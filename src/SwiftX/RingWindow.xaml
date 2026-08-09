@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="SwiftX.RingWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="SwiftX">
+    <Grid x:Name="Root" Background="Transparent" KeyDown="Root_KeyDown">
+        <!-- The window spans the whole work area and the ring is positioned inside the canvas, so
+             the canvas must sit at the origin rather than being centered by the Grid. -->
+        <Canvas x:Name="RingCanvas" Background="Transparent"
+                HorizontalAlignment="Left" VerticalAlignment="Top"
+                PointerPressed="RingCanvas_PointerPressed"
+                PointerMoved="RingCanvas_PointerMoved"
+                PointerExited="RingCanvas_PointerExited"/>
+    </Grid>
+</Window>
