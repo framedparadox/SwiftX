@@ -134,8 +134,10 @@
                 <StackPanel x:Name="ToolPanel" Spacing="6" Visibility="Collapsed">
                     <TextBlock Text="Tool" />
                     <ComboBox x:Name="ToolBox" Width="280">
-                        <ComboBoxItem Content="JSON" Tag="Json" IsSelected="True" />
+                        <ComboBoxItem Content="Data" Tag="Data" IsSelected="True" />
+                        <ComboBoxItem Content="JSON" Tag="Json" />
                         <ComboBoxItem Content="XML" Tag="Xml" />
+                        <ComboBoxItem Content="Secure values" Tag="SecureValues" />
                     </ComboBox>
                 </StackPanel>
 

@@ -198,13 +198,14 @@ public sealed partial class AddItemWindow : Window
 
         if (_kind == AddKind.Tool)
         {
-            var tool = (ToolBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Json";
+            var tool = (ToolBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Data";
+            var def = ToolCatalog.GetByName(tool);
             item.Kind = RingItemKind.Tool;
             item.Target = tool;
             item.DisplayName = string.IsNullOrWhiteSpace(NameBox.Text)
-                ? tool.ToUpperInvariant()
+                ? (def?.DisplayName ?? tool)
                 : NameBox.Text.Trim();
-            item.CustomGlyph = tool.Equals("Xml", StringComparison.OrdinalIgnoreCase) ? "</>" : "\uE943";
+            item.CustomGlyph = def?.Glyph ?? "\uE8A5";
         }
         else if (_kind == AddKind.Group)
         {

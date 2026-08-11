@@ -105,25 +105,28 @@ public sealed class RingManager
             CustomGlyph = "\uE90F",
             Children =
             {
+                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Data", Target = "Data", CustomGlyph = "\uE8A5" },
                 new RingItem { Kind = RingItemKind.Tool, DisplayName = "JSON", Target = "Json", CustomGlyph = "\uE943" },
                 new RingItem { Kind = RingItemKind.Tool, DisplayName = "XML", Target = "Xml", CustomGlyph = "</>" },
+                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Secure values", Target = "SecureValues", CustomGlyph = "\uE72E" },
             },
         });
+        // Two top-level tools fill the remaining user slots; JSON/XML stay inside Dev tools.
         profile.Items.Add(new RingItem
         {
             Kind = RingItemKind.Tool,
-            DisplayName = "JSON",
-            Target = "Json",
-            CustomGlyph = "\uE943",
-            Hidden = !Config.ShowJsonTool,
+            DisplayName = "Data",
+            Target = "Data",
+            CustomGlyph = "\uE8A5",
+            Hidden = !Config.ShowDataTool,
         });
         profile.Items.Add(new RingItem
         {
             Kind = RingItemKind.Tool,
-            DisplayName = "XML",
-            Target = "Xml",
-            CustomGlyph = "</>",
-            Hidden = !Config.ShowXmlTool,
+            DisplayName = "Secure values",
+            Target = "SecureValues",
+            CustomGlyph = "\uE72E",
+            Hidden = !Config.ShowSecureValuesTool,
         });
     }
 

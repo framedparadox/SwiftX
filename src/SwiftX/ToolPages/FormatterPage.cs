@@ -2,34 +2,25 @@ using SwiftX.Controls;
 using SwiftX.Models;
 using SwiftX.Services;
 using SwiftX.Services.Formats;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Windows.System;
 
 namespace SwiftX.ToolPages;
 
 /// <summary>
-/// Backs the JSON, Data Formatter and XML catalog entries — three catalog entries, one page,
-/// differing only by which <see cref="IDataFormat"/> they're constructed with (design doc §8,
-/// §14.1–§14.3). One editable pane; Format, Minify, Validate, sort keys, copy. Invalid input
-/// never clears the user's text.
-/// <para>
-/// <b>One window, not two.</b> Formatting rewrites the editor in place rather than filling a
-/// second read-only pane: the workflow is paste → format → copy, and a side-by-side output pane
-/// meant the user read one half and copied from the other while the half they were looking at
-/// went stale. The single pane is still coloured — <see cref="CodeEditor"/> highlights on a
-/// debounce rather than per keystroke (§10.2), and this page points it at the format's tokenizer
-/// (see <see cref="SetActiveFormat"/>).
-/// </para>
+/// Backs the JSON, Data Formatter and XML catalog entries — catalog entries share one page,
+/// differing by which <see cref="IDataFormat"/> they're constructed with. Basic chrome stays
+/// lean (Format / Validate / Copy / Clear); Advanced opens a sidebar for minify, sort, escape,
+/// convert and indent. Invalid input never clears the user's text.
 /// </summary>
 public sealed class FormatterPage : EditorToolPage
 {
-    /// <summary>What the indent starts at, and what it falls back to when the field is empty.</summary>
     private const int DefaultIndentWidth = 2;
-
-    /// <summary>Wide enough for the field's one or two digits plus some breathing room — there are
-    /// no spin buttons to share the width with any more (see <see cref="_indentBox"/>).</summary>
     private const double IndentBoxWidth = 60;
+    private const double AdvancedSidebarWidth = 260;
 
     private readonly IDataFormat? _fixedFormat;
     private readonly CodeEditor _editor = new();
@@ -38,12 +29,19 @@ public sealed class FormatterPage : EditorToolPage
         Value = DefaultIndentWidth,
         Minimum = 1,
         Maximum = 8,
-        // Explicit rather than left to the defaults: LargeChange defaults to 10, which on a range
-        // of 1–8 makes Page Up a jump straight to the end.
         SmallChange = 1,
         LargeChange = 2,
         Width = IndentBoxWidth,
         VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    private readonly Border _advancedPanel;
+    private readonly ToggleButton _advancedToggle;
+    private readonly TextBlock _detectedLabel = new()
+    {
+        Opacity = 0.75,
+        VerticalAlignment = VerticalAlignment.Center,
+        Margin = new Thickness(8, 0, 0, 0),
     };
 
     private IReadOnlyList<ToolCommand>? _commands;
@@ -51,50 +49,88 @@ public sealed class FormatterPage : EditorToolPage
     private bool _isDirty;
     private bool _replacing;
     private readonly ToolKind _kind;
+    private readonly DispatcherQueueTimer _detectTimer;
 
     public FormatterPage(IDataFormat format)
     {
-        _kind = ReferenceEquals(format, FormatRegistry.Xml) ? ToolKind.Xml : ToolKind.Json;
+        _kind = ResolveKind(format);
         _fixedFormat = ReferenceEquals(format, FormatRegistry.Auto) ? null : format;
 
         _editor.PlaceholderText = Loc.Get("Formatter.InputPlaceholder");
         _editor.AccessibleName = Loc.Get("Common.Input");
-        // A single-format tool knows how to colour its input from the start. Auto-detect can't:
-        // half-typed text has no reliable format yet, so it picks one up the first time a command
-        // successfully parses the document (see SetActiveFormat).
         if (_fixedFormat is not null)
             _editor.Tokenizer = _fixedFormat.Tokenizer;
+
+        _detectTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
+        _detectTimer.Interval = TimeSpan.FromMilliseconds(280);
+        _detectTimer.IsRepeating = false;
+        _detectTimer.Tick += (_, _) => RefreshDetection(autoValidate: true);
+
         _editor.TextChanged += (_, _) =>
         {
             if (_replacing)
-                return; // our own write-back, not the user typing
+                return;
             _isDirty = _editor.Text.Length > 0;
             StatusBar.SetCounts(_editor.Text);
+            _detectTimer.Stop();
+            _detectTimer.Start();
         };
 
-        Microsoft.UI.Xaml.Controls.ToolTipService.SetToolTip(_indentBox, Loc.Get("Formatter.Indent"));
+        ToolTipService.SetToolTip(_indentBox, Loc.Get("Formatter.Indent"));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_indentBox, Loc.Get("Formatter.Indent"));
         _indentBox.EnableWheelStep(1);
 
-        SetBody(Pane(_editor));
+        _advancedToggle = new ToggleButton
+        {
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 6,
+                Children =
+                {
+                    new FontIcon { Glyph = "\uE713", FontSize = 14, VerticalAlignment = VerticalAlignment.Center },
+                    new TextBlock { Text = Loc.Get("Tool.Advanced"), VerticalAlignment = VerticalAlignment.Center },
+                },
+            },
+            VerticalAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(10, 4, 10, 4),
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_advancedToggle, ToolCommand.Ids.Advanced);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_advancedToggle, Loc.Get("Tool.Advanced"));
+
+        _advancedPanel = BuildAdvancedSidebar();
+        _advancedToggle.Checked += (_, _) => _advancedPanel.Visibility = Visibility.Visible;
+        _advancedToggle.Unchecked += (_, _) => _advancedPanel.Visibility = Visibility.Collapsed;
+
+        var body = new Grid();
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var editorPane = Pane(_editor);
+        Grid.SetColumn(editorPane, 0);
+        Grid.SetColumn(_advancedPanel, 1);
+        body.Children.Add(editorPane);
+        body.Children.Add(_advancedPanel);
+
+        var options = OptionsBar();
+        options.Children.Add(_advancedToggle);
+        options.Children.Add(_detectedLabel);
+        SetOptions(options);
+
+        SetBody(body);
         StatusBar.SetUntouched();
         InitializeChrome();
+        RefreshDetection(autoValidate: false);
     }
 
     public override ToolKind Kind => _kind;
     public override bool IsDirty => _isDirty;
 
-    /// <summary>Built once and cached: the indent spinner is a live control, and handing the
-    /// same instance out twice would re-parent it into a second command bar container.</summary>
+    /// <summary>Basic bar only — Format, Validate, Copy, Clear. Advanced lives in the sidebar.</summary>
     public override IReadOnlyList<ToolCommand> Commands => _commands ??=
     [
-        new ToolCommand(Loc.Get("Tool.Format"), "", Format, VirtualKey.Enter, VirtualKeyModifiers.Control, id: ToolCommand.Ids.Format),
-        new ToolCommand(Loc.Get("Tool.Minify"), "", Minify, id: ToolCommand.Ids.Minify),
-        ToolCommand.Validate(Validate),
-        // Indent sits with the two commands whose result it changes, not off in an options strip.
-        ToolCommand.Element(_indentBox),
+        new ToolCommand(Loc.Get("Tool.Format"), "\uE945", Format, VirtualKey.Enter, VirtualKeyModifiers.Control, id: ToolCommand.Ids.Format),
+        ToolCommand.Validate(ValidateAndClean),
         ToolCommand.Copy(CopyOutput),
-        ToolCommand.Save(SaveOutput),
         ToolCommand.Clear(Clear),
     ];
 
@@ -104,14 +140,11 @@ public sealed class FormatterPage : EditorToolPage
     public override void PasteClipboardText(string text)
     {
         _editor.Text = text;
-        Format();
+        ValidateAndClean();
     }
 
     public override async Task LoadFileAsync(string path)
     {
-        // InputLimits, not File.ReadAllTextAsync: §22's ceiling is checked against the file's size
-        // before a byte is read, and the refusal is a sentence in the status bar rather than an
-        // OOM inside a task nobody awaits.
         var read = await InputLimits.ReadTextAsync(path);
         if (!read.Ok)
         {
@@ -120,23 +153,15 @@ public sealed class FormatterPage : EditorToolPage
         }
 
         _editor.Text = read.Text;
-        Format();
+        ValidateAndClean();
     }
 
     private FormatOptions Options => new()
     {
-        // NumberBox reports NaN while its field is empty, and (int)double.NaN is undefined in C# —
-        // it happens to land on a value the writers' own clamps absorb, but only by luck, and a
-        // "luckily this is fine" is not what should decide how a document gets indented.
         IndentWidth = double.IsNaN(_indentBox.Value) ? DefaultIndentWidth : (int)_indentBox.Value,
         SortKeys = false,
     };
 
-    /// <summary>
-    /// Replaces the editor's text with the result of a transformation. The one place the page
-    /// writes back into the editor, and the only thing that suppresses the TextChanged handler —
-    /// without the guard, formatting would re-mark the page dirty on its own write.
-    /// </summary>
     private void Replace(string text)
     {
         _replacing = true;
@@ -149,6 +174,7 @@ public sealed class FormatterPage : EditorToolPage
             _replacing = false;
         }
         StatusBar.SetCounts(text);
+        RefreshDetection(autoValidate: false);
     }
 
     private void Format()
@@ -164,8 +190,6 @@ public sealed class FormatterPage : EditorToolPage
         var result = _activeFormat!.Format(text, Options);
         if (!result.Success)
         {
-            // Invalid input never clears the user's text (§14.1): the editor keeps exactly what
-            // they pasted and the status bar points at the offending line.
             var d = result.Diagnostics[0];
             StatusBar.SetError(d.Line, d.Column);
             return;
@@ -175,12 +199,78 @@ public sealed class FormatterPage : EditorToolPage
         StatusBar.SetValid();
     }
 
-    /// <summary>Records which format the document turned out to be and points the editor's
-    /// syntax colouring at its tokenizer.</summary>
+    /// <summary>
+    /// Clean messy paste wrappers (outer quotes/spaces/escapes), then format with a fixed 2-space
+    /// indent and report validity. Primary "make this usable" action for log-copied payloads.
+    /// </summary>
+    private void ValidateAndClean()
+    {
+        var text = _editor.Text;
+        if (text.Length == 0)
+        {
+            StatusBar.SetUntouched();
+            return;
+        }
+
+        var cleaned = InputSanitizer.Clean(text);
+        var format = _fixedFormat ?? FormatRegistry.DetectBest(cleaned);
+        var formatOptions = new FormatOptions { IndentWidth = DefaultIndentWidth, SortKeys = false };
+        var result = format.Format(cleaned, formatOptions);
+        if (!result.Success)
+        {
+            if (!string.Equals(cleaned, text, StringComparison.Ordinal))
+                Replace(cleaned);
+            SetActiveFormat(format);
+            var d = result.Diagnostics[0];
+            StatusBar.SetError(d.Line, d.Column);
+            return;
+        }
+
+        Replace(result.Text);
+        SetActiveFormat(format);
+        StatusBar.SetValid();
+    }
+
     private void SetActiveFormat(IDataFormat format)
     {
         _activeFormat = format;
         _editor.Tokenizer = format.Tokenizer;
+        UpdateDetectedLabel(format);
+    }
+
+    private void RefreshDetection(bool autoValidate)
+    {
+        var text = _editor.Text;
+        if (text.Length == 0)
+        {
+            _detectedLabel.Text = "";
+            if (!autoValidate)
+                StatusBar.SetUntouched();
+            return;
+        }
+
+        var format = _fixedFormat ?? FormatRegistry.DetectBest(text);
+        UpdateDetectedLabel(format);
+
+        if (_fixedFormat is null)
+            _editor.Tokenizer = format.Tokenizer;
+
+        if (!autoValidate)
+            return;
+
+        var diagnostics = format.Validate(text);
+        if (diagnostics.Count == 0)
+            StatusBar.SetValid();
+        else
+            StatusBar.SetError(diagnostics[0].Line, diagnostics[0].Column);
+    }
+
+    private void UpdateDetectedLabel(IDataFormat format)
+    {
+        string name = format.Id.ToUpperInvariant();
+        _detectedLabel.Text = _fixedFormat is null
+            ? Loc.Format("Formatter.Detected", name)
+            : Loc.Format("Formatter.FormatName", name);
     }
 
     private void Minify()
@@ -200,19 +290,82 @@ public sealed class FormatterPage : EditorToolPage
         StatusBar.SetValid();
     }
 
-    private void Validate()
+    private void SortKeys()
     {
         var text = _editor.Text;
+        if (text.Length == 0)
+            return;
+
         var format = _fixedFormat ?? FormatRegistry.DetectBest(text);
-        var diagnostics = format.Validate(text);
-        if (diagnostics.Count == 0)
+        try
         {
+            var node = format.ToCanonical(text);
+            var options = Options with { SortKeys = true };
+            // Key sorting is a JSON-shaped operation: rewrite through the JSON writer, then leave
+            // the document as JSON (or re-emit via the source format when it was already JSON).
+            string sortedJson = FormatRegistry.Json.FromCanonical(node, options);
+            if (format.Id == "json")
+            {
+                Replace(sortedJson);
+                SetActiveFormat(format);
+            }
+            else
+            {
+                Replace(sortedJson);
+                SetActiveFormat(FormatRegistry.Json);
+            }
             StatusBar.SetValid();
-            SetActiveFormat(format);
         }
-        else
+        catch (Exception ex)
         {
-            StatusBar.SetError(diagnostics[0].Line, diagnostics[0].Column);
+            StatusBar.SetMessage(ex.Message, isError: true);
+        }
+    }
+
+    private void EscapeText()
+    {
+        var text = _editor.Text;
+        if (text.Length == 0)
+            return;
+        Replace(System.Text.Json.JsonSerializer.Serialize(text));
+        StatusBar.SetMessage(Loc.Get("Formatter.Escaped"), isError: false);
+    }
+
+    private void UnescapeText()
+    {
+        var text = _editor.Text;
+        if (text.Length == 0)
+            return;
+        Replace(InputSanitizer.Clean(text));
+        RefreshDetection(autoValidate: true);
+    }
+
+    private void ConvertTo(IDataFormat target)
+    {
+        var text = _editor.Text;
+        if (text.Length == 0)
+            return;
+
+        var source = _fixedFormat ?? FormatRegistry.DetectBest(text);
+        try
+        {
+            var node = source.ToCanonical(text);
+            var rewritten = target.FromCanonical(node, Options);
+            var pretty = target.Format(rewritten, Options);
+            if (!pretty.Success)
+            {
+                Replace(rewritten);
+                SetActiveFormat(target);
+                StatusBar.SetMessage(pretty.Diagnostics[0].Message, isError: true);
+                return;
+            }
+            Replace(pretty.Text);
+            SetActiveFormat(target);
+            StatusBar.SetValid();
+        }
+        catch (Exception ex)
+        {
+            StatusBar.SetMessage(ex.Message, isError: true);
         }
     }
 
@@ -225,33 +378,111 @@ public sealed class FormatterPage : EditorToolPage
         Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
     }
 
-    private void SaveOutput()
-    {
-        if (_editor.Text.Length == 0)
-            return;
-
-        var extension = (_activeFormat ?? _fixedFormat)?.Extensions is [var ext, ..] ? ext : ".txt";
-        try
-        {
-            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            var name = "formatted";
-            var path = Path.Combine(desktop, name + extension);
-            for (int i = 2; File.Exists(path); i++)
-                path = Path.Combine(desktop, $"{name} ({i}){extension}");
-
-            File.WriteAllText(path, _editor.Text);
-            StatusBar.SetMessage(Loc.Format("Tool.SavedTo", Path.GetFileName(path)), isError: false);
-        }
-        catch (Exception ex)
-        {
-            StatusBar.SetMessage(ex.Message, isError: true);
-        }
-    }
-
     private void Clear()
     {
         Replace("");
         _isDirty = false;
         StatusBar.SetUntouched();
+    }
+
+    private Border BuildAdvancedSidebar()
+    {
+        var stack = new StackPanel
+        {
+            Spacing = 10,
+            Padding = new Thickness(12),
+            Width = AdvancedSidebarWidth,
+        };
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = Loc.Get("Tool.Advanced"),
+            Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"],
+            Margin = new Thickness(0, 0, 0, 4),
+        });
+
+        stack.Children.Add(SidebarButton(Loc.Get("Tool.Minify"), "\uE37F", Minify));
+        stack.Children.Add(SidebarButton(Loc.Get("Formatter.SortKeys"), "\uE8CB", SortKeys));
+        stack.Children.Add(SidebarButton(Loc.Get("Formatter.Escape"), "\uE8AB", EscapeText));
+        stack.Children.Add(SidebarButton(Loc.Get("Formatter.Unescape"), "\uE8AC", UnescapeText));
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = Loc.Get("Formatter.Convert"),
+            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+            Margin = new Thickness(0, 8, 0, 0),
+        });
+        stack.Children.Add(SidebarButton(Loc.Get("Formatter.ToJson"), "\uE943", () => ConvertTo(FormatRegistry.Json)));
+        stack.Children.Add(SidebarButton(Loc.Get("Formatter.ToXml"), "</>", () => ConvertTo(FormatRegistry.Xml)));
+        stack.Children.Add(SidebarButton(Loc.Get("Formatter.ToCsv"), "\uE8A5", () => ConvertTo(FormatRegistry.Csv)));
+
+        var indentRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        indentRow.Children.Add(new TextBlock
+        {
+            Text = Loc.Get("Formatter.Indent"),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        indentRow.Children.Add(_indentBox);
+        stack.Children.Add(new Border { Child = indentRow, Margin = new Thickness(0, 8, 0, 0) });
+
+        return new Border
+        {
+            Child = new ScrollViewer
+            {
+                Content = stack,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            },
+            Background = ThemeResourceBrush("CardBackgroundFillColorSecondaryBrush"),
+            BorderBrush = ThemeResourceBrush("CardStrokeColorDefaultBrush"),
+            BorderThickness = new Thickness(1, 0, 0, 0),
+            Visibility = Visibility.Collapsed,
+        };
+    }
+
+    private static Button SidebarButton(string label, string glyph, Action action)
+    {
+        var icon = new FontIcon
+        {
+            Glyph = glyph,
+            FontSize = 14,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        if (GlyphFonts.IsTextGlyph(glyph))
+            icon.FontFamily = new FontFamily("Segoe UI");
+        else if (Application.Current.Resources.TryGetValue("SymbolThemeFontFamily", out var font) && font is FontFamily family)
+            icon.FontFamily = family;
+
+        var button = new Button
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(10, 8, 10, 8),
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10,
+                Children =
+                {
+                    icon,
+                    new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center },
+                },
+            },
+        };
+        button.Click += (_, _) => action();
+        return button;
+    }
+
+    private static Brush? ThemeResourceBrush(string key) =>
+        Application.Current.Resources.TryGetValue(key, out var value)
+            ? value as Brush
+            : null;
+
+    private static ToolKind ResolveKind(IDataFormat format)
+    {
+        if (ReferenceEquals(format, FormatRegistry.Xml))
+            return ToolKind.Xml;
+        if (ReferenceEquals(format, FormatRegistry.Auto))
+            return ToolKind.Data;
+        return ToolKind.Json;
     }
 }

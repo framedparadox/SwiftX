@@ -71,6 +71,7 @@ public sealed class ToolCommand(
         public const string Minify = "minify";
         public const string Convert = "convert";
         public const string Generate = "generate";
+        public const string Advanced = "advanced";
     }
 
     /// <summary>Copy the tool's result to the clipboard. Ctrl+Shift+C.</summary>

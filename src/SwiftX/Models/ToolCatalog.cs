@@ -7,6 +7,8 @@ public enum ToolKind
 {
     Json,
     Xml,
+    Data,
+    SecureValues,
 }
 
 public sealed record ToolDefinition(
@@ -18,15 +20,19 @@ public sealed record ToolDefinition(
 {
 }
 
-/// <summary>Phase 1 catalog: JSON and XML formatters only.</summary>
+/// <summary>Built-in developer tools: formatters and local secure values.</summary>
 public static class ToolCatalog
 {
     public static IReadOnlyList<ToolDefinition> All { get; } =
     [
+        new ToolDefinition(ToolKind.Data, "Data", "Auto-detect and format JSON, XML, or CSV.", "\uE8A5",
+            () => new FormatterPage(FormatRegistry.Auto)),
         new ToolDefinition(ToolKind.Json, "JSON", "Format, minify, and validate JSON.", "\uE943",
             () => new FormatterPage(FormatRegistry.Json)),
         new ToolDefinition(ToolKind.Xml, "XML", "Format, minify, and validate XML.", "</>",
             () => new FormatterPage(FormatRegistry.Xml)),
+        new ToolDefinition(ToolKind.SecureValues, "Secure values", "Store keys and secrets locally (masked).", "\uE72E",
+            () => new SecureValuesPage()),
     ];
 
     public static ToolDefinition? Get(ToolKind kind) =>

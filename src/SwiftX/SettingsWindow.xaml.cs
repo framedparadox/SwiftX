@@ -95,8 +95,10 @@ public sealed partial class SettingsWindow : Window
             // during capture left the button silently armed with no feedback.
             HotkeyCapture.NeedsModifier += () =>
                 HotkeyStatus.Text = "Hold Ctrl, Alt, or Win with that key.";
+            DataToggle.IsOn = _manager.Config.ShowDataTool;
             JsonToggle.IsOn = _manager.Config.ShowJsonTool;
             XmlToggle.IsOn = _manager.Config.ShowXmlTool;
+            SecureValuesToggle.IsOn = _manager.Config.ShowSecureValuesTool;
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0");
             _loading = false;
@@ -607,8 +609,10 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.Theme = AppTheme.Dark;
         _manager.Config.Hotkey = HotkeyGesture.Default.ToString();
         _manager.Config.HotkeyEnabled = true;
+        _manager.Config.ShowDataTool = true;
         _manager.Config.ShowJsonTool = true;
         _manager.Config.ShowXmlTool = true;
+        _manager.Config.ShowSecureValuesTool = true;
         _manager.SeedDefaults(_manager.Config.Primary);
         // Through the manager, not a raw Config assignment: RingMetrics holds the geometry the
         // ring actually draws with.
@@ -624,8 +628,10 @@ public sealed partial class SettingsWindow : Window
         RadiusSlider.Value = RingMetrics.DefaultRadius;
         HotkeyEnabledToggle.IsOn = true;
         HotkeyCapture.Gesture = HotkeyGesture.Default;
+        DataToggle.IsOn = true;
         JsonToggle.IsOn = true;
         XmlToggle.IsOn = true;
+        SecureValuesToggle.IsOn = true;
         _loading = false;
         RenderPreview();
         RebuildItemsList();
@@ -751,19 +757,37 @@ public sealed partial class SettingsWindow : Window
     private void ToolToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
+        _manager.Config.ShowDataTool = DataToggle.IsOn;
         _manager.Config.ShowJsonTool = JsonToggle.IsOn;
         _manager.Config.ShowXmlTool = XmlToggle.IsOn;
-        foreach (var item in _manager.Config.Primary.Items.Where(i => i.IsTool))
-        {
-            if (string.Equals(item.Target, "Json", StringComparison.OrdinalIgnoreCase))
-                item.Hidden = !JsonToggle.IsOn;
-            if (string.Equals(item.Target, "Xml", StringComparison.OrdinalIgnoreCase))
-                item.Hidden = !XmlToggle.IsOn;
-        }
+        _manager.Config.ShowSecureValuesTool = SecureValuesToggle.IsOn;
+        ApplyToolVisibility(_manager.Config.Primary.Items);
         _manager.NotifyItemsChanged();
         RenderPreview();
     }
 
+    private void ApplyToolVisibility(IEnumerable<RingItem> items)
+    {
+        foreach (var item in items)
+        {
+            if (item.IsTool)
+            {
+                if (string.Equals(item.Target, "Data", StringComparison.OrdinalIgnoreCase))
+                    item.Hidden = !DataToggle.IsOn;
+                else if (string.Equals(item.Target, "Json", StringComparison.OrdinalIgnoreCase))
+                    item.Hidden = !JsonToggle.IsOn;
+                else if (string.Equals(item.Target, "Xml", StringComparison.OrdinalIgnoreCase))
+                    item.Hidden = !XmlToggle.IsOn;
+                else if (string.Equals(item.Target, "SecureValues", StringComparison.OrdinalIgnoreCase))
+                    item.Hidden = !SecureValuesToggle.IsOn;
+            }
+            if (item.Children.Count > 0)
+                ApplyToolVisibility(item.Children);
+        }
+    }
+
+    private void OpenData_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Data);
     private void OpenJson_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Json);
     private void OpenXml_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Xml);
+    private void OpenSecureValues_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.SecureValues);
 }
