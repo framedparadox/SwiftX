@@ -24,18 +24,14 @@ public sealed partial class RingWindow : Window
     private const int SpringPeriodMs = 220;
     private const int StaggerMs = 28;
 
-    // Exit motion. Long enough to read as a collapse rather than a cut, short enough not to make
-    // dismissing feel sticky.
-    private const int DismissMs = 190;
-
     // Flyout ("water drop") motion. Looser damping than the main ring's entrance so the children
     // visibly overshoot and settle, and a slower period so the travel out to the outer ring reads
-    // as one liquid gesture rather than a snap.
+    // as one liquid gesture rather than a snap. The same constants drive the reverse (collapse)
+    // motion, so opening and closing always share one physical language.
     private const float FlyoutDamping = 0.58f;
     private const int FlyoutPeriodMs = 320;
     private const int FlyoutScaleMs = 380;
     private const int FlyoutStaggerMs = 26;
-    private const int FlyoutCollapseMs = 165;
 
     /// <summary>
     /// Dwell before hovering a group opens it. Long enough that sweeping the pointer across a
@@ -184,8 +180,10 @@ public sealed partial class RingWindow : Window
         try
         {
             HidePill();
-            FadeOutHub(DismissMs);
-            await FadeOutBubblesAsync(_bubbles.Concat(_flyout).ToList(), DismissMs);
+            FadeOutHub();
+            // Inner ring and any open flyout children reverse their own entrances, at once — the
+            // exact opposite of Summon's AnimateBurstIn / ExpandFlyout's AnimateDropletOut.
+            await Task.WhenAll(AnimateBurstOutAsync(_bubbles), AnimateFlyoutBackAsync(_flyout));
             if (gen != _renderGeneration) return;
         }
         finally
@@ -813,104 +811,59 @@ public sealed partial class RingWindow : Window
     }
 
     /// <summary>
-    /// Retracts <paramref name="bubbles"/> into whatever they emerged from — the hub for ring
-    /// items, the parent group item for flyout children — as one simultaneous implosion.
-    /// <para>
-    /// Deliberately unstaggered. A staggered close walks the items in slot order, and because the
-    /// slots run clockwise from the top, the eye reads that as a wave sweeping sideways across
-    /// the ring rather than as a collapse — items on one side visibly leave before the other side
-    /// has started. Radial motion only looks radial when everything moves at once.
-    /// </para>
-    /// <para>
-    /// Eased rather than sprung, too. A spring is a thing settling onto a resting place, but
-    /// nothing here ever rests — every item is gone the instant it arrives, so the spring's
-    /// overshoot-and-return reads as a wobble that got cut off. An accelerating curve reads as
-    /// being drawn in.
-    /// </para>
+    /// Closing companion to <see cref="AnimateBurstIn"/>, but deliberately not its mirror image:
+    /// the entrance travels from the hub out to each bubble's resting spot, so reversing that
+    /// motion pulls every bubble back along its own radial — which, for a ring whose populated
+    /// items lean to one side, reads as the whole dock sliding sideways rather than fading.
+    /// Closing instead leaves each bubble exactly where it rests and only fades/shrinks it in
+    /// place, so the dock always dissolves symmetrically no matter how the items are arranged.
+    /// Stagger is still reversed — whichever bubble was the last to arrive is the first to leave.
     /// </summary>
-    private async Task AnimateInwardAsync(IReadOnlyList<BubbleView> bubbles, int durationMs)
+    private void AnimateBurstOut(BubbleView bubble, int staggerIndex)
+    {
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
+            visual.CenterPoint = new Vector3(
+                (float)(bubble.Diameter / 2), (float)(bubble.Diameter / 2), 0);
+            var compositor = visual.Compositor;
+            var delay = TimeSpan.FromMilliseconds(staggerIndex * StaggerMs);
+            var ease = compositor.CreateCubicBezierEasingFunction(
+                new Vector2(0.3f, 0f), new Vector2(0.2f, 1f));
+
+            var scale = compositor.CreateVector3KeyFrameAnimation();
+            scale.InsertKeyFrame(1, new Vector3(0.85f, 0.85f, 1), ease);
+            scale.Duration = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            scale.DelayTime = delay;
+            visual.StartAnimation("Scale", scale);
+
+            var opacity = compositor.CreateScalarKeyFrameAnimation();
+            opacity.InsertKeyFrame(1, 0, ease);
+            opacity.Duration = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            opacity.DelayTime = delay;
+            visual.StartAnimation("Opacity", opacity);
+        }
+        catch
+        {
+            // skip animation
+        }
+    }
+
+    /// <summary>Runs <see cref="AnimateBurstOut"/> across the whole inner ring and waits for it to settle.</summary>
+    private async Task AnimateBurstOutAsync(IReadOnlyList<BubbleView> bubbles)
     {
         if (bubbles.Count == 0)
             return;
 
-        try
-        {
-            var duration = TimeSpan.FromMilliseconds(durationMs);
-            foreach (var bubble in bubbles)
-            {
-                var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
-                visual.CenterPoint = new Vector3(
-                    (float)(bubble.Diameter / 2),
-                    (float)(bubble.Diameter / 2),
-                    0);
-                var compositor = visual.Compositor;
-                var accelerate = compositor.CreateCubicBezierEasingFunction(
-                    new Vector2(0.45f, 0f), new Vector2(0.85f, 0.4f));
+        int maxStagger = bubbles.Max(b => b.StaggerIndex);
+        foreach (var bubble in bubbles)
+            AnimateBurstOut(bubble, maxStagger - bubble.StaggerIndex);
 
-                var offset = compositor.CreateVector3KeyFrameAnimation();
-                offset.InsertKeyFrame(1, bubble.EntryOffset, accelerate);
-                offset.Duration = duration;
-                visual.StartAnimation("Offset", offset);
-
-                var scale = compositor.CreateVector3KeyFrameAnimation();
-                scale.InsertKeyFrame(1, new Vector3(0.2f, 0.2f, 1), accelerate);
-                scale.Duration = duration;
-                visual.StartAnimation("Scale", scale);
-
-                // Gone before the journey ends, so the items thin out on the way in instead of
-                // piling into one solid blob at the middle and vanishing from it.
-                var opacity = compositor.CreateScalarKeyFrameAnimation();
-                opacity.InsertKeyFrame(0.7f, 0f, accelerate);
-                opacity.InsertKeyFrame(1f, 0f);
-                opacity.Duration = duration;
-                visual.StartAnimation("Opacity", opacity);
-            }
-        }
-        catch
-        {
-            // Composition unavailable — fall through immediately.
-            return;
-        }
-
-        await Task.Delay(durationMs + 30);
+        await Task.Delay(SpringPeriodMs + maxStagger * StaggerMs + 30);
     }
 
-    /// <summary>
-    /// Dismisses <paramref name="bubbles"/> by fading them out in place — no retreat toward the
-    /// hub or a parent, no shrink. This is the whole dock going away, not one group folding back
-    /// into its icon, so there is nowhere for the items to travel to; animating them inward read
-    /// as a directional swoosh rather than the dock simply disappearing.
-    /// </summary>
-    private async Task FadeOutBubblesAsync(IReadOnlyList<BubbleView> bubbles, int durationMs)
-    {
-        if (bubbles.Count == 0)
-            return;
-
-        try
-        {
-            var duration = TimeSpan.FromMilliseconds(durationMs);
-            foreach (var bubble in bubbles)
-            {
-                var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
-                var compositor = visual.Compositor;
-
-                var opacity = compositor.CreateScalarKeyFrameAnimation();
-                opacity.InsertKeyFrame(1, 0);
-                opacity.Duration = duration;
-                visual.StartAnimation("Opacity", opacity);
-            }
-        }
-        catch
-        {
-            // Composition unavailable — fall through immediately.
-            return;
-        }
-
-        await Task.Delay(durationMs + 30);
-    }
-
-    /// <summary>Shrinks the centre mark away on the same curve as the ring collapsing around it.</summary>
-    private void FadeOutHub(int durationMs)
+    /// <summary>The exact reverse of <see cref="BuildHub"/>'s entrance spring.</summary>
+    private void FadeOutHub()
     {
         if (_hub is null) return;
         try
@@ -918,19 +871,17 @@ public sealed partial class RingWindow : Window
             var visual = ElementCompositionPreview.GetElementVisual(_hub);
             visual.CenterPoint = new Vector3((float)(_hubSize / 2), (float)(_hubSize / 2), 0);
             var compositor = visual.Compositor;
-            var duration = TimeSpan.FromMilliseconds(durationMs);
-            var accelerate = compositor.CreateCubicBezierEasingFunction(
-                new Vector2(0.45f, 0f), new Vector2(0.85f, 0.4f));
 
-            var scale = compositor.CreateVector3KeyFrameAnimation();
-            scale.InsertKeyFrame(1, new Vector3(0.6f, 0.6f, 1), accelerate);
-            scale.Duration = duration;
+            var scale = compositor.CreateSpringVector3Animation();
+            scale.Target = "Scale";
+            scale.FinalValue = new Vector3(0.7f, 0.7f, 1);
+            scale.DampingRatio = SpringDamping;
+            scale.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
             visual.StartAnimation("Scale", scale);
 
             var opacity = compositor.CreateScalarKeyFrameAnimation();
-            opacity.InsertKeyFrame(0.7f, 0f, accelerate);
-            opacity.InsertKeyFrame(1f, 0f);
-            opacity.Duration = duration;
+            opacity.InsertKeyFrame(1, 0);
+            opacity.Duration = TimeSpan.FromMilliseconds(SpringPeriodMs);
             visual.StartAnimation("Opacity", opacity);
         }
         catch
@@ -1039,6 +990,57 @@ public sealed partial class RingWindow : Window
         }
     }
 
+    /// <summary>
+    /// Closing companion to <see cref="AnimateDropletOut"/>, but — like <see cref="AnimateBurstOut"/>
+    /// versus its own entrance — deliberately not its mirror image. The entrance travels from the
+    /// parent bubble out to each child's resting spot; reversing that motion would pull every
+    /// child back toward the parent along its own radial, which for an arc of children reads as
+    /// the whole flyout sliding sideways rather than fading. Hiding instead leaves each child
+    /// exactly where it rests and only fades/shrinks it in place.
+    /// </summary>
+    private void AnimateDropletBack(BubbleView bubble, int staggerIndex)
+    {
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
+            visual.CenterPoint = new Vector3(
+                (float)(bubble.Diameter / 2), (float)(bubble.Diameter / 2), 0);
+            var compositor = visual.Compositor;
+            var delay = TimeSpan.FromMilliseconds(staggerIndex * FlyoutStaggerMs);
+            var ease = compositor.CreateCubicBezierEasingFunction(
+                new Vector2(0.3f, 0f), new Vector2(0.2f, 1f));
+
+            var scale = compositor.CreateVector3KeyFrameAnimation();
+            scale.InsertKeyFrame(1, new Vector3(0.85f, 0.85f, 1), ease);
+            scale.Duration = TimeSpan.FromMilliseconds(FlyoutScaleMs);
+            scale.DelayTime = delay;
+            visual.StartAnimation("Scale", scale);
+
+            var opacity = compositor.CreateScalarKeyFrameAnimation();
+            opacity.InsertKeyFrame(1, 0, ease);
+            opacity.Duration = TimeSpan.FromMilliseconds(FlyoutScaleMs);
+            opacity.DelayTime = delay;
+            visual.StartAnimation("Opacity", opacity);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    /// <summary>Runs <see cref="AnimateDropletBack"/> across a flyout's children and waits for it to settle.</summary>
+    private async Task AnimateFlyoutBackAsync(IReadOnlyList<BubbleView> children)
+    {
+        if (children.Count == 0)
+            return;
+
+        int maxStagger = children.Max(c => c.StaggerIndex);
+        foreach (var bubble in children)
+            AnimateDropletBack(bubble, maxStagger - bubble.StaggerIndex);
+
+        await Task.Delay(FlyoutScaleMs + maxStagger * FlyoutStaggerMs + 30);
+    }
+
     private async Task CollapseFlyoutAsync()
     {
         if (_flyoutParent is null && _flyout.Count == 0)
@@ -1061,8 +1063,8 @@ public sealed partial class RingWindow : Window
             SetHovered(null);
 
         int gen = _renderGeneration;
-        // Children retract into the parent item they came from, all together.
-        await AnimateInwardAsync(children, FlyoutCollapseMs);
+        // Children shed back into the parent item they emerged from, reversing AnimateDropletOut.
+        await AnimateFlyoutBackAsync(children);
 
         if (gen != _renderGeneration)
             return;
