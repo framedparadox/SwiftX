@@ -109,6 +109,8 @@ public sealed class RingManager
                 new RingItem { Kind = RingItemKind.Tool, DisplayName = "JSON", Target = "Json", CustomGlyph = "\uE943" },
                 new RingItem { Kind = RingItemKind.Tool, DisplayName = "XML", Target = "Xml", CustomGlyph = "</>" },
                 new RingItem { Kind = RingItemKind.Tool, DisplayName = "Secure values", Target = "SecureValues", CustomGlyph = "\uE72E" },
+                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Base64", Target = "Base64", CustomGlyph = "01" },
+                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Certificate", Target = "Certificate", CustomGlyph = "\uEB95" },
             },
         });
         // Two top-level tools fill the remaining user slots; JSON/XML stay inside Dev tools.

@@ -99,6 +99,8 @@ public sealed partial class SettingsWindow : Window
             JsonToggle.IsOn = _manager.Config.ShowJsonTool;
             XmlToggle.IsOn = _manager.Config.ShowXmlTool;
             SecureValuesToggle.IsOn = _manager.Config.ShowSecureValuesTool;
+            Base64Toggle.IsOn = _manager.Config.ShowBase64Tool;
+            CertificateToggle.IsOn = _manager.Config.ShowCertificateTool;
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0");
             _loading = false;
@@ -613,6 +615,8 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.ShowJsonTool = true;
         _manager.Config.ShowXmlTool = true;
         _manager.Config.ShowSecureValuesTool = true;
+        _manager.Config.ShowBase64Tool = true;
+        _manager.Config.ShowCertificateTool = true;
         _manager.SeedDefaults(_manager.Config.Primary);
         // Through the manager, not a raw Config assignment: RingMetrics holds the geometry the
         // ring actually draws with.
@@ -761,6 +765,8 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.ShowJsonTool = JsonToggle.IsOn;
         _manager.Config.ShowXmlTool = XmlToggle.IsOn;
         _manager.Config.ShowSecureValuesTool = SecureValuesToggle.IsOn;
+        _manager.Config.ShowBase64Tool = Base64Toggle.IsOn;
+        _manager.Config.ShowCertificateTool = CertificateToggle.IsOn;
         ApplyToolVisibility(_manager.Config.Primary.Items);
         _manager.NotifyItemsChanged();
         RenderPreview();
@@ -780,6 +786,10 @@ public sealed partial class SettingsWindow : Window
                     item.Hidden = !XmlToggle.IsOn;
                 else if (string.Equals(item.Target, "SecureValues", StringComparison.OrdinalIgnoreCase))
                     item.Hidden = !SecureValuesToggle.IsOn;
+                else if (string.Equals(item.Target, "Base64", StringComparison.OrdinalIgnoreCase))
+                    item.Hidden = !Base64Toggle.IsOn;
+                else if (string.Equals(item.Target, "Certificate", StringComparison.OrdinalIgnoreCase))
+                    item.Hidden = !CertificateToggle.IsOn;
             }
             if (item.Children.Count > 0)
                 ApplyToolVisibility(item.Children);
@@ -790,4 +800,6 @@ public sealed partial class SettingsWindow : Window
     private void OpenJson_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Json);
     private void OpenXml_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Xml);
     private void OpenSecureValues_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.SecureValues);
+    private void OpenBase64_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Base64);
+    private void OpenCertificate_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Certificate);
 }

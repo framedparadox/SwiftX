@@ -138,6 +138,8 @@
                         <ComboBoxItem Content="JSON" Tag="Json" />
                         <ComboBoxItem Content="XML" Tag="Xml" />
                         <ComboBoxItem Content="Secure values" Tag="SecureValues" />
+                        <ComboBoxItem Content="Base64" Tag="Base64" />
+                        <ComboBoxItem Content="Certificate" Tag="Certificate" />
                     </ComboBox>
                 </StackPanel>
 

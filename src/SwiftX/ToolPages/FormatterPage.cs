@@ -5,8 +5,10 @@ using SwiftX.Services.Formats;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using Windows.System;
+using DispatcherQueueTimer = Microsoft.UI.Dispatching.DispatcherQueueTimer;
 
 namespace SwiftX.ToolPages;
 
@@ -61,7 +63,7 @@ public sealed class FormatterPage : EditorToolPage
         if (_fixedFormat is not null)
             _editor.Tokenizer = _fixedFormat.Tokenizer;
 
-        _detectTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
+        _detectTimer = DispatcherQueue.CreateTimer();
         _detectTimer.Interval = TimeSpan.FromMilliseconds(280);
         _detectTimer.IsRepeating = false;
         _detectTimer.Tick += (_, _) => RefreshDetection(autoValidate: true);

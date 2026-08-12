@@ -28,6 +28,8 @@ public sealed class AppConfig
     public bool ShowXmlTool { get; set; } = true;
     public bool ShowDataTool { get; set; } = true;
     public bool ShowSecureValuesTool { get; set; } = true;
+    public bool ShowBase64Tool { get; set; } = true;
+    public bool ShowCertificateTool { get; set; } = true;
     public bool ReuseToolWindows { get; set; } = true;
 
     [JsonIgnore]
@@ -54,6 +56,8 @@ public sealed class AppConfig
         ShowXmlTool = other.ShowXmlTool;
         ShowDataTool = other.ShowDataTool;
         ShowSecureValuesTool = other.ShowSecureValuesTool;
+        ShowBase64Tool = other.ShowBase64Tool;
+        ShowCertificateTool = other.ShowCertificateTool;
         ReuseToolWindows = other.ReuseToolWindows;
     }
 }

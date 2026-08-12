@@ -37,10 +37,14 @@ Or launch the built `SwiftX.exe` from the output folder under `bin\x64\Debug\net
 - **Settings** and **Close** are built in to the last two slots — never hidden, reordered, or removed, leaving 6 user slots
 - **Esc** collapses an open group, or dismisses the ring when none is open; click empty space / dead zone to dismiss
 - **Tray → Settings** opens the home ring editor and other pages
-- **Tools:** Data formatter (auto-detect JSON/XML/CSV), locked JSON/XML formatters, and local Secure values
+- **Tools:** Data formatter (auto-detect JSON/XML/CSV), locked JSON/XML formatters, local Secure values,
+  Base64 encode/decode, and a Certificate inspector
   - Basic bar: Format / Validate (clean + pretty-print) / Copy / Clear
   - Advanced sidebar: Minify, Sort keys, Escape/Unescape, Convert, indent
   - Secure values: DPAPI-protected key/secret store with masked display + copy
+  - Base64: Encode / Decode, URL-safe alphabet, encode straight from a file
+  - Certificate: inspects .cer/.crt/.der/.pem, PKCS#7 bundles, password-protected PKCS#12/PFX,
+    and Java KeyStore (.jks) files — full field detail per certificate, nothing uploaded anywhere
 
 ## Settings
 
@@ -52,7 +56,7 @@ Persisted at `%AppData%\SwiftX\ring.json` (override with `SWIFTX_DATA_DIR`).
 | General | Theme (Light / Dark / System), ring item size (Small / Medium / Large), ring radius, start with Windows, import/export, reset |
 | Shortcuts | Summon hotkey capture |
 | Apps & links | Flat list with show/hide and remove — Settings and Close aren't listed |
-| Tools | Toggle Data / JSON / XML / Secure values on the ring; open tools |
+| Tools | Toggle Data / JSON / XML / Secure values / Base64 / Certificate on the ring; open tools |
 | About | Version and privacy note |
 
 ## Theme
