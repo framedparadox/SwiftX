@@ -85,6 +85,13 @@ public sealed partial class RingWindow : Window
         WindowChrome.MakeTransparentOverlay(this, _hwnd);
         ApplyTheme();
         _appWindow.Hide();
+
+        // A click outside the ring's own hit-test disc never reaches this window at all — it
+        // passes straight through to whatever is beneath (see LayoutAtCursor) — so it can't be
+        // caught as a pointer event here. What it *does* do is hand foreground activation to
+        // whatever the user just clicked, and that deactivation is something this window is
+        // told about regardless of where on screen the click landed.
+        Activated += RingWindow_Activated;
     }
 
     public void ApplyTheme()
@@ -171,6 +178,15 @@ public sealed partial class RingWindow : Window
 
         _isOpen = false;
         _ = DismissAnimatedAsync();
+    }
+
+    /// <summary>Clicking anywhere else on screen — another window, the desktop, the taskbar —
+    /// hands that window foreground activation and deactivates this one; treat it the same as
+    /// clicking the ring's own dead zone.</summary>
+    private void RingWindow_Activated(object sender, WindowActivatedEventArgs args)
+    {
+        if (args.WindowActivationState == WindowActivationState.Deactivated)
+            Dismiss();
     }
 
     private async Task DismissAnimatedAsync()

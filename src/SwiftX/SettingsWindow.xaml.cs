@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -47,6 +49,8 @@ public sealed partial class SettingsWindow : Window
         _editList = manager.Config.Primary.Items;
         InitializeComponent();
 
+        _toolCards.CollectionChanged += ToolCards_CollectionChanged;
+
         _hwnd = WindowNative.GetWindowHandle(this);
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
         Title = "SwiftX Settings";
@@ -95,12 +99,7 @@ public sealed partial class SettingsWindow : Window
             // during capture left the button silently armed with no feedback.
             HotkeyCapture.NeedsModifier += () =>
                 HotkeyStatus.Text = "Hold Ctrl, Alt, or Win with that key.";
-            DataToggle.IsOn = _manager.Config.ShowDataTool;
-            JsonToggle.IsOn = _manager.Config.ShowJsonTool;
-            XmlToggle.IsOn = _manager.Config.ShowXmlTool;
-            SecureValuesToggle.IsOn = _manager.Config.ShowSecureValuesTool;
-            Base64Toggle.IsOn = _manager.Config.ShowBase64Tool;
-            CertificateToggle.IsOn = _manager.Config.ShowCertificateTool;
+            RebuildToolsList();
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0");
             _loading = false;
@@ -145,6 +144,7 @@ public sealed partial class SettingsWindow : Window
         AboutPanel.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
         if (tag == "home") RenderPreview();
         if (tag == "apps") RebuildItemsList();
+        if (tag == "tools") RebuildToolsList();
     }
 
     private void RenderPreview()
@@ -640,10 +640,7 @@ public sealed partial class SettingsWindow : Window
         RadiusSlider.Value = RingMetrics.DefaultRadius;
         HotkeyEnabledToggle.IsOn = true;
         HotkeyCapture.Gesture = HotkeyGesture.Default;
-        DataToggle.IsOn = true;
-        JsonToggle.IsOn = true;
-        XmlToggle.IsOn = true;
-        SecureValuesToggle.IsOn = true;
+        RebuildToolsList();
         _loading = false;
         RenderPreview();
         RebuildItemsList();
@@ -697,8 +694,22 @@ public sealed partial class SettingsWindow : Window
         {
             foreach (var item in items)
             {
+                // Tools are managed from the Tools tab's own toggles, not listed here too.
+                if (item.IsTool)
+                    continue;
+
+                // Groups (e.g. "Dev tools") are structure, not a flat show/hide/delete target —
+                // this list isn't the source of truth for what's arranged on the ring or how it's
+                // grouped, the Home tab's ring preview is. Recurse into a group's children (in
+                // case it holds a plain item worth listing) without listing the group itself.
+                if (item.IsGroup)
+                {
+                    AddRows(item.Children, item.DisplayName);
+                    continue;
+                }
+
                 var card = new Border { Style = (Style)Root.Resources["Card"] };
-                var row = new Grid { ColumnSpacing = 12 };
+                var row = new Grid();
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -722,6 +733,7 @@ public sealed partial class SettingsWindow : Window
                     OnContent = "",
                     OffContent = "",
                     MinWidth = 0,
+                    Margin = new Thickness(12, 0, 0, 0),
                 };
                 var captured = item;
                 toggle.Toggled += (_, _) =>
@@ -739,6 +751,7 @@ public sealed partial class SettingsWindow : Window
                     Content = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D), FontSize = 14 },
                     Width = 40,
                     Padding = new Thickness(0),
+                    Margin = new Thickness(4, 0, 0, 0),
                     VerticalAlignment = VerticalAlignment.Center,
                     Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
                     BorderThickness = new Thickness(0),
@@ -776,16 +789,202 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
-    private void ToolToggle_Toggled(object sender, RoutedEventArgs e)
+    private sealed record ToolRow(
+        string Target, ToolKind Kind, string Title, string Description, string Glyph, bool TextGlyph,
+        Func<AppConfig, bool> GetShown, Action<AppConfig, bool> SetShown);
+
+    // Built from the codepoint, not a literal character in source, so the glyph can't be
+    // silently swapped for a different (or invisible) private-use character by a stray
+    // copy/paste — see the memory note on this exact failure mode.
+    private static readonly string DataGlyph = char.ConvertFromUtf32(0xE8A5);
+    private static readonly string JsonGlyph = char.ConvertFromUtf32(0xE943);
+    private static readonly string SecureValuesGlyph = char.ConvertFromUtf32(0xE72E);
+    private static readonly string CertificateGlyph = char.ConvertFromUtf32(0xEB95);
+
+    private static readonly ToolRow[] ToolRows =
+    [
+        new("Data", ToolKind.Data, "Data formatter", "Auto-detect JSON, XML, or CSV and format it.", DataGlyph, false,
+            c => c.ShowDataTool, (c, v) => c.ShowDataTool = v),
+        new("Json", ToolKind.Json, "JSON", "Show the JSON formatter as a ring item.", JsonGlyph, false,
+            c => c.ShowJsonTool, (c, v) => c.ShowJsonTool = v),
+        new("Xml", ToolKind.Xml, "XML", "Show the XML formatter as a ring item.", "</>", true,
+            c => c.ShowXmlTool, (c, v) => c.ShowXmlTool = v),
+        new("SecureValues", ToolKind.SecureValues, "Secure values", "Local key/secret store with masked values.", SecureValuesGlyph, false,
+            c => c.ShowSecureValuesTool, (c, v) => c.ShowSecureValuesTool = v),
+        new("Base64", ToolKind.Base64, "Base64", "Encode and decode Base64 text.", "B64", true,
+            c => c.ShowBase64Tool, (c, v) => c.ShowBase64Tool = v),
+        new("Certificate", ToolKind.Certificate, "Certificate", "Inspect certificate, PKCS#12, and Java KeyStore files.", CertificateGlyph, false,
+            c => c.ShowCertificateTool, (c, v) => c.ShowCertificateTool = v),
+    ];
+
+    // Bound as ToolsList's ItemsSource: WinUI's CanReorderItems drag pipeline mutates whichever
+    // IList backs the list, so this is what actually moves when the user drags a card — observing
+    // it (see ToolCards_CollectionChanged, wired in the constructor) is how a drag becomes a ring
+    // reorder.
+    private readonly ObservableCollection<Border> _toolCards = new();
+
+    // Guards ToolCards_CollectionChanged against RebuildToolsList's own Clear+Add below — a
+    // reorder drag removes and reinserts a card (not a single Move — ObservableCollection only
+    // raises that action for an explicit Move() call), so a rebuild and a drag look identical
+    // from the event args alone; this flag is what tells them apart.
+    private bool _rebuildingToolCards;
+
+    private void RebuildToolsList()
     {
-        if (_loading) return;
-        _manager.Config.ShowDataTool = DataToggle.IsOn;
-        _manager.Config.ShowJsonTool = JsonToggle.IsOn;
-        _manager.Config.ShowXmlTool = XmlToggle.IsOn;
-        _manager.Config.ShowSecureValuesTool = SecureValuesToggle.IsOn;
-        _manager.Config.ShowBase64Tool = Base64Toggle.IsOn;
-        _manager.Config.ShowCertificateTool = CertificateToggle.IsOn;
-        ApplyToolVisibility(_manager.Config.Primary.Items);
+        _rebuildingToolCards = true;
+        try
+        {
+            _toolCards.Clear();
+            foreach (var row in ToolRows)
+                _toolCards.Add(BuildToolCard(row));
+        }
+        finally
+        {
+            _rebuildingToolCards = false;
+        }
+        ToolsList.ItemsSource = _toolCards;
+    }
+
+    private Border BuildToolCard(ToolRow row)
+    {
+        FrameworkElement icon = row.TextGlyph
+            ? new TextBlock
+            {
+                Text = row.Glyph,
+                FontFamily = new FontFamily("Segoe UI"),
+                FontSize = 14,
+                Width = 28,
+                TextAlignment = TextAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            }
+            : new FontIcon
+            {
+                Glyph = row.Glyph,
+                FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
+                FontSize = 18,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+        Grid.SetColumn(icon, 0);
+
+        var labels = new StackPanel();
+        labels.Children.Add(new TextBlock
+        {
+            Text = row.Title,
+            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+        });
+        labels.Children.Add(new TextBlock
+        {
+            Text = row.Description,
+            Style = SecondaryCaptionStyle,
+            TextWrapping = TextWrapping.Wrap,
+        });
+        Grid.SetColumn(labels, 1);
+
+        // The drag affordance — grabbing anywhere on the card works (this is WinUI's own
+        // CanReorderItems drag, not a hand-rolled one), but a dedicated handle is what tells the
+        // user this row moves at all, replacing the old per-row up/down buttons.
+        var handle = new FontIcon
+        {
+            Glyph = char.ConvertFromUtf32(0xE76F),
+            FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
+            FontSize = 16,
+            Opacity = 0.6,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(handle, "Drag to reorder");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(handle, "Drag to reorder " + row.Title);
+        Grid.SetColumn(handle, 2);
+
+        var openButton = new Button
+        {
+            Content = new FontIcon { Glyph = char.ConvertFromUtf32(0xE8A7), FontSize = 14 },
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(6),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(openButton, "Open");
+        var kind = row.Kind;
+        openButton.Click += (_, _) => _manager.OpenTool(kind);
+        Grid.SetColumn(openButton, 3);
+
+        var toggle = new ToggleSwitch
+        {
+            IsOn = row.GetShown(_manager.Config),
+            OnContent = "",
+            OffContent = "",
+            MinWidth = 0,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        toggle.Toggled += (_, _) =>
+        {
+            if (_loading) return;
+            row.SetShown(_manager.Config, toggle.IsOn);
+            ApplyToolVisibility(_manager.Config.Primary.Items);
+            _manager.NotifyItemsChanged();
+            RenderPreview();
+        };
+        Grid.SetColumn(toggle, 4);
+
+        var grid = new Grid { ColumnSpacing = 12 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.Children.Add(icon);
+        grid.Children.Add(labels);
+        grid.Children.Add(handle);
+        grid.Children.Add(openButton);
+        grid.Children.Add(toggle);
+
+        return new Border { Style = (Style)Root.Resources["Card"], Child = grid, Tag = row.Target };
+    }
+
+    /// <summary>
+    /// A reorder drag mutates <see cref="_toolCards"/> directly (WinUI's CanReorderItems drives
+    /// the bound ItemsSource itself — as a remove-then-reinsert, not a single Move, so the action
+    /// kind alone can't tell a drag apart from <see cref="RebuildToolsList"/>'s own Clear+Add;
+    /// <see cref="_rebuildingToolCards"/> is what actually distinguishes them). Any change that
+    /// gets here is therefore the user's own drag finishing.
+    /// </summary>
+    private void ToolCards_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_rebuildingToolCards) return;
+        ApplyToolOrder(_toolCards.Select(c => (string)c.Tag).ToList());
+    }
+
+    /// <summary>
+    /// Wherever two or more tool-kind items share a list (the top level, or inside a group like
+    /// "Dev tools"), re-sorts just those items to match <paramref name="orderedTargets"/> — every
+    /// other item in the list keeps its position. A tool kind can have more than one ring instance
+    /// at once (the default seed puts Data both inside "Dev tools" and at the top level, see
+    /// <see cref="SeedDefaults"/>), so this walks the whole tree rather than assuming one.
+    /// </summary>
+    private void ApplyToolOrder(List<string> orderedTargets)
+    {
+        void Walk(List<RingItem> list)
+        {
+            var toolPositions = new List<int>();
+            for (int i = 0; i < list.Count; i++)
+                if (list[i].IsTool) toolPositions.Add(i);
+
+            if (toolPositions.Count > 1)
+            {
+                var sorted = toolPositions
+                    .Select(i => list[i])
+                    .OrderBy(item => orderedTargets.FindIndex(
+                        t => string.Equals(t, item.Target, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
+                for (int k = 0; k < toolPositions.Count; k++)
+                    list[toolPositions[k]] = sorted[k];
+            }
+
+            foreach (var item in list.Where(x => x.IsGroup))
+                Walk(item.Children);
+        }
+        Walk(_manager.Config.Primary.Items);
+
         _manager.NotifyItemsChanged();
         RenderPreview();
     }
@@ -796,28 +995,12 @@ public sealed partial class SettingsWindow : Window
         {
             if (item.IsTool)
             {
-                if (string.Equals(item.Target, "Data", StringComparison.OrdinalIgnoreCase))
-                    item.Hidden = !DataToggle.IsOn;
-                else if (string.Equals(item.Target, "Json", StringComparison.OrdinalIgnoreCase))
-                    item.Hidden = !JsonToggle.IsOn;
-                else if (string.Equals(item.Target, "Xml", StringComparison.OrdinalIgnoreCase))
-                    item.Hidden = !XmlToggle.IsOn;
-                else if (string.Equals(item.Target, "SecureValues", StringComparison.OrdinalIgnoreCase))
-                    item.Hidden = !SecureValuesToggle.IsOn;
-                else if (string.Equals(item.Target, "Base64", StringComparison.OrdinalIgnoreCase))
-                    item.Hidden = !Base64Toggle.IsOn;
-                else if (string.Equals(item.Target, "Certificate", StringComparison.OrdinalIgnoreCase))
-                    item.Hidden = !CertificateToggle.IsOn;
+                var row = ToolRows.FirstOrDefault(r => string.Equals(r.Target, item.Target, StringComparison.OrdinalIgnoreCase));
+                if (row is not null)
+                    item.Hidden = !row.GetShown(_manager.Config);
             }
             if (item.Children.Count > 0)
                 ApplyToolVisibility(item.Children);
         }
     }
-
-    private void OpenData_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Data);
-    private void OpenJson_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Json);
-    private void OpenXml_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Xml);
-    private void OpenSecureValues_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.SecureValues);
-    private void OpenBase64_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Base64);
-    private void OpenCertificate_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Certificate);
 }
