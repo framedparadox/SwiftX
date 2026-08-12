@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
@@ -30,14 +31,6 @@ public sealed class CertificatePage : EditorToolPage
 
     public CertificatePage()
     {
-        var header = new TextBlock
-        {
-            Text = Loc.Get("Certificate.Blurb"),
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.8,
-            Margin = new Thickness(0, 0, 0, 4),
-        };
-
         var scroller = new ScrollViewer
         {
             Content = _content,
@@ -45,16 +38,15 @@ public sealed class CertificatePage : EditorToolPage
             Padding = new Thickness(16, 12, 16, 16),
         };
 
-        var body = new Grid();
-        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        var headerBorder = new Border { Child = header, Padding = new Thickness(16, 12, 16, 0) };
-        Grid.SetRow(headerBorder, 0);
-        Grid.SetRow(scroller, 1);
-        body.Children.Add(headerBorder);
-        body.Children.Add(scroller);
+        var body = Pane(scroller);
+        body.AllowDrop = true;
+        body.DragOver += Body_DragOver;
+        body.DragEnter += Body_DragEnter;
+        body.DragLeave += Body_DragLeave;
+        body.Drop += Body_Drop;
 
-        SetBody(Pane(body));
+        SetBody(body);
+        SetFooter();
         StatusBar.SetUntouched();
         InitializeChrome();
         RenderEmpty();
@@ -101,6 +93,50 @@ public sealed class CertificatePage : EditorToolPage
         {
             Diag.Log("CertificatePage.OpenFileAsync failed: " + ex);
             StatusBar.SetMessage(Loc.Get("Tool.FileUnreadable"), isError: true);
+        }
+    }
+
+    private void Body_DragEnter(object sender, DragEventArgs e)
+    {
+        if (sender is Border border && e.DataView.Contains(StandardDataFormats.StorageItems))
+            border.BorderBrush = ThemeBrush("AccentFillColorDefaultBrush") ?? border.BorderBrush;
+    }
+
+    private void Body_DragLeave(object sender, DragEventArgs e)
+    {
+        if (sender is Border border)
+            border.BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush");
+    }
+
+    private void Body_DragOver(object sender, DragEventArgs e)
+    {
+        if (e.DataView.Contains(StandardDataFormats.StorageItems))
+            e.AcceptedOperation = DataPackageOperation.Copy;
+    }
+
+    private async void Body_Drop(object sender, DragEventArgs e)
+    {
+        if (sender is Border border)
+            border.BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush");
+
+        if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+            return;
+
+        var deferral = e.GetDeferral();
+        try
+        {
+            var items = await e.DataView.GetStorageItemsAsync();
+            if (items.OfType<StorageFile>().FirstOrDefault() is { } file)
+                await LoadFileAsync(file.Path);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("CertificatePage.Body_Drop failed: " + ex);
+            StatusBar.SetMessage(Loc.Get("Tool.FileUnreadable"), isError: true);
+        }
+        finally
+        {
+            deferral.Complete();
         }
     }
 

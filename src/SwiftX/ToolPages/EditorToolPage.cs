@@ -1,4 +1,5 @@
 using SwiftX.Controls;
+using SwiftX.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -38,6 +39,26 @@ public abstract class EditorToolPage : ToolPage
         VerticalContentAlignment = VerticalAlignment.Center,
     };
 
+    /// <summary>
+    /// The status/privacy footer row — collapsed (zero height) until a page opts in via
+    /// <see cref="SetFooter"/>, so pages that don't call it look exactly as before. Counts and
+    /// privacy live in this one row rather than two stacked rows: the counts (<see cref="StatusBar"/>)
+    /// sit on the left, an optional page-specific control (Base64's URL-safe checkbox) sits right
+    /// after them, and the privacy indicator is pinned to the right edge.
+    /// </summary>
+    private readonly Grid _footerRow = new()
+    {
+        Visibility = Visibility.Collapsed,
+        Padding = new Thickness(0, 0, 12, 0),
+    };
+
+    private readonly ContentPresenter _footerLeftExtra = new()
+    {
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    private readonly FrameworkElement _privacyIndicator = BuildPrivacyIndicator();
+
     private readonly Grid _root = new();
 
     protected EditorToolPage()
@@ -46,9 +67,21 @@ public abstract class EditorToolPage : ToolPage
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Grid.SetRow(_commandBar, 0);
-        Grid.SetRow(StatusBar, 2);
+        Grid.SetRow(_footerRow, 2);
+
+        _footerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _footerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _footerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _footerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(StatusBar, 0);
+        Grid.SetColumn(_footerLeftExtra, 1);
+        Grid.SetColumn(_privacyIndicator, 3);
+        _footerRow.Children.Add(StatusBar);
+        _footerRow.Children.Add(_footerLeftExtra);
+        _footerRow.Children.Add(_privacyIndicator);
+
         _root.Children.Add(_commandBar);
-        _root.Children.Add(StatusBar);
+        _root.Children.Add(_footerRow);
         base.Content = _root;
     }
 
@@ -126,6 +159,58 @@ public abstract class EditorToolPage : ToolPage
     }
 
     /// <summary>
+    /// Shows the footer row — counts (<see cref="StatusBar"/>) on the left, the privacy
+    /// indicator pinned to the right, both in one row. Call once, from the derived constructor.
+    /// </summary>
+    /// <param name="leftExtra">A control that belongs beside the counts, such as Base64's
+    /// URL-safe checkbox.</param>
+    protected void SetFooter(FrameworkElement? leftExtra = null)
+    {
+        if (leftExtra is not null)
+        {
+            leftExtra.VerticalAlignment = VerticalAlignment.Center;
+            _footerLeftExtra.Margin = new Thickness(16, 0, 0, 0);
+            _footerLeftExtra.Content = leftExtra;
+        }
+        _footerRow.Visibility = Visibility.Visible;
+    }
+
+    // Built from the codepoint, not a literal character in source, so the glyph can't be
+    // silently swapped for a different (or invisible) private-use character by a stray
+    // copy/paste — see the memory note on this exact failure mode.
+    private static readonly string ShieldGlyph = char.ConvertFromUtf32(0xEA18);
+
+    /// <summary>
+    /// The "your data stays on this PC" indicator every local-only tool's footer ends with: a
+    /// green shield glyph alone — the caption is a tooltip, shown only on hover, rather than
+    /// text sitting in the row all the time.
+    /// </summary>
+    private static FrameworkElement BuildPrivacyIndicator()
+    {
+        var icon = new FontIcon
+        {
+            Glyph = ShieldGlyph,
+            FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
+            FontSize = 14,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = ThemeBrush("SystemFillColorSuccessBrush")
+                ?? new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Green),
+        };
+
+        var indicator = new Border
+        {
+            Child = icon,
+            Padding = new Thickness(4),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var text = Loc.Get("Tool.PrivacyFooter");
+        ToolTipService.SetToolTip(indicator, text);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(indicator, text);
+        return indicator;
+    }
+
+    /// <summary>
     /// The commands this page was built with, captured by <see cref="InitializeChrome"/>. Most
     /// pages spell <c>Commands</c> as a collection expression, so every read of it allocates a
     /// fresh set of <see cref="ToolCommand"/> objects and re-runs their <c>Loc.Get</c> lookups —
@@ -141,6 +226,11 @@ public abstract class EditorToolPage : ToolPage
     protected void InitializeChrome()
     {
         _boundCommands = Commands;
+
+        // A page that moved every command into the title bar (see ToolPage.HeaderActions)
+        // has nothing left for this row to show — an empty CommandBar still reserves its full
+        // height, which would leave a dead strip under the title.
+        _commandBar.Visibility = _boundCommands.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
 
         // Commands are matched on the way *down* to the focused control, not on the way back up.
         // A KeyboardAccelerator alone is not enough once the focused control is a text editor: the

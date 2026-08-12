@@ -87,10 +87,15 @@ public sealed class ToolCommand(
     public static ToolCommand Clear(Action execute) =>
         new(Loc.Get("Tool.Clear"), "", execute, VirtualKey.X, CtrlShift, id: Ids.Clear) { IconOnly = true };
 
-    /// <summary>Check the input without transforming it — a shield, since the question it
-    /// answers is "is this safe to use?". Ctrl+Shift+V.</summary>
+    // Built from the codepoint, not a literal character in source, so the glyph can't be
+    // silently swapped for a different (or invisible) private-use character by a stray
+    // copy/paste — see the memory note on this exact failure mode.
+    private static readonly string CheckmarkGlyph = char.ConvertFromUtf32(0xE8FB);
+
+    /// <summary>Check the input without transforming it — a checkmark, since the question it
+    /// answers is "is this valid?". Ctrl+Shift+V.</summary>
     public static ToolCommand Validate(Action execute) =>
-        new(Loc.Get("Tool.Validate"), "", execute, VirtualKey.V, CtrlShift, id: Ids.Validate) { IconOnly = true };
+        new(Loc.Get("Tool.Validate"), CheckmarkGlyph, execute, VirtualKey.V, CtrlShift, id: Ids.Validate) { IconOnly = true };
 
     /// <summary>Apply the tool's main transformation. Ctrl+Enter.</summary>
     public static ToolCommand Run(Action execute) =>

@@ -37,7 +37,7 @@ public sealed partial class AddItemWindow : Window
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
         Title = "Add to ring";
 
-        var titleBar = new AppTitleBar("", "Add to ring");
+        var titleBar = new AppTitleBar("", "Add to ring");
         Grid.SetRow(titleBar, 0);
         Root.Children.Insert(0, titleBar);
 

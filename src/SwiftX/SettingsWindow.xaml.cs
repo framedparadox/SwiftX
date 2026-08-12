@@ -17,8 +17,8 @@ namespace SwiftX;
 
 /// <summary>
 /// Settings shell patterned after Anchor: left NavigationView with Home (ring customize),
-/// General, Shortcuts, Apps &amp; links, Tools, and About. Solid surfaces only —
-/// no Mica / acrylic.
+/// General (including the invoke shortcut), Apps &amp; links, Tools, and About. Solid
+/// surfaces only — no Mica / acrylic.
 /// </summary>
 public sealed partial class SettingsWindow : Window
 {
@@ -51,7 +51,7 @@ public sealed partial class SettingsWindow : Window
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
         Title = "SwiftX Settings";
 
-        var titleBar = new AppTitleBar("", "SwiftX Settings");
+        var titleBar = new AppTitleBar("", "SwiftX Settings");
         Grid.SetRow(titleBar, 0);
         Root.Children.Insert(0, titleBar);
 
@@ -77,7 +77,7 @@ public sealed partial class SettingsWindow : Window
             p.IsMaximizable = false;
         _appWindow.IsShownInSwitchers = true;
 
-        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 920, 700);
+        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 1000, 700);
         WindowChrome.SetRoundedCorners(_hwnd);
         WindowChrome.CenterOnCursor(_appWindow, _appWindow.Id);
 
@@ -140,7 +140,6 @@ public sealed partial class SettingsWindow : Window
         var tag = (args.SelectedItem as NavigationViewItem)?.Tag as string ?? "home";
         HomePanel.Visibility = tag == "home" ? Visibility.Visible : Visibility.Collapsed;
         GeneralPanel.Visibility = tag == "general" ? Visibility.Visible : Visibility.Collapsed;
-        ShortcutsPanel.Visibility = tag == "shortcuts" ? Visibility.Visible : Visibility.Collapsed;
         AppsPanel.Visibility = tag == "apps" ? Visibility.Visible : Visibility.Collapsed;
         ToolsPanel.Visibility = tag == "tools" ? Visibility.Visible : Visibility.Collapsed;
         AboutPanel.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
@@ -521,6 +520,15 @@ public sealed partial class SettingsWindow : Window
             RebuildItemsList();
         }, _editList);
 
+    private void AddAppItem_Click(object sender, RoutedEventArgs e) =>
+        _manager.OpenAddItem(added =>
+        {
+            _manager.Config.Primary.Items.Add(added);
+            _manager.NotifyItemsChanged();
+            RenderPreview();
+            RebuildItemsList();
+        }, _manager.Config.Primary.Items);
+
     private void ResetDefaults_Click(object sender, RoutedEventArgs e)
     {
         _manager.SeedDefaults(_manager.Config.Primary);
@@ -726,7 +734,17 @@ public sealed partial class SettingsWindow : Window
                 row.Children.Add(labels);
                 row.Children.Add(toggle);
 
-                var remove = new Button { Content = "Remove" };
+                var remove = new Button
+                {
+                    Content = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D), FontSize = 14 },
+                    Width = 40,
+                    Padding = new Thickness(0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                    BorderThickness = new Thickness(0),
+                };
+                ToolTipService.SetToolTip(remove, "Delete");
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(remove, "Delete");
                 remove.Click += (_, _) =>
                 {
                     _manager.Config.Primary.Items.Remove(captured);

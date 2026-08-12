@@ -41,7 +41,7 @@ public sealed class ToolWindowBase : Window
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _root.Background = ThemeHelper.Brush(_root, "SwiftXSurfaceBrush");
 
-        var titleBar = new AppTitleBar(definition.Glyph, definition.DisplayName);
+        var titleBar = new AppTitleBar(definition.Glyph, definition.DisplayName, page.HeaderActions);
         Grid.SetRow(titleBar, 0);
         Grid.SetRow(page, 1);
         _root.Children.Add(titleBar);

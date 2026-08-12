@@ -9,13 +9,25 @@ namespace SwiftX.ToolPages;
 
 /// <summary>
 /// Local key/secret store. Values are DPAPI-protected at rest and masked on screen; Copy places
-/// the real secret on the clipboard.
+/// the real secret on the clipboard. Add/Save live in the title bar (see
+/// <see cref="HeaderActions"/>); a blank row is always present so there's somewhere to type
+/// without reaching for a button first.
 /// </summary>
 public sealed class SecureValuesPage : EditorToolPage
 {
+    // Icon glyphs are built from their codepoint, never as a string literal in source — a
+    // literal here can silently become a different (or invisible) private-use character on a
+    // stray copy/paste, with nothing visibly wrong to catch by eye. See the memory note on this
+    // exact failure mode.
+    private const int CopyGlyph = 0xE8C8;
+    private const int DeleteGlyph = 0xE74D;
+    private const int AddGlyph = 0xE710;
+    private const int SaveGlyph = 0xE74E;
+
     private readonly List<SecureValueEntry> _entries = [];
     private readonly StackPanel _rows = new() { Spacing = 8 };
-    private IReadOnlyList<ToolCommand>? _commands;
+    private readonly List<(RowState State, Func<bool> Commit)> _rowActions = [];
+    private readonly FrameworkElement _headerActions;
     private bool _isDirty;
     private bool _loading;
 
@@ -49,7 +61,10 @@ public sealed class SecureValuesPage : EditorToolPage
         body.Children.Add(headerBorder);
         body.Children.Add(scroller);
 
+        _headerActions = BuildHeaderActions();
+
         SetBody(Pane(body));
+        SetFooter();
         StatusBar.SetUntouched();
         InitializeChrome();
         LoadEntries();
@@ -58,11 +73,13 @@ public sealed class SecureValuesPage : EditorToolPage
     public override ToolKind Kind => ToolKind.SecureValues;
     public override bool IsDirty => _isDirty;
 
-    public override IReadOnlyList<ToolCommand> Commands => _commands ??=
-    [
-        new ToolCommand(Loc.Get("SecureValues.Add"), "\uE710", AddRow, id: "secure-add"),
-        ToolCommand.Clear(ClearAll),
-    ];
+    /// <summary>No command-bar commands — Add/Save live in the title bar instead (see
+    /// <see cref="HeaderActions"/>), which also lets the (now empty) command bar collapse.</summary>
+    public override IReadOnlyList<ToolCommand> Commands => [];
+
+    public override FrameworkElement? HeaderActions => _headerActions;
+
+    private int SavedCount => _entries.Count(e => !string.IsNullOrWhiteSpace(e.Key));
 
     private void LoadEntries()
     {
@@ -71,8 +88,9 @@ public sealed class SecureValuesPage : EditorToolPage
         {
             _entries.Clear();
             _entries.AddRange(SecureValueStore.Load());
+            EnsureBlankRow();
             RebuildRows();
-            StatusBar.SetMessage(Loc.Format("SecureValues.Count", _entries.Count), isError: false);
+            StatusBar.SetMessage(Loc.Format("SecureValues.Count", SavedCount), isError: false);
         }
         finally
         {
@@ -96,26 +114,45 @@ public sealed class SecureValuesPage : EditorToolPage
         }
     }
 
+    /// <summary>Appends one blank, unsaved entry — but only when the list doesn't already end
+    /// in one — so there's always a row ready to type into. With no saved entries this is the
+    /// only (and therefore topmost) row; with saved entries it lands after them.</summary>
+    private void EnsureBlankRow()
+    {
+        if (_entries.Any(e => string.IsNullOrEmpty(e.Key)))
+            return;
+        _entries.Add(new SecureValueEntry());
+    }
+
     private void AddRow()
     {
         var entry = new SecureValueEntry();
         _entries.Add(entry);
         _rows.Children.Add(CreateRow(entry, keyLocked: false));
         _isDirty = true;
-        StatusBar.SetMessage(Loc.Format("SecureValues.Count", _entries.Count), isError: false);
+        StatusBar.SetMessage(Loc.Format("SecureValues.Count", SavedCount), isError: false);
     }
 
-    private void ClearAll()
+    /// <summary>Commits every row that hasn't been saved yet (the always-present blank row, and
+    /// any others added since), in one pass, then persists once — not once per row.</summary>
+    private void SaveAll()
     {
-        _entries.Clear();
-        _rows.Children.Clear();
-        Persist();
-        StatusBar.SetMessage(Loc.Format("SecureValues.Count", 0), isError: false);
+        bool any = false;
+        foreach (var (state, commit) in _rowActions)
+        {
+            if (state.KeyLocked)
+                continue;
+            if (commit())
+                any = true;
+        }
+        if (any)
+            Persist();
     }
 
     private void RebuildRows()
     {
         _rows.Children.Clear();
+        _rowActions.Clear();
         foreach (var entry in _entries)
             _rows.Children.Add(CreateRow(entry, keyLocked: !string.IsNullOrWhiteSpace(entry.Key)));
     }
@@ -144,17 +181,10 @@ public sealed class SecureValuesPage : EditorToolPage
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(valueBox, Loc.Get("SecureValues.Value"));
 
-        var copyButton = IconButton("\uE8C8", Loc.Get("SecureValues.Copy"));
+        var copyButton = IconButton(CopyGlyph, Loc.Get("SecureValues.Copy"));
         copyButton.IsEnabled = !string.IsNullOrEmpty(entry.Value);
 
-        var deleteButton = IconButton("\uE74D", Loc.Get("SecureValues.Delete"));
-
-        var saveButton = new Button
-        {
-            Content = Loc.Get("SecureValues.Save"),
-            VerticalAlignment = VerticalAlignment.Center,
-            Visibility = keyLocked ? Visibility.Collapsed : Visibility.Visible,
-        };
+        var deleteButton = IconButton(DeleteGlyph, Loc.Get("SecureValues.Delete"));
 
         void ShowMasked()
         {
@@ -163,13 +193,13 @@ public sealed class SecureValuesPage : EditorToolPage
             valueBox.Text = ValueMasking.Mask(entry.Value);
         }
 
-        void Commit()
+        bool Commit()
         {
             var key = keyBox.Text.Trim();
             if (string.IsNullOrEmpty(key))
             {
                 StatusBar.SetMessage(Loc.Get("SecureValues.KeyRequired"), isError: true);
-                return;
+                return false;
             }
 
             if (state.EditingValue || !state.KeyLocked)
@@ -180,18 +210,20 @@ public sealed class SecureValuesPage : EditorToolPage
             keyBox.IsReadOnly = true;
             state.KeyLocked = true;
             state.EditingValue = false;
-            saveButton.Visibility = Visibility.Collapsed;
             ShowMasked();
             copyButton.IsEnabled = !string.IsNullOrEmpty(entry.Value);
             _isDirty = true;
-            Persist();
+            return true;
         }
+
+        _rowActions.Add((state, Commit));
 
         keyBox.KeyDown += (_, e) =>
         {
             if (e.Key == Windows.System.VirtualKey.Enter)
             {
-                Commit();
+                if (Commit())
+                    Persist();
                 e.Handled = true;
             }
         };
@@ -218,7 +250,8 @@ public sealed class SecureValuesPage : EditorToolPage
         {
             if (e.Key == Windows.System.VirtualKey.Enter)
             {
-                Commit();
+                if (Commit())
+                    Persist();
                 e.Handled = true;
             }
         };
@@ -236,28 +269,24 @@ public sealed class SecureValuesPage : EditorToolPage
         deleteButton.Click += (_, _) =>
         {
             _entries.RemoveAll(e => e.Id == entry.Id);
+            EnsureBlankRow();
             Persist();
             RebuildRows();
-            StatusBar.SetMessage(Loc.Format("SecureValues.Count", _entries.Count), isError: false);
+            StatusBar.SetMessage(Loc.Format("SecureValues.Count", SavedCount), isError: false);
         };
-
-        saveButton.Click += (_, _) => Commit();
 
         var grid = new Grid { ColumnSpacing = 8 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         Grid.SetColumn(keyBox, 0);
         Grid.SetColumn(valueBox, 1);
-        Grid.SetColumn(saveButton, 2);
-        Grid.SetColumn(copyButton, 3);
-        Grid.SetColumn(deleteButton, 4);
+        Grid.SetColumn(copyButton, 2);
+        Grid.SetColumn(deleteButton, 3);
         grid.Children.Add(keyBox);
         grid.Children.Add(valueBox);
-        grid.Children.Add(saveButton);
         grid.Children.Add(copyButton);
         grid.Children.Add(deleteButton);
 
@@ -272,11 +301,37 @@ public sealed class SecureValuesPage : EditorToolPage
         };
     }
 
-    private static Button IconButton(string glyph, string label)
+    private FrameworkElement BuildHeaderActions()
+    {
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        panel.Children.Add(HeaderIconButton(AddGlyph, Loc.Get("SecureValues.Add"), AddRow));
+        panel.Children.Add(HeaderIconButton(SaveGlyph, Loc.Get("SecureValues.Save"), SaveAll));
+        return panel;
+    }
+
+    private static Button HeaderIconButton(int codepoint, string label, Action action)
     {
         var button = new Button
         {
-            Content = new FontIcon { Glyph = glyph, FontSize = 14 },
+            Content = new FontIcon { Glyph = char.ConvertFromUtf32(codepoint), FontSize = 14 },
+            Width = 32,
+            Height = 32,
+            Padding = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+        };
+        ToolTipService.SetToolTip(button, label);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
+        button.Click += (_, _) => action();
+        return button;
+    }
+
+    private static Button IconButton(int codepoint, string label)
+    {
+        var button = new Button
+        {
+            Content = new FontIcon { Glyph = char.ConvertFromUtf32(codepoint), FontSize = 14 },
             Width = 40,
             Height = 32,
             Padding = new Thickness(0),

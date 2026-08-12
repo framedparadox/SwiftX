@@ -114,11 +114,11 @@ public sealed class FormatterPage : EditorToolPage
         body.Children.Add(_advancedPanel);
 
         var options = OptionsBar();
-        options.Children.Add(_advancedToggle);
         options.Children.Add(_detectedLabel);
         SetOptions(options);
 
         SetBody(body);
+        SetFooter();
         StatusBar.SetUntouched();
         InitializeChrome();
         RefreshDetection(autoValidate: false);
@@ -126,6 +126,10 @@ public sealed class FormatterPage : EditorToolPage
 
     public override ToolKind Kind => _kind;
     public override bool IsDirty => _isDirty;
+
+    /// <summary>The Advanced toggle lives in the title bar, next to minimize/maximize, rather
+    /// than the command bar — important enough to stay reachable without opening it.</summary>
+    public override FrameworkElement? HeaderActions => _advancedToggle;
 
     /// <summary>Basic bar only — Format, Validate, Copy, Clear. Advanced lives in the sidebar.</summary>
     public override IReadOnlyList<ToolCommand> Commands => _commands ??=

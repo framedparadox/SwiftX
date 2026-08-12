@@ -56,11 +56,11 @@ public sealed class Base64Page : EditorToolPage
         };
 
         var options = OptionsBar();
-        options.Children.Add(_urlSafe);
         options.Children.Add(_detectedLabel);
         SetOptions(options);
 
         SetBody(Pane(_editor));
+        SetFooter(_urlSafe);
         StatusBar.SetUntouched();
         InitializeChrome();
         RefreshDetection();

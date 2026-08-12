@@ -58,12 +58,6 @@
                         <FontIcon Glyph="&#xE713;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
-                <muxc:NavigationViewItem Content="Shortcuts" Tag="shortcuts"
-                                         AutomationProperties.AutomationId="SettingsNavShortcuts">
-                    <muxc:NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE765;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    </muxc:NavigationViewItem.Icon>
-                </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem Content="Apps &amp; links" Tag="apps"
                                          AutomationProperties.AutomationId="SettingsNavApps">
                     <muxc:NavigationViewItem.Icon>
@@ -87,16 +81,63 @@
             <Grid Padding="32,24,32,24">
                 <!-- ==================== HOME (ring customization) ==================== -->
                 <ScrollViewer x:Name="HomePanel">
-                    <StackPanel Spacing="12" MaxWidth="720" HorizontalAlignment="Left">
+                    <StackPanel Spacing="12" MaxWidth="920" HorizontalAlignment="Left">
                         <TextBlock Text="Home" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,4" />
                         <TextBlock Text="Customize your ring. Click an empty slot or + to add; click an item to edit or remove; drag an item to rearrange."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
-                        <Border Style="{StaticResource Card}" HorizontalAlignment="Center" Padding="20">
-                            <Canvas x:Name="PreviewCanvas" Width="360" Height="360" />
-                        </Border>
-                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-                            <Button Content="Add item…" Click="AddItem_Click" />
-                            <Button Content="Reset defaults" Click="ResetDefaults_Click" />
+                        <StackPanel Orientation="Horizontal" Spacing="20" HorizontalAlignment="Left" VerticalAlignment="Top">
+                            <Border Style="{StaticResource Card}"
+                                    HorizontalAlignment="Left" VerticalAlignment="Top" Padding="20">
+                                <Canvas x:Name="PreviewCanvas" Width="360" Height="360" />
+                            </Border>
+
+                            <StackPanel Width="280" Spacing="12">
+                                <Border Style="{StaticResource Card}">
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon Grid.Column="0" Glyph="&#xE8A3;"
+                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="Ring item size" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                        </StackPanel>
+                                        <ComboBox x:Name="ItemSizeBox" Grid.Column="2" MinWidth="130" Width="130"
+                                                  VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                  SelectionChanged="ItemSizeBox_SelectionChanged">
+                                            <ComboBoxItem Content="Small" Tag="Small" />
+                                            <ComboBoxItem Content="Medium" Tag="Medium" />
+                                            <ComboBoxItem Content="Large" Tag="Large" />
+                                        </ComboBox>
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource Card}">
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon Grid.Column="0" Glyph="&#xE9E9;"
+                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="Ring radius" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                        </StackPanel>
+                                        <Slider x:Name="RadiusSlider" Grid.Column="2" MinWidth="130" Width="130"
+                                                VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                Minimum="80" Maximum="220" StepFrequency="5" TickFrequency="20"
+                                                ValueChanged="RadiusSlider_ValueChanged" />
+                                    </Grid>
+                                </Border>
+
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                                    <Button Content="Add item…" Click="AddItem_Click" />
+                                    <Button Content="Reset defaults" Click="ResetDefaults_Click" />
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
                         <StackPanel x:Name="EditPanel" Visibility="Collapsed" Spacing="8">
                             <Border Style="{StaticResource Card}">
@@ -154,41 +195,25 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE8A3;"
-                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Ring item size" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="How large the items around the ring are drawn. The center logo stays a fixed size."
+                                <FontIcon Grid.Column="0" Glyph="&#xE765;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                          VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="Invoke" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Show or hide the ring from the keyboard."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="HotkeyStatus" Style="{StaticResource SecondaryCaption}"
+                                               TextWrapping="Wrap" />
                                 </StackPanel>
-                                <ComboBox x:Name="ItemSizeBox" Grid.Column="2" MinWidth="170" Width="170"
-                                          VerticalAlignment="Center" HorizontalAlignment="Right"
-                                          SelectionChanged="ItemSizeBox_SelectionChanged">
-                                    <ComboBoxItem Content="Small" Tag="Small" />
-                                    <ComboBoxItem Content="Medium" Tag="Medium" />
-                                    <ComboBoxItem Content="Large" Tag="Large" />
-                                </ComboBox>
-                            </Grid>
-                        </Border>
-
-                        <Border Style="{StaticResource Card}">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE9E9;"
-                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Ring radius" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="How far the items sit from the center of the ring."
-                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10"
+                                            VerticalAlignment="Center" HorizontalAlignment="Right">
+                                    <controls:HotkeyCaptureButton x:Name="HotkeyCapture"
+                                                                  VerticalAlignment="Center" />
+                                    <ToggleSwitch x:Name="HotkeyEnabledToggle"
+                                                  OnContent="" OffContent="" MinWidth="0"
+                                                  VerticalAlignment="Center"
+                                                  Toggled="HotkeyEnabled_Toggled" />
                                 </StackPanel>
-                                <Slider x:Name="RadiusSlider" Grid.Column="2" MinWidth="170" Width="170"
-                                        VerticalAlignment="Center" HorizontalAlignment="Right"
-                                        Minimum="80" Maximum="220" StepFrequency="5" TickFrequency="20"
-                                        ValueChanged="RadiusSlider_ValueChanged" />
                             </Grid>
                         </Border>
 
@@ -256,48 +281,18 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- ==================== SHORTCUTS ==================== -->
-                <ScrollViewer x:Name="ShortcutsPanel" Visibility="Collapsed"
-                              AutomationProperties.AutomationId="SettingsShortcutsPanel">
-                    <StackPanel Spacing="6" VerticalAlignment="Top">
-                        <TextBlock Text="Shortcuts" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,8" />
-
-                        <Border Style="{StaticResource Card}">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE765;"
-                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
-                                          VerticalAlignment="Center" />
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock Text="Invoke" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Show or hide the ring from the keyboard."
-                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
-                                    <TextBlock x:Name="HotkeyStatus" Style="{StaticResource SecondaryCaption}"
-                                               TextWrapping="Wrap" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10"
-                                            VerticalAlignment="Center" HorizontalAlignment="Right">
-                                    <controls:HotkeyCaptureButton x:Name="HotkeyCapture"
-                                                                  VerticalAlignment="Center" />
-                                    <ToggleSwitch x:Name="HotkeyEnabledToggle"
-                                                  OnContent="" OffContent="" MinWidth="0"
-                                                  VerticalAlignment="Center"
-                                                  Toggled="HotkeyEnabled_Toggled" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-
                 <!-- ==================== APPS & LINKS ==================== -->
                 <ScrollViewer x:Name="AppsPanel" Visibility="Collapsed"
                               AutomationProperties.AutomationId="SettingsAppsPanel">
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Apps &amp; links" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,12" />
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Apps &amp; links" Style="{ThemeResource TitleTextBlockStyle}" />
+                            <Button Grid.Column="1" Content="Add item…" VerticalAlignment="Center" Click="AddAppItem_Click" />
+                        </Grid>
                         <TextBlock Text="Show, hide, or remove items on the ring. Settings and Close are always on the ring, so they are not listed here."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" Margin="0,0,0,8" />
                         <Grid x:Name="ItemsList" ColumnSpacing="12" RowSpacing="6">
@@ -320,15 +315,22 @@
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE8A5;"
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Data formatter on ring" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Data formatter" Style="{ThemeResource BodyStrongTextBlockStyle}" />
                                     <TextBlock Text="Auto-detect JSON, XML, or CSV and format it."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
-                                <ToggleSwitch x:Name="DataToggle" Grid.Column="2"
+                                <Button Grid.Column="2" Click="OpenData_Click"
+                                        Background="Transparent" BorderThickness="0"
+                                        VerticalAlignment="Center" Padding="6"
+                                        ToolTipService.ToolTip="Open">
+                                    <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                                </Button>
+                                <ToggleSwitch x:Name="DataToggle" Grid.Column="3"
                                               OnContent="" OffContent="" MinWidth="0"
                                               HorizontalAlignment="Right"
                                               Toggled="ToolToggle_Toggled" />
@@ -340,16 +342,23 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE943;"
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
-                                    <TextBlock Text="JSON on ring" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="JSON" Style="{ThemeResource BodyStrongTextBlockStyle}" />
                                     <TextBlock Text="Show the JSON formatter as a ring item."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
-                                <ToggleSwitch x:Name="JsonToggle" Grid.Column="2"
+                                <Button Grid.Column="2" Click="OpenJson_Click"
+                                        Background="Transparent" BorderThickness="0"
+                                        VerticalAlignment="Center" Padding="6"
+                                        ToolTipService.ToolTip="Open">
+                                    <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                                </Button>
+                                <ToggleSwitch x:Name="JsonToggle" Grid.Column="3"
                                               OnContent="" OffContent="" MinWidth="0"
                                               HorizontalAlignment="Right"
                                               Toggled="ToolToggle_Toggled" />
@@ -361,16 +370,23 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&lt;/&gt;"
                                           FontFamily="Segoe UI" FontSize="14" />
                                 <StackPanel Grid.Column="1">
-                                    <TextBlock Text="XML on ring" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="XML" Style="{ThemeResource BodyStrongTextBlockStyle}" />
                                     <TextBlock Text="Show the XML formatter as a ring item."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
-                                <ToggleSwitch x:Name="XmlToggle" Grid.Column="2"
+                                <Button Grid.Column="2" Click="OpenXml_Click"
+                                        Background="Transparent" BorderThickness="0"
+                                        VerticalAlignment="Center" Padding="6"
+                                        ToolTipService.ToolTip="Open">
+                                    <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                                </Button>
+                                <ToggleSwitch x:Name="XmlToggle" Grid.Column="3"
                                               OnContent="" OffContent="" MinWidth="0"
                                               HorizontalAlignment="Right"
                                               Toggled="ToolToggle_Toggled" />
@@ -382,16 +398,23 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE72E;"
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Secure values on ring" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Secure values" Style="{ThemeResource BodyStrongTextBlockStyle}" />
                                     <TextBlock Text="Local key/secret store with masked values."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
-                                <ToggleSwitch x:Name="SecureValuesToggle" Grid.Column="2"
+                                <Button Grid.Column="2" Click="OpenSecureValues_Click"
+                                        Background="Transparent" BorderThickness="0"
+                                        VerticalAlignment="Center" Padding="6"
+                                        ToolTipService.ToolTip="Open">
+                                    <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                                </Button>
+                                <ToggleSwitch x:Name="SecureValuesToggle" Grid.Column="3"
                                               OnContent="" OffContent="" MinWidth="0"
                                               HorizontalAlignment="Right"
                                               Toggled="ToolToggle_Toggled" />
@@ -404,15 +427,22 @@
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="01" FontFamily="Segoe UI" FontSize="16"
-                                           VerticalAlignment="Center" Width="18" TextAlignment="Center" />
+                                <TextBlock Grid.Column="0" Text="B64" FontFamily="Segoe UI" FontSize="14"
+                                           VerticalAlignment="Center" Width="28" TextAlignment="Center" />
                                 <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Base64 on ring" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Base64" Style="{ThemeResource BodyStrongTextBlockStyle}" />
                                     <TextBlock Text="Encode and decode Base64 text."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
-                                <ToggleSwitch x:Name="Base64Toggle" Grid.Column="2"
+                                <Button Grid.Column="2" Click="OpenBase64_Click"
+                                        Background="Transparent" BorderThickness="0"
+                                        VerticalAlignment="Center" Padding="6"
+                                        ToolTipService.ToolTip="Open">
+                                    <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                                </Button>
+                                <ToggleSwitch x:Name="Base64Toggle" Grid.Column="3"
                                               OnContent="" OffContent="" MinWidth="0"
                                               HorizontalAlignment="Right"
                                               Toggled="ToolToggle_Toggled" />
@@ -424,31 +454,27 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xEB95;"
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Certificate on ring" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Certificate" Style="{ThemeResource BodyStrongTextBlockStyle}" />
                                     <TextBlock Text="Inspect certificate, PKCS#12, and Java KeyStore files."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
-                                <ToggleSwitch x:Name="CertificateToggle" Grid.Column="2"
+                                <Button Grid.Column="2" Click="OpenCertificate_Click"
+                                        Background="Transparent" BorderThickness="0"
+                                        VerticalAlignment="Center" Padding="6"
+                                        ToolTipService.ToolTip="Open">
+                                    <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                                </Button>
+                                <ToggleSwitch x:Name="CertificateToggle" Grid.Column="3"
                                               OnContent="" OffContent="" MinWidth="0"
                                               HorizontalAlignment="Right"
                                               Toggled="ToolToggle_Toggled" />
                             </Grid>
-                        </Border>
-
-                        <Border Style="{StaticResource Card}">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Content="Open Data" Click="OpenData_Click" />
-                                <Button Content="Open JSON" Click="OpenJson_Click" />
-                                <Button Content="Open XML" Click="OpenXml_Click" />
-                                <Button Content="Open Secure values" Click="OpenSecureValues_Click" />
-                                <Button Content="Open Base64" Click="OpenBase64_Click" />
-                                <Button Content="Open Certificate" Click="OpenCertificate_Click" />
-                            </StackPanel>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>
