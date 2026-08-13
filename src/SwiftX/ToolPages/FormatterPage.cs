@@ -41,9 +41,9 @@ public sealed class FormatterPage : EditorToolPage
     private readonly ToggleButton _advancedToggle;
     private readonly TextBlock _detectedLabel = new()
     {
+        Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
         Opacity = 0.75,
         VerticalAlignment = VerticalAlignment.Center,
-        Margin = new Thickness(8, 0, 0, 0),
     };
 
     private IReadOnlyList<ToolCommand>? _commands;
@@ -113,12 +113,8 @@ public sealed class FormatterPage : EditorToolPage
         body.Children.Add(editorPane);
         body.Children.Add(_advancedPanel);
 
-        var options = OptionsBar();
-        options.Children.Add(_detectedLabel);
-        SetOptions(options);
-
         SetBody(body);
-        SetFooter();
+        SetFooter(_detectedLabel);
         StatusBar.SetUntouched();
         InitializeChrome();
         RefreshDetection(autoValidate: false);
@@ -271,13 +267,8 @@ public sealed class FormatterPage : EditorToolPage
             StatusBar.SetError(diagnostics[0].Line, diagnostics[0].Column);
     }
 
-    private void UpdateDetectedLabel(IDataFormat format)
-    {
-        string name = format.Id.ToUpperInvariant();
-        _detectedLabel.Text = _fixedFormat is null
-            ? Loc.Format("Formatter.Detected", name)
-            : Loc.Format("Formatter.FormatName", name);
-    }
+    private void UpdateDetectedLabel(IDataFormat format) =>
+        _detectedLabel.Text = Loc.Format("Formatter.FormatName", format.Id.ToUpperInvariant());
 
     private void Minify()
     {

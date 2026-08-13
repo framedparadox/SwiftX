@@ -847,6 +847,16 @@ public sealed partial class SettingsWindow : Window
 
     private Border BuildToolCard(ToolRow row)
     {
+        // The drag affordance — grabbing anywhere on the card works (this is WinUI's own
+        // CanReorderItems drag, not a hand-rolled one), but a dedicated grip at the leading edge
+        // is what tells the user this row moves at all, replacing the old per-row up/down
+        // buttons. Six dots rather than a font glyph: no Segoe Fluent Icons codepoint draws that
+        // pattern, and hand-placed dots can't silently turn into a different (or invisible)
+        // private-use character the way a glyph literal could (see the memory note on that
+        // failure mode).
+        var grip = BuildDragGrip(row.Title);
+        Grid.SetColumn(grip, 0);
+
         FrameworkElement icon = row.TextGlyph
             ? new TextBlock
             {
@@ -864,7 +874,7 @@ public sealed partial class SettingsWindow : Window
                 FontSize = 18,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-        Grid.SetColumn(icon, 0);
+        Grid.SetColumn(icon, 1);
 
         var labels = new StackPanel();
         labels.Children.Add(new TextBlock
@@ -878,22 +888,7 @@ public sealed partial class SettingsWindow : Window
             Style = SecondaryCaptionStyle,
             TextWrapping = TextWrapping.Wrap,
         });
-        Grid.SetColumn(labels, 1);
-
-        // The drag affordance — grabbing anywhere on the card works (this is WinUI's own
-        // CanReorderItems drag, not a hand-rolled one), but a dedicated handle is what tells the
-        // user this row moves at all, replacing the old per-row up/down buttons.
-        var handle = new FontIcon
-        {
-            Glyph = char.ConvertFromUtf32(0xE76F),
-            FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
-            FontSize = 16,
-            Opacity = 0.6,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        ToolTipService.SetToolTip(handle, "Drag to reorder");
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(handle, "Drag to reorder " + row.Title);
-        Grid.SetColumn(handle, 2);
+        Grid.SetColumn(labels, 2);
 
         var openButton = new Button
         {
@@ -928,17 +923,79 @@ public sealed partial class SettingsWindow : Window
 
         var grid = new Grid { ColumnSpacing = 12 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.Children.Add(grip);
         grid.Children.Add(icon);
         grid.Children.Add(labels);
-        grid.Children.Add(handle);
         grid.Children.Add(openButton);
         grid.Children.Add(toggle);
 
         return new Border { Style = (Style)Root.Resources["Card"], Child = grid, Tag = row.Target };
+    }
+
+    /// <summary>
+    /// A <see cref="Grid"/> that exists solely to reach <see cref="UIElement.ProtectedCursor"/> —
+    /// WinUI only exposes that setter to subclasses, so a plain <see cref="Grid"/> field can't
+    /// change its own hover cursor without one.
+    /// </summary>
+    private sealed class CursorGrid : Grid
+    {
+        public void SetCursor(Microsoft.UI.Input.InputCursor? cursor) => ProtectedCursor = cursor;
+    }
+
+    /// <summary>
+    /// A six-dot grip (two columns of three) at the leading edge of a tool card — the same
+    /// affordance shape most reorderable lists use, so it reads as "drag me" without a tooltip
+    /// even before the cursor changes over it. The cursor itself becomes a hand on hover, the
+    /// closest built-in <see cref="Microsoft.UI.Input.InputSystemCursorShape"/> to a gripping hand.
+    /// </summary>
+    private static FrameworkElement BuildDragGrip(string title)
+    {
+        var grid = new CursorGrid
+        {
+            Width = 12,
+            Height = 22,
+            ColumnSpacing = 3,
+            RowSpacing = 3,
+            Opacity = 0.6,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        var dotBrush = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
+        for (int row = 0; row < 3; row++)
+        {
+            for (int column = 0; column < 2; column++)
+            {
+                var dot = new Ellipse
+                {
+                    Width = 3,
+                    Height = 3,
+                    Fill = dotBrush,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                Grid.SetRow(dot, row);
+                Grid.SetColumn(dot, column);
+                grid.Children.Add(dot);
+            }
+        }
+
+        ToolTipService.SetToolTip(grid, "Drag to reorder");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(grid, "Drag to reorder " + title);
+
+        var handCursor = Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Hand);
+        grid.PointerEntered += (_, _) => grid.SetCursor(handCursor);
+        grid.PointerExited += (_, _) => grid.SetCursor(null);
+
+        return grid;
     }
 
     /// <summary>

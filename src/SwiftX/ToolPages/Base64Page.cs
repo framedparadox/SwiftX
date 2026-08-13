@@ -22,7 +22,19 @@ public sealed class Base64Page : EditorToolPage
     private static readonly string DecodeGlyph = char.ConvertFromUtf32(0xE8AC);
 
     private readonly CodeEditor _editor = new();
-    private readonly CheckBox _urlSafe = new() { Content = Loc.Get("Base64.UrlSafe"), VerticalAlignment = VerticalAlignment.Center };
+
+    // The footer's other text (ToolStatusBar's counts/chip, the privacy tooltip) all render at
+    // the Fluent caption size; a bare string here would fall back to the CheckBox's default body
+    // size instead and read as a mismatched control dropped into the row.
+    private readonly CheckBox _urlSafe = new()
+    {
+        Content = new TextBlock
+        {
+            Text = Loc.Get("Base64.UrlSafe"),
+            Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+        },
+        VerticalAlignment = VerticalAlignment.Center,
+    };
     private readonly TextBlock _detectedLabel = new()
     {
         Opacity = 0.75,

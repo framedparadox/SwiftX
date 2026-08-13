@@ -23,6 +23,7 @@ public sealed class SecureValuesPage : EditorToolPage
     private const int DeleteGlyph = 0xE74D;
     private const int AddGlyph = 0xE710;
     private const int SaveGlyph = 0xE74E;
+    private const int InfoGlyph = 0xE946;
 
     private readonly List<SecureValueEntry> _entries = [];
     private readonly StackPanel _rows = new() { Spacing = 8 };
@@ -35,10 +36,9 @@ public sealed class SecureValuesPage : EditorToolPage
     {
         var header = new TextBlock
         {
-            Text = Loc.Get("SecureValues.Blurb"),
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.8,
-            Margin = new Thickness(0, 0, 0, 4),
+            Text = Loc.Get("SecureValues.Heading"),
+            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+            HorizontalAlignment = HorizontalAlignment.Center,
         };
 
         var scroller = new ScrollViewer
@@ -55,6 +55,7 @@ public sealed class SecureValuesPage : EditorToolPage
         {
             Child = header,
             Padding = new Thickness(16, 12, 16, 0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         Grid.SetRow(headerBorder, 0);
         Grid.SetRow(scroller, 1);
@@ -64,10 +65,37 @@ public sealed class SecureValuesPage : EditorToolPage
         _headerActions = BuildHeaderActions();
 
         SetBody(Pane(body));
-        SetFooter();
+        SetFooter(rightExtra: BuildInfoButton());
         StatusBar.SetUntouched();
         InitializeChrome();
         LoadEntries();
+    }
+
+    /// <summary>
+    /// The blurb that used to sit above the list, now behind an info button in the footer — a
+    /// small centered heading (see <c>header</c> above) reads as a page title rather than a
+    /// sentence explaining DPAPI, so the explanation moved to a bubble popup the way the privacy
+    /// indicator already shows its own caption on hover (see <c>EditorToolPage.BuildBubbleFlyout</c>).
+    /// </summary>
+    private FrameworkElement BuildInfoButton()
+    {
+        var button = new Button
+        {
+            Content = new FontIcon { Glyph = char.ConvertFromUtf32(InfoGlyph), FontSize = 14 },
+            Width = 32,
+            Height = 32,
+            Padding = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+        };
+        var label = Loc.Get("SecureValues.InfoLabel");
+        ToolTipService.SetToolTip(button, label);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
+
+        var flyout = BuildBubbleFlyout(Loc.Get("SecureValues.Blurb"));
+        button.Click += (_, _) => flyout.ShowAt(button);
+        return button;
     }
 
     public override ToolKind Kind => ToolKind.SecureValues;

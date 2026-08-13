@@ -214,18 +214,53 @@ public sealed class CertificatePage : EditorToolPage
     private FrameworkElement BuildCard(CertificateReader.CertEntry entry)
     {
         var cert = entry.Certificate;
-        var stack = new StackPanel { Spacing = 6 };
+        bool valid = IsCurrentlyValid(cert);
+        var stack = new StackPanel { Spacing = 10 };
 
-        stack.Children.Add(new TextBlock
+        var titleRow = new Grid { ColumnSpacing = 8 };
+        titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var titleBlock = new TextBlock
         {
             Text = entry.Alias ?? cert.Subject,
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
-        });
-        stack.Children.Add(new TextBlock { Text = entry.Source, Opacity = 0.6 });
-        stack.Children.Add(new TextBlock { Text = ValidityStatus(cert), Opacity = 0.85 });
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+        Grid.SetColumn(titleBlock, 0);
+        titleRow.Children.Add(titleBlock);
 
-        foreach (var (label, value) in DescribeFields(cert))
-            stack.Children.Add(DetailRow(label, value));
+        // The type pill sits left of where the valid badge lands (present or not), so its
+        // position doesn't jump depending on validity.
+        var typePill = BuildTypePill(entry.Source);
+        Grid.SetColumn(typePill, 1);
+        titleRow.Children.Add(typePill);
+
+        if (valid)
+        {
+            var validBadge = BuildValidBadge();
+            Grid.SetColumn(validBadge, 2);
+            titleRow.Children.Add(validBadge);
+        }
+
+        stack.Children.Add(titleRow);
+
+        // An expired or not-yet-valid certificate gets a warning line up here, where it's seen
+        // immediately; a currently valid one relies on the badge above plus the "Expires in" row
+        // at the end of the form below instead of repeating itself.
+        if (!valid)
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = ValidityStatus(cert),
+                Opacity = 0.85,
+                Foreground = ThemeBrush("SystemFillColorCriticalBrush"),
+            });
+        }
+
+        stack.Children.Add(BuildForm(cert, valid));
 
         return new Border
         {
@@ -236,6 +271,97 @@ public sealed class CertificatePage : EditorToolPage
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
         };
+    }
+
+    /// <summary>
+    /// The label/value pairs (including the CN convenience rows and, when the certificate is
+    /// currently valid, the "expires in" row) laid out as a form: labels on the left, values on
+    /// the right, on a background a step apart from the card that hosts it so it reads as its own
+    /// section rather than a continuation of the title row above.
+    /// </summary>
+    private FrameworkElement BuildForm(X509Certificate2 cert, bool valid)
+    {
+        string commonNameLabel = Loc.Get("Certificate.Field.CommonName");
+        var rows = DescribeFields(cert)
+            .Select(f => f.Label == commonNameLabel
+                ? DetailRowWithCopy(f.Label, f.Value)
+                : DetailRow(f.Label, f.Value))
+            .ToList();
+
+        if (valid)
+        {
+            int days = (int)(cert.NotAfter - DateTime.Now).TotalDays;
+            rows.Add(DetailRow(Loc.Get("Certificate.Field.ExpiresIn"), Loc.Format("Certificate.ExpiresInValue", days)));
+        }
+
+        var form = new StackPanel();
+        for (int i = 0; i < rows.Count; i++)
+            form.Children.Add(FormRow(rows[i], isLast: i == rows.Count - 1));
+
+        return new Border
+        {
+            Child = form,
+            Padding = new Thickness(12, 0, 12, 0),
+            Background = ThemeBrush("CardBackgroundFillColorSecondaryBrush"),
+            BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+        };
+    }
+
+    private static FrameworkElement FormRow(FrameworkElement content, bool isLast) => new Border
+    {
+        Child = content,
+        Padding = new Thickness(0, 8, 0, 8),
+        BorderThickness = isLast ? new Thickness(0) : new Thickness(0, 0, 0, 1),
+        BorderBrush = ThemeBrush("DividerStrokeColorDefaultBrush") ?? ThemeBrush("CardStrokeColorDefaultBrush"),
+    };
+
+    private static FrameworkElement BuildTypePill(string text) => new Border
+    {
+        Child = new TextBlock
+        {
+            Text = text,
+            Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+            VerticalAlignment = VerticalAlignment.Center,
+        },
+        Background = ThemeBrush("ControlFillColorSecondaryBrush"),
+        BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush"),
+        BorderThickness = new Thickness(1),
+        CornerRadius = new CornerRadius(10),
+        Padding = new Thickness(8, 2, 8, 2),
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    // Built from the codepoint, not a literal character in source — see the memory note on PUA
+    // glyph corruption from a stray copy/paste.
+    private static readonly string ValidCheckGlyph = char.ConvertFromUtf32(0xE8FB);
+
+    private static FrameworkElement BuildValidBadge()
+    {
+        var icon = new FontIcon
+        {
+            Glyph = ValidCheckGlyph,
+            FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
+            FontSize = 12,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = ThemeBrush("SystemFillColorSuccessBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Green),
+        };
+        var badge = new Border
+        {
+            Child = icon,
+            Width = 24,
+            Height = 24,
+            CornerRadius = new CornerRadius(12),
+            Background = ThemeBrush("SystemFillColorSuccessBackgroundBrush"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var label = Loc.Get("Certificate.ValidBadge");
+        ToolTipService.SetToolTip(badge, label);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(badge, label);
+        return badge;
     }
 
     private static FrameworkElement DetailRow(string label, string value)
@@ -261,6 +387,81 @@ public sealed class CertificatePage : EditorToolPage
         return grid;
     }
 
+    // Built from the codepoint, not a literal character in source — see the memory note on PUA
+    // glyph corruption from a stray copy/paste.
+    private static readonly string CopyGlyph = char.ConvertFromUtf32(0xE8C8);
+
+    /// <summary>Same shape as <see cref="DetailRow"/>, with a copy button for the CN convenience
+    /// rows — the one field on the card worth lifting straight to the clipboard on its own,
+    /// rather than the whole card's summary via <see cref="CopySummary"/>.</summary>
+    private FrameworkElement DetailRowWithCopy(string label, string value)
+    {
+        var grid = new Grid { ColumnSpacing = 12 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var labelBlock = new TextBlock { Text = label, Opacity = 0.65, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
+        var valueBlock = new TextBlock
+        {
+            Text = value,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+            FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var copyButton = new Button
+        {
+            Content = new FontIcon { Glyph = CopyGlyph, FontSize = 12 },
+            Width = 28,
+            Height = 28,
+            Padding = new Thickness(0),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(copyButton, Loc.Get("Tool.CopyOutput"));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(copyButton, Loc.Format("Certificate.CopyField", label));
+        copyButton.Click += (_, _) =>
+        {
+            var package = new DataPackage();
+            package.SetText(value);
+            Clipboard.SetContent(package);
+            StatusBar.SetMessage(Loc.Get("Certificate.Copied"), isError: false);
+        };
+
+        Grid.SetColumn(labelBlock, 0);
+        Grid.SetColumn(valueBlock, 1);
+        Grid.SetColumn(copyButton, 2);
+        grid.Children.Add(labelBlock);
+        grid.Children.Add(valueBlock);
+        grid.Children.Add(copyButton);
+        return grid;
+    }
+
+    private static bool IsCurrentlyValid(X509Certificate2 cert)
+    {
+        var now = DateTime.Now;
+        return now >= cert.NotBefore && now <= cert.NotAfter;
+    }
+
+    // The commonName (2.5.4.3) attribute, read from the structured RDN sequence rather than
+    // guessed out of the formatted DN string — X509NameType.SimpleName (used by FriendlyAlias
+    // below) silently falls back to OU/O/E when no CN is present, which is the wrong answer for a
+    // row whose whole point is "only the CN value, or nothing".
+    private const string CommonNameOid = "2.5.4.3";
+
+    private static string? CommonName(X500DistinguishedName name)
+    {
+        foreach (var rdn in name.EnumerateRelativeDistinguishedNames())
+        {
+            if (!rdn.HasMultipleElements && rdn.GetSingleElementType().Value == CommonNameOid)
+                return rdn.GetSingleElementValue();
+        }
+        return null;
+    }
+
     /// <summary>
     /// The label/value pairs shown on a card and copied to the clipboard — one source of
     /// truth for both, computed from the certificate rather than duplicated between the UI
@@ -269,7 +470,11 @@ public sealed class CertificatePage : EditorToolPage
     private static IEnumerable<(string Label, string Value)> DescribeFields(X509Certificate2 cert)
     {
         yield return (Loc.Get("Certificate.Field.Subject"), cert.Subject);
+        if (CommonName(cert.SubjectName) is { Length: > 0 } subjectCn)
+            yield return (Loc.Get("Certificate.Field.CommonName"), subjectCn);
         yield return (Loc.Get("Certificate.Field.Issuer"), cert.Issuer);
+        if (CommonName(cert.IssuerName) is { Length: > 0 } issuerCn)
+            yield return (Loc.Get("Certificate.Field.CommonName"), issuerCn);
         yield return (Loc.Get("Certificate.Field.Serial"), cert.SerialNumber);
         yield return (Loc.Get("Certificate.Field.Version"), cert.Version.ToString(CultureInfo.InvariantCulture));
         yield return (Loc.Get("Certificate.Field.NotBefore"), cert.NotBefore.ToLocalTime().ToString("f", CultureInfo.CurrentCulture));
