@@ -82,6 +82,15 @@ public sealed partial class RingWindow : Window
     private bool _dragDropArmed;
     private BubbleView? _dragDropBubble;
 
+    /// <summary>
+    /// Miniature stand-in for the ring's own Close bubble, shown pinned to the top-right edge of
+    /// the Drag &amp; drop bubble only while armed — a second, faster way to cancel than hunting
+    /// for the Close item or reaching for Escape. Lives directly on <see cref="RingCanvas"/> (not
+    /// inside the drag & drop bubble's own Border) so it can sit astride that bubble's edge instead
+    /// of being clipped to its parent's corner radius.
+    /// </summary>
+    private Border? _dragDropCloseBadge;
+
     public bool IsOpen => _isOpen;
 
     public RingWindow(RingManager manager)
@@ -258,6 +267,7 @@ public sealed partial class RingWindow : Window
         // right here along with everything else, so there is nothing left to stop an animation on.
         _dragDropArmed = false;
         _dragDropBubble = null;
+        _dragDropCloseBadge = null;
     }
 
     /// <summary>
@@ -301,6 +311,7 @@ public sealed partial class RingWindow : Window
         // whole ring reloaded" and "the item that was just dropped needs the armed pulse to stop."
         _dragDropArmed = false;
         _dragDropBubble = null;
+        _dragDropCloseBadge = null;
 
         AttachHub();
 
@@ -488,11 +499,7 @@ public sealed partial class RingWindow : Window
             Glyph = item.Glyph,
             FontSize = glyphSize,
             Foreground = ThemeBrush("SwiftXForegroundBrush"),
-            // The Drag & drop quick action draws a dot-grip instead (see BuildDragHandleDots
-            // below) — there's no Fluent glyph for the concept, so item.Glyph here is only ever
-            // the unstyled fallback from RingItem.Glyph's Kind switch, never something meant to
-            // actually be shown.
-            Visibility = isDragDropItem ? Visibility.Collapsed : item.GlyphVisibility,
+            Visibility = item.GlyphVisibility,
         };
         if (GlyphFonts.IsTextGlyph(item.Glyph))
             glyph.FontFamily = new FontFamily("Segoe UI");
@@ -503,7 +510,7 @@ public sealed partial class RingWindow : Window
             {
                 icon.Source = item.IconImage;
                 icon.Visibility = item.ImageVisibility;
-                glyph.Visibility = isDragDropItem ? Visibility.Collapsed : item.GlyphVisibility;
+                glyph.Visibility = item.GlyphVisibility;
             }
         };
         item.PropertyChanged += onItemChanged;
@@ -511,8 +518,6 @@ public sealed partial class RingWindow : Window
         var content = new Grid();
         content.Children.Add(icon);
         content.Children.Add(glyph);
-        if (isDragDropItem)
-            content.Children.Add(BuildDragHandleDots(glyphSize, ThemeBrush("SwiftXForegroundBrush")));
 
         // A group wears a small nub on its outward edge — before you hover it, that dot is the
         // only thing distinguishing an item that opens a ring of its own from one that launches.
@@ -718,14 +723,20 @@ public sealed partial class RingWindow : Window
         if (!bubble.IsFlyout && _flyout.Count > 0 && ReferenceEquals(_flyoutParent, bubble))
         {
             // Once a group is open, its name is the heading of the ring it opened rather than a
-            // label on the item — so it sits directly above the first child in the arc, a fixed
-            // point a user's eye already lands on, instead of centered over the whole arc, which
-            // would drift sideways depending on how many children the group has.
-            var first = _flyout[0];
-            px = first.RestX;
-            py = first.RestY
-                 - (RingMetrics.FlyoutBubble / 2 * RingMetrics.HoverScale
-                    + RingMetrics.PillGap + size.Height / 2);
+            // label on the item — so it sits outward from the whole arc along the same radial the
+            // group itself sits on, clearing every child regardless of how many there are or which
+            // side of the ring the group is on. An earlier version anchored purely above the first
+            // child, which only cleared the arc for groups near the top of the ring — Settings sits
+            // to the side, and its "above the first child" label landed across its own two children
+            // instead of outside them.
+            double ux = Math.Cos(bubble.AngleRad);
+            double uy = Math.Sin(bubble.AngleRad);
+            double reach = (Math.Abs(ux) * size.Width + Math.Abs(uy) * size.Height) / 2;
+            double distance = RingMetrics.FlyoutRadius
+                + RingMetrics.FlyoutBubble / 2 * RingMetrics.HoverScale
+                + RingMetrics.PillGap + reach;
+            px = distance * ux;
+            py = distance * uy;
         }
         else
         {
@@ -1156,6 +1167,13 @@ public sealed partial class RingWindow : Window
         if (_flyoutParent is null && _flyout.Count == 0)
             return;
 
+        // The armed drag & drop bubble is one of the children about to be swept away — most often
+        // via Escape, but also a hover-away or a click on Settings to close it again. Whatever the
+        // cause, the bubble the pulse and close badge are pinned to is going away, so cancel drop
+        // mode along with it rather than leaving an orphaned animation running.
+        if (_dragDropArmed)
+            DisarmDragDrop();
+
         var parent = _flyoutParent;
         var children = _flyout.ToList();
         _flyoutParent = null;
@@ -1421,6 +1439,7 @@ public sealed partial class RingWindow : Window
         _dragDropArmed = true;
         _dragDropBubble = bubble;
         StartDragDropPulse(bubble);
+        ShowDragDropCloseBadge(bubble);
     }
 
     private void DisarmDragDrop()
@@ -1429,6 +1448,78 @@ public sealed partial class RingWindow : Window
             StopDragDropPulse(_dragDropBubble);
         _dragDropArmed = false;
         _dragDropBubble = null;
+        HideDragDropCloseBadge();
+    }
+
+    /// <summary>
+    /// Pins the mini close badge to the top-right edge of <paramref name="bubble"/>. Built once and
+    /// reused for the lifetime of the ring's current render — <see cref="ClearRing"/> and
+    /// <see cref="RenderCurrent"/> both null the field out so a stale badge is never reused across a
+    /// rebuild of the canvas it used to live on.
+    /// </summary>
+    private void ShowDragDropCloseBadge(BubbleView bubble)
+    {
+        _dragDropCloseBadge ??= BuildDragDropCloseBadge();
+        if (!RingCanvas.Children.Contains(_dragDropCloseBadge))
+            RingCanvas.Children.Add(_dragDropCloseBadge);
+
+        double size = _dragDropCloseBadge.Width;
+        Canvas.SetLeft(_dragDropCloseBadge, _cx + bubble.RestX + bubble.Diameter / 2 - size / 2);
+        Canvas.SetTop(_dragDropCloseBadge, _cy + bubble.RestY - bubble.Diameter / 2 - size / 2);
+        Canvas.SetZIndex(_dragDropCloseBadge, 90);
+        _dragDropCloseBadge.Visibility = Visibility.Visible;
+    }
+
+    private void HideDragDropCloseBadge()
+    {
+        if (_dragDropCloseBadge is not null)
+            _dragDropCloseBadge.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// A smaller copy of the ring's own Close bubble — same circle-plus-X shape and the same
+    /// red-on-hover treatment as <see cref="ApplyBubbleFill"/> gives the real Close item — sized
+    /// down and used purely as a cancel affordance for armed drag &amp; drop mode. Clicking it (or
+    /// pressing Escape, or picking the ring's actual Close item) all route to the same
+    /// <see cref="DisarmDragDrop"/>.
+    /// </summary>
+    private Border BuildDragDropCloseBadge()
+    {
+        double size = Math.Max(16, RingMetrics.FlyoutBubble * 0.5);
+        var glyph = new FontIcon
+        {
+            Glyph = "\uE711",
+            FontSize = size * 0.5,
+            Foreground = ThemeBrush("SwiftXForegroundBrush"),
+        };
+        var badge = new Border
+        {
+            Width = size,
+            Height = size,
+            CornerRadius = new CornerRadius(size / 2),
+            Background = ThemeBrush("RingBubbleBackground"),
+            Child = glyph,
+            Visibility = Visibility.Collapsed,
+        };
+        badge.PointerEntered += (_, _) =>
+        {
+            badge.Background = ThemeBrush("RingCloseHoverBackground");
+            glyph.Foreground = ThemeBrush("RingCloseHoverForeground");
+        };
+        badge.PointerExited += (_, _) =>
+        {
+            badge.Background = ThemeBrush("RingBubbleBackground");
+            glyph.Foreground = ThemeBrush("SwiftXForegroundBrush");
+        };
+        badge.Tapped += (_, e) =>
+        {
+            // Handled here so the tap never falls through to the drag & drop bubble underneath —
+            // this badge and that bubble overlap at the corner, and a fall-through would re-arm
+            // the very thing this button just cancelled.
+            e.Handled = true;
+            DisarmDragDrop();
+        };
+        return badge;
     }
 
     private static void StartDragDropPulse(BubbleView bubble)
@@ -1514,49 +1605,6 @@ public sealed partial class RingWindow : Window
         _manager.Config.Primary.Items.Add(item);
         _manager.NotifyItemsChanged();
         return true;
-    }
-
-    /// <summary>
-    /// Six dots standing in for the Drag &amp; drop quick action's icon — the same hand-drawn grip
-    /// Settings › Tools already uses for its reorder handle (see SettingsWindow.BuildDragGrip): no
-    /// Segoe Fluent Icons codepoint draws a drag/move glyph, and guessing an unfamiliar private-use
-    /// codepoint risks silently rendering nothing at all rather than failing loudly.
-    /// </summary>
-    private static FrameworkElement BuildDragHandleDots(double size, Brush dotBrush)
-    {
-        double dot = Math.Max(2, size * 0.16);
-        var grid = new Grid
-        {
-            Width = size,
-            Height = size,
-            ColumnSpacing = dot,
-            RowSpacing = dot,
-        };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-        for (int row = 0; row < 3; row++)
-        {
-            for (int column = 0; column < 2; column++)
-            {
-                var pip = new Ellipse
-                {
-                    Width = dot,
-                    Height = dot,
-                    Fill = dotBrush,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-                Grid.SetRow(pip, row);
-                Grid.SetColumn(pip, column);
-                grid.Children.Add(pip);
-            }
-        }
-
-        return grid;
     }
 
     // ---- Input ---------------------------------------------------------------------------

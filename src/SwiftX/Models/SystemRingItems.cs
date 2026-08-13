@@ -54,17 +54,16 @@ public static class SystemRingItems
 
     /// <summary>
     /// Arms RingWindow's drop-target mode on click rather than launching anything \u2014 see
-    /// <c>RingWindow.OnSelectAsync</c>'s <c>IsDragDropItem</c> branch. Its bubble's icon is a
-    /// six-dot grip drawn in code (<c>RingWindow.BuildDragHandleDots</c>), the same one Settings \u203A
-    /// Tools already uses for its reorder handle: no Segoe Fluent Icons codepoint draws a
-    /// drag/move glyph, and <see cref="CustomGlyph"/> is deliberately left unset here \u2014 it is
-    /// never rendered, so there is nothing to get wrong by guessing an unfamiliar codepoint for it.
+    /// <c>RingWindow.OnSelectAsync</c>'s <c>IsDragDropItem</c> branch. Its bubble wears an import
+    /// glyph so it reads as "bring something in" at a glance, and pulses for as long as drop mode
+    /// stays armed (see <c>RingWindow.StartDragDropPulse</c>).
     /// </summary>
     public static RingItem CreateDragDrop() => new()
     {
         Kind = RingItemKind.Application,
         DisplayName = "Drag & drop",
         Target = DragDropTarget,
+        CustomGlyph = "\uE8B5",
         IsSystem = true,
     };
 
