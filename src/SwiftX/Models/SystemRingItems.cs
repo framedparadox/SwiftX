@@ -17,13 +17,30 @@ public static class SystemRingItems
     public const string SettingsTarget = "swiftx:settings";
     public const string CloseTarget = "swiftx:close";
 
+    /// <summary>Quick action nested under Settings \u2014 see <see cref="CreateDragDrop"/>. Never
+    /// reaches <c>RingManager.HandleItemActivation</c>: <c>RingWindow.OnSelectAsync</c> intercepts
+    /// it to arm the drop-target mode instead of "activating" anything.</summary>
+    public const string DragDropTarget = "swiftx:quickdrop";
+
+    /// <summary>Quick action nested under Settings \u2014 see <see cref="CreateAddNew"/>.</summary>
+    public const string AddNewTarget = "swiftx:quickadd";
+
+    /// <summary>
+    /// Settings is a group now, not a plain launch item \u2014 <see cref="CreateDragDrop"/> and
+    /// <see cref="CreateAddNew"/> hang off it as flyout children the same way any user group's
+    /// children do (see RingWindow.ExpandFlyout, which reads a bubble's Children generically and
+    /// has no special case for system items). Both children are themselves synthesized fresh here
+    /// rather than stored anywhere, for the same reason Settings/Close never were \u2014 see the class
+    /// doc comment.
+    /// </summary>
     public static RingItem CreateSettings() => new()
     {
-        Kind = RingItemKind.Application,
+        Kind = RingItemKind.Group,
         DisplayName = "Settings",
         Target = SettingsTarget,
         CustomGlyph = "\uE713",
         IsSystem = true,
+        Children = { CreateDragDrop(), CreateAddNew() },
     };
 
     public static RingItem CreateClose() => new()
@@ -35,9 +52,38 @@ public static class SystemRingItems
         IsSystem = true,
     };
 
+    /// <summary>
+    /// Arms RingWindow's drop-target mode on click rather than launching anything \u2014 see
+    /// <c>RingWindow.OnSelectAsync</c>'s <c>IsDragDropItem</c> branch. Its bubble's icon is a
+    /// six-dot grip drawn in code (<c>RingWindow.BuildDragHandleDots</c>), the same one Settings \u203A
+    /// Tools already uses for its reorder handle: no Segoe Fluent Icons codepoint draws a
+    /// drag/move glyph, and <see cref="CustomGlyph"/> is deliberately left unset here \u2014 it is
+    /// never rendered, so there is nothing to get wrong by guessing an unfamiliar codepoint for it.
+    /// </summary>
+    public static RingItem CreateDragDrop() => new()
+    {
+        Kind = RingItemKind.Application,
+        DisplayName = "Drag & drop",
+        Target = DragDropTarget,
+        IsSystem = true,
+    };
+
+    /// <summary>Opens the same "Add to ring" window as the tray icon's Add entry, targeting the
+    /// same list (<c>Config.Primary.Items</c> \u2014 Settings \u203A Apps &amp; links).</summary>
+    public static RingItem CreateAddNew() => new()
+    {
+        Kind = RingItemKind.Application,
+        DisplayName = "Add new",
+        Target = AddNewTarget,
+        CustomGlyph = "\uE710",
+        IsSystem = true,
+    };
+
     public static bool IsSystemTarget(string? target) =>
         string.Equals(target, SettingsTarget, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(target, CloseTarget, StringComparison.OrdinalIgnoreCase);
+        string.Equals(target, CloseTarget, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(target, DragDropTarget, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(target, AddNewTarget, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Removes any stored Settings/Close entries from <paramref name="items"/> and every nested

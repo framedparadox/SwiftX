@@ -35,6 +35,10 @@ public sealed class RingManager
     /// activation away from it.</summary>
     public bool IsSettingsOpen => _settingsWindow is not null;
 
+    /// <summary>Same idea as <see cref="IsSettingsOpen"/>, for the "Add new" quick action's own
+    /// window (a Settings ring item flyout child — see SystemRingItems.CreateAddNew).</summary>
+    public bool IsAddItemOpen => _addItemWindow is not null;
+
     public event Action? ItemsChanged;
 
     public void Start()
@@ -246,6 +250,19 @@ public sealed class RingManager
             OpenSettings();
             return;
         }
+
+        if (string.Equals(item.Target, SystemRingItems.AddNewTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            // Same call the tray icon's own Add entry makes: no explicit callback/target list, so
+            // AddItemWindow falls back to adding straight into Config.Primary.Items itself (Settings
+            // › Apps & links) and persists on its own — see AddItemWindow.Add_Click.
+            OpenAddItem();
+            return;
+        }
+
+        // DragDropTarget deliberately has no case here — RingWindow.OnSelectAsync intercepts it
+        // before HandleItemActivation is ever called, since clicking it arms drop-target mode
+        // rather than activating/launching anything.
 
         Launcher.Launch(item);
     }

@@ -1010,7 +1010,7 @@ public sealed partial class SettingsWindow : Window
         // pattern, and hand-placed dots can't silently turn into a different (or invisible)
         // private-use character the way a glyph literal could (see the memory note on that
         // failure mode).
-        var grip = BuildDragGrip(row.Title);
+        var grip = BuildDragGrip(row.Title, ThemeHelper.Brush(Root, "SwiftXForegroundBrush"));
         Grid.SetColumn(grip, 0);
 
         FrameworkElement icon = row.TextGlyph
@@ -1108,7 +1108,14 @@ public sealed partial class SettingsWindow : Window
     /// even before the cursor changes over it. The cursor itself becomes a hand on hover, the
     /// closest built-in <see cref="Microsoft.UI.Input.InputSystemCursorShape"/> to a gripping hand.
     /// </summary>
-    private static FrameworkElement BuildDragGrip(string title)
+    /// <param name="dotBrush">
+    /// Resolved by the caller against this window's own theme (<see cref="ThemeHelper.Brush"/>),
+    /// not looked up in here via <c>Application.Current.Resources</c> — this is a <c>static</c>
+    /// helper with no <c>Root</c> to resolve against, and the app-wide ambient theme can disagree
+    /// with this specific window's (Light Settings while Windows itself runs Dark, or vice versa),
+    /// which is exactly what made the dots render in the wrong theme's color.
+    /// </param>
+    private static FrameworkElement BuildDragGrip(string title, Brush dotBrush)
     {
         var grid = new CursorGrid
         {
@@ -1125,7 +1132,6 @@ public sealed partial class SettingsWindow : Window
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var dotBrush = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
         for (int row = 0; row < 3; row++)
         {
             for (int column = 0; column < 2; column++)

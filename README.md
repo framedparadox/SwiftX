@@ -94,3 +94,9 @@ order of how well they fit the current sidebar-button architecture:
   editor; a bigger UI addition.
 - Diff/compare - a two-document comparison; likely its own tool page rather than a Data
   Formatter sidebar addition, given the two-pane layout it needs.
+
+## Add new 
+
+- Add + button to group or folder and auto add to the ring child section
+- Add second circle
+- Ring - Settings  : add Rearrange quick action

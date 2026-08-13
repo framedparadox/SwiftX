@@ -11,8 +11,10 @@ using Microsoft.UI.Xaml.Media;
 using SwiftX.Interop;
 using SwiftX.Models;
 using SwiftX.Services;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Windows.Graphics;
+using Windows.Storage;
 using Windows.System;
 using Ellipse = Microsoft.UI.Xaml.Shapes.Ellipse;
 
@@ -42,6 +44,9 @@ public sealed partial class RingWindow : Window
     /// <summary>Resting scale of the group bubble whose flyout is open, so it reads as active.</summary>
     private const float ExpandedParentScale = 1.08f;
 
+    /// <summary>Period of the "waiting for a drop" pulse on the Drag &amp; drop quick action.</summary>
+    private const int DragDropPulseMs = 900;
+
     private readonly RingManager _manager;
     private readonly nint _hwnd;
     private readonly AppWindow _appWindow;
@@ -68,6 +73,14 @@ public sealed partial class RingWindow : Window
     private int _renderGeneration;
     private BubbleView? _hovered;
     private int _hoverGeneration;
+
+    // Drag & drop quick action state. Armed by a click on that flyout child (see OnSelectAsync's
+    // IsDragDropItem branch) so the user can go find something external to drag in without a
+    // window-activation change dismissing the ring first — see RingWindow_Activated. The bubble
+    // reference is what StopDragDropPulse needs to halt its own composition animation; it does not
+    // survive a re-render, so every place that rebuilds or tears down the ring resets both fields.
+    private bool _dragDropArmed;
+    private BubbleView? _dragDropBubble;
 
     public bool IsOpen => _isOpen;
 
@@ -184,19 +197,27 @@ public sealed partial class RingWindow : Window
     /// hands that window foreground activation and deactivates this one; treat it the same as
     /// clicking the ring's own dead zone.
     /// <para>
-    /// Suppressed while Settings is open: opening it from the ring's own Settings bubble already
-    /// dismisses the ring on selection (see <see cref="OnSelectAsync"/>), but Settings can also be
-    /// reached from the tray icon while the ring is sitting open, or the ring can be re-summoned
-    /// while Settings already has focus — either way, every click into Settings would otherwise
-    /// deactivate this window and immediately dismiss the ring out from under the user. Once
-    /// Settings closes, <see cref="RingManager.IsSettingsOpen"/> goes false again and the very next
+    /// Suppressed while Settings or Add-new is open: opening either from the ring's own flyout
+    /// already dismisses the ring on selection (see <see cref="OnSelectAsync"/>), but both can also
+    /// be reached from the tray icon while the ring is sitting open, or the ring can be re-summoned
+    /// while one already has focus — either way, every click into that window would otherwise
+    /// deactivate this one and immediately dismiss the ring out from under the user. Once the
+    /// window closes, the matching <c>RingManager</c> flag goes false again and the very next
     /// deactivation resumes the normal click-anywhere-to-dismiss behavior.
+    /// </para>
+    /// <para>
+    /// Also suppressed while drag &amp; drop mode is armed (<see cref="_dragDropArmed"/>) — the
+    /// whole point of arming it is to survive the activation change that clicking an external drag
+    /// source (an icon on the desktop, a link in a browser) causes.
     /// </para>
     /// </summary>
     private void RingWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
-        if (args.WindowActivationState == WindowActivationState.Deactivated && !_manager.IsSettingsOpen)
-            Dismiss();
+        if (args.WindowActivationState != WindowActivationState.Deactivated)
+            return;
+        if (_manager.IsSettingsOpen || _manager.IsAddItemOpen || _dragDropArmed)
+            return;
+        Dismiss();
     }
 
     private async Task DismissAnimatedAsync()
@@ -233,6 +254,10 @@ public sealed partial class RingWindow : Window
         _pill = null;
         _pillText = null;
         _hovered = null;
+        // Not a DisarmDragDrop() call: the bubble (and its composition Visual) is being discarded
+        // right here along with everything else, so there is nothing left to stop an animation on.
+        _dragDropArmed = false;
+        _dragDropBubble = null;
     }
 
     /// <summary>
@@ -271,6 +296,11 @@ public sealed partial class RingWindow : Window
         _flyout.Clear();
         _flyoutParent = null;
         _hovered = null;
+        // A successful drop reaches here too (NotifyItemsChanged -> ReloadItems -> RenderCurrent),
+        // which is exactly the moment drag & drop mode should end — one reset covers both "the
+        // whole ring reloaded" and "the item that was just dropped needs the armed pulse to stop."
+        _dragDropArmed = false;
+        _dragDropBubble = null;
 
         AttachHub();
 
@@ -451,12 +481,18 @@ public sealed partial class RingWindow : Window
             Visibility = item.ImageVisibility,
         };
 
+        bool isDragDropItem = IsDragDropItem(item);
+
         var glyph = new FontIcon
         {
             Glyph = item.Glyph,
             FontSize = glyphSize,
             Foreground = ThemeBrush("SwiftXForegroundBrush"),
-            Visibility = item.GlyphVisibility,
+            // The Drag & drop quick action draws a dot-grip instead (see BuildDragHandleDots
+            // below) — there's no Fluent glyph for the concept, so item.Glyph here is only ever
+            // the unstyled fallback from RingItem.Glyph's Kind switch, never something meant to
+            // actually be shown.
+            Visibility = isDragDropItem ? Visibility.Collapsed : item.GlyphVisibility,
         };
         if (GlyphFonts.IsTextGlyph(item.Glyph))
             glyph.FontFamily = new FontFamily("Segoe UI");
@@ -467,7 +503,7 @@ public sealed partial class RingWindow : Window
             {
                 icon.Source = item.IconImage;
                 icon.Visibility = item.ImageVisibility;
-                glyph.Visibility = item.GlyphVisibility;
+                glyph.Visibility = isDragDropItem ? Visibility.Collapsed : item.GlyphVisibility;
             }
         };
         item.PropertyChanged += onItemChanged;
@@ -475,6 +511,8 @@ public sealed partial class RingWindow : Window
         var content = new Grid();
         content.Children.Add(icon);
         content.Children.Add(glyph);
+        if (isDragDropItem)
+            content.Children.Add(BuildDragHandleDots(glyphSize, ThemeBrush("SwiftXForegroundBrush")));
 
         // A group wears a small nub on its outward edge — before you hover it, that dot is the
         // only thing distinguishing an item that opens a ring of its own from one that launches.
@@ -546,7 +584,53 @@ public sealed partial class RingWindow : Window
             await OnSelectAsync(bubble);
         };
 
+        if (isDragDropItem)
+            WireDropTarget(border);
+
         return bubble;
+    }
+
+    /// <summary>
+    /// Makes the Drag &amp; drop quick action's bubble an OS drop target — ordinary WinUI
+    /// <c>AllowDrop</c>/drag events, the same mechanism a ListView's own reorder/file-drop support
+    /// is built on, and (like any other pointer input this ring receives) it works here because the
+    /// bubble sits inside the window's own elliptical hit-region clip
+    /// (<see cref="WindowChrome.SetEllipticHitRegions"/>), not despite it. Actually accepting the
+    /// drop still requires drag &amp; drop mode to have been armed first by a click (see
+    /// <see cref="ToggleDragDropArmed"/>) — hovering the bubble with something already mid-drag
+    /// does not arm it on its own, since that would arm on a graze the user never meant as a click.
+    /// </summary>
+    private void WireDropTarget(Border border)
+    {
+        border.AllowDrop = true;
+        border.DragOver += (_, e) =>
+        {
+            e.AcceptedOperation = _dragDropArmed ? DataPackageOperation.Copy : DataPackageOperation.None;
+            if (_dragDropArmed)
+                e.DragUIOverride.Caption = "Add to ring";
+        };
+        border.Drop += async (_, e) =>
+        {
+            if (!_dragDropArmed)
+                return;
+            var deferral = e.GetDeferral();
+            try
+            {
+                await AddRingItemFromDropAsync(e.DataView);
+            }
+            finally
+            {
+                // AddRingItemFromDropAsync (on success) goes through NotifyItemsChanged ->
+                // ReloadItems -> RenderCurrent, which already resets _dragDropArmed/_dragDropBubble
+                // and rebuilds this exact bubble from scratch — but a drop that yielded nothing
+                // usable (an unrecognized format) never reaches that path, so disarm explicitly
+                // here too rather than leaving the pulse running for a drop that silently did
+                // nothing.
+                if (_dragDropArmed)
+                    DisarmDragDrop();
+                deferral.Complete();
+            }
+        };
     }
 
     /// <summary>
@@ -1245,7 +1329,25 @@ public sealed partial class RingWindow : Window
             return;
         }
 
-        if (item.IsGroup)
+        if (IsDragDropItem(item))
+        {
+            // Arms/disarms drop-target mode instead of "activating" anything — see
+            // ToggleDragDropArmed and the matching check in RingWindow_Activated.
+            ToggleDragDropArmed(bubble);
+            return;
+        }
+
+        // Selecting anything else ends drag & drop mode if it was armed — the user's attention has
+        // moved on to something unrelated, so the pulse shouldn't keep running.
+        if (_dragDropArmed)
+            DisarmDragDrop();
+
+        // Settings is a group now too (it owns the Drag & drop / Add new quick actions below), but
+        // unlike a user-created group it still has a job of its own to do on click — open Settings
+        // — so it deliberately skips the generic group-click branch, which only ever toggles a
+        // flyout and never activates anything. Hovering it still opens that flyout regardless (see
+        // ScheduleFlyoutForHover, which checks Item.IsGroup independently of this method).
+        if (item.IsGroup && !IsSettingsItem(item))
         {
             // Nested groups inside a flyout would need a third ring to land in; there isn't one,
             // so they simply don't expand.
@@ -1284,13 +1386,177 @@ public sealed partial class RingWindow : Window
         await Task.Delay(150);
         _manager.HandleItemActivation(item);
 
-        // Every other selection closes the ring on activation — Settings is the one exception:
-        // it should stay on screen for as long as Settings is open (see RingWindow_Activated's
-        // matching IsSettingsOpen check, which keeps it from being dismissed by the deactivation
-        // that follows here too). Selecting it a second time while already open just re-activates
-        // the existing SettingsWindow (see RingManager.OpenSettings) — still no dismiss.
-        if (!string.Equals(item.Target, SystemRingItems.SettingsTarget, StringComparison.OrdinalIgnoreCase))
+        // Every other selection closes the ring on activation — Settings and Add-new are the
+        // exceptions: each opens its own window and should stay on screen for as long as that
+        // window is open (see RingWindow_Activated's matching IsSettingsOpen/IsAddItemOpen checks,
+        // which keep the deactivation that follows here from dismissing it too). Selecting either
+        // a second time while its window is already open just re-activates that window (see
+        // RingManager.OpenSettings/OpenAddItem) — still no dismiss.
+        bool staysOpen = IsSettingsItem(item) ||
+            string.Equals(item.Target, SystemRingItems.AddNewTarget, StringComparison.OrdinalIgnoreCase);
+        if (!staysOpen)
             Dismiss();
+    }
+
+    private static bool IsSettingsItem(RingItem item) =>
+        string.Equals(item.Target, SystemRingItems.SettingsTarget, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsDragDropItem(RingItem item) =>
+        string.Equals(item.Target, SystemRingItems.DragDropTarget, StringComparison.OrdinalIgnoreCase);
+
+    // ---- Drag & drop quick action ----------------------------------------------------------
+
+    private void ToggleDragDropArmed(BubbleView bubble)
+    {
+        if (_dragDropArmed && ReferenceEquals(_dragDropBubble, bubble))
+        {
+            DisarmDragDrop();
+            return;
+        }
+        // Defensive: only one bubble should ever be armed at a time, but if some other path left
+        // a stale one set, stop its animation before starting a new one rather than leaking it.
+        if (_dragDropArmed)
+            DisarmDragDrop();
+
+        _dragDropArmed = true;
+        _dragDropBubble = bubble;
+        StartDragDropPulse(bubble);
+    }
+
+    private void DisarmDragDrop()
+    {
+        if (_dragDropBubble is not null)
+            StopDragDropPulse(_dragDropBubble);
+        _dragDropArmed = false;
+        _dragDropBubble = null;
+    }
+
+    private static void StartDragDropPulse(BubbleView bubble)
+    {
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
+            visual.CenterPoint = new Vector3((float)(bubble.Diameter / 2), (float)(bubble.Diameter / 2), 0);
+
+            var pulse = visual.Compositor.CreateVector3KeyFrameAnimation();
+            pulse.InsertKeyFrame(0f, Vector3.One);
+            pulse.InsertKeyFrame(0.5f, new Vector3(1.18f, 1.18f, 1));
+            pulse.InsertKeyFrame(1f, Vector3.One);
+            pulse.Duration = TimeSpan.FromMilliseconds(DragDropPulseMs);
+            pulse.IterationBehavior = AnimationIterationBehavior.Forever;
+            visual.StartAnimation("Scale", pulse);
+        }
+        catch
+        {
+            // Composition may be unavailable in some hosts — same tolerance as every other
+            // animation in this file.
+        }
+    }
+
+    private static void StopDragDropPulse(BubbleView bubble)
+    {
+        try
+        {
+            ElementCompositionPreview.GetElementVisual(bubble.Host).StopAnimation("Scale");
+        }
+        catch
+        {
+        }
+        // Composition animations leave their last-driven value in place once stopped rather than
+        // reverting to the pre-animation value — this is what puts the bubble back at rest scale
+        // instead of leaving it wherever the pulse happened to be when it was cut off.
+        ResetBubbleVisual(bubble, rested: true);
+    }
+
+    /// <summary>
+    /// Extracts a droppable target (a file/folder/shortcut/app path, or a URL) from an external
+    /// drag's payload and adds it to the ring the same way "Add new" would. Tries storage items
+    /// first (Explorer, the Start menu, a desktop icon), then a web link (a browser's own address
+    /// bar or an anchor drag), then falls back to plain text in case some source only offers that —
+    /// <see cref="RingItemFactory.Classify"/> re-derives the actual kind from the string either way,
+    /// so nothing here has to guess whether what came off the source was a shortcut, a folder, or
+    /// a URL.
+    /// </summary>
+    private async Task<bool> AddRingItemFromDropAsync(DataPackageView data)
+    {
+        string? target = null;
+
+        if (data.Contains(StandardDataFormats.StorageItems))
+        {
+            var items = await data.GetStorageItemsAsync();
+            target = items.FirstOrDefault()?.Path;
+        }
+
+        if (string.IsNullOrEmpty(target) && data.Contains(StandardDataFormats.WebLink))
+        {
+            var uri = await data.GetWebLinkAsync();
+            target = uri?.ToString();
+        }
+
+        if (string.IsNullOrEmpty(target) && data.Contains(StandardDataFormats.Text))
+        {
+            var text = (await data.GetTextAsync())?.Trim();
+            if (!string.IsNullOrEmpty(text) &&
+                Uri.TryCreate(text, UriKind.Absolute, out var uri) &&
+                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+                target = text;
+        }
+
+        if (string.IsNullOrEmpty(target))
+            return false;
+
+        var item = new RingItem
+        {
+            Kind = RingItemFactory.Classify(target),
+            Target = target,
+            DisplayName = RingItemFactory.SuggestName(target),
+        };
+        _manager.Config.Primary.Items.Add(item);
+        _manager.NotifyItemsChanged();
+        return true;
+    }
+
+    /// <summary>
+    /// Six dots standing in for the Drag &amp; drop quick action's icon — the same hand-drawn grip
+    /// Settings › Tools already uses for its reorder handle (see SettingsWindow.BuildDragGrip): no
+    /// Segoe Fluent Icons codepoint draws a drag/move glyph, and guessing an unfamiliar private-use
+    /// codepoint risks silently rendering nothing at all rather than failing loudly.
+    /// </summary>
+    private static FrameworkElement BuildDragHandleDots(double size, Brush dotBrush)
+    {
+        double dot = Math.Max(2, size * 0.16);
+        var grid = new Grid
+        {
+            Width = size,
+            Height = size,
+            ColumnSpacing = dot,
+            RowSpacing = dot,
+        };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        for (int row = 0; row < 3; row++)
+        {
+            for (int column = 0; column < 2; column++)
+            {
+                var pip = new Ellipse
+                {
+                    Width = dot,
+                    Height = dot,
+                    Fill = dotBrush,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                Grid.SetRow(pip, row);
+                Grid.SetColumn(pip, column);
+                grid.Children.Add(pip);
+            }
+        }
+
+        return grid;
     }
 
     // ---- Input ---------------------------------------------------------------------------
