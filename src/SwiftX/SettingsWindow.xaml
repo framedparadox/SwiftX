@@ -84,15 +84,19 @@
                 </muxc:NavigationViewItem>
             </muxc:NavigationView.FooterMenuItems>
 
-            <Grid Padding="32,24,32,24">
+            <!-- Opaque, painted directly over NavigationView's own ContentGrid: that grid defaults
+                 to a translucent overlay (NavigationViewContentBackground in generic.xaml) which
+                 is not exposed as a settable property, so covering it is the only way to keep the
+                 content area a flat color instead of a tinted see-through one. -->
+            <Grid Padding="32,24,32,24" Background="{ThemeResource SwiftXCanvasBrush}">
                 <!-- ==================== HOME (ring customization) ==================== -->
                 <ScrollViewer x:Name="HomePanel">
                     <StackPanel Spacing="12" MaxWidth="920" HorizontalAlignment="Left">
                         <TextBlock Text="Home" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,4" />
-                        <TextBlock Text="Customize your ring. Click an empty slot or + to add; click an item to edit or remove; drag an item to rearrange."
+                        <TextBlock Text="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="20" HorizontalAlignment="Left" VerticalAlignment="Top">
-                            <Border Style="{StaticResource Card}"
+                            <Border Style="{StaticResource Card}" Background="{ThemeResource SwiftXRingCanvasBrush}"
                                     HorizontalAlignment="Left" VerticalAlignment="Top" Padding="20">
                                 <Canvas x:Name="PreviewCanvas" Width="360" Height="360" />
                             </Border>
@@ -143,25 +147,36 @@
                                     <Button Content="Add item…" Click="AddItem_Click" />
                                     <Button Content="Reset defaults" Click="ResetDefaults_Click" />
                                 </StackPanel>
+
+                                <!-- Read-only inspector for whatever item was last clicked, on the
+                                     main ring or inside an expanded group's children row below.
+                                     No edit/save controls here — real edits happen on the "Apps &
+                                     links" tab. Hidden until something is selected. -->
+                                <Border x:Name="InfoBox" Style="{StaticResource Card}" Visibility="Collapsed">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Name" Style="{StaticResource SecondaryCaption}" />
+                                        <TextBlock x:Name="InfoName" Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Text="Target" Style="{StaticResource SecondaryCaption}" Margin="0,6,0,0" />
+                                        <TextBlock x:Name="InfoTarget" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </StackPanel>
-                        <StackPanel x:Name="EditPanel" Visibility="Collapsed" Spacing="8">
-                            <Border Style="{StaticResource Card}">
-                                <StackPanel Spacing="10">
-                                    <TextBlock x:Name="EditTitle" FontWeight="SemiBold" />
-                                    <TextBox x:Name="EditName" Header="Name" />
-                                    <TextBox x:Name="EditTarget" Header="Target" />
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <Button Content="Save" Style="{ThemeResource AccentButtonStyle}" Click="SaveEdit_Click" />
-                                        <Button Content="Remove" Click="RemoveEdit_Click" />
-                                        <Button Content="↑" Click="MoveUp_Click" ToolTipService.ToolTip="Move earlier on ring" />
-                                        <Button Content="↓" Click="MoveDown_Click" ToolTipService.ToolTip="Move later on ring" />
-                                        <Button Content="Open group…" x:Name="OpenGroupBtn" Click="OpenGroup_Click" Visibility="Collapsed" />
-                                        <Button Content="Cancel" Click="CancelEdit_Click" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
+
+                        <!-- Revealed in place of a group bubble's own slot when it's clicked, instead
+                             of replacing the whole ring view. Uses the ring-canvas grey (not the
+                             white Card look) so it reads as the canvas extended, not another box. -->
+                        <Border x:Name="GroupRow" Visibility="Collapsed" CornerRadius="8" BorderThickness="1"
+                                Background="{ThemeResource SwiftXRingCanvasBrush}"
+                                BorderBrush="{ThemeResource SwiftXCardStrokeBrush}" Padding="16,14">
+                            <StackPanel Spacing="8">
+                                <TextBlock x:Name="GroupRowTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                    <Canvas x:Name="GroupChildrenCanvas" Height="52" />
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 

@@ -30,6 +30,11 @@ public sealed class RingManager
     public ToolWindowManager ToolWindows { get; }
     public ToolWindowLauncher Tools { get; }
 
+    /// <summary>Whether Settings is currently open — <see cref="RingWindow"/> checks this so it can
+    /// stay on screen instead of dismissing itself the instant Settings takes foreground
+    /// activation away from it.</summary>
+    public bool IsSettingsOpen => _settingsWindow is not null;
+
     public event Action? ItemsChanged;
 
     public void Start()

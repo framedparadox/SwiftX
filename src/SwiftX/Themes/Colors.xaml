@@ -30,6 +30,21 @@
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
             <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#0A0A0A"/>
             <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#333333"/>
+            <!-- NavigationView's own pane defaults to in-app Acrylic and its content area to a
+                 translucent overlay (WinUI generic.xaml: NavigationViewDefaultPaneBackground /
+                 NavigationViewContentBackground) regardless of the window's own backdrop, so an
+                 explicit flat brush is needed to keep it solid instead of picking up a tint. -->
+            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#000000"/>
+            <!-- Overrides the framework's own key so NavigationView's pane (which reads this key
+                 straight from its control template, not from an exposed CLR property) picks up
+                 our flat color instead of the WinUI default of in-app Acrylic. -->
+            <StaticResource x:Key="NavigationViewDefaultPaneBackground" ResourceKey="SwiftXCanvasBrush"/>
+            <!-- SettingsWindow.xaml references this key unconditionally (not theme-gated), so it
+                 must exist in every theme dictionary or {ThemeResource} throws XamlParseException
+                 the moment this dictionary is the active one — it isn't just a Light-mode nicety.
+                 A shade lighter than SwiftXCardBackgroundBrush so the ring-preview canvas still
+                 reads as its own distinct "tray" rather than another card. -->
+            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#161616"/>
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Light">
@@ -52,6 +67,32 @@
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
             <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#F5F5F5"/>
             <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#CCCCCC"/>
+            <!-- Lightest grey in the palette: the NavigationView pane + content area ("section
+                 background"). Bumped from #F3F3F3 so it reads as visibly closer to white than the
+                 generic Card background below it. -->
+            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#FAFAFA"/>
+            <!-- A shade more recessed than both the page background above and the generic Card
+                 background below, dedicated to the Home tab's ring-preview canvas so it reads as
+                 its own distinct "tray" rather than just another settings card. -->
+            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#EEEEEE"/>
+            <!-- Strictly neutral (R=G=B) selected-nav-item greys. WinUI's own tokens here
+                 (SubtleFillColorSecondary/TertiaryBrush, etc.) can be influenced by the user's
+                 Windows accent-color personalization, which read as "a little bit pink" against a
+                 light pane. Going fully explicit removes that whole class of doubt rather than
+                 chasing which token was actually the source. -->
+            <SolidColorBrush x:Key="SwiftXNavSelectedBrush" Color="#E8E8E8"/>
+            <SolidColorBrush x:Key="SwiftXNavSelectedHoverBrush" Color="#E0E0E0"/>
+            <SolidColorBrush x:Key="SwiftXNavSelectedPressedBrush" Color="#D8D8D8"/>
+            <SolidColorBrush x:Key="SwiftXNavSelectedDisabledBrush" Color="#EDEDED"/>
+            <StaticResource x:Key="NavigationViewDefaultPaneBackground" ResourceKey="SwiftXCanvasBrush"/>
+            <StaticResource x:Key="NavigationViewItemBackgroundSelected" ResourceKey="SwiftXNavSelectedBrush"/>
+            <StaticResource x:Key="NavigationViewItemBackgroundSelectedPointerOver" ResourceKey="SwiftXNavSelectedHoverBrush"/>
+            <StaticResource x:Key="NavigationViewItemBackgroundSelectedPressed" ResourceKey="SwiftXNavSelectedPressedBrush"/>
+            <StaticResource x:Key="NavigationViewItemBackgroundSelectedDisabled" ResourceKey="SwiftXNavSelectedDisabledBrush"/>
+            <!-- CardStrokeColorDefaultBrush (the WinUI default here) is itself neutral, but pinned
+                 to our own already-neutral stroke brush anyway so this line is never a place a
+                 future Fluent token change could reintroduce a tint. -->
+            <StaticResource x:Key="NavigationViewContentGridBorderBrush" ResourceKey="SwiftXCardStrokeBrush"/>
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Default">
@@ -74,6 +115,11 @@
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
             <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#0A0A0A"/>
             <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#333333"/>
+            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#000000"/>
+            <StaticResource x:Key="NavigationViewDefaultPaneBackground" ResourceKey="SwiftXCanvasBrush"/>
+            <!-- See the matching comment in the Dark dictionary above — this key is referenced
+                 unconditionally from SettingsWindow.xaml and must exist here too. -->
+            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#161616"/>
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>

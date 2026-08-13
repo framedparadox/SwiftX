@@ -182,10 +182,20 @@ public sealed partial class RingWindow : Window
 
     /// <summary>Clicking anywhere else on screen — another window, the desktop, the taskbar —
     /// hands that window foreground activation and deactivates this one; treat it the same as
-    /// clicking the ring's own dead zone.</summary>
+    /// clicking the ring's own dead zone.
+    /// <para>
+    /// Suppressed while Settings is open: opening it from the ring's own Settings bubble already
+    /// dismisses the ring on selection (see <see cref="OnSelectAsync"/>), but Settings can also be
+    /// reached from the tray icon while the ring is sitting open, or the ring can be re-summoned
+    /// while Settings already has focus — either way, every click into Settings would otherwise
+    /// deactivate this window and immediately dismiss the ring out from under the user. Once
+    /// Settings closes, <see cref="RingManager.IsSettingsOpen"/> goes false again and the very next
+    /// deactivation resumes the normal click-anywhere-to-dismiss behavior.
+    /// </para>
+    /// </summary>
     private void RingWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
-        if (args.WindowActivationState == WindowActivationState.Deactivated)
+        if (args.WindowActivationState == WindowActivationState.Deactivated && !_manager.IsSettingsOpen)
             Dismiss();
     }
 
@@ -1273,7 +1283,14 @@ public sealed partial class RingWindow : Window
 
         await Task.Delay(150);
         _manager.HandleItemActivation(item);
-        Dismiss();
+
+        // Every other selection closes the ring on activation — Settings is the one exception:
+        // it should stay on screen for as long as Settings is open (see RingWindow_Activated's
+        // matching IsSettingsOpen check, which keeps it from being dismissed by the deactivation
+        // that follows here too). Selecting it a second time while already open just re-activates
+        // the existing SettingsWindow (see RingManager.OpenSettings) — still no dismiss.
+        if (!string.Equals(item.Target, SystemRingItems.SettingsTarget, StringComparison.OrdinalIgnoreCase))
+            Dismiss();
     }
 
     // ---- Input ---------------------------------------------------------------------------

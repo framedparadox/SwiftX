@@ -27,8 +27,6 @@ public sealed partial class SettingsWindow : Window
     private readonly RingManager _manager;
     private readonly nint _hwnd;
     private readonly AppWindow _appWindow;
-    private RingItem? _editing;
-    private List<RingItem> _editList;
     private bool _loading = true;
     private Border? _dragBorder;
     private RingItem? _dragItem;
@@ -43,10 +41,27 @@ public sealed partial class SettingsWindow : Window
     private double _previewRadius;
     private double _previewBubble;
 
+    // Selection state for the read-only inspector (InfoBox) and the group children row (GroupRow).
+    // Neither swaps out which list the ring renders anymore — a click just picks what, if anything,
+    // is shown below the ring — so plain "currently selected / currently expanded" fields replace
+    // the old _editing/_editList-swapping model entirely.
+    private RingItem? _selectedItem;
+    private RingItem? _expandedGroup;
+
+    // Geometry + drag state for GroupRow's horizontal children strip, mirroring _slotBorders /
+    // _dragBorder etc. above but for a 1-D layout instead of the ring's circular one.
+    private const double GroupChildBubble = 44;
+    private const double GroupChildGap = 14;
+    private readonly List<Border> _groupSlotBorders = new();
+    private Border? _groupDragBorder;
+    private RingItem? _groupDragItem;
+    private Point _groupDragStart;
+    private bool _groupDragMoved;
+    private int _groupDragIndex = -1;
+
     public SettingsWindow(RingManager manager)
     {
         _manager = manager;
-        _editList = manager.Config.Primary.Items;
         InitializeComponent();
 
         _toolCards.CollectionChanged += ToolCards_CollectionChanged;
@@ -68,6 +83,11 @@ public sealed partial class SettingsWindow : Window
         PreviewCanvas.PointerMoved += Preview_PointerMoved;
         PreviewCanvas.PointerReleased += Preview_PointerReleased;
         PreviewCanvas.PointerCaptureLost += (_, _) => EndPreviewDrag();
+
+        GroupChildrenCanvas.PointerPressed += GroupRow_PointerPressed;
+        GroupChildrenCanvas.PointerMoved += GroupRow_PointerMoved;
+        GroupChildrenCanvas.PointerReleased += GroupRow_PointerReleased;
+        GroupChildrenCanvas.PointerCaptureLost += (_, _) => EndGroupDrag();
 
         ApplyTheme();
         Root.ActualThemeChanged += (_, _) =>
@@ -112,10 +132,28 @@ public sealed partial class SettingsWindow : Window
         {
             DispatcherQueue.TryEnqueue(() =>
             {
+                // An edit from elsewhere (e.g. a delete on the "Apps & links" tab) can remove the
+                // item this tab currently has selected or expanded — drop stale state rather than
+                // leave the inspector or children row pointing at something that no longer exists.
+                if (_expandedGroup is not null && !ItemExists(_manager.Config.Primary.Items, _expandedGroup))
+                    CollapseGroup();
+                if (_selectedItem is not null && !ItemExists(_manager.Config.Primary.Items, _selectedItem))
+                    HideInfo();
                 RenderPreview();
+                if (_expandedGroup is not null) RenderGroupRow();
                 RebuildItemsList();
             });
         };
+    }
+
+    private static bool ItemExists(List<RingItem> items, RingItem target)
+    {
+        foreach (var item in items)
+        {
+            if (ReferenceEquals(item, target)) return true;
+            if (item.Children.Count > 0 && ItemExists(item.Children, target)) return true;
+        }
+        return false;
     }
 
     public void ApplyTheme()
@@ -179,7 +217,7 @@ public sealed partial class SettingsWindow : Window
         Canvas.SetTop(hub, cy - logo / 2);
         PreviewCanvas.Children.Add(hub);
 
-        var items = _editList.Where(i => !i.Hidden).Take(RingMetrics.UserSlotCount).ToList();
+        var items = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(RingMetrics.UserSlotCount).ToList();
         for (int i = 0; i < RingMetrics.SlotCount; i++)
         {
             double angle = (-90 + i * 45) * Math.PI / 180.0;
@@ -188,7 +226,6 @@ public sealed partial class SettingsWindow : Window
 
             // The ring synthesizes Settings and Close into the last two slots, so the preview does
             // the same rather than reading them out of the profile — they are not in it.
-            Border? edit = null;
             bool pinned = i >= RingMetrics.UserSlotCount;
             RingItem? item = pinned
                 ? (i == RingMetrics.UserSlotCount ? SystemRingItems.CreateSettings() : SystemRingItems.CreateClose())
@@ -218,20 +255,11 @@ public sealed partial class SettingsWindow : Window
             {
                 border.Child = PreviewGlyph(item.Glyph, glyphSize, foreground);
                 _slotBorders[i] = border;
-                edit = BuildEditBadge(item, bubble, x, y, borderBrush, foreground);
             }
 
             Canvas.SetLeft(border, x);
             Canvas.SetTop(border, y);
             PreviewCanvas.Children.Add(border);
-
-            // Added after its slot's bubble, and z-lifted, so a later slot's bubble can't paint
-            // over a badge that overhangs into it.
-            if (edit is not null)
-            {
-                Canvas.SetZIndex(edit, 5);
-                PreviewCanvas.Children.Add(edit);
-            }
         }
     }
 
@@ -293,16 +321,19 @@ public sealed partial class SettingsWindow : Window
 
         if (item is not null)
         {
-            BeginEdit(item);
+            if (item.IsGroup)
+                ToggleGroup(item);
+            else
+                ShowItemInfo(item);
         }
         else if (slot < RingMetrics.UserSlotCount)
         {
             _manager.OpenAddItem(added =>
             {
-                _editList.Add(added);
+                _manager.Config.Primary.Items.Add(added);
                 _manager.NotifyItemsChanged();
                 RenderPreview();
-            }, _editList);
+            }, _manager.Config.Primary.Items);
         }
     }
 
@@ -337,44 +368,6 @@ public sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// The pencil badge on a preview item. The bubble itself is now a drag handle for
-    /// repositioning, so "edit this one" needs a target of its own rather than relying on a tap
-    /// the drag gesture has to keep second-guessing. It sits outside the bubble's Border — a
-    /// child would be clipped by the corner radius — and stops its tap from reaching the bubble.
-    /// </summary>
-    private Border BuildEditBadge(
-        RingItem item, double bubble, double x, double y, Brush stroke, Brush foreground)
-    {
-        double badge = Math.Max(18, bubble * 0.4);
-        var edit = new Border
-        {
-            Width = badge,
-            Height = badge,
-            CornerRadius = new CornerRadius(badge / 2),
-            Background = ThemeHelper.Brush(Root, "SwiftXCardBackgroundBrush"),
-            BorderBrush = stroke,
-            BorderThickness = new Thickness(1),
-            Child = new FontIcon
-            {
-                Glyph = "\uE70F",
-                FontSize = badge * 0.5,
-                Foreground = foreground,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            },
-        };
-        ToolTipService.SetToolTip(edit, $"Edit {item.DisplayName}");
-        edit.Tapped += (_, e) =>
-        {
-            e.Handled = true;
-            BeginEdit(item);
-        };
-        Canvas.SetLeft(edit, x + bubble - badge * 0.8);
-        Canvas.SetTop(edit, y - badge * 0.2);
-        return edit;
-    }
-
-    /// <summary>
     /// A preview slot's glyph. Mirrors the ring's own handling of non-Fluent glyphs such as
     /// "&lt;/&gt;", which render as tofu boxes in the icon font and need a text family instead.
     /// </summary>
@@ -399,7 +392,7 @@ public sealed partial class SettingsWindow : Window
         // ignored rather than clamped, so the item stays where the user last put it.
         if (targetSlot < 0 || targetSlot >= RingMetrics.UserSlotCount) return;
 
-        var visible = _editList.Where(i => !i.Hidden).Take(RingMetrics.UserSlotCount).ToList();
+        var visible = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(RingMetrics.UserSlotCount).ToList();
         int from = visible.IndexOf(dragged);
         if (from < 0) return;
 
@@ -417,108 +410,269 @@ public sealed partial class SettingsWindow : Window
         // Write the new order back over the positions the visible items already occupy, so
         // hidden entries keep their place in the list instead of being shuffled by an index
         // computed from a filtered view of it.
+        var items = _manager.Config.Primary.Items;
         var positions = new List<int>();
-        for (int i = 0; i < _editList.Count && positions.Count < visible.Count; i++)
+        for (int i = 0; i < items.Count && positions.Count < visible.Count; i++)
         {
-            if (!_editList[i].Hidden)
+            if (!items[i].Hidden)
                 positions.Add(i);
         }
         for (int i = 0; i < positions.Count; i++)
-            _editList[positions[i]] = visible[i];
+            items[positions[i]] = visible[i];
 
         _manager.NotifyItemsChanged();
         RenderPreview();
         RebuildItemsList();
     }
 
-    private void BeginEdit(RingItem item)
+    /// <summary>
+    /// Shows <paramref name="item"/>'s name/target in the read-only <c>InfoBox</c>. Re-clicking the
+    /// item already shown hides it again — the simplest "close" affordance that doesn't need a
+    /// dedicated button. This is display-only: real edits happen on the "Apps &amp; links" tab.
+    /// <para>
+    /// A click on a plain main-ring item is unrelated to whatever group row is currently expanded
+    /// (if any), so that row is collapsed first — otherwise it kept sitting there showing a group
+    /// that has nothing to do with the newly-selected item. A click on a child <em>inside</em> the
+    /// expanded group's own row is the one case that should leave the row open alongside the info
+    /// box, since the row is exactly what the user clicked into.
+    /// </para>
+    /// </summary>
+    private void ShowItemInfo(RingItem item)
     {
-        _editing = item;
-        EditPanel.Visibility = Visibility.Visible;
-        EditTitle.Text = $"Edit · {item.Kind}";
-        EditName.Text = item.DisplayName;
-        EditTarget.Text = item.Target;
-        OpenGroupBtn.Visibility = item.IsGroup ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void SaveEdit_Click(object sender, RoutedEventArgs e)
-    {
-        if (_editing is null) return;
-        _editing.DisplayName = EditName.Text.Trim();
-        string newTarget = EditTarget.Text.Trim();
-        // Target changed: drop the old icon rather than let it linger if the new target's icon
-        // fails to resolve (IconImage is otherwise never cleared once set).
-        if (!string.Equals(_editing.Target, newTarget, StringComparison.Ordinal))
-            _editing.IconImage = null;
-        _editing.Target = newTarget;
-        EditPanel.Visibility = Visibility.Collapsed;
-        _editing = null;
-        _manager.NotifyItemsChanged();
-        RenderPreview();
-        RebuildItemsList();
-    }
-
-    private void RemoveEdit_Click(object sender, RoutedEventArgs e)
-    {
-        if (_editing is null) return;
-        _editList.Remove(_editing);
-        EditPanel.Visibility = Visibility.Collapsed;
-        _editing = null;
-        _manager.NotifyItemsChanged();
-        RenderPreview();
-        RebuildItemsList();
-    }
-
-    private void MoveUp_Click(object sender, RoutedEventArgs e)
-    {
-        if (_editing is null) return;
-        int i = _editList.IndexOf(_editing);
-        if (i <= 0) return;
-        _editList.RemoveAt(i);
-        _editList.Insert(i - 1, _editing);
-        _manager.NotifyItemsChanged();
-        RenderPreview();
-    }
-
-    private void MoveDown_Click(object sender, RoutedEventArgs e)
-    {
-        if (_editing is null) return;
-        int i = _editList.IndexOf(_editing);
-        if (i < 0 || i >= _editList.Count - 1) return;
-        _editList.RemoveAt(i);
-        _editList.Insert(i + 1, _editing);
-        _manager.NotifyItemsChanged();
-        RenderPreview();
-    }
-
-    private void OpenGroup_Click(object sender, RoutedEventArgs e)
-    {
-        if (_editing is null || !_editing.IsGroup) return;
-        _editList = _editing.Children;
-        EditPanel.Visibility = Visibility.Collapsed;
-        _editing = null;
-        RenderPreview();
-    }
-
-    private void CancelEdit_Click(object sender, RoutedEventArgs e)
-    {
-        EditPanel.Visibility = Visibility.Collapsed;
-        _editing = null;
-        if (!ReferenceEquals(_editList, _manager.Config.Primary.Items))
+        if (ReferenceEquals(_selectedItem, item) && InfoBox.Visibility == Visibility.Visible)
         {
-            _editList = _manager.Config.Primary.Items;
-            RenderPreview();
+            HideInfo();
+            return;
         }
+        if (!IsChildOfExpandedGroup(item))
+            CollapseGroup();
+        _selectedItem = item;
+        InfoName.Text = item.DisplayName;
+        InfoTarget.Text = string.IsNullOrEmpty(item.Target) ? "—" : item.Target;
+        InfoBox.Visibility = Visibility.Visible;
+    }
+
+    private void HideInfo()
+    {
+        _selectedItem = null;
+        InfoBox.Visibility = Visibility.Collapsed;
+    }
+
+    private bool IsChildOfExpandedGroup(RingItem item) =>
+        _expandedGroup is not null && _expandedGroup.Children.Any(c => ReferenceEquals(c, item));
+
+    /// <summary>
+    /// Expands (or, on a second click of the same group, collapses) <c>GroupRow</c> — the
+    /// horizontal children strip that replaces the old full-ring drill-down.
+    /// <para>
+    /// Switching to a different group closes whatever was open first (via <see cref="CollapseGroup"/>)
+    /// rather than just overwriting <c>_expandedGroup</c> in place, and any info box left showing
+    /// from before is cleared too — both would otherwise linger, showing state for an item or
+    /// group the newly-opened row has nothing to do with.
+    /// </para>
+    /// </summary>
+    private void ToggleGroup(RingItem group)
+    {
+        if (ReferenceEquals(_expandedGroup, group))
+        {
+            CollapseGroup();
+            return;
+        }
+        CollapseGroup();
+        HideInfo();
+        _expandedGroup = group;
+        GroupRowTitle.Text = group.DisplayName;
+        GroupRow.Visibility = Visibility.Visible;
+        RenderGroupRow();
+    }
+
+    /// <summary>Also clears <c>InfoBox</c> when it's showing one of this group's own children —
+    /// otherwise closing the row left a child's name/target on screen with no row left to have
+    /// come from.</summary>
+    private void CollapseGroup()
+    {
+        if (_selectedItem is not null && IsChildOfExpandedGroup(_selectedItem))
+            HideInfo();
+        _expandedGroup = null;
+        GroupRow.Visibility = Visibility.Collapsed;
+        GroupChildrenCanvas.Children.Clear();
+        _groupSlotBorders.Clear();
+    }
+
+    /// <summary>
+    /// Draws <see cref="_expandedGroup"/>'s children as a left-to-right strip of small bubbles,
+    /// mirroring <see cref="RenderPreview"/>'s bubble styling (same brushes, same <see cref="PreviewGlyph"/>
+    /// helper) at a smaller size. Hidden children are skipped, same as the main ring.
+    /// </summary>
+    private void RenderGroupRow()
+    {
+        GroupChildrenCanvas.Children.Clear();
+        _groupSlotBorders.Clear();
+        if (_expandedGroup is null) return;
+
+        var borderBrush = ThemeHelper.Brush(Root, "SwiftXBorderBrush");
+        var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
+        double glyphSize = Math.Max(10, GroupChildBubble * 0.36);
+
+        var children = _expandedGroup.Children.Where(c => !c.Hidden).ToList();
+        GroupChildrenCanvas.Width = children.Count == 0
+            ? GroupChildBubble
+            : children.Count * GroupChildBubble + (children.Count - 1) * GroupChildGap;
+        GroupChildrenCanvas.Height = GroupChildBubble;
+
+        for (int i = 0; i < children.Count; i++)
+        {
+            var child = children[i];
+            double x = i * (GroupChildBubble + GroupChildGap);
+
+            var border = new Border
+            {
+                Width = GroupChildBubble,
+                Height = GroupChildBubble,
+                CornerRadius = new CornerRadius(GroupChildBubble / 2),
+                Background = ThemeHelper.Brush(Root, "RingBubbleBackground"),
+                BorderBrush = borderBrush,
+                BorderThickness = new Thickness(1),
+                Tag = child,
+                Child = PreviewGlyph(child.Glyph, glyphSize, foreground),
+            };
+            ToolTipService.SetToolTip(border, child.DisplayName);
+
+            Canvas.SetLeft(border, x);
+            Canvas.SetTop(border, 0);
+            GroupChildrenCanvas.Children.Add(border);
+            _groupSlotBorders.Add(border);
+        }
+    }
+
+    /// <summary>
+    /// Press/drag/release for the group children row, the same one-capture-on-the-canvas pattern
+    /// as <see cref="Preview_PointerPressed"/>/<see cref="Preview_PointerMoved"/>/
+    /// <see cref="Preview_PointerReleased"/>, just projected onto a single horizontal axis instead
+    /// of the ring's circular one.
+    /// </summary>
+    private void GroupRow_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(GroupChildrenCanvas).Position;
+        _groupDragIndex = GroupChildIndexAt(point);
+        _groupDragBorder = _groupDragIndex >= 0 ? _groupSlotBorders[_groupDragIndex] : null;
+        _groupDragItem = _groupDragBorder?.Tag as RingItem;
+        _groupDragStart = point;
+        _groupDragMoved = false;
+        if (_groupDragIndex >= 0)
+            GroupChildrenCanvas.CapturePointer(e.Pointer);
+    }
+
+    private void GroupRow_PointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (_groupDragBorder is null) return;
+
+        var point = e.GetCurrentPoint(GroupChildrenCanvas).Position;
+        double dx = point.X - _groupDragStart.X;
+        if (!_groupDragMoved && Math.Abs(dx) > 4)
+            _groupDragMoved = true;
+        if (_groupDragMoved)
+            _groupDragBorder.RenderTransform = new TranslateTransform { X = dx, Y = 0 };
+    }
+
+    private void GroupRow_PointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(GroupChildrenCanvas).Position;
+        int index = _groupDragIndex;
+        var item = _groupDragItem;
+        bool moved = _groupDragMoved;
+
+        GroupChildrenCanvas.ReleasePointerCapture(e.Pointer);
+        EndGroupDrag();
+
+        if (index < 0)
+            return;
+
+        if (moved)
+        {
+            if (item is not null)
+                ReorderGroupChild(item, GroupChildIndexAt(point, requireHit: false));
+            return;
+        }
+
+        if (item is not null)
+            ShowItemInfo(item);
+    }
+
+    private void EndGroupDrag()
+    {
+        if (_groupDragBorder is not null)
+            _groupDragBorder.RenderTransform = null;
+        _groupDragBorder = null;
+        _groupDragItem = null;
+        _groupDragIndex = -1;
+        _groupDragMoved = false;
+    }
+
+    /// <summary>
+    /// Which child bubble in the row a canvas point is in, or -1. Mirrors
+    /// <see cref="PreviewSlotAt"/>: with <paramref name="requireHit"/> the point must actually land
+    /// on that bubble, so a drop past the last child (or before the first) still resolves to a
+    /// slot for <see cref="ReorderGroupChild"/> without picking one up on a plain press.
+    /// </summary>
+    private int GroupChildIndexAt(Point point, bool requireHit = true)
+    {
+        if (_groupSlotBorders.Count == 0) return -1;
+
+        double step = GroupChildBubble + GroupChildGap;
+        int index = Math.Clamp((int)Math.Floor(point.X / step), 0, _groupSlotBorders.Count - 1);
+        if (!requireHit)
+            return index;
+
+        double slotX = index * step + GroupChildBubble / 2;
+        bool withinX = Math.Abs(point.X - slotX) <= GroupChildBubble / 2 + 4;
+        bool withinY = point.Y >= -4 && point.Y <= GroupChildBubble + 4;
+        return withinX && withinY ? index : -1;
+    }
+
+    /// <summary>
+    /// Reorders <see cref="_expandedGroup"/>'s children after a drag in the row, the same
+    /// position-preserving move <see cref="ReorderItem"/> does for the main ring so hidden
+    /// siblings keep their place instead of being shuffled by an index from a filtered view.
+    /// </summary>
+    private void ReorderGroupChild(RingItem dragged, int targetIndex)
+    {
+        if (_expandedGroup is null || targetIndex < 0) return;
+
+        var list = _expandedGroup.Children;
+        var visible = list.Where(i => !i.Hidden).ToList();
+        int from = visible.IndexOf(dragged);
+        if (from < 0) return;
+
+        int to = Math.Min(targetIndex, visible.Count - 1);
+        if (to == from) return;
+
+        visible.RemoveAt(from);
+        visible.Insert(to, dragged);
+
+        var positions = new List<int>();
+        for (int i = 0; i < list.Count && positions.Count < visible.Count; i++)
+        {
+            if (!list[i].Hidden)
+                positions.Add(i);
+        }
+        for (int i = 0; i < positions.Count; i++)
+            list[positions[i]] = visible[i];
+
+        _manager.NotifyItemsChanged();
+        RenderGroupRow();
+        RenderPreview();
+        RebuildItemsList();
     }
 
     private void AddItem_Click(object sender, RoutedEventArgs e) =>
         _manager.OpenAddItem(added =>
         {
-            _editList.Add(added);
+            _manager.Config.Primary.Items.Add(added);
             _manager.NotifyItemsChanged();
             RenderPreview();
             RebuildItemsList();
-        }, _editList);
+        }, _manager.Config.Primary.Items);
 
     private void AddAppItem_Click(object sender, RoutedEventArgs e) =>
         _manager.OpenAddItem(added =>
@@ -531,8 +685,10 @@ public sealed partial class SettingsWindow : Window
 
     private void ResetDefaults_Click(object sender, RoutedEventArgs e)
     {
+        // Every item the selection/expansion state could be pointing at is about to be replaced.
+        HideInfo();
+        CollapseGroup();
         _manager.SeedDefaults(_manager.Config.Primary);
-        _editList = _manager.Config.Primary.Items;
         _manager.NotifyItemsChanged();
         RenderPreview();
         RebuildItemsList();
@@ -602,11 +758,14 @@ public sealed partial class SettingsWindow : Window
         if (file is null) return;
         var imported = RingStore.ImportFrom(file.Path);
         if (imported is null) return;
+        // The whole Rings collection is being replaced, so nothing the selection/expansion state
+        // could be pointing at survives.
+        HideInfo();
+        CollapseGroup();
         _manager.Config.CopyAppSettingsFrom(imported);
         _manager.Config.Rings.Clear();
         _manager.Config.Rings.AddRange(imported.Rings);
         _manager.Config.EnsurePrimary();
-        _editList = _manager.Config.Primary.Items;
         _manager.NotifyItemsChanged();
         _manager.ApplyTheme();
         ApplyTheme();
@@ -616,6 +775,10 @@ public sealed partial class SettingsWindow : Window
 
     private void ResetAll_Click(object sender, RoutedEventArgs e)
     {
+        // SeedDefaults below replaces every ring item, so drop anything the selection/expansion
+        // state was pointing at first.
+        HideInfo();
+        CollapseGroup();
         _manager.Config.Theme = AppTheme.Dark;
         _manager.Config.Hotkey = HotkeyGesture.Default.ToString();
         _manager.Config.HotkeyEnabled = true;
