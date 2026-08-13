@@ -74,8 +74,13 @@ public sealed class SecureValuesPage : EditorToolPage
     /// <summary>
     /// The blurb that used to sit above the list, now behind an info button in the footer — a
     /// small centered heading (see <c>header</c> above) reads as a page title rather than a
-    /// sentence explaining DPAPI, so the explanation moved to a bubble popup the way the privacy
-    /// indicator already shows its own caption on hover (see <c>EditorToolPage.BuildBubbleFlyout</c>).
+    /// sentence explaining DPAPI, so the explanation moved to a bubble popup styled like the
+    /// privacy indicator's own, but click-only rather than hover-only: a plain
+    /// <see cref="ToolTip"/> only works when the framework opens and closes it via a hover
+    /// trigger it owns (see <c>EditorToolPage.BuildBubbleToolTip</c>'s doc comment — a manually
+    /// toggled <c>IsOpen</c> on one crashes), so the on-click case uses
+    /// <c>EditorToolPage.BuildBubbleFlyout</c> instead, the same rounded speech-bubble styling
+    /// built on a control that's actually meant to be shown on demand.
     /// </summary>
     private FrameworkElement BuildInfoButton()
     {
@@ -89,11 +94,8 @@ public sealed class SecureValuesPage : EditorToolPage
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             BorderThickness = new Thickness(0),
         };
-        var label = Loc.Get("SecureValues.InfoLabel");
-        ToolTipService.SetToolTip(button, label);
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
-
         var flyout = BuildBubbleFlyout(Loc.Get("SecureValues.Blurb"));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, Loc.Get("SecureValues.InfoLabel"));
         button.Click += (_, _) => flyout.ShowAt(button);
         return button;
     }

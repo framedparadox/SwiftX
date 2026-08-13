@@ -620,8 +620,6 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.Hotkey = HotkeyGesture.Default.ToString();
         _manager.Config.HotkeyEnabled = true;
         _manager.Config.ShowDataTool = true;
-        _manager.Config.ShowJsonTool = true;
-        _manager.Config.ShowXmlTool = true;
         _manager.Config.ShowSecureValuesTool = true;
         _manager.Config.ShowBase64Tool = true;
         _manager.Config.ShowCertificateTool = true;
@@ -795,9 +793,8 @@ public sealed partial class SettingsWindow : Window
 
     // Built from the codepoint, not a literal character in source, so the glyph can't be
     // silently swapped for a different (or invisible) private-use character by a stray
-    // copy/paste — see the memory note on this exact failure mode.
-    private static readonly string DataGlyph = char.ConvertFromUtf32(0xE8A5);
-    private static readonly string JsonGlyph = char.ConvertFromUtf32(0xE943);
+    // copy/paste. See the memory note on this exact failure mode.
+    private static readonly string DataGlyph = char.ConvertFromUtf32(0xE943);
     private static readonly string SecureValuesGlyph = char.ConvertFromUtf32(0xE72E);
     private static readonly string CertificateGlyph = char.ConvertFromUtf32(0xEB95);
 
@@ -805,10 +802,6 @@ public sealed partial class SettingsWindow : Window
     [
         new("Data", ToolKind.Data, "Data formatter", "Auto-detect JSON, XML, or CSV and format it.", DataGlyph, false,
             c => c.ShowDataTool, (c, v) => c.ShowDataTool = v),
-        new("Json", ToolKind.Json, "JSON", "Show the JSON formatter as a ring item.", JsonGlyph, false,
-            c => c.ShowJsonTool, (c, v) => c.ShowJsonTool = v),
-        new("Xml", ToolKind.Xml, "XML", "Show the XML formatter as a ring item.", "</>", true,
-            c => c.ShowXmlTool, (c, v) => c.ShowXmlTool = v),
         new("SecureValues", ToolKind.SecureValues, "Secure values", "Local key/secret store with masked values.", SecureValuesGlyph, false,
             c => c.ShowSecureValuesTool, (c, v) => c.ShowSecureValuesTool = v),
         new("Base64", ToolKind.Base64, "Base64", "Encode and decode Base64 text.", "B64", true,
@@ -956,10 +949,10 @@ public sealed partial class SettingsWindow : Window
     {
         var grid = new CursorGrid
         {
-            Width = 12,
-            Height = 22,
-            ColumnSpacing = 3,
-            RowSpacing = 3,
+            Width = 8,
+            Height = 16,
+            ColumnSpacing = 2,
+            RowSpacing = 2,
             Opacity = 0.6,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -976,8 +969,8 @@ public sealed partial class SettingsWindow : Window
             {
                 var dot = new Ellipse
                 {
-                    Width = 3,
-                    Height = 3,
+                    Width = 2,
+                    Height = 2,
                     Fill = dotBrush,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,

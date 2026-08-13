@@ -201,6 +201,16 @@ public abstract class EditorToolPage : ToolPage
     /// privacy tooltip and Secure values' info flyout read as the same affordance.</summary>
     private static readonly CornerRadius BubbleCornerRadius = new(12);
 
+    /// <summary>Shared with <see cref="BuildBubbleFlyout"/> so its content wraps at the exact
+    /// same width as <see cref="BuildBubbleToolTip"/>'s — two different controls rendering one
+    /// visual affordance only reads as the same bubble if nothing about its size gives it away.</summary>
+    private const double BubbleMaxWidth = 260;
+
+    /// <summary>Shared with <see cref="BuildBubbleFlyout"/>'s presenter style for the same reason
+    /// as <see cref="BubbleMaxWidth"/> — identical padding, not just identical corner radius and
+    /// colours.</summary>
+    private static readonly Thickness BubblePadding = new(10, 8, 10, 8);
+
     /// <summary>The app's own card surface, not the OS's tooltip chrome — a hover bubble that
     /// used the system tooltip background could land on a colour that doesn't track SwiftX's own
     /// light/dark switch (Settings ▸ General), since that background is a Windows setting, not
@@ -208,20 +218,37 @@ public abstract class EditorToolPage : ToolPage
     private static Microsoft.UI.Xaml.Media.Brush? BubbleBackground => ThemeBrush("CardBackgroundFillColorDefaultBrush");
     private static Microsoft.UI.Xaml.Media.Brush? BubbleBorder => ThemeBrush("CardStrokeColorDefaultBrush");
 
-    /// <summary>A hover tip styled as a rounded speech bubble in the app's own theme colours,
-    /// rather than the OS's plain rectangular tooltip. Used for the privacy indicator.</summary>
+    /// <summary>
+    /// A hover-only tip styled as a rounded speech bubble in the app's own theme colours, rather
+    /// than the OS's plain rectangular tooltip <em>or</em> a manually driven one — a
+    /// <see cref="ToolTip"/> not attached via <see cref="ToolTipService.SetToolTip"/> has no
+    /// framework-managed connection for its <see cref="ToolTip.IsOpen"/> setter to work against;
+    /// setting <c>IsOpen</c> on one throws a native <see cref="NullReferenceException"/> straight
+    /// out of the WinRT ABI. So this is hover-triggered only, full stop — see
+    /// <see cref="BuildBubbleFlyout"/> for the click-triggered counterpart, which is a different
+    /// control precisely because programmatic open/close needs one, styled to be visually
+    /// indistinguishable from this one.
+    /// </summary>
     protected static ToolTip BuildBubbleToolTip(string text) => new()
     {
-        Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 260 },
+        Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = BubbleMaxWidth },
         Background = BubbleBackground,
         BorderBrush = BubbleBorder,
         BorderThickness = new Thickness(1),
         CornerRadius = BubbleCornerRadius,
-        Padding = new Thickness(10, 8, 10, 8),
+        Padding = BubblePadding,
     };
 
-    /// <summary>A click-to-open popup styled as the same speech bubble as <see cref="BuildBubbleToolTip"/>,
-    /// for content too long to rely on a hover tip alone — Secure values' info button.</summary>
+    /// <summary>
+    /// A click-to-open popup styled as the same speech bubble as <see cref="BuildBubbleToolTip"/>
+    /// — same corner radius, colours, padding and max width — for the bubbles that must never
+    /// appear on hover (Secure values' info button). A <see cref="Flyout"/> rather than a
+    /// manually toggled <see cref="ToolTip"/> because it is actually built for on-demand
+    /// open/close — light-dismiss (closing on the next click anywhere else) comes for free
+    /// instead of needing to be reimplemented by hand. <see cref="FlyoutPresenter.IsDefaultShadowEnabledProperty"/>
+    /// is off: a Flyout's default drop shadow is what would otherwise give it away as a different
+    /// kind of popup than the flat tooltip bubble.
+    /// </summary>
     protected static Flyout BuildBubbleFlyout(string text)
     {
         var presenterStyle = new Style(typeof(FlyoutPresenter));
@@ -229,11 +256,12 @@ public abstract class EditorToolPage : ToolPage
         presenterStyle.Setters.Add(new Setter(Control.BorderBrushProperty, BubbleBorder));
         presenterStyle.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(1)));
         presenterStyle.Setters.Add(new Setter(Control.CornerRadiusProperty, BubbleCornerRadius));
-        presenterStyle.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(14, 12, 14, 12)));
+        presenterStyle.Setters.Add(new Setter(Control.PaddingProperty, BubblePadding));
+        presenterStyle.Setters.Add(new Setter(FlyoutPresenter.IsDefaultShadowEnabledProperty, false));
 
         return new Flyout
         {
-            Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 280 },
+            Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = BubbleMaxWidth },
             FlyoutPresenterStyle = presenterStyle,
             Placement = FlyoutPlacementMode.Top,
         };
@@ -241,8 +269,12 @@ public abstract class EditorToolPage : ToolPage
 
     /// <summary>
     /// The "your data stays on this PC" indicator every local-only tool's footer ends with: a
-    /// green shield glyph alone — the caption is a bubble tooltip, shown only on hover, rather
-    /// than text sitting in the row all the time.
+    /// green shield glyph alone — the caption is the bubble tooltip, shown on hover only.
+    /// (Secure values' info button is the click-only counterpart — see
+    /// <c>SecureValuesPage.BuildInfoButton</c> — deliberately not the same trigger, since a
+    /// hover-only tip on a hand-cursor-less info glyph would never be discovered, and a
+    /// click-only privacy indicator sitting in every tool's footer would take a click just to
+    /// read a line that's the same on every page.)
     /// </summary>
     private static FrameworkElement BuildPrivacyIndicator()
     {

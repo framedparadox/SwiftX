@@ -43,9 +43,14 @@ public sealed class RingManager
         if (firstRun && Config.Primary.Items.Count == 0)
             SeedDefaults(Config.Primary);
         else
-            // Settings and Close are synthesized onto the ring now, not stored — drop the copies
+        {
+            // Settings and Close are synthesized onto the ring now, not stored. Drop the copies
             // a config written by an older build still carries. See SystemRingItems.
             repaired = SystemRingItems.Strip(Config.Primary.Items);
+            // JSON and XML were merged into the single Data Formatter tool. Rewrite any ring item
+            // still pointing at either retired target so it keeps working in the same slot.
+            repaired |= ToolCatalog.MigrateLegacyTargets(Config.Primary.Items);
+        }
 
         ApplyTheme();
         SetUpTrayAndHotkey();
@@ -105,30 +110,27 @@ public sealed class RingManager
             CustomGlyph = "\uE90F",
             Children =
             {
-                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Data", Target = "Data", CustomGlyph = "\uE8A5" },
-                new RingItem { Kind = RingItemKind.Tool, DisplayName = "JSON", Target = "Json", CustomGlyph = "\uE943" },
-                new RingItem { Kind = RingItemKind.Tool, DisplayName = "XML", Target = "Xml", CustomGlyph = "</>" },
+                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Data", Target = "Data", CustomGlyph = "\uE943" },
                 new RingItem { Kind = RingItemKind.Tool, DisplayName = "Secure values", Target = "SecureValues", CustomGlyph = "\uE72E" },
                 new RingItem { Kind = RingItemKind.Tool, DisplayName = "Base64", Target = "Base64", CustomGlyph = "B64" },
                 new RingItem { Kind = RingItemKind.Tool, DisplayName = "Certificate", Target = "Certificate", CustomGlyph = "\uEB95" },
             },
         });
-        // Two top-level tools fill the remaining user slots; JSON/XML stay inside Dev tools.
+        // Data and Secure values are already one tap away inside "Dev tools" above \u2014 a top-level
+        // duplicate of each just doubled up on the same tool, so the two remaining user slots go
+        // to a couple of stock Windows apps instead (the ring's other defaults \u2014 Notepad, GitHub,
+        // Downloads \u2014 are the same idea: something useful out of the box, not an empty ring).
         profile.Items.Add(new RingItem
         {
-            Kind = RingItemKind.Tool,
-            DisplayName = "Data",
-            Target = "Data",
-            CustomGlyph = "\uE8A5",
-            Hidden = !Config.ShowDataTool,
+            Kind = RingItemKind.Application,
+            DisplayName = "Calculator",
+            Target = Path.Combine(Environment.SystemDirectory, "calc.exe"),
         });
         profile.Items.Add(new RingItem
         {
-            Kind = RingItemKind.Tool,
-            DisplayName = "Secure values",
-            Target = "SecureValues",
-            CustomGlyph = "\uE72E",
-            Hidden = !Config.ShowSecureValuesTool,
+            Kind = RingItemKind.Application,
+            DisplayName = "File Explorer",
+            Target = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
         });
     }
 

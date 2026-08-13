@@ -25,4 +25,23 @@ namespace SwiftX.Services;
 /// no brush is the result we were after.
 /// </para>
 /// </summary>
-public sealed class TransparentBackdrop : SystemBackdrop;
+public sealed class TransparentBackdrop : SystemBackdrop
+{
+    /// <summary>
+    /// A genuine no-op — not simply "not overridden". <see cref="SystemBackdrop"/>'s own,
+    /// unoverridden default implementation of this hook round-trips back through the WinRT ABI
+    /// (visible in its call stack as a second, re-entrant <c>ISystemBackdropOverrides</c> call),
+    /// and on this app's hidden owner <c>RingWindow</c> — created once at startup and kept alive
+    /// with no content ever shown, purely so WinUI doesn't exit with no windows open (see
+    /// <c>RingManager.Start</c>) — that round-trip throws <see cref="ArgumentException"/> ("The
+    /// parameter is incorrect") the moment anything fires it, which a theme change does:
+    /// <c>RingManager.ApplyTheme</c> sets <c>RequestedTheme</c> on every open window, this
+    /// perpetually-hidden one included. This backdrop has no configuration to react to in the
+    /// first place — see the class doc above — so the fix is to never let that buggy base call
+    /// happen at all, rather than let the framework reach it.
+    /// </summary>
+    protected override void OnDefaultSystemBackdropConfigurationChanged(
+        Microsoft.UI.Composition.ICompositionSupportsSystemBackdrop target, XamlRoot xamlRoot)
+    {
+    }
+}

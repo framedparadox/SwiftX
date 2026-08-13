@@ -42,6 +42,17 @@ public abstract class ToolPage : UserControl
     /// <summary>Loads clipboard text into the page in response to the "Paste clipboard" chip.</summary>
     public virtual void PasteClipboardText(string text) { }
 
+    /// <summary>Whether this page can save its own content directly — adds a Save option beside
+    /// Discard/Cancel on the close-without-saving prompt (<c>ToolWindowBase.OnClosing</c>). False
+    /// for pages with nothing file-shaped to save (Certificate is read-only; Secure values
+    /// persists every row as it's edited, not as a document).</summary>
+    public virtual bool CanSave => false;
+
+    /// <summary>Saves the page's content. Only called when <see cref="CanSave"/> is true. Returns
+    /// false if the save didn't happen — a picker the user cancelled, or a write that failed —
+    /// so the close prompt knows to leave the window open rather than discard unsaved work.</summary>
+    public virtual Task<bool> SaveAsync() => Task.FromResult(false);
+
     private readonly CancellationTokenSource _pageClosing = new();
 
     /// <summary>Cancelled when the host window closes — every background parse ties to this.</summary>

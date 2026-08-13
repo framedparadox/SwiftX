@@ -211,10 +211,20 @@ public sealed class CertificatePage : EditorToolPage
         _content.Children.Add(stack);
     }
 
+    private enum ValidityState { Valid, Expired, NotYetValid }
+
+    private static ValidityState GetValidityState(X509Certificate2 cert)
+    {
+        var now = DateTime.Now;
+        if (now < cert.NotBefore) return ValidityState.NotYetValid;
+        if (now > cert.NotAfter) return ValidityState.Expired;
+        return ValidityState.Valid;
+    }
+
     private FrameworkElement BuildCard(CertificateReader.CertEntry entry)
     {
         var cert = entry.Certificate;
-        bool valid = IsCurrentlyValid(cert);
+        var state = GetValidityState(cert);
         var stack = new StackPanel { Spacing = 10 };
 
         var titleRow = new Grid { ColumnSpacing = 8 };
@@ -232,35 +242,18 @@ public sealed class CertificatePage : EditorToolPage
         Grid.SetColumn(titleBlock, 0);
         titleRow.Children.Add(titleBlock);
 
-        // The type pill sits left of where the valid badge lands (present or not), so its
-        // position doesn't jump depending on validity.
+        // The type pill sits left of the valid/invalid badge, which is always present now (a
+        // green check or a red X), so its position never jumps between certificates.
         var typePill = BuildTypePill(entry.Source);
         Grid.SetColumn(typePill, 1);
         titleRow.Children.Add(typePill);
 
-        if (valid)
-        {
-            var validBadge = BuildValidBadge();
-            Grid.SetColumn(validBadge, 2);
-            titleRow.Children.Add(validBadge);
-        }
+        var badge = BuildValidityBadge(state, cert);
+        Grid.SetColumn(badge, 2);
+        titleRow.Children.Add(badge);
 
         stack.Children.Add(titleRow);
-
-        // An expired or not-yet-valid certificate gets a warning line up here, where it's seen
-        // immediately; a currently valid one relies on the badge above plus the "Expires in" row
-        // at the end of the form below instead of repeating itself.
-        if (!valid)
-        {
-            stack.Children.Add(new TextBlock
-            {
-                Text = ValidityStatus(cert),
-                Opacity = 0.85,
-                Foreground = ThemeBrush("SystemFillColorCriticalBrush"),
-            });
-        }
-
-        stack.Children.Add(BuildForm(cert, valid));
+        stack.Children.Add(BuildForm(cert, state));
 
         return new Border
         {
@@ -274,25 +267,38 @@ public sealed class CertificatePage : EditorToolPage
     }
 
     /// <summary>
-    /// The label/value pairs (including the CN convenience rows and, when the certificate is
-    /// currently valid, the "expires in" row) laid out as a form: labels on the left, values on
-    /// the right, on a background a step apart from the card that hosts it so it reads as its own
-    /// section rather than a continuation of the title row above.
+    /// The label/value pairs (including the CN convenience rows and a trailing countdown row —
+    /// "Expires in", "Expired", or "Starts in" depending on <paramref name="state"/>) laid out as
+    /// a form: labels on the left, values on the right, on a background a step apart from the
+    /// card that hosts it so it reads as its own section rather than a continuation of the title
+    /// row above. The boundary date that's actually the problem (Valid To when expired, Valid
+    /// From when not yet valid) renders in red — the badge says "something's wrong", this says
+    /// which field.
     /// </summary>
-    private FrameworkElement BuildForm(X509Certificate2 cert, bool valid)
+    private FrameworkElement BuildForm(X509Certificate2 cert, ValidityState state)
     {
         string commonNameLabel = Loc.Get("Certificate.Field.CommonName");
+        string highlightLabel = state switch
+        {
+            ValidityState.Expired => Loc.Get("Certificate.Field.NotAfter"),
+            ValidityState.NotYetValid => Loc.Get("Certificate.Field.NotBefore"),
+            _ => "",
+        };
+
         var rows = DescribeFields(cert)
             .Select(f => f.Label == commonNameLabel
                 ? DetailRowWithCopy(f.Label, f.Value)
-                : DetailRow(f.Label, f.Value))
+                : DetailRow(f.Label, f.Value, highlightRed: f.Label == highlightLabel))
             .ToList();
 
-        if (valid)
+        var now = DateTime.Now;
+        var (countdownLabel, countdownValue) = state switch
         {
-            int days = (int)(cert.NotAfter - DateTime.Now).TotalDays;
-            rows.Add(DetailRow(Loc.Get("Certificate.Field.ExpiresIn"), Loc.Format("Certificate.ExpiresInValue", days)));
-        }
+            ValidityState.Valid => (Loc.Get("Certificate.Field.ExpiresIn"), Loc.Format("Certificate.ExpiresInValue", (int)(cert.NotAfter - now).TotalDays)),
+            ValidityState.Expired => (Loc.Get("Certificate.Field.Expired"), Loc.Format("Certificate.ExpiredValue", (int)(now - cert.NotAfter).TotalDays)),
+            _ => (Loc.Get("Certificate.Field.StartsIn"), Loc.Format("Certificate.ExpiresInValue", (int)(cert.NotBefore - now).TotalDays)),
+        };
+        rows.Add(DetailRow(countdownLabel, countdownValue));
 
         var form = new StackPanel();
         for (int i = 0; i < rows.Count; i++)
@@ -334,19 +340,24 @@ public sealed class CertificatePage : EditorToolPage
     };
 
     // Built from the codepoint, not a literal character in source — see the memory note on PUA
-    // glyph corruption from a stray copy/paste.
+    // glyph corruption from a stray copy/paste. The X is the same glyph SystemRingItems already
+    // uses for the ring's "Close" item, so it's a codepoint this app already ships and renders.
     private static readonly string ValidCheckGlyph = char.ConvertFromUtf32(0xE8FB);
+    private static readonly string InvalidGlyph = char.ConvertFromUtf32(0xE711);
 
-    private static FrameworkElement BuildValidBadge()
+    private static FrameworkElement BuildValidityBadge(ValidityState state, X509Certificate2 cert)
     {
+        bool valid = state == ValidityState.Valid;
         var icon = new FontIcon
         {
-            Glyph = ValidCheckGlyph,
+            Glyph = valid ? ValidCheckGlyph : InvalidGlyph,
             FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
             FontSize = 12,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = ThemeBrush("SystemFillColorSuccessBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Green),
+            Foreground = valid
+                ? ThemeBrush("SystemFillColorSuccessBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Green)
+                : ThemeBrush("SystemFillColorCriticalBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Red),
         };
         var badge = new Border
         {
@@ -354,17 +365,22 @@ public sealed class CertificatePage : EditorToolPage
             Width = 24,
             Height = 24,
             CornerRadius = new CornerRadius(12),
-            Background = ThemeBrush("SystemFillColorSuccessBackgroundBrush"),
+            Background = valid
+                ? ThemeBrush("SystemFillColorSuccessBackgroundBrush")
+                : ThemeBrush("SystemFillColorCriticalBackgroundBrush"),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        var label = Loc.Get("Certificate.ValidBadge");
+        // The green badge's caption is a fixed "currently valid"; the red one reuses
+        // ValidityStatus's own message so the tooltip says exactly why (expired N days ago, or
+        // not yet valid until a given date) instead of a generic "invalid".
+        var label = valid ? Loc.Get("Certificate.ValidBadge") : ValidityStatus(cert);
         ToolTipService.SetToolTip(badge, label);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(badge, label);
         return badge;
     }
 
-    private static FrameworkElement DetailRow(string label, string value)
+    private static FrameworkElement DetailRow(string label, string value, bool highlightRed = false)
     {
         var grid = new Grid { ColumnSpacing = 12 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
@@ -379,6 +395,8 @@ public sealed class CertificatePage : EditorToolPage
             FontFamily = new FontFamily("Cascadia Mono, Consolas"),
             FontSize = 12,
         };
+        if (highlightRed)
+            valueBlock.Foreground = ThemeBrush("SystemFillColorCriticalBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Red);
 
         Grid.SetColumn(labelBlock, 0);
         Grid.SetColumn(valueBlock, 1);
@@ -438,12 +456,6 @@ public sealed class CertificatePage : EditorToolPage
         grid.Children.Add(valueBlock);
         grid.Children.Add(copyButton);
         return grid;
-    }
-
-    private static bool IsCurrentlyValid(X509Certificate2 cert)
-    {
-        var now = DateTime.Now;
-        return now >= cert.NotBefore && now <= cert.NotAfter;
     }
 
     // The commonName (2.5.4.3) attribute, read from the structured RDN sequence rather than

@@ -31,7 +31,7 @@ public sealed class RingItem : INotifyPropertyChanged
         set { _displayName = value; OnPropertyChanged(); }
     }
 
-    /// <summary>Path, URL, or tool kind name (Data / Json / Xml / SecureValues).</summary>
+    /// <summary>Path, URL, or tool kind name (Data / SecureValues / Base64 / Certificate).</summary>
     public string Target { get; set; } = "";
 
     public string? Arguments { get; set; }

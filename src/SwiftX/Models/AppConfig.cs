@@ -24,8 +24,6 @@ public sealed class AppConfig
     public RingItemSize ItemSize { get; set; } = RingItemSize.Medium;
 
     public double? RingRadius { get; set; }
-    public bool ShowJsonTool { get; set; } = true;
-    public bool ShowXmlTool { get; set; } = true;
     public bool ShowDataTool { get; set; } = true;
     public bool ShowSecureValuesTool { get; set; } = true;
     public bool ShowBase64Tool { get; set; } = true;
@@ -52,8 +50,6 @@ public sealed class AppConfig
         HotkeyEnabled = other.HotkeyEnabled;
         ItemSize = other.ItemSize;
         RingRadius = other.RingRadius;
-        ShowJsonTool = other.ShowJsonTool;
-        ShowXmlTool = other.ShowXmlTool;
         ShowDataTool = other.ShowDataTool;
         ShowSecureValuesTool = other.ShowSecureValuesTool;
         ShowBase64Tool = other.ShowBase64Tool;
