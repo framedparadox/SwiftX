@@ -11,12 +11,11 @@ using Microsoft.UI.Xaml.Media;
 using SwiftX.Interop;
 using SwiftX.Models;
 using SwiftX.Services;
-using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Windows.Graphics;
 using Windows.Storage;
 using Windows.System;
-using Ellipse = Microsoft.UI.Xaml.Shapes.Ellipse;
+using Path = Microsoft.UI.Xaml.Shapes.Path;
 
 namespace SwiftX;
 
@@ -44,9 +43,6 @@ public sealed partial class RingWindow : Window
     /// <summary>Resting scale of the group bubble whose flyout is open, so it reads as active.</summary>
     private const float ExpandedParentScale = 1.08f;
 
-    /// <summary>Period of the "waiting for a drop" pulse on the Drag &amp; drop quick action.</summary>
-    private const int DragDropPulseMs = 900;
-
     private readonly RingManager _manager;
     private readonly nint _hwnd;
     private readonly AppWindow _appWindow;
@@ -73,23 +69,6 @@ public sealed partial class RingWindow : Window
     private int _renderGeneration;
     private BubbleView? _hovered;
     private int _hoverGeneration;
-
-    // Drag & drop quick action state. Armed by a click on that flyout child (see OnSelectAsync's
-    // IsDragDropItem branch) so the user can go find something external to drag in without a
-    // window-activation change dismissing the ring first — see RingWindow_Activated. The bubble
-    // reference is what StopDragDropPulse needs to halt its own composition animation; it does not
-    // survive a re-render, so every place that rebuilds or tears down the ring resets both fields.
-    private bool _dragDropArmed;
-    private BubbleView? _dragDropBubble;
-
-    /// <summary>
-    /// Miniature stand-in for the ring's own Close bubble, shown pinned to the top-right edge of
-    /// the Drag &amp; drop bubble only while armed — a second, faster way to cancel than hunting
-    /// for the Close item or reaching for Escape. Lives directly on <see cref="RingCanvas"/> (not
-    /// inside the drag & drop bubble's own Border) so it can sit astride that bubble's edge instead
-    /// of being clipped to its parent's corner radius.
-    /// </summary>
-    private Border? _dragDropCloseBadge;
 
     public bool IsOpen => _isOpen;
 
@@ -214,17 +193,12 @@ public sealed partial class RingWindow : Window
     /// window closes, the matching <c>RingManager</c> flag goes false again and the very next
     /// deactivation resumes the normal click-anywhere-to-dismiss behavior.
     /// </para>
-    /// <para>
-    /// Also suppressed while drag &amp; drop mode is armed (<see cref="_dragDropArmed"/>) — the
-    /// whole point of arming it is to survive the activation change that clicking an external drag
-    /// source (an icon on the desktop, a link in a browser) causes.
-    /// </para>
     /// </summary>
     private void RingWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
         if (args.WindowActivationState != WindowActivationState.Deactivated)
             return;
-        if (_manager.IsSettingsOpen || _manager.IsAddItemOpen || _dragDropArmed)
+        if (_manager.IsSettingsOpen || _manager.IsAddItemOpen)
             return;
         Dismiss();
     }
@@ -263,11 +237,6 @@ public sealed partial class RingWindow : Window
         _pill = null;
         _pillText = null;
         _hovered = null;
-        // Not a DisarmDragDrop() call: the bubble (and its composition Visual) is being discarded
-        // right here along with everything else, so there is nothing left to stop an animation on.
-        _dragDropArmed = false;
-        _dragDropBubble = null;
-        _dragDropCloseBadge = null;
     }
 
     /// <summary>
@@ -306,12 +275,6 @@ public sealed partial class RingWindow : Window
         _flyout.Clear();
         _flyoutParent = null;
         _hovered = null;
-        // A successful drop reaches here too (NotifyItemsChanged -> ReloadItems -> RenderCurrent),
-        // which is exactly the moment drag & drop mode should end — one reset covers both "the
-        // whole ring reloaded" and "the item that was just dropped needs the armed pulse to stop."
-        _dragDropArmed = false;
-        _dragDropBubble = null;
-        _dragDropCloseBadge = null;
 
         AttachHub();
 
@@ -492,8 +455,6 @@ public sealed partial class RingWindow : Window
             Visibility = item.ImageVisibility,
         };
 
-        bool isDragDropItem = IsDragDropItem(item);
-
         var glyph = new FontIcon
         {
             Glyph = item.Glyph,
@@ -519,28 +480,15 @@ public sealed partial class RingWindow : Window
         content.Children.Add(icon);
         content.Children.Add(glyph);
 
-        // A group wears a small nub on its outward edge — before you hover it, that dot is the
-        // only thing distinguishing an item that opens a ring of its own from one that launches.
-        // It rides inside the circle rather than protruding, so the Border's corner-radius clip
-        // can never crop it, and it scales with the item because it lives in the same content.
-        Ellipse? bump = null;
+        // A group wears a short arc traced on its own outward edge — before you hover it, that
+        // arc is the only thing distinguishing an item that opens a ring of its own from one that
+        // launches. It rides on the circle's own boundary, centered on the direction the item
+        // already sits from the hub, so it never needs its own transform and scales with the item
+        // because it lives in the same content.
+        Path? bump = null;
         if (item.IsGroup && !isFlyout)
         {
-            double dot = RingMetrics.Bump;
-            bump = new Ellipse
-            {
-                Width = dot,
-                Height = dot,
-                Fill = ThemeBrush("SwiftXForegroundBrush"),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                IsHitTestVisible = false,
-                RenderTransform = new TranslateTransform
-                {
-                    X = Math.Cos(angle) * (diameter / 2 - dot),
-                    Y = Math.Sin(angle) * (diameter / 2 - dot),
-                },
-            };
+            bump = BuildGroupArc(diameter, angle, ThemeBrush("SwiftXForegroundBrush"));
             content.Children.Add(bump);
         }
 
@@ -589,52 +537,56 @@ public sealed partial class RingWindow : Window
             await OnSelectAsync(bubble);
         };
 
-        if (isDragDropItem)
-            WireDropTarget(border);
-
         return bubble;
     }
 
     /// <summary>
-    /// Makes the Drag &amp; drop quick action's bubble an OS drop target — ordinary WinUI
-    /// <c>AllowDrop</c>/drag events, the same mechanism a ListView's own reorder/file-drop support
-    /// is built on, and (like any other pointer input this ring receives) it works here because the
-    /// bubble sits inside the window's own elliptical hit-region clip
-    /// (<see cref="WindowChrome.SetEllipticHitRegions"/>), not despite it. Actually accepting the
-    /// drop still requires drag &amp; drop mode to have been armed first by a click (see
-    /// <see cref="ToggleDragDropArmed"/>) — hovering the bubble with something already mid-drag
-    /// does not arm it on its own, since that would arm on a graze the user never meant as a click.
+    /// A 30° stroke traced along the bubble's own circular edge, centered on <paramref
+    /// name="angleRad"/> — the same outward direction the bubble already rests on, so the arc
+    /// reads as part of that edge instead of a separate ornament. Drawn as an unfilled
+    /// <see cref="ArcSegment"/> rather than the old filled dot so it hugs the boundary at any
+    /// bubble size instead of floating as a disconnected speck once items get small.
     /// </summary>
-    private void WireDropTarget(Border border)
+    private static Path BuildGroupArc(double diameter, double angleRad, Brush stroke)
     {
-        border.AllowDrop = true;
-        border.DragOver += (_, e) =>
+        const double SweepDegrees = 30;
+        double sweep = SweepDegrees * Math.PI / 180.0;
+        double thickness = Math.Max(2, diameter * 0.08);
+        double radius = diameter / 2 - thickness / 2;
+        double center = diameter / 2;
+        double startAngle = angleRad - sweep / 2;
+        double endAngle = angleRad + sweep / 2;
+
+        var figure = new PathFigure
         {
-            e.AcceptedOperation = _dragDropArmed ? DataPackageOperation.Copy : DataPackageOperation.None;
-            if (_dragDropArmed)
-                e.DragUIOverride.Caption = "Add to ring";
+            StartPoint = new Point(
+                center + radius * Math.Cos(startAngle),
+                center + radius * Math.Sin(startAngle)),
+            IsClosed = false,
         };
-        border.Drop += async (_, e) =>
+        figure.Segments.Add(new ArcSegment
         {
-            if (!_dragDropArmed)
-                return;
-            var deferral = e.GetDeferral();
-            try
-            {
-                await AddRingItemFromDropAsync(e.DataView);
-            }
-            finally
-            {
-                // AddRingItemFromDropAsync (on success) goes through NotifyItemsChanged ->
-                // ReloadItems -> RenderCurrent, which already resets _dragDropArmed/_dragDropBubble
-                // and rebuilds this exact bubble from scratch — but a drop that yielded nothing
-                // usable (an unrecognized format) never reaches that path, so disarm explicitly
-                // here too rather than leaving the pulse running for a drop that silently did
-                // nothing.
-                if (_dragDropArmed)
-                    DisarmDragDrop();
-                deferral.Complete();
-            }
+            Point = new Point(
+                center + radius * Math.Cos(endAngle),
+                center + radius * Math.Sin(endAngle)),
+            Size = new Size(radius, radius),
+            SweepDirection = SweepDirection.Clockwise,
+            IsLargeArc = false,
+        });
+
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+
+        return new Path
+        {
+            Width = diameter,
+            Height = diameter,
+            Data = geometry,
+            Stroke = stroke,
+            StrokeThickness = thickness,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            IsHitTestVisible = false,
         };
     }
 
@@ -1167,13 +1119,6 @@ public sealed partial class RingWindow : Window
         if (_flyoutParent is null && _flyout.Count == 0)
             return;
 
-        // The armed drag & drop bubble is one of the children about to be swept away — most often
-        // via Escape, but also a hover-away or a click on Settings to close it again. Whatever the
-        // cause, the bubble the pulse and close badge are pinned to is going away, so cancel drop
-        // mode along with it rather than leaving an orphaned animation running.
-        if (_dragDropArmed)
-            DisarmDragDrop();
-
         var parent = _flyoutParent;
         var children = _flyout.ToList();
         _flyoutParent = null;
@@ -1307,7 +1252,7 @@ public sealed partial class RingWindow : Window
         bubble.Host.Background = background;
         bubble.Glyph.Foreground = foreground;
         if (bubble.Bump is not null)
-            bubble.Bump.Fill = foreground;
+            bubble.Bump.Stroke = foreground;
     }
 
     private static bool IsCloseItem(RingItem item) =>
@@ -1347,21 +1292,8 @@ public sealed partial class RingWindow : Window
             return;
         }
 
-        if (IsDragDropItem(item))
-        {
-            // Arms/disarms drop-target mode instead of "activating" anything — see
-            // ToggleDragDropArmed and the matching check in RingWindow_Activated.
-            ToggleDragDropArmed(bubble);
-            return;
-        }
-
-        // Selecting anything else ends drag & drop mode if it was armed — the user's attention has
-        // moved on to something unrelated, so the pulse shouldn't keep running.
-        if (_dragDropArmed)
-            DisarmDragDrop();
-
-        // Settings is a group now too (it owns the Drag & drop / Add new quick actions below), but
-        // unlike a user-created group it still has a job of its own to do on click — open Settings
+        // Settings is a group now too (it owns the Add new quick action below), but unlike a
+        // user-created group it still has a job of its own to do on click — open Settings
         // — so it deliberately skips the generic group-click branch, which only ever toggles a
         // flyout and never activates anything. Hovering it still opens that flyout regardless (see
         // ScheduleFlyoutForHover, which checks Item.IsGroup independently of this method).
@@ -1418,194 +1350,6 @@ public sealed partial class RingWindow : Window
 
     private static bool IsSettingsItem(RingItem item) =>
         string.Equals(item.Target, SystemRingItems.SettingsTarget, StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsDragDropItem(RingItem item) =>
-        string.Equals(item.Target, SystemRingItems.DragDropTarget, StringComparison.OrdinalIgnoreCase);
-
-    // ---- Drag & drop quick action ----------------------------------------------------------
-
-    private void ToggleDragDropArmed(BubbleView bubble)
-    {
-        if (_dragDropArmed && ReferenceEquals(_dragDropBubble, bubble))
-        {
-            DisarmDragDrop();
-            return;
-        }
-        // Defensive: only one bubble should ever be armed at a time, but if some other path left
-        // a stale one set, stop its animation before starting a new one rather than leaking it.
-        if (_dragDropArmed)
-            DisarmDragDrop();
-
-        _dragDropArmed = true;
-        _dragDropBubble = bubble;
-        StartDragDropPulse(bubble);
-        ShowDragDropCloseBadge(bubble);
-    }
-
-    private void DisarmDragDrop()
-    {
-        if (_dragDropBubble is not null)
-            StopDragDropPulse(_dragDropBubble);
-        _dragDropArmed = false;
-        _dragDropBubble = null;
-        HideDragDropCloseBadge();
-    }
-
-    /// <summary>
-    /// Pins the mini close badge to the top-right edge of <paramref name="bubble"/>. Built once and
-    /// reused for the lifetime of the ring's current render — <see cref="ClearRing"/> and
-    /// <see cref="RenderCurrent"/> both null the field out so a stale badge is never reused across a
-    /// rebuild of the canvas it used to live on.
-    /// </summary>
-    private void ShowDragDropCloseBadge(BubbleView bubble)
-    {
-        _dragDropCloseBadge ??= BuildDragDropCloseBadge();
-        if (!RingCanvas.Children.Contains(_dragDropCloseBadge))
-            RingCanvas.Children.Add(_dragDropCloseBadge);
-
-        double size = _dragDropCloseBadge.Width;
-        Canvas.SetLeft(_dragDropCloseBadge, _cx + bubble.RestX + bubble.Diameter / 2 - size / 2);
-        Canvas.SetTop(_dragDropCloseBadge, _cy + bubble.RestY - bubble.Diameter / 2 - size / 2);
-        Canvas.SetZIndex(_dragDropCloseBadge, 90);
-        _dragDropCloseBadge.Visibility = Visibility.Visible;
-    }
-
-    private void HideDragDropCloseBadge()
-    {
-        if (_dragDropCloseBadge is not null)
-            _dragDropCloseBadge.Visibility = Visibility.Collapsed;
-    }
-
-    /// <summary>
-    /// A smaller copy of the ring's own Close bubble — same circle-plus-X shape and the same
-    /// red-on-hover treatment as <see cref="ApplyBubbleFill"/> gives the real Close item — sized
-    /// down and used purely as a cancel affordance for armed drag &amp; drop mode. Clicking it (or
-    /// pressing Escape, or picking the ring's actual Close item) all route to the same
-    /// <see cref="DisarmDragDrop"/>.
-    /// </summary>
-    private Border BuildDragDropCloseBadge()
-    {
-        double size = Math.Max(16, RingMetrics.FlyoutBubble * 0.5);
-        var glyph = new FontIcon
-        {
-            Glyph = "\uE711",
-            FontSize = size * 0.5,
-            Foreground = ThemeBrush("SwiftXForegroundBrush"),
-        };
-        var badge = new Border
-        {
-            Width = size,
-            Height = size,
-            CornerRadius = new CornerRadius(size / 2),
-            Background = ThemeBrush("RingBubbleBackground"),
-            Child = glyph,
-            Visibility = Visibility.Collapsed,
-        };
-        badge.PointerEntered += (_, _) =>
-        {
-            badge.Background = ThemeBrush("RingCloseHoverBackground");
-            glyph.Foreground = ThemeBrush("RingCloseHoverForeground");
-        };
-        badge.PointerExited += (_, _) =>
-        {
-            badge.Background = ThemeBrush("RingBubbleBackground");
-            glyph.Foreground = ThemeBrush("SwiftXForegroundBrush");
-        };
-        badge.Tapped += (_, e) =>
-        {
-            // Handled here so the tap never falls through to the drag & drop bubble underneath —
-            // this badge and that bubble overlap at the corner, and a fall-through would re-arm
-            // the very thing this button just cancelled.
-            e.Handled = true;
-            DisarmDragDrop();
-        };
-        return badge;
-    }
-
-    private static void StartDragDropPulse(BubbleView bubble)
-    {
-        try
-        {
-            var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
-            visual.CenterPoint = new Vector3((float)(bubble.Diameter / 2), (float)(bubble.Diameter / 2), 0);
-
-            var pulse = visual.Compositor.CreateVector3KeyFrameAnimation();
-            pulse.InsertKeyFrame(0f, Vector3.One);
-            pulse.InsertKeyFrame(0.5f, new Vector3(1.18f, 1.18f, 1));
-            pulse.InsertKeyFrame(1f, Vector3.One);
-            pulse.Duration = TimeSpan.FromMilliseconds(DragDropPulseMs);
-            pulse.IterationBehavior = AnimationIterationBehavior.Forever;
-            visual.StartAnimation("Scale", pulse);
-        }
-        catch
-        {
-            // Composition may be unavailable in some hosts — same tolerance as every other
-            // animation in this file.
-        }
-    }
-
-    private static void StopDragDropPulse(BubbleView bubble)
-    {
-        try
-        {
-            ElementCompositionPreview.GetElementVisual(bubble.Host).StopAnimation("Scale");
-        }
-        catch
-        {
-        }
-        // Composition animations leave their last-driven value in place once stopped rather than
-        // reverting to the pre-animation value — this is what puts the bubble back at rest scale
-        // instead of leaving it wherever the pulse happened to be when it was cut off.
-        ResetBubbleVisual(bubble, rested: true);
-    }
-
-    /// <summary>
-    /// Extracts a droppable target (a file/folder/shortcut/app path, or a URL) from an external
-    /// drag's payload and adds it to the ring the same way "Add new" would. Tries storage items
-    /// first (Explorer, the Start menu, a desktop icon), then a web link (a browser's own address
-    /// bar or an anchor drag), then falls back to plain text in case some source only offers that —
-    /// <see cref="RingItemFactory.Classify"/> re-derives the actual kind from the string either way,
-    /// so nothing here has to guess whether what came off the source was a shortcut, a folder, or
-    /// a URL.
-    /// </summary>
-    private async Task<bool> AddRingItemFromDropAsync(DataPackageView data)
-    {
-        string? target = null;
-
-        if (data.Contains(StandardDataFormats.StorageItems))
-        {
-            var items = await data.GetStorageItemsAsync();
-            target = items.FirstOrDefault()?.Path;
-        }
-
-        if (string.IsNullOrEmpty(target) && data.Contains(StandardDataFormats.WebLink))
-        {
-            var uri = await data.GetWebLinkAsync();
-            target = uri?.ToString();
-        }
-
-        if (string.IsNullOrEmpty(target) && data.Contains(StandardDataFormats.Text))
-        {
-            var text = (await data.GetTextAsync())?.Trim();
-            if (!string.IsNullOrEmpty(text) &&
-                Uri.TryCreate(text, UriKind.Absolute, out var uri) &&
-                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-                target = text;
-        }
-
-        if (string.IsNullOrEmpty(target))
-            return false;
-
-        var item = new RingItem
-        {
-            Kind = RingItemFactory.Classify(target),
-            Target = target,
-            DisplayName = RingItemFactory.SuggestName(target),
-        };
-        _manager.Config.Primary.Items.Add(item);
-        _manager.NotifyItemsChanged();
-        return true;
-    }
 
     // ---- Input ---------------------------------------------------------------------------
 
@@ -1761,7 +1505,7 @@ public sealed partial class RingWindow : Window
         public required FontIcon Glyph { get; init; }
 
         /// <summary>The has-children marker, present only on inner-ring groups.</summary>
-        public Ellipse? Bump { get; init; }
+        public Path? Bump { get; init; }
 
         /// <summary>Scale to return to when hover ends — not 1 for an expanded group bubble.</summary>
         public float RestScale { get; set; } = 1f;

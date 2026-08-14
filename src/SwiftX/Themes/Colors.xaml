@@ -65,7 +65,12 @@
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
-            <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#F5F5F5"/>
+            <!-- 100% white: Light Settings has exactly two things that are allowed to read as
+                 grey — the canvas (SwiftXCanvasBrush/SwiftXRingCanvasBrush below) and a
+                 highlighted/selected nav item (SwiftXNavSelected* below). Every other surface,
+                 including this card background, is pure white so those two stay visually
+                 distinct instead of blending into a field of near-whites. -->
+            <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#FFFFFF"/>
             <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#CCCCCC"/>
             <!-- Lightest grey in the palette: the NavigationView pane + content area ("section
                  background"). Bumped from #F3F3F3 so it reads as visibly closer to white than the

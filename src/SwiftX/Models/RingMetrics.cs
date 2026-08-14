@@ -71,9 +71,6 @@ public static class RingMetrics
         _ => 16,
     };
 
-    /// <summary>Marker on an item that has children. Scales with the item so it never looks bolted on.</summary>
-    public static double Bump => Math.Round(Bubble * 0.12);
-
     // ---- Hub: fixed, unaffected by every setting -------------------------------------------
 
     /// <summary>Layout box the centered logo occupies. Nothing paints behind it.</summary>

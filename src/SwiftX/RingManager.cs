@@ -260,10 +260,6 @@ public sealed class RingManager
             return;
         }
 
-        // DragDropTarget deliberately has no case here — RingWindow.OnSelectAsync intercepts it
-        // before HandleItemActivation is ever called, since clicking it arms drop-target mode
-        // rather than activating/launching anything.
-
         Launcher.Launch(item);
     }
 
