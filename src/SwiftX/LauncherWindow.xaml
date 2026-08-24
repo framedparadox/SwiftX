@@ -19,5 +19,8 @@
                 HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                 BorderThickness="1"
                 ToolTipService.ToolTip="Open the SwiftX ring — drag to move, drop on an edge to hide" />
+        <Border x:Name="Notch"
+                IsHitTestVisible="False"
+                Visibility="Collapsed" />
     </Grid>
 </Window>

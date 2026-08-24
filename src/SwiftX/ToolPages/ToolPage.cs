@@ -1,4 +1,5 @@
 using SwiftX.Models;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
 namespace SwiftX.ToolPages;
@@ -18,6 +19,12 @@ public abstract class ToolPage : UserControl
 
     /// <summary>Commands surfaced in the host's command bar and bound to accelerators.</summary>
     public abstract IReadOnlyList<ToolCommand> Commands { get; }
+
+    /// <summary>
+    /// Optional content seated in the title bar beside the system buttons — for actions that
+    /// should stay visible without opening the command bar. Null when not needed.
+    /// </summary>
+    public virtual FrameworkElement? HeaderActions => null;
 
     /// <summary>The hosting <c>ToolWindowBase</c>'s window handle, set once at construction — the
     /// one thing a page needs to show a WinRT file picker (an unpackaged app must tell WinRT which

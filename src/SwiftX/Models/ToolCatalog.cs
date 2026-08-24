@@ -7,6 +7,8 @@ public enum ToolKind
 {
     Json,
     Xml,
+    SecureValues,
+    Certificate,
 }
 
 public sealed record ToolDefinition(
@@ -18,7 +20,7 @@ public sealed record ToolDefinition(
 {
 }
 
-/// <summary>Phase 1 catalog: JSON and XML formatters only.</summary>
+/// <summary>Built-in developer tools shipped with SwiftX.</summary>
 public static class ToolCatalog
 {
     public static IReadOnlyList<ToolDefinition> All { get; } =
@@ -27,6 +29,10 @@ public static class ToolCatalog
             () => new FormatterPage(FormatRegistry.Json)),
         new ToolDefinition(ToolKind.Xml, "XML", "Format, minify, and validate XML.", "</>",
             () => new FormatterPage(FormatRegistry.Xml)),
+        new ToolDefinition(ToolKind.SecureValues, "Secure values", "Store keys and secrets locally (masked).", "\uE72E",
+            () => new SecureValuesPage()),
+        new ToolDefinition(ToolKind.Certificate, "Certificate", "Inspect certificate, PKCS#12, and Java KeyStore files.", "\uEB95",
+            () => new CertificatePage()),
     ];
 
     public static ToolDefinition? Get(ToolKind kind) =>

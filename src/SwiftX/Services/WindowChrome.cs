@@ -251,6 +251,51 @@ public static class WindowChrome
     }
 
     /// <summary>
+    /// Makes a window click-through and unpainted everywhere except one rounded rectangle,
+    /// optionally intersected with a clip rectangle. Both rectangles are in <b>window-local
+    /// physical pixels</b>, matching what <c>SetWindowRgn</c> expects.
+    /// </summary>
+    public static void SetRoundRectRegion(nint hwnd, RectInt32 rect, int cornerRadiusPx, RectInt32? clip)
+    {
+        if (clip is { } c && (c.Width <= 0 || c.Height <= 0))
+        {
+            NativeMethods.SetWindowRgn(hwnd, NativeMethods.CreateRectRgn(0, 0, 0, 0), true);
+            return;
+        }
+
+        int diameter = Math.Max(1, cornerRadiusPx * 2);
+        nint region = NativeMethods.CreateRoundRectRgn(
+            rect.X, rect.Y, rect.X + rect.Width, rect.Y + rect.Height, diameter, diameter);
+
+        if (clip is { } clipRect)
+        {
+            nint clipRegion = NativeMethods.CreateRectRgn(
+                clipRect.X, clipRect.Y, clipRect.X + clipRect.Width, clipRect.Y + clipRect.Height);
+            NativeMethods.CombineRgn(region, region, clipRegion, NativeMethods.RGN_AND);
+            NativeMethods.DeleteObject(clipRegion);
+        }
+
+        NativeMethods.SetWindowRgn(hwnd, region, true);
+    }
+
+    /// <summary>
+    /// Restricts hit-testing to a rectangle in window-local physical pixels. Pass an empty rect
+    /// to hide the window entirely.
+    /// </summary>
+    public static void SetRectHitRegion(nint hwnd, RectInt32 rect)
+    {
+        if (rect.Width <= 0 || rect.Height <= 0)
+        {
+            NativeMethods.SetWindowRgn(hwnd, NativeMethods.CreateRectRgn(0, 0, 0, 0), true);
+            return;
+        }
+
+        nint region = NativeMethods.CreateRectRgn(
+            rect.X, rect.Y, rect.X + rect.Width, rect.Y + rect.Height);
+        NativeMethods.SetWindowRgn(hwnd, region, true);
+    }
+
+    /// <summary>
     /// Makes a window click-through and unpainted everywhere except one ellipse, optionally
     /// intersected with a clip rectangle. Both rectangles are in <b>window-local physical
     /// pixels</b>, matching what <c>SetWindowRgn</c> expects.

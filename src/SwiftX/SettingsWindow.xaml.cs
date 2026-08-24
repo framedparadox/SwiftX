@@ -97,6 +97,8 @@ public sealed partial class SettingsWindow : Window
                 HotkeyStatus.Text = "Hold Ctrl, Alt, or Win with that key.";
             JsonToggle.IsOn = _manager.Config.ShowJsonTool;
             XmlToggle.IsOn = _manager.Config.ShowXmlTool;
+            SecureValuesToggle.IsOn = _manager.Config.ShowSecureValuesTool;
+            CertificateToggle.IsOn = _manager.Config.ShowCertificateTool;
             LauncherToggle.IsOn = _manager.Config.FloatingLauncherEnabled;
             LauncherResetButton.IsEnabled = _manager.Config.FloatingLauncherEnabled;
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
@@ -629,6 +631,8 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.HotkeyEnabled = true;
         _manager.Config.ShowJsonTool = true;
         _manager.Config.ShowXmlTool = true;
+        _manager.Config.ShowSecureValuesTool = true;
+        _manager.Config.ShowCertificateTool = true;
         _manager.Config.FloatingLauncherEnabled = true;
         _manager.SeedDefaults(_manager.Config.Primary);
         // Through the manager, not a raw Config assignment: RingMetrics holds the geometry the
@@ -651,6 +655,8 @@ public sealed partial class SettingsWindow : Window
         HotkeyCapture.Gesture = HotkeyGesture.Default;
         JsonToggle.IsOn = true;
         XmlToggle.IsOn = true;
+        SecureValuesToggle.IsOn = true;
+        CertificateToggle.IsOn = true;
         LauncherToggle.IsOn = true;
         LauncherResetButton.IsEnabled = true;
         _loading = false;
@@ -706,6 +712,9 @@ public sealed partial class SettingsWindow : Window
         {
             foreach (var item in items)
             {
+                if (item.IsTool)
+                    continue;
+
                 var card = new Border { Style = (Style)Root.Resources["Card"] };
                 var row = new Grid { ColumnSpacing = 12 };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -780,17 +789,36 @@ public sealed partial class SettingsWindow : Window
         if (_loading) return;
         _manager.Config.ShowJsonTool = JsonToggle.IsOn;
         _manager.Config.ShowXmlTool = XmlToggle.IsOn;
-        foreach (var item in _manager.Config.Primary.Items.Where(i => i.IsTool))
-        {
-            if (string.Equals(item.Target, "Json", StringComparison.OrdinalIgnoreCase))
-                item.Hidden = !JsonToggle.IsOn;
-            if (string.Equals(item.Target, "Xml", StringComparison.OrdinalIgnoreCase))
-                item.Hidden = !XmlToggle.IsOn;
-        }
+        _manager.Config.ShowSecureValuesTool = SecureValuesToggle.IsOn;
+        _manager.Config.ShowCertificateTool = CertificateToggle.IsOn;
+        ApplyToolVisibility(_manager.Config.Primary.Items, _manager.Config);
         _manager.NotifyItemsChanged();
         RenderPreview();
     }
 
+    private static void ApplyToolVisibility(List<RingItem> items, AppConfig config)
+    {
+        foreach (var item in items)
+        {
+            if (item.Kind == RingItemKind.Tool)
+            {
+                item.Hidden = item.Target switch
+                {
+                    "Json" => !config.ShowJsonTool,
+                    "Xml" => !config.ShowXmlTool,
+                    "SecureValues" => !config.ShowSecureValuesTool,
+                    "Certificate" => !config.ShowCertificateTool,
+                    _ => item.Hidden,
+                };
+            }
+
+            if (item.IsGroup)
+                ApplyToolVisibility(item.Children, config);
+        }
+    }
+
     private void OpenJson_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Json);
     private void OpenXml_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Xml);
+    private void OpenSecureValues_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.SecureValues);
+    private void OpenCertificate_Click(object sender, RoutedEventArgs e) => _manager.OpenTool(ToolKind.Certificate);
 }

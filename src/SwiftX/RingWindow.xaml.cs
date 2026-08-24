@@ -162,7 +162,8 @@ public sealed partial class RingWindow : Window
     /// clamped, by exactly enough for the ring to fit, and an expanding flyout needs no resize at
     /// all. Nothing is visible outside what XAML paints (see
     /// <see cref="WindowChrome.MakeTransparentOverlay"/>) and nothing outside the ring's own disc
-    /// takes input (see <see cref="ApplyHitRegions"/>), so the extra extent costs nothing.
+    /// nothing outside the ring's own disc takes input until dismissed (see
+    /// <see cref="ApplyHitRegions"/>), so the extra extent costs nothing while open.
     /// </para>
     /// </summary>
     private void LayoutAround(PointInt32 screenPoint)
@@ -297,33 +298,13 @@ public sealed partial class RingWindow : Window
     }
 
     /// <summary>
-    /// One circle covering everything the ring can paint — hub, bubbles, a hover-grown bubble, an
-    /// expanded flyout ring, and the hover pill beyond it (<see cref="RingMetrics.ContentRadius"/>)
-    /// — so the whole disk receives pointer input the way a real action ring does, and the rest of
-    /// the work-area-sized window stays click-through.
-    /// <para>
-    /// The radius has to bound the <em>painted</em> content, not just the resting bubbles:
-    /// <see cref="WindowChrome.SetEllipticHitRegions"/> genuinely clips DWM's composited pixels,
-    /// so a region drawn tight to the ring is what used to shave the outer edge off every bubble
-    /// the moment hover scaled it up.
-    /// </para>
+    /// Makes the whole work-area overlay receive pointer input so a click anywhere outside the
+    /// ring disc dismisses it. Only what XAML paints is visible; the rest is transparent.
     /// </summary>
-    private void ApplyHitRegions(double pillCx = 0, double pillCy = 0, double pillRadius = 0)
+    private void ApplyHitRegions()
     {
-        double scale = NativeMethods.GetDpiForWindow(_hwnd) / 96.0;
-        var regions = new List<(double, double, double)>
-        {
-            (_cx, _cy, RingMetrics.ContentRadius),
-        };
-
-        // The region clips painting, so a pill that reaches past the ring disc needs its own
-        // circle unioned in or its far end is simply cut off. Adding it per-pill, instead of
-        // permanently padding ContentRadius by the longest name a user might have, keeps the
-        // ring's own footprint tight enough to still open under the cursor near a screen edge.
-        if (pillRadius > 0)
-            regions.Add((pillCx, pillCy, pillRadius));
-
-        WindowChrome.SetEllipticHitRegions(_hwnd, scale, regions);
+        var size = _appWindow.Size;
+        WindowChrome.SetRectHitRegion(_hwnd, new RectInt32(0, 0, size.Width, size.Height));
     }
 
     private static async Task ResolveIconAsync(RingItem ringItem)
@@ -680,9 +661,6 @@ public sealed partial class RingWindow : Window
         _pillLeft = left;
         _pillTop = top;
         _pillShown = true;
-
-        double halfDiagonal = Math.Sqrt(size.Width * size.Width + size.Height * size.Height) / 2;
-        ApplyHitRegions(left + size.Width / 2, top + size.Height / 2, halfDiagonal + 2);
 
         if (moving)
             GlidePill(previousLeft - left, previousTop - top);
@@ -1286,6 +1264,13 @@ public sealed partial class RingWindow : Window
         double dx = pos.X - _cx;
         double dy = pos.Y - _cy;
         double dist = Math.Sqrt(dx * dx + dy * dy);
+
+        // Outside the painted ring — click anywhere on the overlay dismisses, the same as Close.
+        if (dist > RingMetrics.ContentRadius)
+        {
+            Dismiss();
+            return;
+        }
 
         if (dist < RingMetrics.DeadZone)
         {

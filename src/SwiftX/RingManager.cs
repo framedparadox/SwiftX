@@ -115,6 +115,8 @@ public sealed class RingManager
             {
                 new RingItem { Kind = RingItemKind.Tool, DisplayName = "JSON", Target = "Json", CustomGlyph = "\uE943" },
                 new RingItem { Kind = RingItemKind.Tool, DisplayName = "XML", Target = "Xml", CustomGlyph = "</>" },
+                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Secure values", Target = "SecureValues", CustomGlyph = "\uE72E", Hidden = !Config.ShowSecureValuesTool },
+                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Certificate", Target = "Certificate", CustomGlyph = "\uEB95", Hidden = !Config.ShowCertificateTool },
             },
         });
         profile.Items.Add(new RingItem

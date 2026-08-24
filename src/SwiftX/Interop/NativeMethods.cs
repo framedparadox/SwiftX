@@ -42,6 +42,9 @@ internal static partial class NativeMethods
     public static extern nint CreateEllipticRgn(int x1, int y1, int x2, int y2);
 
     [DllImport("gdi32.dll")]
+    public static extern nint CreateRoundRectRgn(int x1, int y1, int x2, int y2, int w, int h);
+
+    [DllImport("gdi32.dll")]
     public static extern int CombineRgn(nint dest, nint src1, nint src2, int mode);
 
     [DllImport("gdi32.dll")]

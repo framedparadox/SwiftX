@@ -36,7 +36,13 @@ public sealed partial class LauncherWindow : Window
     /// <summary>Diameter of the puck, in DIPs. Converted to pixels per monitor — see <see cref="SizePx"/>.</summary>
     private const double SizeDip = 46;
 
+    /// <summary>Rounded-square corner radius — a bubble, not a circle.</summary>
+    private const double CornerRadiusDip = 12;
+
     private const double LogoDip = 22;
+
+    /// <summary>Accent-colored edge strip that reads as the dock notch when snapped to a screen edge.</summary>
+    private const double NotchAccentDip = 3;
 
     /// <summary>
     /// Pointer travel that turns a press into a drag rather than a click. Small enough that
@@ -93,6 +99,8 @@ public sealed partial class LauncherWindow : Window
 
     private Brush? _restBorder;
     private Brush? _hoverBorder;
+    private Brush? _glassBackground;
+    private Brush? _accentBrush;
 
     public LauncherWindow(RingManager manager)
     {
@@ -133,13 +141,13 @@ public sealed partial class LauncherWindow : Window
     // ---- Appearance --------------------------------------------------------
 
     /// <summary>
-    /// The puck: the app's own mark on a plain themed disc. Deliberately the same vocabulary as
-    /// the ring's own bubbles — solid surface, one hairline border, the logo at
-    /// <see cref="LogoDip"/> — so the thing that opens the ring looks like it belongs to it.
+    /// The puck: a rounded-square glass bubble with the app logo, matching the ring's hover
+    /// name pill — a hairline border and a lightly tinted fill rather than an opaque plate.
+    /// When docked, a Windows-accent strip on the screen-edge side reads as the notch.
     /// </summary>
     private void BuildPuck()
     {
-        Puck.CornerRadius = new CornerRadius(SizeDip / 2);
+        Puck.CornerRadius = new CornerRadius(CornerRadiusDip);
 
         var logo = AppLogo.Create(LogoDip);
         if (logo is FrameworkElement element)
@@ -151,6 +159,8 @@ public sealed partial class LauncherWindow : Window
         var content = new Grid();
         content.Children.Add(logo);
         Puck.Child = content;
+
+        Notch.CornerRadius = new CornerRadius(1);
     }
 
     public void ApplyTheme()
@@ -164,8 +174,13 @@ public sealed partial class LauncherWindow : Window
 
         _restBorder = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SwiftXBorderBrush"));
         _hoverBorder = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SwiftXForegroundBrush"));
-        Puck.Background = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SwiftXSurfaceBrush"));
+        _glassBackground = new SolidColorBrush(ThemeHelper.GlassBackground(dark));
+        _accentBrush = new SolidColorBrush(ThemeHelper.WindowsAccentColor());
+
+        Puck.Background = _glassBackground;
         Puck.BorderBrush = _restBorder;
+        Notch.Background = _accentBrush;
+        UpdateNotch();
     }
 
     // ---- Geometry ----------------------------------------------------------
@@ -174,7 +189,9 @@ public sealed partial class LauncherWindow : Window
 
     private int SizePx => (int)Math.Ceiling(SizeDip * Scale);
 
-    private int NotchPx => Math.Max(1, (int)Math.Round(LauncherSnap.NotchDip * Scale));
+    private int CornerRadiusPx => Math.Max(1, (int)Math.Round(CornerRadiusDip * Scale));
+
+    private int NotchAccentPx => Math.Max(1, (int)Math.Round(NotchAccentDip * Scale));
 
     private int SnapThresholdPx => (int)Math.Round(LauncherSnap.SnapThresholdDip * Scale);
 
@@ -213,23 +230,71 @@ public sealed partial class LauncherWindow : Window
     }
 
     /// <summary>
-    /// Clips the HWND to the puck's circle, and — while docked — to the launcher's own monitor.
-    /// Re-applied on every move, including every frame of a slide, which is what makes the puck
-    /// appear to emerge from behind the screen edge rather than jump out from under it.
+    /// Clips the HWND to the puck's rounded square, and — while docked — to the launcher's own
+    /// monitor. Re-applied on every move, including every frame of a slide, which is what makes
+    /// the puck appear to emerge from behind the screen edge rather than jump out from under it.
     /// </summary>
     private void ApplyRegion()
     {
         var rect = WindowRect;
-        var circle = new RectInt32(0, 0, rect.Width, rect.Height);
+        var body = new RectInt32(0, 0, rect.Width, rect.Height);
 
-        // No clip while floating free: an undocked launcher is allowed to straddle two monitors
-        // mid-drag, and clipping it to one of them would slice it in half on the way across.
         RectInt32? clip = _edge == ScreenEdge.None
             ? null
             : LauncherSnap.ClipToWorkArea(rect, _workArea);
 
-        WindowChrome.SetEllipseRegion(_hwnd, circle, clip);
+        WindowChrome.SetRoundRectRegion(_hwnd, body, CornerRadiusPx, clip);
     }
+
+    /// <summary>
+    /// Positions the accent notch on whichever side faces the screen edge when docked. The strip
+    /// is the visible sliver users hunt for — tinted with the Windows accent rather than the glass
+    /// fill of the puck itself.
+    /// </summary>
+    private void UpdateNotch()
+    {
+        if (_edge == ScreenEdge.None)
+        {
+            Notch.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        Notch.Visibility = Visibility.Visible;
+        double accent = NotchAccentDip;
+        switch (_edge)
+        {
+            case ScreenEdge.Left:
+                Notch.Width = accent;
+                Notch.Height = SizeDip;
+                Notch.HorizontalAlignment = HorizontalAlignment.Left;
+                Notch.VerticalAlignment = VerticalAlignment.Stretch;
+                Notch.Margin = new Thickness(0);
+                break;
+            case ScreenEdge.Right:
+                Notch.Width = accent;
+                Notch.Height = SizeDip;
+                Notch.HorizontalAlignment = HorizontalAlignment.Right;
+                Notch.VerticalAlignment = VerticalAlignment.Stretch;
+                Notch.Margin = new Thickness(0);
+                break;
+            case ScreenEdge.Top:
+                Notch.Width = SizeDip;
+                Notch.Height = accent;
+                Notch.HorizontalAlignment = HorizontalAlignment.Stretch;
+                Notch.VerticalAlignment = VerticalAlignment.Top;
+                Notch.Margin = new Thickness(0);
+                break;
+            case ScreenEdge.Bottom:
+                Notch.Width = SizeDip;
+                Notch.Height = accent;
+                Notch.HorizontalAlignment = HorizontalAlignment.Stretch;
+                Notch.VerticalAlignment = VerticalAlignment.Bottom;
+                Notch.Margin = new Thickness(0);
+                break;
+        }
+    }
+
+    private int NotchPx => Math.Max(1, (int)Math.Round(LauncherSnap.NotchDip * Scale));
 
     /// <summary>Moves the window, keeping its size, DPI and clip region consistent with where it landed.</summary>
     private void PlaceAt(PointInt32 origin)
@@ -256,6 +321,7 @@ public sealed partial class LauncherWindow : Window
     {
         _edge = edge;
         _peeked = false;
+        UpdateNotch();
         SyncDpi();
 
         var target = LauncherSnap.HiddenOrigin(WindowRect, _workArea, edge, NotchPx);
@@ -277,6 +343,7 @@ public sealed partial class LauncherWindow : Window
     {
         _edge = ScreenEdge.None;
         _peeked = false;
+        UpdateNotch();
         ApplyRegion();
     }
 
@@ -454,6 +521,7 @@ public sealed partial class LauncherWindow : Window
         // the pointer that just placed it, which reads as the drop having gone wrong.
         _edge = edge;
         _peeked = true;
+        UpdateNotch();
         var peek = LauncherSnap.PeekOrigin(WindowRect, _workArea, edge, PeekMarginPx);
         SlideTo(peek, animate: true);
         Persist(peek);

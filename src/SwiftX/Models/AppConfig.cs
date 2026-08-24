@@ -55,6 +55,8 @@ public sealed class AppConfig
 
     public bool ShowJsonTool { get; set; } = true;
     public bool ShowXmlTool { get; set; } = true;
+    public bool ShowSecureValuesTool { get; set; } = true;
+    public bool ShowCertificateTool { get; set; } = true;
     public bool ReuseToolWindows { get; set; } = true;
 
     [JsonIgnore]
@@ -79,6 +81,8 @@ public sealed class AppConfig
         RingRadius = other.RingRadius;
         ShowJsonTool = other.ShowJsonTool;
         ShowXmlTool = other.ShowXmlTool;
+        ShowSecureValuesTool = other.ShowSecureValuesTool;
+        ShowCertificateTool = other.ShowCertificateTool;
         ReuseToolWindows = other.ReuseToolWindows;
         FloatingLauncherEnabled = other.FloatingLauncherEnabled;
         LauncherX = other.LauncherX;
