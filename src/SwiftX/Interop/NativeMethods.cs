@@ -48,6 +48,7 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool DeleteObject(nint obj);
 
+    public const int RGN_AND = 1;
     public const int RGN_OR = 2;
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -67,6 +68,15 @@ internal static partial class NativeMethods
     public const int GWL_EXSTYLE = -20;
     public const long WS_EX_TOOLWINDOW = 0x00000080;
 
+    /// <summary>
+    /// Stops a window taking the foreground when it is clicked. The floating launcher wants this:
+    /// it is a button that sits over whatever you are working in, and stealing focus from that —
+    /// dropping the caret out of an editor, greying a document's selection — just to register a
+    /// click on a launcher would be its own kind of interruption. Pointer input still arrives
+    /// normally; only activation is suppressed.
+    /// </summary>
+    public const long WS_EX_NOACTIVATE = 0x08000000;
+
     // ---- Window styles (strip the non-client frame / resize border) -------
     public const int GWL_STYLE = -16;
     public const long WS_CAPTION = 0x00C00000;
@@ -76,6 +86,9 @@ internal static partial class NativeMethods
 
     public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_FRAMECHANGED = 0x0020;
+
+    /// <summary>Z-order sentinel for SetWindowPos: put (and keep) the window above non-topmost ones.</summary>
+    public static readonly nint HWND_TOPMOST = -1;
 
     [LibraryImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     public static partial nint GetWindowLongPtr(nint hwnd, int index);
@@ -318,6 +331,14 @@ internal static partial class NativeMethods
     public const uint WM_LBUTTONDBLCLK = 0x0203;
     public const uint WM_RBUTTONUP = 0x0205;
     public const uint WM_CONTEXTMENU = 0x007B;
+
+    /// <summary>
+    /// Broadcast when the display resolution or monitor layout changes. The floating launcher
+    /// listens for it: a position that was docked to the edge of a monitor that has just been
+    /// unplugged points at nowhere, and re-validating on this message is what puts the launcher
+    /// back somewhere reachable instead of leaving it stranded off-desktop.
+    /// </summary>
+    public const uint WM_DISPLAYCHANGE = 0x007E;
 
     // ---- Notification-area (tray) icon -------------------------------------
 

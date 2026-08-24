@@ -97,6 +97,8 @@ public sealed partial class SettingsWindow : Window
                 HotkeyStatus.Text = "Hold Ctrl, Alt, or Win with that key.";
             JsonToggle.IsOn = _manager.Config.ShowJsonTool;
             XmlToggle.IsOn = _manager.Config.ShowXmlTool;
+            LauncherToggle.IsOn = _manager.Config.FloatingLauncherEnabled;
+            LauncherResetButton.IsEnabled = _manager.Config.FloatingLauncherEnabled;
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0");
             _loading = false;
@@ -562,6 +564,17 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
+    private void LauncherToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _manager.SetFloatingLauncherEnabled(LauncherToggle.IsOn);
+        // Nothing to reposition while there is no launcher on screen.
+        LauncherResetButton.IsEnabled = LauncherToggle.IsOn;
+    }
+
+    private void LauncherReset_Click(object sender, RoutedEventArgs e) =>
+        _manager.ResetLauncherPosition();
+
     private async void StartupToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
@@ -597,7 +610,14 @@ public sealed partial class SettingsWindow : Window
         _editList = _manager.Config.Primary.Items;
         _manager.NotifyItemsChanged();
         _manager.ApplyTheme();
+        // The imported config carries the launcher's own on/off state and position, and a live
+        // launcher reads those only when it is built — so rebuild it.
+        _manager.ReloadFloatingLauncher();
         ApplyTheme();
+        _loading = true;
+        LauncherToggle.IsOn = _manager.Config.FloatingLauncherEnabled;
+        LauncherResetButton.IsEnabled = _manager.Config.FloatingLauncherEnabled;
+        _loading = false;
         RenderPreview();
         RebuildItemsList();
     }
@@ -609,6 +629,7 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.HotkeyEnabled = true;
         _manager.Config.ShowJsonTool = true;
         _manager.Config.ShowXmlTool = true;
+        _manager.Config.FloatingLauncherEnabled = true;
         _manager.SeedDefaults(_manager.Config.Primary);
         // Through the manager, not a raw Config assignment: RingMetrics holds the geometry the
         // ring actually draws with.
@@ -617,6 +638,10 @@ public sealed partial class SettingsWindow : Window
         _manager.NotifyItemsChanged();
         _manager.ApplyTheme();
         _manager.ApplyHotkey();
+        // Re-create the launcher if it was off, then send it home: "Reset" should leave it where
+        // a first run would have put it, not wherever it was last dragged.
+        _manager.ApplyFloatingLauncher();
+        _manager.ResetLauncherPosition();
         ApplyTheme();
         _loading = true;
         SelectTheme(AppTheme.Dark);
@@ -626,6 +651,8 @@ public sealed partial class SettingsWindow : Window
         HotkeyCapture.Gesture = HotkeyGesture.Default;
         JsonToggle.IsOn = true;
         XmlToggle.IsOn = true;
+        LauncherToggle.IsOn = true;
+        LauncherResetButton.IsEnabled = true;
         _loading = false;
         RenderPreview();
         RebuildItemsList();

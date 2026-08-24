@@ -57,6 +57,33 @@ public static class WindowChrome
     }
 
     /// <summary>
+    /// Adds <c>WS_EX_NOACTIVATE</c> so clicking the window never pulls the foreground away from
+    /// whatever the user was working in. See the constant's own docs for why the launcher wants
+    /// this and why pointer input is unaffected.
+    /// </summary>
+    public static void MakeNonActivating(nint hwnd)
+    {
+        long ex = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE);
+        ex |= NativeMethods.WS_EX_NOACTIVATE;
+        NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE, (nint)ex);
+    }
+
+    /// <summary>
+    /// Re-asserts topmost Z-order without moving, resizing or activating the window.
+    /// <para>
+    /// <see cref="OverlappedPresenter.IsAlwaysOnTop"/> sets the flag once, and a full-screen app
+    /// or another topmost window taking the foreground can still end up drawn over it afterwards.
+    /// A window that is meant to be permanently reachable has to claim the band again from time to
+    /// time — cheap, and a no-op when it is already there.
+    /// </para>
+    /// </summary>
+    public static void RaiseToTopmost(nint hwnd)
+    {
+        NativeMethods.SetWindowPos(hwnd, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0,
+            NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
+    }
+
+    /// <summary>
     /// Sets the theme of the system caption buttons (minimize / close) so they render with the
     /// right glyph color from the first frame. Without this the buttons inherit the theme late
     /// (only after activation / a pointer pass over them), so a light-themed window briefly shows
@@ -221,6 +248,44 @@ public static class WindowChrome
             return 1;
 
         return NativeMethods.DefSubclassProc(hwnd, msg, wParam, lParam);
+    }
+
+    /// <summary>
+    /// Makes a window click-through and unpainted everywhere except one ellipse, optionally
+    /// intersected with a clip rectangle. Both rectangles are in <b>window-local physical
+    /// pixels</b>, matching what <c>SetWindowRgn</c> expects.
+    /// <para>
+    /// The launcher's counterpart to <see cref="SetEllipticHitRegions"/>: the ellipse is what
+    /// turns a square HWND into a round button whose corners neither paint nor swallow clicks,
+    /// and the clip is what keeps an edge-snapped launcher on its own monitor (see
+    /// <see cref="Models.LauncherSnap.ClipToWorkArea"/>). Passing an empty clip hides the window
+    /// entirely, which is the correct rendering of "pushed out through an edge with nothing on the
+    /// far side of it to show on".
+    /// </para>
+    /// </summary>
+    public static void SetEllipseRegion(nint hwnd, RectInt32 ellipse, RectInt32? clip)
+    {
+        if (clip is { } c && (c.Width <= 0 || c.Height <= 0))
+        {
+            // An empty region is not the same as no region: SetWindowRgn(0) *clears* the clip and
+            // would show the whole square window. A degenerate rect is what actually hides it.
+            NativeMethods.SetWindowRgn(hwnd, NativeMethods.CreateRectRgn(0, 0, 0, 0), true);
+            return;
+        }
+
+        nint region = NativeMethods.CreateEllipticRgn(
+            ellipse.X, ellipse.Y, ellipse.X + ellipse.Width, ellipse.Y + ellipse.Height);
+
+        if (clip is { } rect)
+        {
+            nint clipRegion = NativeMethods.CreateRectRgn(
+                rect.X, rect.Y, rect.X + rect.Width, rect.Y + rect.Height);
+            NativeMethods.CombineRgn(region, region, clipRegion, NativeMethods.RGN_AND);
+            NativeMethods.DeleteObject(clipRegion);
+        }
+
+        // SetWindowRgn takes ownership of the region handle.
+        NativeMethods.SetWindowRgn(hwnd, region, true);
     }
 
     /// <summary>

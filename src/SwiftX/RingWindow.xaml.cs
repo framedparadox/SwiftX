@@ -71,6 +71,14 @@ public sealed partial class RingWindow : Window
 
     public bool IsOpen => _isOpen;
 
+    /// <summary>
+    /// Raised once a dismiss has run to completion and the window is hidden — not when
+    /// <see cref="Dismiss"/> is called, which only starts the animation, and not when a fresh
+    /// summon supersedes one mid-flight. Lets the floating launcher wait out the ring's exit
+    /// before putting itself back on screen.
+    /// </summary>
+    public event Action? Dismissed;
+
     public RingWindow(RingManager manager)
     {
         _manager = manager;
@@ -120,11 +128,22 @@ public sealed partial class RingWindow : Window
 
     public void Summon()
     {
+        NativeMethods.GetCursorPos(out var cursor);
+        SummonAt(new PointInt32(cursor.X, cursor.Y));
+    }
+
+    /// <summary>
+    /// Opens the ring centered on <paramref name="screenPoint"/> (physical screen pixels) rather
+    /// than on the cursor. The floating launcher summons this way, so the ring comes up around the
+    /// puck that opened it instead of jumping to wherever the pointer happened to end up.
+    /// </summary>
+    public void SummonAt(PointInt32 screenPoint)
+    {
         // Cancel any in-flight dismiss hide.
         _renderGeneration++;
         WindowChrome.MakeTransparentOverlay(this, _hwnd);
         ApplyTheme();
-        LayoutAtCursor();
+        LayoutAround(screenPoint);
         _appWindow.Show();
         Activate();
         NativeMethods.SetForegroundWindow(_hwnd);
@@ -133,8 +152,8 @@ public sealed partial class RingWindow : Window
     }
 
     /// <summary>
-    /// Spreads the window over the whole work area of the monitor under the cursor and places the
-    /// ring's center at the cursor inside it.
+    /// Spreads the window over the whole work area of the monitor holding <paramref name="screenPoint"/>
+    /// and places the ring's center on that point inside it.
     /// <para>
     /// The window used to be a ring-sized square moved to the cursor, which forced two
     /// compromises: near a screen edge the square got clamped into the work area and dragged the
@@ -146,11 +165,9 @@ public sealed partial class RingWindow : Window
     /// takes input (see <see cref="ApplyHitRegions"/>), so the extra extent costs nothing.
     /// </para>
     /// </summary>
-    private void LayoutAtCursor()
+    private void LayoutAround(PointInt32 screenPoint)
     {
-        NativeMethods.GetCursorPos(out var cursor);
-        var area = DisplayArea.GetFromPoint(
-            new PointInt32(cursor.X, cursor.Y), DisplayAreaFallback.Nearest).WorkArea;
+        var area = DisplayArea.GetFromPoint(screenPoint, DisplayAreaFallback.Nearest).WorkArea;
         _appWindow.MoveAndResize(area);
 
         // Read the DPI only after the move, so a summon onto a differently-scaled monitor sizes
@@ -160,8 +177,8 @@ public sealed partial class RingWindow : Window
         RingCanvas.Height = area.Height / scale;
 
         double r = RingMetrics.ContentRadius;
-        _cx = ClampCenter((cursor.X - area.X) / scale, RingCanvas.Width, r);
-        _cy = ClampCenter((cursor.Y - area.Y) / scale, RingCanvas.Height, r);
+        _cx = ClampCenter((screenPoint.X - area.X) / scale, RingCanvas.Width, r);
+        _cy = ClampCenter((screenPoint.Y - area.Y) / scale, RingCanvas.Height, r);
     }
 
     public void Dismiss()
@@ -194,6 +211,7 @@ public sealed partial class RingWindow : Window
         ClearRing();
         WindowChrome.SetEllipticHitRegions(_hwnd, 1, Array.Empty<(double, double, double)>());
         _appWindow.Hide();
+        Dismissed?.Invoke();
     }
 
     private void ClearRing()

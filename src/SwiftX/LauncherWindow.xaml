@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="SwiftX.LauncherWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="SwiftX Launcher">
+    <!-- The window is exactly the button, so the root fills it and the button fills the root.
+         Everything outside the button's circle is clipped away by the HWND region (see
+         LauncherWindow.ApplyRegion) — the same mechanism that hides whatever hangs off the
+         screen edge while the launcher is docked. -->
+    <Grid x:Name="Root" Background="Transparent"
+          PointerEntered="Root_PointerEntered"
+          PointerExited="Root_PointerExited"
+          PointerPressed="Root_PointerPressed"
+          PointerMoved="Root_PointerMoved"
+          PointerReleased="Root_PointerReleased"
+          PointerCaptureLost="Root_PointerCaptureLost">
+        <Border x:Name="Puck"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                BorderThickness="1"
+                ToolTipService.ToolTip="Open the SwiftX ring — drag to move, drop on an edge to hide" />
+    </Grid>
+</Window>

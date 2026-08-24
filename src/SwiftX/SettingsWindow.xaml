@@ -199,6 +199,31 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE7C4;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Floating launcher" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="An always-on-top button that opens the ring with the mouse. Drag it anywhere; drop it on a screen edge and it hides behind it, leaving a notch that brings it back when you hover."
+                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
+                                            VerticalAlignment="Center">
+                                    <Button x:Name="LauncherResetButton" Content="Reset position"
+                                            Click="LauncherReset_Click" />
+                                    <ToggleSwitch x:Name="LauncherToggle"
+                                                  OnContent="" OffContent="" MinWidth="0"
+                                                  Toggled="LauncherToggle_Toggled" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE7E8;"
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
