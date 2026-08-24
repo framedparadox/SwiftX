@@ -70,13 +70,6 @@ public static class ThemeHelper
         _ => dark ? Color.FromArgb(255, 0, 0, 0) : Color.FromArgb(255, 255, 255, 255),
     };
 
-    /// <summary>
-    /// A lightly tinted glass fill — the same vocabulary as the ring's hover name pill, but
-    /// translucent so the desktop shows through the floating launcher.
-    /// </summary>
-    public static Color GlassBackground(bool dark) =>
-        dark ? Color.FromArgb(0x66, 0, 0, 0) : Color.FromArgb(0x66, 255, 255, 255);
-
     /// <summary>The user's Windows accent color — used for the launcher's edge notch.</summary>
     public static Color WindowsAccentColor() =>
         new UISettings().GetColorValue(UIColorType.Accent);

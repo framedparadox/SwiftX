@@ -161,9 +161,8 @@ public sealed partial class RingWindow : Window
     /// did. A work-area-sized window has neither problem — only the <em>center point</em> is
     /// clamped, by exactly enough for the ring to fit, and an expanding flyout needs no resize at
     /// all. Nothing is visible outside what XAML paints (see
-    /// <see cref="WindowChrome.MakeTransparentOverlay"/>) and nothing outside the ring's own disc
-    /// nothing outside the ring's own disc takes input until dismissed (see
-    /// <see cref="ApplyHitRegions"/>), so the extra extent costs nothing while open.
+    /// <see cref="WindowChrome.MakeTransparentOverlay"/>). The full overlay receives input so a
+    /// click anywhere outside the ring disc dismisses it (see <see cref="ApplyHitRegions"/>).
     /// </para>
     /// </summary>
     private void LayoutAround(PointInt32 screenPoint)

@@ -99,7 +99,6 @@ public sealed partial class LauncherWindow : Window
 
     private Brush? _restBorder;
     private Brush? _hoverBorder;
-    private Brush? _glassBackground;
     private Brush? _accentBrush;
 
     public LauncherWindow(RingManager manager)
@@ -141,9 +140,9 @@ public sealed partial class LauncherWindow : Window
     // ---- Appearance --------------------------------------------------------
 
     /// <summary>
-    /// The puck: a rounded-square glass bubble with the app logo, matching the ring's hover
-    /// name pill — a hairline border and a lightly tinted fill rather than an opaque plate.
-    /// When docked, a Windows-accent strip on the screen-edge side reads as the notch.
+    /// The puck: a rounded-square bubble with the app logo on the theme surface (solid black or
+    /// white), matching the ring hover name pill's shape vocabulary. When docked, a Windows-accent
+    /// strip on the screen-edge side reads as the notch.
     /// </summary>
     private void BuildPuck()
     {
@@ -174,10 +173,9 @@ public sealed partial class LauncherWindow : Window
 
         _restBorder = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SwiftXBorderBrush"));
         _hoverBorder = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SwiftXForegroundBrush"));
-        _glassBackground = new SolidColorBrush(ThemeHelper.GlassBackground(dark));
         _accentBrush = new SolidColorBrush(ThemeHelper.WindowsAccentColor());
 
-        Puck.Background = _glassBackground;
+        Puck.Background = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SwiftXSurfaceBrush"));
         Puck.BorderBrush = _restBorder;
         Notch.Background = _accentBrush;
         UpdateNotch();
