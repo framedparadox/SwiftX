@@ -98,7 +98,6 @@ public sealed partial class LauncherWindow : Window
     private long _slideStart;
 
     private Brush? _restBorder;
-    private Brush? _hoverBorder;
     private Brush? _accentBrush;
 
     public LauncherWindow(RingManager manager)
