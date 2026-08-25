@@ -60,6 +60,8 @@ public sealed class RingManager
             // JSON and XML were merged into the single Data Formatter tool. Rewrite any ring item
             // still pointing at either retired target so it keeps working in the same slot.
             repaired |= ToolCatalog.MigrateLegacyTargets(Config.Primary.Items);
+            // Every tool belongs under the one Tools group, wherever an older config left them.
+            repaired |= ToolCatalog.EnsureToolsGroup(Config.Primary.Items);
         }
 
         ApplyTheme();
@@ -113,23 +115,13 @@ public sealed class RingManager
             Target = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
         });
-        profile.Items.Add(new RingItem
-        {
-            Kind = RingItemKind.Group,
-            DisplayName = "Dev tools",
-            CustomGlyph = "\uE90F",
-            Children =
-            {
-                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Data", Target = "Data", CustomGlyph = "\uE943" },
-                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Secure values", Target = "SecureValues", CustomGlyph = "\uE72E" },
-                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Base64", Target = "Base64", CustomGlyph = "B64" },
-                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Certificate", Target = "Certificate", CustomGlyph = "\uEB95" },
-            },
-        });
-        // Data and Secure values are already one tap away inside "Dev tools" above \u2014 a top-level
+        // One parent item owning every built-in tool, rather than tools scattered across the ring
+        // — see ToolCatalog.EnsureToolsGroup, which keeps an existing ring in that shape too.
+        profile.Items.Add(ToolCatalog.CreateToolsGroup());
+        // Data and Secure values are already one tap away inside "Tools" above — a top-level
         // duplicate of each just doubled up on the same tool, so the two remaining user slots go
-        // to a couple of stock Windows apps instead (the ring's other defaults \u2014 Notepad, GitHub,
-        // Downloads \u2014 are the same idea: something useful out of the box, not an empty ring).
+        // to a couple of stock Windows apps instead (the ring's other defaults — Notepad, GitHub,
+        // Downloads — are the same idea: something useful out of the box, not an empty ring).
         profile.Items.Add(new RingItem
         {
             Kind = RingItemKind.Application,

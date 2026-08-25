@@ -17,15 +17,15 @@ public static class SystemRingItems
     public const string SettingsTarget = "swiftx:settings";
     public const string CloseTarget = "swiftx:close";
 
-    /// <summary>Quick action nested under Settings \u2014 see <see cref="CreateAddNew"/>.</summary>
+    /// <summary>Quick action nested under Settings — see <see cref="CreateAddNew"/>.</summary>
     public const string AddNewTarget = "swiftx:quickadd";
 
     /// <summary>
-    /// Settings is a group now, not a plain launch item \u2014 <see cref="CreateAddNew"/> hangs off
+    /// Settings is a group now, not a plain launch item — <see cref="CreateAddNew"/> hangs off
     /// it as a flyout child the same way any user group's children do (see
     /// RingWindow.ExpandFlyout, which reads a bubble's Children generically and has no special
     /// case for system items). It is synthesized fresh here rather than stored anywhere, for the
-    /// same reason Settings/Close never were \u2014 see the class doc comment.
+    /// same reason Settings/Close never were — see the class doc comment.
     /// </summary>
     public static RingItem CreateSettings() => new()
     {
@@ -47,9 +47,9 @@ public static class SystemRingItems
     };
 
     /// <summary>Opens the same "Add to ring" window as the tray icon's Add entry, targeting the
-    /// same list (<c>Config.Primary.Items</c> \u2014 Settings \u203A Apps &amp; links). That window
+    /// same list (<c>Config.Primary.Items</c> — Settings › Apps &amp; links). That window
     /// itself now accepts a drag-and-drop, so this is also the entry point for "bring something in
-    /// from outside" \u2014 see AddItemWindow's own drop handling.</summary>
+    /// from outside" — see AddItemWindow's own drop handling.</summary>
     public static RingItem CreateAddNew() => new()
     {
         Kind = RingItemKind.Application,

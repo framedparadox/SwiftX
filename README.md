@@ -39,6 +39,8 @@ Or launch the built `SwiftX.exe` from the output folder under `bin\x64\Debug\net
 - **Click** a leaf to launch; **Group** pops its children out into a concentric outer ring — select it again to collapse
 - **Center hub** shows the app logo; click it to collapse an open group
 - **Settings** and **Close** are built in to the last two slots — never hidden, reordered, or removed, leaving 6 user slots
+- **Tools** is one of those slots by default: a single parent item holding every built-in tool, so they open one
+  hop in rather than competing for slots of their own (Settings → Tools picks which of them it holds)
 - **Esc** collapses an open group, or dismisses the ring when none is open; click empty space / dead zone to dismiss
 - **Tray → Settings** opens the home ring editor and other pages
 - **Tools:** Data Formatter (auto-detect JSON/XML/CSV), local Secure values,
@@ -61,8 +63,9 @@ Persisted at `%AppData%\SwiftX\ring.json` (override with `SWIFTX_DATA_DIR`).
 | Home | Live ring customizer — add, edit, remove, open groups, item size (Small / Medium / Large), ring radius |
 | General | Theme (Light / Dark / System), summon hotkey, hot corner, start with Windows, import/export, reset |
 | Apps & links | Flat list with show/hide and remove — Settings and Close aren't listed |
-| Tools | Toggle Data / Secure values / Base64 / Certificate on the ring; open tools |
-| About | Version and privacy note |
+| Tools | Toggle Data / Secure values / Base64 / Certificate inside the ring's Tools item; open tools |
+| Privacy | What stays on the device, what is encrypted, and the one thing that touches the network |
+| About | What SwiftX is, and its version |
 
 ## Theme
 

@@ -76,6 +76,12 @@
                  About is a "learn more", not a working page, so it reads as the same footer slot
                  Windows apps usually give Settings/About rather than just another row in the list. -->
             <muxc:NavigationView.FooterMenuItems>
+                <muxc:NavigationViewItem Content="Privacy" Tag="privacy"
+                                         AutomationProperties.AutomationId="SettingsNavPrivacy">
+                    <muxc:NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE72E;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
+                    </muxc:NavigationViewItem.Icon>
+                </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem Content="About" Tag="about"
                                          AutomationProperties.AutomationId="SettingsNavAbout">
                     <muxc:NavigationViewItem.Icon>
@@ -96,10 +102,19 @@
                         <TextBlock Text="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="20" HorizontalAlignment="Left" VerticalAlignment="Top">
-                            <Border Style="{StaticResource Card}" Background="{ThemeResource SwiftXRingCanvasBrush}"
-                                    HorizontalAlignment="Left" VerticalAlignment="Top" Padding="20">
-                                <Canvas x:Name="PreviewCanvas" Width="360" Height="360" />
-                            </Border>
+                            <!-- Canvas and the two ring-wide actions as one column: the buttons act
+                                 on the ring as a whole, so they belong under the picture of it
+                                 rather than in the column of per-setting cards beside it. -->
+                            <StackPanel Spacing="12" HorizontalAlignment="Left" VerticalAlignment="Top">
+                                <Border Style="{StaticResource Card}" Background="{ThemeResource SwiftXRingCanvasBrush}"
+                                        HorizontalAlignment="Left" VerticalAlignment="Top" Padding="20">
+                                    <Canvas x:Name="PreviewCanvas" Width="360" Height="360" />
+                                </Border>
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                                    <Button Content="Add item…" Click="AddItem_Click" />
+                                    <Button Content="Reset defaults" Click="ResetDefaults_Click" />
+                                </StackPanel>
+                            </StackPanel>
 
                             <StackPanel Width="280" Spacing="12">
                                 <Border Style="{StaticResource Card}">
@@ -143,10 +158,6 @@
                                     </Grid>
                                 </Border>
 
-                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-                                    <Button Content="Add item…" Click="AddItem_Click" />
-                                    <Button Content="Reset defaults" Click="ResetDefaults_Click" />
-                                </StackPanel>
 
                                 <!-- Read-only inspector for whatever item was last clicked, on the
                                      main ring or inside an expanded group's children row below.
@@ -366,7 +377,7 @@
                 <ScrollViewer x:Name="ToolsPanel" Visibility="Collapsed">
                     <StackPanel Spacing="6">
                         <TextBlock Text="Tools" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,12" />
-                        <TextBlock Text="Drag a tool by its handle to change where it sits on the ring."
+                        <TextBlock Text="Every tool lives inside the Tools item on the ring. Turn one off to take it out, or drag it by its handle to change where it sits inside."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" Margin="0,0,0,4" />
 
                         <!-- Rows are built in code-behind (RebuildToolsList) — six fixed built-in
@@ -389,6 +400,127 @@
                     </StackPanel>
                 </ScrollViewer>
 
+                <!-- ==================== PRIVACY ==================== -->
+                <!-- Its own page rather than a paragraph on About: this is the part of the app a
+                     user may actually need to go and check, and it is written to say what happens
+                     to their data, not where the bytes sit. -->
+                <ScrollViewer x:Name="PrivacyPanel" Visibility="Collapsed"
+                              AutomationProperties.AutomationId="SettingsPrivacyPanel">
+                    <StackPanel Spacing="6" MaxWidth="720" HorizontalAlignment="Left">
+                        <TextBlock Text="Privacy" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,4" />
+                        <TextBlock Text="What SwiftX does — and does not do — with what you put into it."
+                                   Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" Margin="0,0,0,8" />
+
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE977;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                          VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="Everything stays on this device"
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Your ring items and settings are saved to this PC only. There is no SwiftX account and no server to sync to."
+                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE9D9;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                          VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="No tracking, no analytics"
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="SwiftX collects no usage data, sends no crash or telemetry reports, and shows no ads."
+                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE72E;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                          VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="Secure values are encrypted for your account"
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Anything kept in Secure values is protected by Windows' own per-user encryption, so it can only be read back while you are signed in to this account on this device."
+                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE90F;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                          VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="The tools run offline"
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Text you paste and files you open in the built-in tools are processed on this device and are never uploaded anywhere."
+                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE774;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                          VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="The one thing that touches the network"
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="A web link on the ring may ask that site for its icon so the item can show it. That request carries nothing about you, and it is the only network call SwiftX makes on its own."
+                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE74D;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                          VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="You can take it all back"
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Export your setup at any time from General, and Reset clears it back to defaults."
+                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
                 <!-- ==================== ABOUT ==================== -->
                 <ScrollViewer x:Name="AboutPanel" Visibility="Collapsed">
                     <StackPanel Spacing="6" MaxWidth="720" HorizontalAlignment="Left">
@@ -398,7 +530,9 @@
                                 <TextBlock Text="SwiftX" FontSize="20" FontWeight="SemiBold" />
                                 <TextBlock x:Name="VersionText" Style="{StaticResource SecondaryCaption}" />
                                 <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
-                                           Text="SwiftX is a quick-access ring for Windows. It stays on your PC: settings live in %AppData%\SwiftX, and nothing is uploaded. Favicon fetches for web links are the only optional network use." />
+                                           Text="A quick-access ring for Windows. Summon it with a shortcut, a screen corner, or the tray icon, and launch the apps, folders, links, and built-in tools you reach for most." />
+                                <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
+                                           Text="SwiftX runs entirely on your own device — see Privacy for what that means." />
                             </StackPanel>
                         </Border>
                     </StackPanel>

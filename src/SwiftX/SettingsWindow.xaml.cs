@@ -18,9 +18,10 @@ using WinRT.Interop;
 namespace SwiftX;
 
 /// <summary>
-/// Settings shell patterned after Anchor: left NavigationView with Home (ring customize),
-/// General (including the invoke shortcut), Apps &amp; links, Tools, and About. Solid
-/// surfaces only — no Mica / acrylic.
+/// Settings shell patterned after Anchor: left NavigationView with Home (ring customize,
+/// including the hot corner), General (the invoke shortcut and app-wide settings), Apps &amp;
+/// links, Tools, and — pinned to the footer — Privacy and About. Solid surfaces only — no
+/// Mica / acrylic.
 /// </summary>
 public sealed partial class SettingsWindow : Window
 {
@@ -181,6 +182,7 @@ public sealed partial class SettingsWindow : Window
         GeneralPanel.Visibility = tag == "general" ? Visibility.Visible : Visibility.Collapsed;
         AppsPanel.Visibility = tag == "apps" ? Visibility.Visible : Visibility.Collapsed;
         ToolsPanel.Visibility = tag == "tools" ? Visibility.Visible : Visibility.Collapsed;
+        PrivacyPanel.Visibility = tag == "privacy" ? Visibility.Visible : Visibility.Collapsed;
         AboutPanel.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
         if (tag == "home") RenderPreview();
         if (tag == "apps") RebuildItemsList();
