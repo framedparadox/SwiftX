@@ -99,6 +99,13 @@ internal static partial class NativeMethods
     [LibraryImport("user32.dll")]
     public static partial uint GetDpiForWindow(nint hwnd);
 
+    // Mouse buttons, read through the same GetAsyncKeyState below. The hot-corner watcher needs
+    // them: a pointer arriving at a corner with a button held is a drag — a window being thrown
+    // at a corner for Windows' own snap, or a selection — not a request to summon the ring.
+    public const int VK_LBUTTON = 0x01;
+    public const int VK_RBUTTON = 0x02;
+    public const int VK_MBUTTON = 0x04;
+
     // Modifier keys, read the same way while capturing a hotkey: XAML's KeyDown reports the
     // pressed key but not which modifiers are held with it, and the Windows key never reaches
     // the app as a KeyDown at all.
@@ -425,6 +432,21 @@ internal static partial class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool UnregisterHotKey(nint hwnd, int id);
+
+    // ---- Window timers (hot-corner pointer polling) ------------------------
+    //
+    // WM_TIMER on the same hidden MessageWindow the tray icon and hotkeys already use, rather than
+    // a DispatcherQueueTimer: the tick then arrives through the app's own message pump on the UI
+    // thread, in the same place as every other shell-integration message.
+
+    public const uint WM_TIMER = 0x0113;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern nuint SetTimer(nint hwnd, nuint id, uint intervalMs, nint callback);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool KillTimer(nint hwnd, nuint id);
 
     // ---- Package identity --------------------------------------------------
     //

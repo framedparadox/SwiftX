@@ -30,7 +30,11 @@ Or launch the built `SwiftX.exe` from the output folder under `bin\x64\Debug\net
 
 ## Usage
 
-- **Summon / dismiss:** `Ctrl+Shift+S` (default; remappable in Settings → Shortcuts), or left-click the tray icon
+- **Summon / dismiss:** `Ctrl+Shift+S` (default; remappable in Settings → General), or left-click the tray icon
+- **Hot corner:** push the pointer into a corner of the screen and hold it there for a moment — macOS-style,
+  on by default at the top-left, and any of the four corners can be picked in Settings → General.
+  It fires per monitor, ignores a corner clipped in passing, and stays quiet while a mouse button is held
+  so dragging a window into a corner still snaps it the way Windows expects
 - **Hover** a bubble to pop its full name out in a pill beside it
 - **Click** a leaf to launch; **Group** pops its children out into a concentric outer ring — select it again to collapse
 - **Center hub** shows the app logo; click it to collapse an open group
@@ -54,9 +58,8 @@ Persisted at `%AppData%\SwiftX\ring.json` (override with `SWIFTX_DATA_DIR`).
 
 | Page | What it does |
 |------|----------------|
-| Home | Live ring customizer — add, edit, remove, open groups |
-| General | Theme (Light / Dark / System), ring item size (Small / Medium / Large), ring radius, start with Windows, import/export, reset |
-| Shortcuts | Summon hotkey capture |
+| Home | Live ring customizer — add, edit, remove, open groups, item size (Small / Medium / Large), ring radius |
+| General | Theme (Light / Dark / System), summon hotkey, hot corner, start with Windows, import/export, reset |
 | Apps & links | Flat list with show/hide and remove — Settings and Close aren't listed |
 | Tools | Toggle Data / Secure values / Base64 / Certificate on the ring; open tools |
 | About | Version and privacy note |
