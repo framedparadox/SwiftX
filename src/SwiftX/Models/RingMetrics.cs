@@ -100,30 +100,42 @@ public static class RingMetrics
     public static double FlyoutBubble => Math.Round(Bubble * 0.88);
 
     /// <summary>Distance from the ring center to a flyout item's center.</summary>
-    public static double FlyoutRadius =>
-        Radius + (Bubble / 2) * HoverScale + FlyoutGap + FlyoutBubble / 2;
+    public static double FlyoutRadius => FlyoutRadiusFor(Radius);
+
+    /// <summary>
+    /// <see cref="FlyoutRadius"/> for an inner ring of an arbitrary radius. The quarter-circle a
+    /// hot corner can summon sits further out than <see cref="Radius"/> (it has to clear two
+    /// screen edges — see <see cref="QuadrantLayout"/>), and its flyout has to clear it in turn,
+    /// so every band below is expressed against whatever radius the inner items actually got.
+    /// </summary>
+    public static double FlyoutRadiusFor(double radius) =>
+        radius + (Bubble / 2) * HoverScale + FlyoutGap + FlyoutBubble / 2;
 
     public static double FlyoutIcon => Math.Round(Icon * 0.88);
 
     public static double FlyoutGlyph => Math.Round(Glyph * 0.9);
 
     /// <summary>Where the flyout band starts — pointer distances beyond this target the outer ring.</summary>
-    public static double FlyoutBandStart => Radius + (Bubble / 2) * HoverScale + FlyoutGap / 2;
+    public static double FlyoutBandStart => FlyoutBandStartFor(Radius);
+
+    /// <summary><see cref="FlyoutBandStart"/> for an inner ring of an arbitrary radius.</summary>
+    public static double FlyoutBandStartFor(double radius) =>
+        radius + (Bubble / 2) * HoverScale + FlyoutGap / 2;
 
     /// <summary>
     /// Angular spacing between adjacent flyout items, chosen so their circles keep a constant
     /// pixel gap at the current <see cref="FlyoutRadius"/> instead of a fixed angle that would
     /// crowd at a small radius and scatter at a large one.
     /// </summary>
-    public static double FlyoutStepDegrees
+    public static double FlyoutStepDegrees => FlyoutStepDegreesFor(FlyoutRadius);
+
+    /// <summary><see cref="FlyoutStepDegrees"/> at an arbitrary flyout radius.</summary>
+    public static double FlyoutStepDegreesFor(double flyoutRadius)
     {
-        get
-        {
-            double chord = (FlyoutBubble + 12) / 2;
-            double ratio = Math.Clamp(chord / FlyoutRadius, 0, 1);
-            double step = 2 * Math.Asin(ratio) * 180.0 / Math.PI;
-            return Math.Clamp(step, 14, 40);
-        }
+        double chord = (FlyoutBubble + 12) / 2;
+        double ratio = Math.Clamp(chord / Math.Max(1, flyoutRadius), 0, 1);
+        double step = 2 * Math.Asin(ratio) * 180.0 / Math.PI;
+        return Math.Clamp(step, 14, 40);
     }
 
     public const int FlyoutSlotCount = 8;
@@ -163,11 +175,22 @@ public static class RingMetrics
     /// all. RingWindow adds a second region circle around the pill only while one is showing.
     /// </para>
     /// </summary>
-    public static double ContentRadius =>
-        FlyoutRadius + (FlyoutBubble / 2) * HoverScale + 14;
+    public static double ContentRadius => ContentRadiusFor(Radius);
+
+    /// <summary><see cref="ContentRadius"/> for an inner ring of an arbitrary radius.</summary>
+    public static double ContentRadiusFor(double radius) =>
+        FlyoutRadiusFor(radius) + (FlyoutBubble / 2) * HoverScale + 14;
 
     /// <summary>Diameter of the ring's full painted footprint.</summary>
     public static double WindowSize => ContentRadius * 2;
+
+    /// <summary>
+    /// Inner radius of the quarter-circle a hot corner summons. Starts from the ring's own radius
+    /// and grows only as far as it must for four hover-grown items to fit on the quarter arc
+    /// without touching each other or the two screen edges (see <see cref="QuadrantLayout"/>).
+    /// </summary>
+    public static double QuadrantRadius =>
+        QuadrantLayout.Radius(QuadrantLayout.ItemCount, Bubble * HoverScale, Radius);
 
     public const int SlotCount = 8;
 

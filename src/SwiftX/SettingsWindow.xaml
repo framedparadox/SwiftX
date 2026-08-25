@@ -107,7 +107,7 @@
                                  rather than in the column of per-setting cards beside it. -->
                             <StackPanel Spacing="12" HorizontalAlignment="Left" VerticalAlignment="Top">
                                 <Border Style="{StaticResource Card}" Background="{ThemeResource SwiftXRingCanvasBrush}"
-                                        HorizontalAlignment="Left" VerticalAlignment="Top" Padding="20">
+                                        HorizontalAlignment="Left" VerticalAlignment="Top" Padding="12">
                                     <Canvas x:Name="PreviewCanvas" Width="360" Height="360" />
                                 </Border>
                                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
@@ -116,7 +116,7 @@
                                 </StackPanel>
                             </StackPanel>
 
-                            <StackPanel Width="280" Spacing="12">
+                            <StackPanel Width="320" Spacing="12">
                                 <Border Style="{StaticResource Card}">
                                     <Grid ColumnSpacing="12">
                                         <Grid.ColumnDefinitions>
@@ -156,6 +156,62 @@
                                                 Minimum="80" Maximum="220" StepFrequency="5" TickFrequency="20"
                                                 ValueChanged="RadiusSlider_ValueChanged" />
                                     </Grid>
+                                </Border>
+
+                                <!-- The pointer half of "Invoke", and a ring setting rather than an
+                                     app-wide one, so it lives here beside size and radius: switch,
+                                     which corner, and — once it is on — how much of the ring the
+                                     corner brings up. -->
+                                <Border Style="{StaticResource Card}">
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon Grid.Column="0" Glyph="&#xE740;"
+                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                                  VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="Hot corner"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   VerticalAlignment="Center" />
+                                        <ToggleSwitch x:Name="HotCornerEnabledToggle" Grid.Column="2"
+                                                      OnContent="" OffContent="" MinWidth="0"
+                                                      VerticalAlignment="Center"
+                                                      AutomationProperties.AutomationId="SettingsHotCornerToggle"
+                                                      Toggled="HotCornerEnabled_Toggled" />
+                                        <ComboBox x:Name="HotCornerBox" Grid.Column="3" MinWidth="0" Width="118"
+                                                  VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                  AutomationProperties.AutomationId="SettingsHotCornerBox"
+                                                  SelectionChanged="HotCornerBox_SelectionChanged">
+                                            <ComboBoxItem Content="Top left" Tag="TopLeft" />
+                                            <ComboBoxItem Content="Top right" Tag="TopRight" />
+                                            <ComboBoxItem Content="Bottom left" Tag="BottomLeft" />
+                                            <ComboBoxItem Content="Bottom right" Tag="BottomRight" />
+                                        </ComboBox>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Only meaningful once the corner is armed, so it appears with it. -->
+                                <Border x:Name="HotCornerLayoutCard" Style="{StaticResource Card}"
+                                        Visibility="Collapsed">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Corner shows"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                        <StackPanel Orientation="Horizontal" Spacing="14">
+                                            <RadioButton x:Name="HotCornerLayoutRing" Content="Full ring"
+                                                         GroupName="HotCornerLayout" MinWidth="0"
+                                                         AutomationProperties.AutomationId="SettingsHotCornerLayoutRing"
+                                                         Checked="HotCornerLayout_Checked" />
+                                            <RadioButton x:Name="HotCornerLayoutQuadrant" Content="Quadrant"
+                                                         GroupName="HotCornerLayout" MinWidth="0"
+                                                         AutomationProperties.AutomationId="SettingsHotCornerLayoutQuadrant"
+                                                         Checked="HotCornerLayout_Checked" />
+                                        </StackPanel>
+                                        <TextBlock x:Name="HotCornerLayoutHint" Style="{StaticResource SecondaryCaption}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
                                 </Border>
 
 
@@ -245,43 +301,6 @@
                                                   OnContent="" OffContent="" MinWidth="0"
                                                   VerticalAlignment="Center"
                                                   Toggled="HotkeyEnabled_Toggled" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <!-- The pointer half of "Invoke": same card shape, so keyboard summon and
-                             mouse summon read as the two ways of doing the one thing. -->
-                        <Border Style="{StaticResource Card}">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE740;"
-                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
-                                          VerticalAlignment="Center" />
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock Text="Hot corner" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Push the pointer into a corner of the screen and hold it there for a moment to summon the ring."
-                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10"
-                                            VerticalAlignment="Center" HorizontalAlignment="Right">
-                                    <ComboBox x:Name="HotCornerBox" MinWidth="150" Width="150"
-                                              VerticalAlignment="Center"
-                                              AutomationProperties.AutomationId="SettingsHotCornerBox"
-                                              SelectionChanged="HotCornerBox_SelectionChanged">
-                                        <ComboBoxItem Content="Top left" Tag="TopLeft" />
-                                        <ComboBoxItem Content="Top right" Tag="TopRight" />
-                                        <ComboBoxItem Content="Bottom left" Tag="BottomLeft" />
-                                        <ComboBoxItem Content="Bottom right" Tag="BottomRight" />
-                                    </ComboBox>
-                                    <ToggleSwitch x:Name="HotCornerEnabledToggle"
-                                                  OnContent="" OffContent="" MinWidth="0"
-                                                  VerticalAlignment="Center"
-                                                  AutomationProperties.AutomationId="SettingsHotCornerToggle"
-                                                  Toggled="HotCornerEnabled_Toggled" />
                                 </StackPanel>
                             </Grid>
                         </Border>

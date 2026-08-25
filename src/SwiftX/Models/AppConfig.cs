@@ -25,6 +25,9 @@ public sealed class AppConfig
     /// <summary>The screen corner that summons the ring. Top-left, the way macOS ships.</summary>
     public HotCorner HotCorner { get; set; } = HotCorner.TopLeft;
 
+    /// <summary>Whether a hot-corner summon brings up the whole ring or a corner quadrant.</summary>
+    public HotCornerLayout HotCornerLayout { get; set; } = HotCornerLayout.Ring;
+
     public bool Seeded { get; set; }
 
     /// <summary>How large the items around the ring are drawn. The hub is fixed and unaffected.</summary>
@@ -57,6 +60,7 @@ public sealed class AppConfig
         HotkeyEnabled = other.HotkeyEnabled;
         HotCornerEnabled = other.HotCornerEnabled;
         HotCorner = other.HotCorner;
+        HotCornerLayout = other.HotCornerLayout;
         ItemSize = other.ItemSize;
         RingRadius = other.RingRadius;
         ShowDataTool = other.ShowDataTool;

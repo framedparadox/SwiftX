@@ -9,6 +9,20 @@ public enum HotCorner
     BottomRight,
 }
 
+/// <summary>How much of the ring a hot-corner summon puts on screen.</summary>
+public enum HotCornerLayout
+{
+    /// <summary>The whole ring, exactly as the keyboard shortcut summons it.</summary>
+    Ring,
+
+    /// <summary>
+    /// Four items only, fanned out along a quarter circle centered on the corner itself — the
+    /// pointer is already there, so everything is a short flick away. See
+    /// <see cref="QuadrantLayout"/>.
+    /// </summary>
+    Quadrant,
+}
+
 /// <summary>
 /// The geometry behind the hot corner: whether a cursor position sits inside the small square
 /// patch at one corner of a display. Pure integer math on physical pixels, deliberately free of

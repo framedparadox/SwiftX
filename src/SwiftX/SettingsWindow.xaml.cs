@@ -42,6 +42,11 @@ public sealed partial class SettingsWindow : Window
     private double _previewRadius;
     private double _previewBubble;
 
+    // Whether the canvas is currently showing the hot corner's quadrant instead of the ring.
+    // Purely a preview: toggled by the corner button RenderPreview draws, and never persisted —
+    // what the corner actually summons is Config.HotCornerLayout.
+    private bool _previewQuadrant;
+
     // Selection state for the read-only inspector (InfoBox) and the group children row (GroupRow).
     // Neither swaps out which list the ring renders anymore — a click just picks what, if anything,
     // is shown below the ring — so plain "currently selected / currently expanded" fields replace
@@ -115,6 +120,8 @@ public sealed partial class SettingsWindow : Window
             HotkeyEnabledToggle.IsOn = _manager.Config.HotkeyEnabled;
             HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
             SelectHotCorner(_manager.Config.HotCorner);
+            SelectHotCornerLayout(_manager.Config.HotCornerLayout);
+            SyncHotCornerControls();
             if (HotkeyGesture.TryParse(_manager.Config.Hotkey, out var g))
                 HotkeyCapture.Gesture = g;
             HotkeyCapture.Assigned += OnHotkeyAssigned;
@@ -196,6 +203,16 @@ public sealed partial class SettingsWindow : Window
         const double size = 360;
         double cx = size / 2, cy = size / 2;
 
+        if (_previewQuadrant && _manager.Config.HotCornerEnabled)
+        {
+            // No editable slots in this view — drop the ring's, so a press can't reach a bubble
+            // that is no longer on the canvas.
+            Array.Clear(_slotBorders);
+            RenderQuadrantPreview(size);
+            AddHotCornerButton(size);
+            return;
+        }
+
         // Scale the live ring geometry into the preview canvas rather than drawing one fixed
         // picture of it, so Ring size / Item size / Ring radius visibly change what this shows.
         double scale = size * 0.74 / (2 * (RingMetrics.Radius + RingMetrics.Bubble / 2));
@@ -265,6 +282,151 @@ public sealed partial class SettingsWindow : Window
             Canvas.SetTop(border, y);
             PreviewCanvas.Children.Add(border);
         }
+
+        AddHotCornerButton(size);
+    }
+
+    /// <summary>
+    /// The quarter circle a hot corner set to <see cref="HotCornerLayout.Quadrant"/> summons,
+    /// drawn to the same rules the real one uses (<see cref="QuadrantLayout"/>) and scaled into
+    /// the canvas — centered on the canvas corner that matches the chosen screen corner, so the
+    /// picture says which corner as much as what.
+    /// </summary>
+    private void RenderQuadrantPreview(double size)
+    {
+        var corner = _manager.Config.HotCorner;
+        var items = QuadrantLayout.Compose(
+            _manager.Config.Primary.Items, SystemRingItems.CreateSettings());
+        if (items.Count == 0)
+            return;
+
+        double bubble = RingMetrics.Bubble;
+        double radius = QuadrantLayout.Radius(items.Count, bubble * RingMetrics.HoverScale, RingMetrics.Radius);
+
+        // Same scale the ring preview uses, so switching between the two views changes the shape
+        // and not the size of everything in it — only clamped smaller if a large ring radius
+        // would push the fan off the canvas.
+        double scale = Math.Min(
+            size * 0.74 / (2 * (RingMetrics.Radius + bubble / 2)),
+            size * 0.96 / (radius + bubble / 2));
+        double previewRadius = radius * scale;
+        double previewBubble = bubble * scale;
+        double glyphSize = Math.Max(10, RingMetrics.Glyph * scale);
+
+        var (cx, cy) = QuadrantLayout.Center(corner, size, size);
+        var borderBrush = ThemeHelper.Brush(Root, "SwiftXBorderBrush");
+        var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
+        var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
+
+        // The arc the items sit on, so the shape reads as a quarter of the ring rather than four
+        // loose bubbles that happen to be curved. A single item has no arc to speak of — and an
+        // arc whose ends meet is ambiguous to draw — so it goes without.
+        if (items.Count > 1)
+        {
+            PreviewCanvas.Children.Add(BuildQuadrantArc(
+                corner, cx, cy, previewRadius, items.Count, bubble * RingMetrics.HoverScale, radius, muted));
+        }
+
+        for (int i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            double local = QuadrantLayout.LocalAngleRad(
+                i, items.Count, bubble * RingMetrics.HoverScale, radius);
+            double angle = QuadrantLayout.ScreenAngleRad(corner, local);
+
+            var border = new Border
+            {
+                Width = previewBubble,
+                Height = previewBubble,
+                CornerRadius = new CornerRadius(previewBubble / 2),
+                Background = ThemeHelper.Brush(Root, "RingBubbleBackground"),
+                BorderBrush = borderBrush,
+                BorderThickness = new Thickness(1),
+                Child = PreviewGlyph(item.Glyph, glyphSize, item.IsSystem ? muted : foreground),
+            };
+            ToolTipService.SetToolTip(border, item.DisplayName);
+            Canvas.SetLeft(border, cx + previewRadius * Math.Cos(angle) - previewBubble / 2);
+            Canvas.SetTop(border, cy + previewRadius * Math.Sin(angle) - previewBubble / 2);
+            PreviewCanvas.Children.Add(border);
+        }
+    }
+
+    /// <summary>The thin guide arc the quadrant's items are strung along.</summary>
+    private static Microsoft.UI.Xaml.Shapes.Path BuildQuadrantArc(
+        HotCorner corner, double cx, double cy, double previewRadius,
+        int count, double hoverBubble, double radius, Brush stroke)
+    {
+        double firstLocal = QuadrantLayout.LocalAngleRad(0, count, hoverBubble, radius);
+        double lastLocal = QuadrantLayout.LocalAngleRad(count - 1, count, hoverBubble, radius);
+        double first = QuadrantLayout.ScreenAngleRad(corner, firstLocal);
+        double last = QuadrantLayout.ScreenAngleRad(corner, lastLocal);
+
+        var start = new Point(cx + previewRadius * Math.Cos(first), cy + previewRadius * Math.Sin(first));
+        var end = new Point(cx + previewRadius * Math.Cos(last), cy + previewRadius * Math.Sin(last));
+
+        // Which way round the arc is drawn flips with the corner, because two of the four mirror
+        // the sweep; comparing the canvas angles says which without special-casing each corner.
+        var figure = new PathFigure { StartPoint = start, IsClosed = false, IsFilled = false };
+        figure.Segments.Add(new ArcSegment
+        {
+            Point = end,
+            Size = new Size(previewRadius, previewRadius),
+            SweepDirection = last > first ? SweepDirection.Clockwise : SweepDirection.Counterclockwise,
+            IsLargeArc = false,
+        });
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+
+        return new Microsoft.UI.Xaml.Shapes.Path
+        {
+            Data = geometry,
+            Stroke = stroke,
+            StrokeThickness = 1,
+            Opacity = 0.5,
+            IsHitTestVisible = false,
+        };
+    }
+
+    /// <summary>
+    /// The corner button: present on the canvas whenever the hot corner is on, sitting in the
+    /// canvas corner that matches the chosen screen one, and switching the canvas between the
+    /// ring and what that corner would actually show.
+    /// </summary>
+    private void AddHotCornerButton(double size)
+    {
+        if (!_manager.Config.HotCornerEnabled)
+            return;
+
+        const double diameter = 34;
+        const double inset = 2;
+        var corner = _manager.Config.HotCorner;
+
+        var button = new Button
+        {
+            Width = diameter,
+            Height = diameter,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(diameter / 2),
+            Content = new FontIcon
+            {
+                Glyph = _previewQuadrant ? "\uE72C" : "\uE740",
+                FontSize = 14,
+            },
+        };
+        ToolTipService.SetToolTip(button, _previewQuadrant
+            ? "Back to the full ring"
+            : "Show what this corner opens");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, "Hot corner preview");
+        button.Click += (_, _) =>
+        {
+            _previewQuadrant = !_previewQuadrant;
+            RenderPreview();
+        };
+
+        var (cx, cy) = QuadrantLayout.Center(corner, size, size);
+        Canvas.SetLeft(button, Math.Clamp(cx - diameter / 2, inset, size - diameter - inset));
+        Canvas.SetTop(button, Math.Clamp(cy - diameter / 2, inset, size - diameter - inset));
+        PreviewCanvas.Children.Add(button);
     }
 
     /// <summary>
@@ -278,6 +440,14 @@ public sealed partial class SettingsWindow : Window
     /// </summary>
     private void Preview_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
+        // The quadrant preview shows a fixed four items rather than the ring's editable slots,
+        // so there is nothing here to pick up, drag, or drop into.
+        if (_previewQuadrant)
+        {
+            EndPreviewDrag();
+            return;
+        }
+
         var point = e.GetCurrentPoint(PreviewCanvas).Position;
         _dragSlot = PreviewSlotAt(point);
         _dragBorder = _dragSlot >= 0 ? _slotBorders[_dragSlot] : null;
@@ -303,6 +473,9 @@ public sealed partial class SettingsWindow : Window
 
     private void Preview_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
+        if (_previewQuadrant)
+            return;
+
         var point = e.GetCurrentPoint(PreviewCanvas).Position;
         int slot = _dragSlot;
         var item = _dragItem;
@@ -777,6 +950,8 @@ public sealed partial class SettingsWindow : Window
         _loading = true;
         HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
         SelectHotCorner(_manager.Config.HotCorner);
+        SelectHotCornerLayout(_manager.Config.HotCornerLayout);
+        SyncHotCornerControls();
         _loading = false;
         RenderPreview();
         RebuildItemsList();
@@ -793,6 +968,7 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.HotkeyEnabled = true;
         _manager.Config.HotCornerEnabled = true;
         _manager.Config.HotCorner = HotCorner.TopLeft;
+        _manager.Config.HotCornerLayout = HotCornerLayout.Ring;
         _manager.Config.ShowDataTool = true;
         _manager.Config.ShowSecureValuesTool = true;
         _manager.Config.ShowBase64Tool = true;
@@ -815,6 +991,8 @@ public sealed partial class SettingsWindow : Window
         HotkeyCapture.Gesture = HotkeyGesture.Default;
         HotCornerEnabledToggle.IsOn = true;
         SelectHotCorner(HotCorner.TopLeft);
+        SelectHotCornerLayout(HotCornerLayout.Ring);
+        SyncHotCornerControls();
         RebuildToolsList();
         _loading = false;
         RenderPreview();
@@ -863,6 +1041,29 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
+    private void SelectHotCornerLayout(HotCornerLayout layout)
+    {
+        HotCornerLayoutRing.IsChecked = layout == HotCornerLayout.Ring;
+        HotCornerLayoutQuadrant.IsChecked = layout == HotCornerLayout.Quadrant;
+    }
+
+    /// <summary>
+    /// Brings the hot corner's dependent controls in line with the switch: the corner picker is
+    /// dead while the corner is off, the "corner shows" row only exists while it is on, and the
+    /// canvas drops any quadrant preview it was showing the moment there is no corner to preview.
+    /// </summary>
+    private void SyncHotCornerControls()
+    {
+        bool on = HotCornerEnabledToggle.IsOn;
+        HotCornerBox.IsEnabled = on;
+        HotCornerLayoutCard.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        HotCornerLayoutHint.Text = _manager.Config.HotCornerLayout == HotCornerLayout.Quadrant
+            ? "Four items fanned out around the corner itself."
+            : "The whole ring, drawn at the corner.";
+        if (!on)
+            _previewQuadrant = false;
+    }
+
     private void HotCornerBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || HotCornerBox.SelectedItem is not ComboBoxItem item) return;
@@ -871,6 +1072,8 @@ public sealed partial class SettingsWindow : Window
             _manager.Config.HotCorner = corner;
             _manager.Save();
             _manager.ApplyHotCorner();
+            // The canvas draws the corner button, and any quadrant preview, at the chosen corner.
+            RenderPreview();
         }
     }
 
@@ -880,6 +1083,19 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.HotCornerEnabled = HotCornerEnabledToggle.IsOn;
         _manager.Save();
         _manager.ApplyHotCorner();
+        SyncHotCornerControls();
+        RenderPreview();
+    }
+
+    private void HotCornerLayout_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _manager.Config.HotCornerLayout = ReferenceEquals(sender, HotCornerLayoutQuadrant)
+            ? HotCornerLayout.Quadrant
+            : HotCornerLayout.Ring;
+        _manager.Save();
+        SyncHotCornerControls();
+        RenderPreview();
     }
 
     private void UpdateHotkeyStatus()

@@ -200,8 +200,13 @@ public sealed class RingManager
         if (_hiddenByUser)
             return;
         _ringWindow ??= new RingWindow(this);
-        if (!_ringWindow.IsOpen)
-            _ringWindow.Summon();
+        if (_ringWindow.IsOpen)
+            return;
+
+        // The quadrant form is anchored on the corner the pointer just reached; the full ring
+        // comes up under the pointer exactly as the hotkey summons it.
+        _ringWindow.Summon(
+            Config.HotCornerLayout == HotCornerLayout.Quadrant ? Config.HotCorner : null);
     }
 
     public void ToggleRing()

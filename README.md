@@ -32,9 +32,13 @@ Or launch the built `SwiftX.exe` from the output folder under `bin\x64\Debug\net
 
 - **Summon / dismiss:** `Ctrl+Shift+S` (default; remappable in Settings → General), or left-click the tray icon
 - **Hot corner:** push the pointer into a corner of the screen and hold it there for a moment — macOS-style,
-  on by default at the top-left, and any of the four corners can be picked in Settings → General.
+  on by default at the top-left, and any of the four corners can be picked in Settings → Home.
   It fires per monitor, ignores a corner clipped in passing, and stays quiet while a mouse button is held
   so dragging a window into a corner still snaps it the way Windows expects
+  - **Full ring** (default) brings up the whole ring at the corner
+  - **Quadrant** brings up four items only — your first two, Tools, and Settings — fanned out along a
+    quarter circle centered on the corner itself, so everything is a short flick from where the pointer
+    already is. The button on the Home page's ring canvas shows what the corner will open
 - **Hover** a bubble to pop its full name out in a pill beside it
 - **Click** a leaf to launch; **Group** pops its children out into a concentric outer ring — select it again to collapse
 - **Center hub** shows the app logo; click it to collapse an open group
@@ -60,8 +64,8 @@ Persisted at `%AppData%\SwiftX\ring.json` (override with `SWIFTX_DATA_DIR`).
 
 | Page | What it does |
 |------|----------------|
-| Home | Live ring customizer — add, edit, remove, open groups, item size (Small / Medium / Large), ring radius |
-| General | Theme (Light / Dark / System), summon hotkey, hot corner, start with Windows, import/export, reset |
+| Home | Live ring customizer — add, edit, remove, open groups, item size (Small / Medium / Large), ring radius, hot corner |
+| General | Theme (Light / Dark / System), summon hotkey, start with Windows, import/export, reset |
 | Apps & links | Flat list with show/hide and remove — Settings and Close aren't listed |
 | Tools | Toggle Data / Secure values / Base64 / Certificate inside the ring's Tools item; open tools |
 | Privacy | What stays on the device, what is encrypted, and the one thing that touches the network |
