@@ -39,6 +39,18 @@ public static class ToolCatalog
             () => new CertificatePage()),
     ];
 
+    /// <summary>
+    /// Target of the one ring group that owns every built-in tool. Stored (unlike the
+    /// <see cref="SystemRingItems"/> targets, which are synthesized at render time) so the user
+    /// can move it around the ring like any other item, but stable enough for
+    /// <see cref="EnsureToolsGroup"/> to find it again on the next launch whatever it has been
+    /// renamed to.
+    /// </summary>
+    public const string ToolsGroupTarget = "swiftx:toolsgroup";
+
+    /// <summary>Glyph the tools group wears on the ring.</summary>
+    public const string ToolsGroupGlyph = "\uE90F";
+
     public static ToolDefinition? Get(ToolKind kind) =>
         All.FirstOrDefault(t => t.Kind == kind);
 
@@ -96,4 +108,133 @@ public static class ToolCatalog
 
         return changed;
     }
+
+    /// <summary>Builds the tools group itself — one ring item holding every built-in tool.</summary>
+    public static RingItem CreateToolsGroup() => new()
+    {
+        Kind = RingItemKind.Group,
+        DisplayName = "Tools",
+        Target = ToolsGroupTarget,
+        CustomGlyph = ToolsGroupGlyph,
+        Children = All.Select(CreateToolItem).ToList(),
+    };
+
+    private static RingItem CreateToolItem(ToolDefinition tool) => new()
+    {
+        Kind = RingItemKind.Tool,
+        DisplayName = tool.DisplayName,
+        Target = tool.Kind.ToString(),
+        CustomGlyph = tool.Glyph,
+    };
+
+    /// <summary>
+    /// Gathers every tool on the ring into a single "Tools" group and makes sure that group holds
+    /// all of them, so tools are always one parent item deep instead of scattered across the ring
+    /// (some at the top level, some inside a group, some missing entirely).
+    /// <para>
+    /// The group is found by <see cref="ToolsGroupTarget"/> first and by name second, which is
+    /// what adopts the "Dev tools" group earlier builds seeded rather than leaving it beside a
+    /// new one. Tools found anywhere else are moved in — keeping the order they already had, and
+    /// dropping duplicates of a kind the group already holds — and any built-in tool that is on
+    /// the ring nowhere at all is added. A group created here takes the ring slot of the first
+    /// tool it absorbed, so the tools stay roughly where the user last saw them.
+    /// </para>
+    /// <para>
+    /// Returns true if anything changed, matching <see cref="MigrateLegacyTargets"/> and
+    /// <see cref="SystemRingItems.Strip"/>, so the caller knows whether to persist. Note it never
+    /// creates the group on a ring that has no tools at all: a user who deleted the group and its
+    /// tools outright should not find them back on the next launch.
+    /// </para>
+    /// </summary>
+    public static bool EnsureToolsGroup(List<RingItem> items)
+    {
+        var group = FindToolsGroup(items);
+        var loose = new List<RingItem>();
+        int firstLooseIndex = -1;
+
+        void Collect(List<RingItem> list, bool topLevel)
+        {
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                var item = list[i];
+                if (ReferenceEquals(item, group))
+                    continue;
+                if (item.IsGroup)
+                {
+                    Collect(item.Children, topLevel: false);
+                    continue;
+                }
+                if (!item.IsTool)
+                    continue;
+                loose.Insert(0, item);
+                list.RemoveAt(i);
+                if (topLevel)
+                    firstLooseIndex = i;
+            }
+        }
+        Collect(items, topLevel: true);
+
+        if (group is null)
+        {
+            // Nothing to hold and nothing to hold it in: leave the ring exactly as it is.
+            if (loose.Count == 0)
+                return false;
+            group = new RingItem
+            {
+                Kind = RingItemKind.Group,
+                DisplayName = "Tools",
+                Target = ToolsGroupTarget,
+                CustomGlyph = ToolsGroupGlyph,
+            };
+            items.Insert(firstLooseIndex >= 0 ? Math.Min(firstLooseIndex, items.Count) : items.Count, group);
+        }
+
+        bool changed = loose.Count > 0;
+        changed |= AdoptGroup(group);
+
+        var held = new HashSet<string>(
+            group.Children.Where(c => c.IsTool).Select(c => c.Target), StringComparer.OrdinalIgnoreCase);
+        foreach (var tool in loose)
+        {
+            if (held.Add(tool.Target))
+                group.Children.Add(tool);
+        }
+
+        // Every built-in tool belongs to this group, including one the ring never had an item for
+        // (a tool added to the catalog after this config was written).
+        foreach (var tool in All)
+        {
+            if (held.Add(tool.Kind.ToString()))
+            {
+                group.Children.Add(CreateToolItem(tool));
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    private static RingItem? FindToolsGroup(List<RingItem> items)
+    {
+        var byTarget = items.FirstOrDefault(
+            i => i.IsGroup && string.Equals(i.Target, ToolsGroupTarget, StringComparison.OrdinalIgnoreCase));
+        if (byTarget is not null)
+            return byTarget;
+
+        // The names earlier builds gave it, before it had a target of its own to be found by.
+        return items.FirstOrDefault(i => i.IsGroup &&
+            (string.Equals(i.DisplayName, "Tools", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(i.DisplayName, "Dev tools", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <summary>Stamps the group's stable target on a group adopted by name. Its display name is
+    /// left alone — renaming it is the user's business, and the target is what finds it now.</summary>
+    private static bool AdoptGroup(RingItem group)
+    {
+        if (string.Equals(group.Target, ToolsGroupTarget, StringComparison.Ordinal))
+            return false;
+        group.Target = ToolsGroupTarget;
+        return true;
+    }
 }
+

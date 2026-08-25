@@ -64,6 +64,22 @@ public sealed partial class RingWindow : Window
     private double _hubSize;
     private double _cx;
     private double _cy;
+
+    /// <summary>
+    /// The corner this summon is anchored to when the ring came up as a quarter circle, or null
+    /// when it is the whole ring. Set by <see cref="Summon"/> and read by everything that has to
+    /// know where the items are: layout, hover, and the hit region.
+    /// </summary>
+    private HotCorner? _quadrant;
+
+    // Radii of the current summon's bands. The quarter circle sits further out than the full
+    // ring (it has to clear two screen edges), so these are resolved per summon from
+    // RingMetrics' *For(radius) helpers rather than read straight off RingMetrics.
+    private double _itemRadius = RingMetrics.Radius;
+    private double _flyoutRadius = RingMetrics.FlyoutRadius;
+    private double _flyoutBandStart = RingMetrics.FlyoutBandStart;
+    private double _flyoutStepDegrees = RingMetrics.FlyoutStepDegrees;
+    private double _contentRadius = RingMetrics.ContentRadius;
     private bool _isOpen;
     private bool _isAnimating;
     private int _renderGeneration;
@@ -106,6 +122,7 @@ public sealed partial class RingWindow : Window
     public void ReloadItems()
     {
         if (!_isOpen) return;
+        UpdateGeometry();
         RecenterForMetrics();
         RenderCurrent();
     }
@@ -118,7 +135,11 @@ public sealed partial class RingWindow : Window
     /// </summary>
     private void RecenterForMetrics()
     {
-        double r = RingMetrics.ContentRadius;
+        // A quarter circle is anchored on its corner and never recentered — clamping it inward
+        // would pull the fan off the very point the pointer is sitting on.
+        if (_quadrant is not null)
+            return;
+        double r = _contentRadius;
         _cx = ClampCenter(_cx, RingCanvas.Width, r);
         _cy = ClampCenter(_cy, RingCanvas.Height, r);
     }
@@ -126,13 +147,38 @@ public sealed partial class RingWindow : Window
     private static double ClampCenter(double value, double extent, double radius) =>
         extent >= radius * 2 ? Math.Clamp(value, radius, extent - radius) : extent / 2;
 
-    public void Summon()
+    /// <summary>
+    /// Resolves the band radii for the summon that is about to happen. Everything downstream —
+    /// item placement, the flyout ring, hover bands, the hit region — reads these rather than
+    /// RingMetrics directly, which is what lets one set of drawing code serve both the full ring
+    /// and the quarter circle.
+    /// </summary>
+    private void UpdateGeometry()
+    {
+        _itemRadius = _quadrant is null ? RingMetrics.Radius : RingMetrics.QuadrantRadius;
+        _flyoutRadius = RingMetrics.FlyoutRadiusFor(_itemRadius);
+        _flyoutBandStart = RingMetrics.FlyoutBandStartFor(_itemRadius);
+        _flyoutStepDegrees = RingMetrics.FlyoutStepDegreesFor(_flyoutRadius);
+        _contentRadius = RingMetrics.ContentRadiusFor(_itemRadius);
+    }
+
+    /// <summary>
+    /// Brings the ring up under the pointer, or — when <paramref name="quadrant"/> names a corner
+    /// — as a quarter circle anchored on that corner of the screen the pointer is on. The
+    /// quadrant form is what a hot corner set to <see cref="HotCornerLayout.Quadrant"/> summons.
+    /// </summary>
+    public void Summon(HotCorner? quadrant = null)
     {
         // Cancel any in-flight dismiss hide.
         _renderGeneration++;
+        _quadrant = quadrant;
+        UpdateGeometry();
         WindowChrome.MakeTransparentOverlay(this, _hwnd);
         ApplyTheme();
-        LayoutAtCursor();
+        if (quadrant is { } corner)
+            LayoutAtCorner(corner);
+        else
+            LayoutAtCursor();
         _appWindow.Show();
         Activate();
         NativeMethods.SetForegroundWindow(_hwnd);
@@ -167,9 +213,30 @@ public sealed partial class RingWindow : Window
         RingCanvas.Width = area.Width / scale;
         RingCanvas.Height = area.Height / scale;
 
-        double r = RingMetrics.ContentRadius;
+        double r = _contentRadius;
         _cx = ClampCenter((cursor.X - area.X) / scale, RingCanvas.Width, r);
         _cy = ClampCenter((cursor.Y - area.Y) / scale, RingCanvas.Height, r);
+    }
+
+    /// <summary>
+    /// Spreads the window over the whole of the monitor the pointer is on — outer bounds, not the
+    /// work area — and puts the ring's center on <paramref name="corner"/> itself. The taskbar's
+    /// strip has to be inside the window for a bottom corner's fan to be drawn around the point
+    /// the pointer actually stopped at; nothing outside the painted items takes input anyway (see
+    /// <see cref="ApplyHitRegions"/>), so covering it costs nothing.
+    /// </summary>
+    private void LayoutAtCorner(HotCorner corner)
+    {
+        NativeMethods.GetCursorPos(out var cursor);
+        var area = DisplayArea.GetFromPoint(
+            new PointInt32(cursor.X, cursor.Y), DisplayAreaFallback.Nearest).OuterBounds;
+        _appWindow.MoveAndResize(area);
+
+        double scale = NativeMethods.GetDpiForWindow(_hwnd) / 96.0;
+        RingCanvas.Width = area.Width / scale;
+        RingCanvas.Height = area.Height / scale;
+
+        (_cx, _cy) = QuadrantLayout.Center(corner, RingCanvas.Width, RingCanvas.Height);
     }
 
     public void Dismiss()
@@ -237,6 +304,12 @@ public sealed partial class RingWindow : Window
         _pill = null;
         _pillText = null;
         _hovered = null;
+
+        // Back to the full ring: the next summon says for itself whether it is a quadrant, and
+        // anything that reads this between now and then (a metrics change, say) should see the
+        // ring's own geometry rather than the last corner's.
+        _quadrant = null;
+        UpdateGeometry();
     }
 
     /// <summary>
@@ -266,6 +339,34 @@ public sealed partial class RingWindow : Window
         return slots;
     }
 
+    /// <summary>
+    /// What to draw and where, for whichever shape this summon took: the eight-slot ring, or the
+    /// quarter circle's fan. Index is the bubble's position in its own layout — a ring slot, or a
+    /// place along the arc — and the angle is already in canvas terms.
+    /// </summary>
+    private IReadOnlyList<(RingItem Item, int Index, double AngleRad)> CurrentLayout()
+    {
+        if (_quadrant is not { } corner)
+        {
+            return CurrentItems()
+                .Select(entry => (
+                    Item: entry.Item,
+                    Index: entry.Slot,
+                    AngleRad: RingMetrics.SlotAngleRad(entry.Slot)))
+                .ToList();
+        }
+
+        var items = QuadrantLayout.Compose(_manager.Config.Primary.Items, _settingsItem);
+        var layout = new List<(RingItem Item, int Index, double AngleRad)>(items.Count);
+        for (int i = 0; i < items.Count; i++)
+        {
+            double local = QuadrantLayout.LocalAngleRad(
+                i, items.Count, RingMetrics.Bubble * RingMetrics.HoverScale, _itemRadius);
+            layout.Add((items[i], i, QuadrantLayout.ScreenAngleRad(corner, local)));
+        }
+        return layout;
+    }
+
     private void RenderCurrent(bool animate = false)
     {
         _renderGeneration++;
@@ -276,14 +377,16 @@ public sealed partial class RingWindow : Window
         _flyoutParent = null;
         _hovered = null;
 
-        AttachHub();
+        // The hub is the ring's center mark; a quarter circle's center is the screen corner, where
+        // three quarters of that mark would be off the screen, so it simply isn't drawn there.
+        if (_quadrant is null)
+            AttachHub();
 
-        foreach (var (item, slot) in CurrentItems())
+        foreach (var (item, slot, angle) in CurrentLayout())
         {
-            double angle = RingMetrics.SlotAngleRad(slot);
             var bubble = CreateBubble(
                 item, slot, angle,
-                radius: RingMetrics.Radius,
+                radius: _itemRadius,
                 diameter: RingMetrics.Bubble,
                 iconSize: RingMetrics.Icon,
                 glyphSize: RingMetrics.Glyph,
@@ -325,7 +428,7 @@ public sealed partial class RingWindow : Window
         double scale = NativeMethods.GetDpiForWindow(_hwnd) / 96.0;
         var regions = new List<(double, double, double)>
         {
-            (_cx, _cy, RingMetrics.ContentRadius),
+            (_cx, _cy, _contentRadius),
         };
 
         // The region clips painting, so a pill that reaches past the ring disc needs its own
@@ -684,7 +787,7 @@ public sealed partial class RingWindow : Window
             double ux = Math.Cos(bubble.AngleRad);
             double uy = Math.Sin(bubble.AngleRad);
             double reach = (Math.Abs(ux) * size.Width + Math.Abs(uy) * size.Height) / 2;
-            double distance = RingMetrics.FlyoutRadius
+            double distance = _flyoutRadius
                 + RingMetrics.FlyoutBubble / 2 * RingMetrics.HoverScale
                 + RingMetrics.PillGap + reach;
             px = distance * ux;
@@ -710,7 +813,7 @@ public sealed partial class RingWindow : Window
             {
                 clearance = Math.Max(
                     clearance,
-                    RingMetrics.FlyoutRadius + RingMetrics.FlyoutBubble / 2 * RingMetrics.HoverScale);
+                    _flyoutRadius + RingMetrics.FlyoutBubble / 2 * RingMetrics.HoverScale);
             }
 
             double distance = clearance + RingMetrics.PillGap + reach;
@@ -752,7 +855,7 @@ public sealed partial class RingWindow : Window
     /// </summary>
     private bool PointsIntoFlyoutArc(double angleRad)
     {
-        double tolerance = (RingMetrics.FlyoutStepDegrees * 0.5 + 12) * Math.PI / 180.0;
+        double tolerance = (_flyoutStepDegrees * 0.5 + 12) * Math.PI / 180.0;
         return _flyout.Any(b => Math.Abs(NormalizeAngle(angleRad - b.AngleRad)) <= tolerance);
     }
 
@@ -966,6 +1069,40 @@ public sealed partial class RingWindow : Window
     // ---- Flyout (outer ring) ---------------------------------------------------------------
 
     /// <summary>
+    /// Canvas angles for an expanding group's children: a fan of
+    /// <see cref="_flyoutStepDegrees"/> centered on the group itself.
+    /// <para>
+    /// On a quarter circle that fan also has to stay inside the quarter — a group sitting near
+    /// one of the two screen edges would otherwise throw half its children off the screen — so
+    /// there the whole fan is slid back inside the span its own radius leaves, keeping its
+    /// spacing. On the full ring there is no such constraint and the fan is simply centered.
+    /// </para>
+    /// </summary>
+    private IReadOnlyList<double> FlyoutAngles(BubbleView parent, int count)
+    {
+        double step = _flyoutStepDegrees * Math.PI / 180.0;
+        double spread = step * (count - 1);
+
+        if (_quadrant is not { } corner)
+        {
+            double start = parent.AngleRad - spread / 2;
+            return Enumerable.Range(0, count).Select(i => start + i * step).ToList();
+        }
+
+        double inset = QuadrantLayout.EdgeInsetRad(
+            RingMetrics.FlyoutBubble * RingMetrics.HoverScale, _flyoutRadius);
+        double lowest = inset;
+        double highest = Math.Max(inset, Math.PI / 2 - inset - spread);
+        double localStart = Math.Clamp(
+            QuadrantLayout.LocalAngleFromScreenRad(corner, parent.AngleRad) - spread / 2,
+            lowest, highest);
+
+        return Enumerable.Range(0, count)
+            .Select(i => QuadrantLayout.ScreenAngleRad(corner, localStart + i * step))
+            .ToList();
+    }
+
+    /// <summary>
     /// Pops a group's children out into a concentric ring <em>around</em> the ring that is already
     /// on screen, rather than replacing it. The children are born at the parent bubble's own
     /// center and travel outward on a loose spring while their scale runs a stretch-then-settle
@@ -986,17 +1123,14 @@ public sealed partial class RingWindow : Window
         ApplyBubbleFill(parent, active: true);
         AnimateScale(parent, ExpandedParentScale, 180);
 
-        double step = RingMetrics.FlyoutStepDegrees;
-        double centerDeg = parent.AngleRad * 180.0 / Math.PI;
-        double startDeg = centerDeg - step * (children.Count - 1) / 2.0;
+        var angles = FlyoutAngles(parent, children.Count);
         var origin = new Vector2(parent.RestX, parent.RestY);
 
         for (int i = 0; i < children.Count; i++)
         {
-            double angle = (startDeg + i * step) * Math.PI / 180.0;
             var bubble = CreateBubble(
-                children[i], i, angle,
-                radius: RingMetrics.FlyoutRadius,
+                children[i], i, angles[i],
+                radius: _flyoutRadius,
                 diameter: RingMetrics.FlyoutBubble,
                 iconSize: RingMetrics.FlyoutIcon,
                 glyphSize: RingMetrics.FlyoutGlyph,
@@ -1409,9 +1543,17 @@ public sealed partial class RingWindow : Window
         }
 
         // Past the flyout band the outer ring owns the pointer; inside it, the inner ring does.
-        if (_flyout.Count > 0 && dist >= RingMetrics.FlyoutBandStart)
+        if (_flyout.Count > 0 && dist >= _flyoutBandStart)
         {
-            SetHovered(NearestFlyoutBubble(dx, dy));
+            SetHovered(NearestOnArc(_flyout, dx, dy, _flyoutStepDegrees * 0.6 * Math.PI / 180.0));
+            return;
+        }
+
+        // A quarter circle is an arc too, so it is hovered the same way its flyout is rather than
+        // through the eight-slot lookup below, which only knows about the full ring's geometry.
+        if (_quadrant is not null)
+        {
+            SetHovered(NearestOnArc(_bubbles, dx, dy, QuadrantHoverToleranceRad()));
             return;
         }
 
@@ -1424,17 +1566,30 @@ public sealed partial class RingWindow : Window
     }
 
     /// <summary>
-    /// The flyout occupies an arc, not the whole circle, so — unlike the inner ring's slot
-    /// lookup — a pointer out in the band still has to be near the arc to hover anything.
+    /// Half the gap between two neighbours on the quarter circle, with a little slack: far enough
+    /// that the space between items still points at one of them, tight enough that the screen
+    /// beyond either end of the fan points at nothing.
     /// </summary>
-    private BubbleView? NearestFlyoutBubble(double dx, double dy)
+    private double QuadrantHoverToleranceRad()
+    {
+        if (_bubbles.Count < 2)
+            return Math.PI / 4;
+        double step = Math.Abs(NormalizeAngle(_bubbles[1].AngleRad - _bubbles[0].AngleRad));
+        return step * 0.6;
+    }
+
+    /// <summary>
+    /// An arc occupies part of the circle, not all of it — unlike the full ring's slot lookup — so
+    /// a pointer out in the band still has to be near the arc to hover anything on it.
+    /// </summary>
+    private static BubbleView? NearestOnArc(
+        IReadOnlyList<BubbleView> bubbles, double dx, double dy, double toleranceRad)
     {
         double pointer = Math.Atan2(dy, dx);
-        double tolerance = RingMetrics.FlyoutStepDegrees * 0.6 * Math.PI / 180.0;
 
         BubbleView? best = null;
         double bestDelta = double.MaxValue;
-        foreach (var bubble in _flyout)
+        foreach (var bubble in bubbles)
         {
             double delta = Math.Abs(NormalizeAngle(pointer - bubble.AngleRad));
             if (delta < bestDelta)
@@ -1444,7 +1599,7 @@ public sealed partial class RingWindow : Window
             }
         }
 
-        return bestDelta <= tolerance ? best : null;
+        return bestDelta <= toleranceRad ? best : null;
     }
 
     private static double NormalizeAngle(double radians)
