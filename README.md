@@ -25,8 +25,8 @@ Everything runs on your own machine. There is no account, no telemetry, and noth
   - [General](#general)
   - [Apps & links](#apps--links)
   - [Tools](#tools-page)
-  - [Privacy](#privacy)
   - [About](#about)
+  - [Privacy](#privacy)
 - [Built-in tools](#built-in-tools)
 - [Configuration file](#configuration-file)
 - [How it works](#how-it-works)
@@ -116,7 +116,7 @@ How it behaves, and why:
 | **Re-arm** | Having fired, it will not fire again until the pointer leaves the patch — parking the mouse in the corner summons once, not twenty times a second. |
 | **Drag guard** | While any mouse button is held, the dwell does not even start. Dragging a window into a corner still hits Windows' own snap, and a text selection that ends in a corner is not a summon. |
 | **Per monitor** | The corner belongs to whichever display the pointer is on, measured against that display's full bounds rather than its work area — the corner of the *screen* is where the pointer actually stops, taskbar or not. |
-| **Already open** | A hot corner never re-summons an open ring; it would only yank it across the screen. |
+| **A toggle** | Reaching the corner while the dock is already open puts it away rather than summoning a second time — the same toggle the hotkey and the tray icon already are. Parking the mouse back in the corner is a reliable way to dismiss it however it was opened. |
 | **Hidden** | "Hide ring" from the tray is honored — unlike a keypress, a pointer can wander into a corner without being asked to. |
 | **Detection** | The pointer is polled every 50 ms on a `WM_TIMER`, riding the same hidden message window the tray icon and hotkeys already use. No system-wide mouse hook is installed for this. |
 
@@ -124,7 +124,8 @@ Pick the corner and what it opens in **Settings → Home → Hot corner**: a swi
 dropdown, and two choices for the shape —
 
 - **Ring** (default) — the whole ring, drawn at the corner.
-- **Quadrant** — four items only, on a quarter circle centered on the corner itself.
+- **Quadrant** — four items only, on a quarter circle centered on the corner itself: QuickAccess,
+  Notepad, Tools, and Settings by default (see [The corner quadrant](#the-corner-quadrant)).
 
 ---
 
@@ -132,8 +133,8 @@ dropdown, and two choices for the shape —
 
 | Action | Result |
 |--------|--------|
-| **Hover** an item | Its full name pops out in a pill beside it, along the same radial the item sits on, so the label never covers the item. |
-| **Hover** a group | After a short dwell it opens into the outer ring. Sweeping past on the way to a neighbour does not fire it. |
+| **Hover** an item | Its full name pops out in a pill beside it, along the same radial the item sits on, so the label never covers the item — always in exactly one place, even for a group whose flyout is open. |
+| **Hover** a group | After a short dwell it opens into the outer ring. Sweeping past on the way to a neighbour does not fire it. On the full ring, an open group's own label moves to sit outward of the whole arc it opened rather than beside itself; on a quadrant, where the flyout never leaves the same quarter, it just stays put beside the group. |
 | **Click** a leaf | Launches it and dismisses the ring. Settings and Add-new are the exceptions: they open their own window and leave the ring up. |
 | **Click** a group | Opens it (never toggles it shut — that would make groups flicker under a normal point-and-click). |
 | **Click** the gaps | The whole disc is live: a click between two items activates whichever one the pointer is angularly nearest, exactly as clicking the item would. |
@@ -157,15 +158,27 @@ items must not touch, and the first and last must clear the two screen edges the
 as it must, which is what keeps the layout correct at any item size and any radius you have set.
 Items are then spread evenly across whatever the edge clearance leaves.
 
-**The four items**, until you say otherwise, are your first two ring items, then Tools, then
-Settings — the ring's own "user items first, built-ins last" order, so the two layouts never
-disagree about where anything is. Close is deliberately absent: there are only four places, and a
-quadrant is dismissed the way the ring always was.
+**The four items**, until you say otherwise, are:
+
+1. **QuickAccess** — every web link and shortcut on your ring, gathered into one group, wherever
+   they sit (top level or nested inside your own groups). Drops out entirely if you have none, so
+   an empty group never takes a place for nothing.
+2. **Notepad** — your ring's own Notepad if it has one, or the same default `SeedDefaults` plants
+   on a fresh ring otherwise, so this place always opens to something.
+3. **Tools**
+4. **Settings**
+
+— content first, built-ins last, the same convention the full ring reads in with Settings and
+Close pinned to its own last two slots. Close is deliberately absent from the quadrant: there are
+only four places, and it is dismissed the way the ring always was (Esc, a click elsewhere, or the
+corner itself again). QuickAccess stays live even after you have arranged the corner by hand — a
+link you add to the ring later still joins it — and so does Tools, following the Tools page's
+switches the same way it does on the full ring.
 
 **Editing the corner** happens on the Home page's canvas (see below). Until you touch it, the
-corner has nothing stored and simply follows the ring — add an item to the ring and the corner
-picks it up. Your first edit writes the current selection into the config, and from then on the
-corner is your arrangement and stays put as the ring changes.
+corner has nothing stored and simply follows the rules above — add a link to the ring and
+QuickAccess picks it up. Your first edit writes the current selection into the config, and from
+then on the corner is your own arrangement; any of the four can be swapped for anything else.
 
 Groups still work inside a quadrant: expanding one fans its children out into an outer arc, slid
 back inside the quarter if it would otherwise throw half of them off the screen.
@@ -234,15 +247,15 @@ are Settings and Close, which the ring always draws itself.
 One row per built-in tool: a switch that puts it in the ring's Tools item or takes it out, an
 open button, and a drag handle. Dragging reorders the tools inside that group.
 
+### About
+
+What the app is, and its version.
+
 ### Privacy
 
 What happens to what you put into SwiftX, in plain terms: everything stays on the device, no
 tracking or analytics, secure values encrypted for your account, the tools running offline, the one
 thing that touches the network, and how to export or reset your data.
-
-### About
-
-What the app is, and its version.
 
 ---
 
@@ -334,13 +347,17 @@ config written by an older build that did store them is repaired on load.
 
 ### How `HotCornerRing` resolves
 
-Empty means the corner follows the ring: the four places are filled from your ring items plus Tools
-and Settings, recomputed every time. Once you arrange the corner by hand the list is written out,
-and each entry is mapped back to the live thing it names before it is drawn — Settings to the
-synthesized entry, `swiftx:toolsgroup` to the Tools item on the ring (so the Tools page's switches
-still govern its children), everything else to the ring item with the same `Id`. An entry naming
-something that has since left the ring keeps working from its own stored copy, which is what lets
-the corner hold an item the ring itself does not.
+Empty means the corner follows the ring: the four places are QuickAccess (every web link and
+shortcut on the ring, gathered into one group), Notepad (the ring's own, or a default stand-in),
+Tools, and Settings, recomputed every time. Once you arrange the corner by hand the list is
+written out, and each entry is mapped back to the live thing it names before it is drawn —
+Settings to the synthesized entry, `swiftx:toolsgroup` to the Tools item on the ring (so the Tools
+page's switches still govern its children), `swiftx:quickaccess` to a freshly gathered QuickAccess
+group (so it too keeps up with new links and shortcuts after being locked into an arrangement),
+everything else to the ring item with the same `Id`. An entry naming something that has since left
+the ring — including a QuickAccess with nothing left to gather, or a Notepad the ring never really
+had — keeps working from its own stored copy, which is what lets the corner hold an item the ring
+itself does not.
 
 ### Migrations run at startup
 
@@ -421,10 +438,12 @@ The suite covers the parts that can be reasoned about without a window on screen
   that stops an oversized patch swallowing half the screen.
 - `Models/QuadrantLayoutTests` — every item wholly on screen from all four corners, no two touching,
   the round trip between corner-local and canvas angles, a radius left alone when it already fits,
-  and which items the corner picks.
+  and which items the corner picks by default: QuickAccess gathering links and shortcuts from
+  anywhere on the ring (skipping hidden ones, dropping out when there's nothing to gather), and
+  Notepad preferring the ring's own over the synthesized fallback.
 - `Models/HotCornerItemsTests` — following the ring until edited, seeding on first edit, an
-  arrangement surviving ring changes, live re-linking, the fallback copy, reset, and the four-place
-  cap.
+  arrangement surviving ring changes, QuickAccess and Tools staying live once locked into an
+  arrangement, the fallback copy for an item that left the ring, reset, and the four-place cap.
 - `Models/ToolsGroupTests` — the Tools-group migration: adoption by name, consolidation, adding a
   missing tool, slot placement, and leaving an intentionally tool-free ring alone.
 - `Models/HotkeyGestureTests`, `Models/SystemRingItemsTests`.
@@ -435,7 +454,9 @@ The suite covers the parts that can be reasoned about without a window on screen
 ## Theme
 
 Solid **black** (Dark) or solid **white** (Light) surfaces only — no acrylic, Mica, or glass.
-System follows Windows and re-themes open windows as it changes.
+System follows Windows and re-themes open windows as it changes. In Settings, the sidebar sits a
+shade lighter/greyer than the content area beside it (Dark: `#141414` pane against `#000000`
+content) so the two read as distinct panels rather than one seamless field.
 
 ---
 

@@ -181,7 +181,11 @@ public sealed partial class RingWindow : Window
             LayoutAtCursor();
         _appWindow.Show();
         Activate();
-        NativeMethods.SetForegroundWindow(_hwnd);
+        // Not a plain SetForegroundWindow: a hot-corner summon fires from a WM_TIMER, which
+        // Windows does not treat as a real input event, so the plain call can silently fail to
+        // make the ring truly active — see WindowChrome.ForceForeground for why that specifically
+        // breaks "click anywhere to dismiss".
+        WindowChrome.ForceForeground(_hwnd);
         _isOpen = true;
         RenderCurrent(animate: true);
     }
@@ -775,7 +779,13 @@ public sealed partial class RingWindow : Window
         _pill.CornerRadius = new CornerRadius(size.Height / 2);
 
         double px, py;
-        if (!bubble.IsFlyout && _flyout.Count > 0 && ReferenceEquals(_flyoutParent, bubble))
+        // A quadrant's flyout never leaves the quarter its parent already sits in — its children
+        // are clamped inside that same arc (see FlyoutAngles) — so the parent's own beside-item
+        // spot is never crowded by them the way the full ring's up-to-eight-child flyout could be.
+        // Skipping the "heading" relocation there means a hovered item's name is drawn in exactly
+        // one place for the life of the hover, on the full ring or the quadrant alike, instead of
+        // jumping to a second spot the moment its flyout opens.
+        if (_quadrant is null && !bubble.IsFlyout && _flyout.Count > 0 && ReferenceEquals(_flyoutParent, bubble))
         {
             // Once a group is open, its name is the heading of the ring it opened rather than a
             // label on the item — so it sits outward from the whole arc along the same radial the

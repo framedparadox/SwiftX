@@ -99,38 +99,120 @@ public class QuadrantLayoutTests
         Target = name,
     };
 
+    private static RingItem Link(string name) => new()
+    {
+        Kind = RingItemKind.WebLink,
+        DisplayName = name,
+        Target = "https://" + name,
+    };
+
+    private static RingItem Shortcut(string name) => new()
+    {
+        Kind = RingItemKind.Shortcut,
+        DisplayName = name,
+        Target = name + ".lnk",
+    };
+
+    private static RingItem Group(string name, params RingItem[] children)
+    {
+        var group = new RingItem { Kind = RingItemKind.Group, DisplayName = name };
+        group.Children.AddRange(children);
+        return group;
+    }
+
     [Fact]
-    public void Four_items_by_default_user_items_first_then_Tools_then_Settings()
+    public void Four_items_by_default_QuickAccess_then_Notepad_then_Tools_then_Settings()
     {
         var tools = ToolCatalog.CreateToolsGroup();
-        var items = new List<RingItem> { App("one"), App("two"), tools, App("three") };
+        var notepad = App("Notepad");
+        var items = new List<RingItem> { notepad, Link("github"), tools };
 
         var quadrant = QuadrantLayout.Compose(items, SystemRingItems.CreateSettings());
 
         Assert.Equal(
-            new[] { "one", "two", "Tools", "Settings" },
+            new[] { "QuickAccess", "Notepad", "Tools", "Settings" },
             quadrant.Select(i => i.DisplayName));
+    }
+
+    [Fact]
+    public void QuickAccess_gathers_every_link_and_shortcut_wherever_it_sits()
+    {
+        var items = new List<RingItem>
+        {
+            Link("github"),
+            Group("Work", Shortcut("project"), App("calc")),
+        };
+
+        var quadrant = QuadrantLayout.Compose(items, SystemRingItems.CreateSettings());
+
+        var quickAccess = Assert.Single(quadrant, i => i.DisplayName == "QuickAccess");
+        Assert.Equal(new[] { "github", "project" }, quickAccess.Children.Select(c => c.DisplayName));
+    }
+
+    [Fact]
+    public void QuickAccess_drops_out_entirely_when_there_is_nothing_to_gather()
+    {
+        var items = new List<RingItem> { App("Notepad") };
+
+        var quadrant = QuadrantLayout.Compose(items, SystemRingItems.CreateSettings());
+
+        Assert.DoesNotContain(quadrant, i => i.DisplayName == "QuickAccess");
+        // The place it would have taken goes unfilled rather than to some other item — the
+        // default composition names exactly four things, not "whatever fits".
+        Assert.Equal(new[] { "Notepad", "Settings" }, quadrant.Select(i => i.DisplayName));
+    }
+
+    [Fact]
+    public void The_rings_own_Notepad_is_used_when_it_has_one()
+    {
+        var notepad = App("My editor");
+        notepad.Target = @"C:\Windows\System32\Notepad.exe";
+        var items = new List<RingItem> { notepad };
+
+        var quadrant = QuadrantLayout.Compose(items, SystemRingItems.CreateSettings());
+
+        Assert.Same(notepad, quadrant.First());
+    }
+
+    [Fact]
+    public void A_ring_with_no_notepad_gets_the_same_default_SeedDefaults_plants()
+    {
+        var quadrant = QuadrantLayout.Compose(new List<RingItem>(), SystemRingItems.CreateSettings());
+
+        var notepad = quadrant.First();
+        Assert.Equal("Notepad", notepad.DisplayName);
+        Assert.EndsWith("notepad.exe", notepad.Target, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void Hidden_items_are_passed_over()
     {
-        var hidden = App("hidden");
-        hidden.Hidden = true;
-        var items = new List<RingItem> { hidden, App("one"), App("two"), App("three") };
+        var hiddenLink = Link("hidden");
+        hiddenLink.Hidden = true;
+        var items = new List<RingItem> { hiddenLink };
 
         var quadrant = QuadrantLayout.Compose(items, SystemRingItems.CreateSettings());
 
-        // No Tools item on this ring, so the third place goes to another of the user's.
-        Assert.Equal(
-            new[] { "one", "two", "three", "Settings" },
-            quadrant.Select(i => i.DisplayName));
+        Assert.DoesNotContain(quadrant, i => i.DisplayName == "QuickAccess");
+    }
+
+    [Fact]
+    public void A_hidden_link_nested_inside_a_visible_group_is_still_passed_over()
+    {
+        var hiddenShortcut = Shortcut("hidden");
+        hiddenShortcut.Hidden = true;
+        var items = new List<RingItem> { Group("Work", hiddenShortcut, Link("visible")) };
+
+        var quickAccess = QuadrantLayout.BuildQuickAccess(items);
+
+        Assert.NotNull(quickAccess);
+        Assert.Equal(new[] { "visible" }, quickAccess!.Children.Select(c => c.DisplayName));
     }
 
     [Fact]
     public void An_almost_empty_ring_still_gets_its_built_ins()
     {
         var quadrant = QuadrantLayout.Compose(new List<RingItem>(), SystemRingItems.CreateSettings());
-        Assert.Equal(new[] { "Settings" }, quadrant.Select(i => i.DisplayName));
+        Assert.Equal(new[] { "Notepad", "Settings" }, quadrant.Select(i => i.DisplayName));
     }
 }

@@ -73,19 +73,20 @@
             </muxc:NavigationView.MenuItems>
 
             <!-- Pinned below the scrollable menu, separated by NavigationView's own divider —
-                 About is a "learn more", not a working page, so it reads as the same footer slot
-                 Windows apps usually give Settings/About rather than just another row in the list. -->
+                 both read as the same "learn more" footer slot Windows apps usually give
+                 Settings/About rather than just another row in the working-page list above, About
+                 first as the more general of the two with Privacy right behind it. -->
             <muxc:NavigationView.FooterMenuItems>
-                <muxc:NavigationViewItem Content="Privacy" Tag="privacy"
-                                         AutomationProperties.AutomationId="SettingsNavPrivacy">
-                    <muxc:NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE72E;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    </muxc:NavigationViewItem.Icon>
-                </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem Content="About" Tag="about"
                                          AutomationProperties.AutomationId="SettingsNavAbout">
                     <muxc:NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE946;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
+                    </muxc:NavigationViewItem.Icon>
+                </muxc:NavigationViewItem>
+                <muxc:NavigationViewItem Content="Privacy" Tag="privacy"
+                                         AutomationProperties.AutomationId="SettingsNavPrivacy">
+                    <muxc:NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE72E;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
             </muxc:NavigationView.FooterMenuItems>

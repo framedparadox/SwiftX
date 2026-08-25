@@ -17,6 +17,22 @@ public class HotCornerItemsTests
         Target = name,
     };
 
+    private static RingItem Link(string name) => new()
+    {
+        Kind = RingItemKind.WebLink,
+        DisplayName = name,
+        Target = "https://" + name,
+    };
+
+    /// <summary>An Application item that <see cref="QuadrantLayout.FindOrDefaultNotepad"/> will
+    /// actually recognize — matched by the target's file name, not its display name.</summary>
+    private static RingItem Notepad(string name = "Notepad") => new()
+    {
+        Kind = RingItemKind.Application,
+        DisplayName = name,
+        Target = @"C:\Windows\System32\notepad.exe",
+    };
+
     private static AppConfig ConfigWith(params RingItem[] items)
     {
         var config = new AppConfig().EnsurePrimary();
@@ -27,66 +43,97 @@ public class HotCornerItemsTests
     [Fact]
     public void An_untouched_corner_follows_the_ring()
     {
-        var config = ConfigWith(App("one"), App("two"), App("three"));
+        var config = ConfigWith(Link("github"), Notepad());
 
         Assert.True(HotCornerItems.IsDefault(config));
         Assert.Equal(
-            new[] { "one", "two", "three", "Settings" },
+            new[] { "QuickAccess", "Notepad", "Settings" },
             HotCornerItems.Resolve(config, SystemRingItems.CreateSettings()).Select(i => i.DisplayName));
 
-        // Following the ring means keeping up with it, not snapshotting it.
-        config.Primary.Items.Insert(0, App("zero"));
-        Assert.Equal(
-            new[] { "zero", "one", "two", "Settings" },
-            HotCornerItems.Resolve(config, SystemRingItems.CreateSettings()).Select(i => i.DisplayName));
+        // Following the ring means keeping up with it, not snapshotting it — a new link joins
+        // QuickAccess rather than needing its own place.
+        config.Primary.Items.Add(Link("docs"));
+        var quickAccess = HotCornerItems.Resolve(config, SystemRingItems.CreateSettings())
+            .First(i => i.DisplayName == "QuickAccess");
+        Assert.Equal(new[] { "github", "docs" }, quickAccess.Children.Select(c => c.DisplayName));
     }
 
     [Fact]
     public void Editing_starts_from_what_the_corner_already_shows()
     {
-        var config = ConfigWith(App("one"), App("two"), App("three"));
+        var config = ConfigWith(Link("github"), Notepad());
 
         var list = HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
 
         Assert.False(HotCornerItems.IsDefault(config));
         Assert.Equal(
-            new[] { "one", "two", "three", "Settings" },
+            new[] { "QuickAccess", "Notepad", "Settings" },
             list.Select(i => i.DisplayName));
     }
 
     [Fact]
     public void An_arrangement_is_kept_as_the_ring_moves_on()
     {
-        var config = ConfigWith(App("one"), App("two"), App("three"));
+        var config = ConfigWith(Link("github"), Notepad());
         var list = HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
+        // Seeded as [QuickAccess, Notepad, Settings].
 
         // Rearrange, and take one off.
-        var first = list[0];
+        var quickAccess = list[0];
         list.RemoveAt(0);
-        list.Add(first);
+        list.Add(quickAccess);
         list.RemoveAt(0);
+        // Now [Settings, QuickAccess].
 
-        // A new ring item does not push its way onto a corner the user has arranged.
-        config.Primary.Items.Insert(0, App("zero"));
+        // A ring change does not push its way onto a corner the user has arranged.
+        config.Primary.Items.Add(Link("docs"));
 
         Assert.Equal(
-            new[] { "three", "Settings", "one" },
+            new[] { "Settings", "QuickAccess" },
             HotCornerItems.Resolve(config, SystemRingItems.CreateSettings()).Select(i => i.DisplayName));
+    }
+
+    [Fact]
+    public void QuickAccess_keeps_gathering_new_links_once_locked_into_an_arrangement()
+    {
+        var config = ConfigWith(Link("github"));
+        HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
+
+        config.Primary.Items.Add(Link("docs"));
+
+        var quickAccess = HotCornerItems.Resolve(config, SystemRingItems.CreateSettings())
+            .First(i => i.DisplayName == "QuickAccess");
+        Assert.Equal(new[] { "github", "docs" }, quickAccess.Children.Select(c => c.DisplayName));
+    }
+
+    [Fact]
+    public void Tools_stays_the_live_ring_group_once_locked_into_an_arrangement()
+    {
+        var tools = ToolCatalog.CreateToolsGroup();
+        var config = ConfigWith(tools);
+        HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
+
+        var resolved = HotCornerItems.Resolve(config, SystemRingItems.CreateSettings())
+            .First(i => i.Target == ToolCatalog.ToolsGroupTarget);
+        // The live ring object, not a frozen copy — so the Tools page's own switches (which hide
+        // children directly on this object) keep applying wherever the corner shows it.
+        Assert.Same(tools, resolved);
     }
 
     [Fact]
     public void A_stored_entry_resolves_to_the_live_item_it_names()
     {
-        var notepad = App("Notepad");
-        var config = ConfigWith(notepad, App("two"));
+        var notepad = Notepad("My editor");
+        var config = ConfigWith(notepad);
         HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
 
         // Stored entries are copies in the file, so renaming the ring item has to show through.
-        notepad.DisplayName = "Editor";
+        notepad.DisplayName = "Renamed";
 
         var resolved = HotCornerItems.Resolve(config, SystemRingItems.CreateSettings());
-        Assert.Same(notepad, resolved[0]);
-        Assert.Equal("Editor", resolved[0].DisplayName);
+        var slot = Assert.Single(resolved, i => i.Id == notepad.Id);
+        Assert.Same(notepad, slot);
+        Assert.Equal("Renamed", slot.DisplayName);
     }
 
     [Fact]
@@ -104,20 +151,20 @@ public class HotCornerItemsTests
     [Fact]
     public void An_entry_whose_item_left_the_ring_keeps_working_from_its_own_copy()
     {
-        var notepad = App("Notepad");
-        var config = ConfigWith(notepad, App("two"));
+        var notepad = Notepad();
+        var config = ConfigWith(notepad);
         HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
 
         config.Primary.Items.Remove(notepad);
 
         var resolved = HotCornerItems.Resolve(config, SystemRingItems.CreateSettings());
-        Assert.Equal("Notepad", resolved[0].DisplayName);
+        Assert.Contains(resolved, i => i.DisplayName == "Notepad");
     }
 
     [Fact]
     public void Reset_puts_the_corner_back_on_the_rings_picks()
     {
-        var config = ConfigWith(App("one"), App("two"));
+        var config = ConfigWith(Link("github"), Notepad());
         var list = HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
         list.RemoveAt(0);
         Assert.False(HotCornerItems.IsDefault(config));
@@ -126,7 +173,7 @@ public class HotCornerItemsTests
 
         Assert.True(HotCornerItems.IsDefault(config));
         Assert.Equal(
-            new[] { "one", "two", "Settings" },
+            new[] { "QuickAccess", "Notepad", "Settings" },
             HotCornerItems.Resolve(config, SystemRingItems.CreateSettings()).Select(i => i.DisplayName));
     }
 

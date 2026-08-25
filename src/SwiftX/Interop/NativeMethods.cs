@@ -420,6 +420,29 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetForegroundWindow(nint hwnd);
 
+    // A plain SetForegroundWindow is honored unconditionally only when Windows can see it was
+    // triggered by a real input event on the calling thread — a keypress, a mouse click. The hot
+    // corner's summon is neither: it fires from a WM_TIMER on the message window's own thread, so
+    // Windows' foreground-lock can silently downgrade the request to a flashing taskbar icon
+    // instead of true activation. That matters here specifically because "click anywhere to
+    // dismiss" (RingWindow_Activated) fires on losing activation — a window that was never truly
+    // activated can never fire that transition, so a corner-summoned dock would stay stuck on
+    // screen through a click elsewhere. AttachThreadInput temporarily shares input state with
+    // whichever thread currently owns the foreground, which is the documented, widely-used way to
+    // borrow its standing long enough for SetForegroundWindow to actually take.
+    [DllImport("user32.dll")]
+    public static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint GetWindowThreadProcessId(nint hWnd, out uint processId);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, [MarshalAs(UnmanagedType.Bool)] bool fAttach);
+
     // ---- Global hotkeys ----------------------------------------------------
 
     /// <summary>Ask Windows not to auto-repeat a held-down hotkey.</summary>
