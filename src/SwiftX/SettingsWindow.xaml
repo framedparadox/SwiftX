@@ -99,24 +99,27 @@
                 <ScrollViewer x:Name="HomePanel">
                     <StackPanel Spacing="12" MaxWidth="920" HorizontalAlignment="Left">
                         <TextBlock Text="Home" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,4" />
-                        <TextBlock Text="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange."
+                        <TextBlock Text="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange. The corner button switches to what the hot corner opens, which is arranged the same way."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="20" HorizontalAlignment="Left" VerticalAlignment="Top">
-                            <!-- Canvas and the two ring-wide actions as one column: the buttons act
-                                 on the ring as a whole, so they belong under the picture of it
-                                 rather than in the column of per-setting cards beside it. -->
-                            <StackPanel Spacing="12" HorizontalAlignment="Left" VerticalAlignment="Top">
-                                <Border Style="{StaticResource Card}" Background="{ThemeResource SwiftXRingCanvasBrush}"
-                                        HorizontalAlignment="Left" VerticalAlignment="Top" Padding="12">
+                            <!-- The two ring-wide actions sit on the canvas itself, in the space
+                                 below the ring: they act on what is drawn there, and the ring's own
+                                 footprint never reaches the bottom of the canvas (it is scaled to
+                                 fit well inside), so nothing is covered. -->
+                            <Border Style="{StaticResource Card}" Background="{ThemeResource SwiftXRingCanvasBrush}"
+                                    HorizontalAlignment="Left" VerticalAlignment="Top" Padding="8">
+                                <Grid>
                                     <Canvas x:Name="PreviewCanvas" Width="360" Height="360" />
-                                </Border>
-                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-                                    <Button Content="Add item…" Click="AddItem_Click" />
-                                    <Button Content="Reset defaults" Click="ResetDefaults_Click" />
-                                </StackPanel>
-                            </StackPanel>
+                                    <StackPanel x:Name="CanvasActions" Orientation="Horizontal" Spacing="8"
+                                                HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                                                Margin="0,0,0,4">
+                                        <Button Content="Add item…" Click="AddItem_Click" />
+                                        <Button Content="Reset defaults" Click="ResetDefaults_Click" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
 
-                            <StackPanel Width="320" Spacing="12">
+                            <StackPanel Width="336" Spacing="12">
                                 <Border Style="{StaticResource Card}">
                                     <Grid ColumnSpacing="12">
                                         <Grid.ColumnDefinitions>
@@ -159,61 +162,60 @@
                                 </Border>
 
                                 <!-- The pointer half of "Invoke", and a ring setting rather than an
-                                     app-wide one, so it lives here beside size and radius: switch,
-                                     which corner, and — once it is on — how much of the ring the
-                                     corner brings up. -->
+                                     app-wide one, so it lives here beside size and radius. Two rows:
+                                     the switch, then — as part of the same section rather than a
+                                     card of its own — which corner and how much of the ring it
+                                     opens. Both of the second row's controls are only meaningful
+                                     while the corner is armed, so they go dead with the switch
+                                     rather than disappearing and shuffling the column. -->
                                 <Border Style="{StaticResource Card}">
-                                    <Grid ColumnSpacing="10">
+                                    <Grid ColumnSpacing="10" RowSpacing="10">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <FontIcon Grid.Column="0" Glyph="&#xE740;"
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <FontIcon Grid.Row="0" Grid.Column="0" Glyph="&#xE740;"
                                                   FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
                                                   VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Text="Hot corner"
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="Hot corner"
                                                    Style="{ThemeResource BodyStrongTextBlockStyle}"
                                                    VerticalAlignment="Center" />
-                                        <ToggleSwitch x:Name="HotCornerEnabledToggle" Grid.Column="2"
+                                        <ToggleSwitch x:Name="HotCornerEnabledToggle" Grid.Row="0" Grid.Column="2"
                                                       OnContent="" OffContent="" MinWidth="0"
-                                                      VerticalAlignment="Center"
+                                                      VerticalAlignment="Center" HorizontalAlignment="Right"
                                                       AutomationProperties.AutomationId="SettingsHotCornerToggle"
                                                       Toggled="HotCornerEnabled_Toggled" />
-                                        <ComboBox x:Name="HotCornerBox" Grid.Column="3" MinWidth="0" Width="118"
-                                                  VerticalAlignment="Center" HorizontalAlignment="Right"
-                                                  AutomationProperties.AutomationId="SettingsHotCornerBox"
-                                                  SelectionChanged="HotCornerBox_SelectionChanged">
-                                            <ComboBoxItem Content="Top left" Tag="TopLeft" />
-                                            <ComboBoxItem Content="Top right" Tag="TopRight" />
-                                            <ComboBoxItem Content="Bottom left" Tag="BottomLeft" />
-                                            <ComboBoxItem Content="Bottom right" Tag="BottomRight" />
-                                        </ComboBox>
-                                    </Grid>
-                                </Border>
 
-                                <!-- Only meaningful once the corner is armed, so it appears with it. -->
-                                <Border x:Name="HotCornerLayoutCard" Style="{StaticResource Card}"
-                                        Visibility="Collapsed">
-                                    <StackPanel Spacing="6">
-                                        <TextBlock Text="Corner shows"
-                                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                        <StackPanel Orientation="Horizontal" Spacing="14">
-                                            <RadioButton x:Name="HotCornerLayoutRing" Content="Full ring"
+                                        <StackPanel x:Name="HotCornerOptionsRow" Grid.Row="1" Grid.Column="0"
+                                                    Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="12">
+                                            <ComboBox x:Name="HotCornerBox" MinWidth="0" Width="112"
+                                                      VerticalAlignment="Center"
+                                                      AutomationProperties.AutomationId="SettingsHotCornerBox"
+                                                      SelectionChanged="HotCornerBox_SelectionChanged">
+                                                <ComboBoxItem Content="Top left" Tag="TopLeft" />
+                                                <ComboBoxItem Content="Top right" Tag="TopRight" />
+                                                <ComboBoxItem Content="Bottom left" Tag="BottomLeft" />
+                                                <ComboBoxItem Content="Bottom right" Tag="BottomRight" />
+                                            </ComboBox>
+                                            <RadioButton x:Name="HotCornerLayoutRing" Content="Ring"
                                                          GroupName="HotCornerLayout" MinWidth="0"
+                                                         VerticalAlignment="Center"
                                                          AutomationProperties.AutomationId="SettingsHotCornerLayoutRing"
                                                          Checked="HotCornerLayout_Checked" />
                                             <RadioButton x:Name="HotCornerLayoutQuadrant" Content="Quadrant"
                                                          GroupName="HotCornerLayout" MinWidth="0"
+                                                         VerticalAlignment="Center"
                                                          AutomationProperties.AutomationId="SettingsHotCornerLayoutQuadrant"
                                                          Checked="HotCornerLayout_Checked" />
                                         </StackPanel>
-                                        <TextBlock x:Name="HotCornerLayoutHint" Style="{StaticResource SecondaryCaption}"
-                                                   TextWrapping="Wrap" />
-                                    </StackPanel>
+                                    </Grid>
                                 </Border>
-
 
                                 <!-- Read-only inspector for whatever item was last clicked, on the
                                      main ring or inside an expanded group's children row below.

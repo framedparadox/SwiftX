@@ -28,6 +28,13 @@ public sealed class AppConfig
     /// <summary>Whether a hot-corner summon brings up the whole ring or a corner quadrant.</summary>
     public HotCornerLayout HotCornerLayout { get; set; } = HotCornerLayout.Ring;
 
+    /// <summary>
+    /// What the quadrant shows, once the user has arranged it themselves. Empty means "whatever
+    /// the ring suggests" — see <see cref="HotCornerItems"/>, which picks the default and is also
+    /// what writes this list the first time the corner is edited.
+    /// </summary>
+    public List<RingItem> HotCornerRing { get; set; } = new();
+
     public bool Seeded { get; set; }
 
     /// <summary>How large the items around the ring are drawn. The hub is fixed and unaffected.</summary>
@@ -39,6 +46,20 @@ public sealed class AppConfig
     public bool ShowBase64Tool { get; set; } = true;
     public bool ShowCertificateTool { get; set; } = true;
     public bool ReuseToolWindows { get; set; } = true;
+
+    /// <summary>
+    /// Whether <paramref name="kind"/> is one of the tools the ring is currently set to show —
+    /// the read side of the Tools page's switches, which <see cref="ToolCatalog.ApplyVisibility"/>
+    /// turns into the <see cref="RingItem.Hidden"/> flag on the ring's own tool items.
+    /// </summary>
+    public bool IsToolShown(ToolKind kind) => kind switch
+    {
+        ToolKind.Data => ShowDataTool,
+        ToolKind.SecureValues => ShowSecureValuesTool,
+        ToolKind.Base64 => ShowBase64Tool,
+        ToolKind.Certificate => ShowCertificateTool,
+        _ => true,
+    };
 
     [JsonIgnore]
     public RingProfile Primary => Rings.Count > 0
@@ -61,6 +82,7 @@ public sealed class AppConfig
         HotCornerEnabled = other.HotCornerEnabled;
         HotCorner = other.HotCorner;
         HotCornerLayout = other.HotCornerLayout;
+        HotCornerRing = other.HotCornerRing;
         ItemSize = other.ItemSize;
         RingRadius = other.RingRadius;
         ShowDataTool = other.ShowDataTool;
