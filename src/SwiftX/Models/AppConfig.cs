@@ -18,6 +18,13 @@ public sealed class AppConfig
     public AppTheme Theme { get; set; } = AppTheme.Dark;
     public string Hotkey { get; set; } = HotkeyGesture.Default.ToString();
     public bool HotkeyEnabled { get; set; } = true;
+
+    /// <summary>Whether shoving the pointer into <see cref="HotCorner"/> summons the ring.</summary>
+    public bool HotCornerEnabled { get; set; } = true;
+
+    /// <summary>The screen corner that summons the ring. Top-left, the way macOS ships.</summary>
+    public HotCorner HotCorner { get; set; } = HotCorner.TopLeft;
+
     public bool Seeded { get; set; }
 
     /// <summary>How large the items around the ring are drawn. The hub is fixed and unaffected.</summary>
@@ -48,6 +55,8 @@ public sealed class AppConfig
         Theme = other.Theme;
         Hotkey = other.Hotkey;
         HotkeyEnabled = other.HotkeyEnabled;
+        HotCornerEnabled = other.HotCornerEnabled;
+        HotCorner = other.HotCorner;
         ItemSize = other.ItemSize;
         RingRadius = other.RingRadius;
         ShowDataTool = other.ShowDataTool;

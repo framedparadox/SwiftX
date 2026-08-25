@@ -13,6 +13,7 @@ public sealed class RingManager
     private MessageWindow? _messageWindow;
     private TrayIconService? _tray;
     private HotkeyService? _hotkeys;
+    private HotCornerWatcher? _hotCorner;
     private SettingsWindow? _settingsWindow;
     private AddItemWindow? _addItemWindow;
     private RingWindow? _ringWindow;
@@ -165,6 +166,10 @@ public sealed class RingManager
                     ToggleRing();
             };
             ApplyHotkey();
+
+            _hotCorner = new HotCornerWatcher(_messageWindow);
+            _hotCorner.Triggered += SummonFromHotCorner;
+            ApplyHotCorner();
         }
         catch (Exception ex)
         {
@@ -183,6 +188,28 @@ public sealed class RingManager
         if (!HotkeyGesture.TryParse(Config.Hotkey, out var gesture) || !gesture.IsValid)
             return false;
         return _hotkeys.Register(SummonHotkeyId, gesture);
+    }
+
+    /// <summary>Puts <see cref="Config"/>'s hot-corner choice into effect. Call after changing
+    /// either the corner or whether it is on.</summary>
+    public void ApplyHotCorner() =>
+        _hotCorner?.Configure(Config.HotCornerEnabled, Config.HotCorner);
+
+    /// <summary>
+    /// The mouse-only counterpart to the summon hotkey (see <see cref="HotCornerWatcher"/>).
+    /// Summons rather than toggles: the pointer reaching a corner is a request for the ring, and
+    /// re-summoning an open one would only yank it across the screen to the corner, so an already
+    /// open ring is left exactly where it is. Hiding the ring from the tray stays honored — that
+    /// is an explicit "not now", and unlike the hotkey the pointer can wander into a corner
+    /// without being asked to.
+    /// </summary>
+    private void SummonFromHotCorner()
+    {
+        if (_hiddenByUser)
+            return;
+        _ringWindow ??= new RingWindow(this);
+        if (!_ringWindow.IsOpen)
+            _ringWindow.Summon();
     }
 
     public void ToggleRing()
@@ -294,9 +321,11 @@ public sealed class RingManager
     {
         _tray?.Dispose();
         _hotkeys?.Dispose();
+        _hotCorner?.Dispose();
         _messageWindow?.Dispose();
         _tray = null;
         _hotkeys = null;
+        _hotCorner = null;
         _messageWindow = null;
     }
 

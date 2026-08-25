@@ -112,6 +112,8 @@ public sealed partial class SettingsWindow : Window
             SelectItemSize(_manager.Config.ItemSize);
             RadiusSlider.Value = _manager.Config.RingRadius ?? RingMetrics.DefaultRadius;
             HotkeyEnabledToggle.IsOn = _manager.Config.HotkeyEnabled;
+            HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
+            SelectHotCorner(_manager.Config.HotCorner);
             if (HotkeyGesture.TryParse(_manager.Config.Hotkey, out var g))
                 HotkeyCapture.Gesture = g;
             HotkeyCapture.Assigned += OnHotkeyAssigned;
@@ -768,7 +770,12 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.EnsurePrimary();
         _manager.NotifyItemsChanged();
         _manager.ApplyTheme();
+        _manager.ApplyHotCorner();
         ApplyTheme();
+        _loading = true;
+        HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
+        SelectHotCorner(_manager.Config.HotCorner);
+        _loading = false;
         RenderPreview();
         RebuildItemsList();
     }
@@ -782,6 +789,8 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.Theme = AppTheme.Dark;
         _manager.Config.Hotkey = HotkeyGesture.Default.ToString();
         _manager.Config.HotkeyEnabled = true;
+        _manager.Config.HotCornerEnabled = true;
+        _manager.Config.HotCorner = HotCorner.TopLeft;
         _manager.Config.ShowDataTool = true;
         _manager.Config.ShowSecureValuesTool = true;
         _manager.Config.ShowBase64Tool = true;
@@ -794,6 +803,7 @@ public sealed partial class SettingsWindow : Window
         _manager.NotifyItemsChanged();
         _manager.ApplyTheme();
         _manager.ApplyHotkey();
+        _manager.ApplyHotCorner();
         ApplyTheme();
         _loading = true;
         SelectTheme(AppTheme.Dark);
@@ -801,6 +811,8 @@ public sealed partial class SettingsWindow : Window
         RadiusSlider.Value = RingMetrics.DefaultRadius;
         HotkeyEnabledToggle.IsOn = true;
         HotkeyCapture.Gesture = HotkeyGesture.Default;
+        HotCornerEnabledToggle.IsOn = true;
+        SelectHotCorner(HotCorner.TopLeft);
         RebuildToolsList();
         _loading = false;
         RenderPreview();
@@ -835,6 +847,37 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.HotkeyEnabled = HotkeyEnabledToggle.IsOn;
         _manager.Save();
         UpdateHotkeyStatus();
+    }
+
+    private void SelectHotCorner(HotCorner corner)
+    {
+        foreach (ComboBoxItem item in HotCornerBox.Items)
+        {
+            if ((item.Tag as string) == corner.ToString())
+            {
+                HotCornerBox.SelectedItem = item;
+                break;
+            }
+        }
+    }
+
+    private void HotCornerBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || HotCornerBox.SelectedItem is not ComboBoxItem item) return;
+        if (Enum.TryParse<HotCorner>(item.Tag as string, out var corner))
+        {
+            _manager.Config.HotCorner = corner;
+            _manager.Save();
+            _manager.ApplyHotCorner();
+        }
+    }
+
+    private void HotCornerEnabled_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _manager.Config.HotCornerEnabled = HotCornerEnabledToggle.IsOn;
+        _manager.Save();
+        _manager.ApplyHotCorner();
     }
 
     private void UpdateHotkeyStatus()
