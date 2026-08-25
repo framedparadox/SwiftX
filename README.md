@@ -36,9 +36,11 @@ Or launch the built `SwiftX.exe` from the output folder under `bin\x64\Debug\net
   It fires per monitor, ignores a corner clipped in passing, and stays quiet while a mouse button is held
   so dragging a window into a corner still snaps it the way Windows expects
   - **Full ring** (default) brings up the whole ring at the corner
-  - **Quadrant** brings up four items only — your first two, Tools, and Settings — fanned out along a
-    quarter circle centered on the corner itself, so everything is a short flick from where the pointer
-    already is. The button on the Home page's ring canvas shows what the corner will open
+  - **Quadrant** brings up four items only — your first two, Tools, and Settings by default — fanned out
+    along a quarter circle centered on the corner itself, so everything is a short flick from where the
+    pointer already is. The button on the Home page's ring canvas switches to that view, where the four
+    places can be rearranged by dragging, filled from an empty +, or emptied with the × on an item;
+    until you touch them the corner just follows the ring
 - **Hover** a bubble to pop its full name out in a pill beside it
 - **Click** a leaf to launch; **Group** pops its children out into a concentric outer ring — select it again to collapse
 - **Center hub** shows the app logo; click it to collapse an open group

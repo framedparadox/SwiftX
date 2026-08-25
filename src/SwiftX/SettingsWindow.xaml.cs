@@ -42,6 +42,15 @@ public sealed partial class SettingsWindow : Window
     private double _previewRadius;
     private double _previewBubble;
 
+    // Quadrant geometry and slot occupancy, the corner view's counterpart to _slotBorders and
+    // friends above: the canvas-level pointer handlers work out which of the four places an event
+    // landed in from these rather than by walking the visual tree.
+    private readonly Border?[] _quadrantSlotBorders = new Border?[QuadrantLayout.ItemCount];
+    private readonly double[] _quadrantSlotAngles = new double[QuadrantLayout.ItemCount];
+    private Point _quadrantCenter;
+    private double _quadrantRadius;
+    private double _quadrantBubble;
+
     // Whether the canvas is currently showing the hot corner's quadrant instead of the ring.
     // Purely a preview: toggled by the corner button RenderPreview draws, and never persisted —
     // what the corner actually summons is Config.HotCornerLayout.
@@ -205,13 +214,17 @@ public sealed partial class SettingsWindow : Window
 
         if (_previewQuadrant && _manager.Config.HotCornerEnabled)
         {
-            // No editable slots in this view — drop the ring's, so a press can't reach a bubble
-            // that is no longer on the canvas.
+            // The ring's own slots are not on screen, so drop them: a press must not reach a
+            // bubble that is no longer drawn. The two ring-wide buttons go with them — they act on
+            // the ring, and a bottom corner's fan would run straight through where they sit.
             Array.Clear(_slotBorders);
+            CanvasActions.Visibility = Visibility.Collapsed;
             RenderQuadrantPreview(size);
             AddHotCornerButton(size);
             return;
         }
+
+        CanvasActions.Visibility = Visibility.Visible;
 
         // Scale the live ring geometry into the preview canvas rather than drawing one fixed
         // picture of it, so Ring size / Item size / Ring radius visibly change what this shows.
@@ -291,17 +304,24 @@ public sealed partial class SettingsWindow : Window
     /// drawn to the same rules the real one uses (<see cref="QuadrantLayout"/>) and scaled into
     /// the canvas — centered on the canvas corner that matches the chosen screen corner, so the
     /// picture says which corner as much as what.
+    /// <para>
+    /// Editable, like the ring view beside it: all four places are always drawn, an empty one
+    /// offers a +, each filled one carries a remove badge, and any of them can be dragged onto
+    /// another to reorder. The first such edit turns the corner's default pick into an
+    /// arrangement of the user's own — see <see cref="HotCornerItems"/>.
+    /// </para>
     /// </summary>
     private void RenderQuadrantPreview(double size)
     {
         var corner = _manager.Config.HotCorner;
-        var items = QuadrantLayout.Compose(
-            _manager.Config.Primary.Items, SystemRingItems.CreateSettings());
-        if (items.Count == 0)
-            return;
+        var items = HotCornerItems.Resolve(_manager.Config, SystemRingItems.CreateSettings());
 
         double bubble = RingMetrics.Bubble;
-        double radius = QuadrantLayout.Radius(items.Count, bubble * RingMetrics.HoverScale, RingMetrics.Radius);
+        // Always laid out for the full four places, so adding or removing an item fills or empties
+        // a slot instead of re-spacing the whole fan under the pointer.
+        int slots = QuadrantLayout.ItemCount;
+        double hoverBubble = bubble * RingMetrics.HoverScale;
+        double radius = QuadrantLayout.Radius(slots, hoverBubble, RingMetrics.Radius);
 
         // Same scale the ring preview uses, so switching between the two views changes the shape
         // and not the size of everything in it — only clamped smaller if a large ring radius
@@ -314,25 +334,30 @@ public sealed partial class SettingsWindow : Window
         double glyphSize = Math.Max(10, RingMetrics.Glyph * scale);
 
         var (cx, cy) = QuadrantLayout.Center(corner, size, size);
+        _quadrantCenter = new Point(cx, cy);
+        _quadrantRadius = previewRadius;
+        _quadrantBubble = previewBubble;
+        Array.Clear(_quadrantSlotBorders);
+
         var borderBrush = ThemeHelper.Brush(Root, "SwiftXBorderBrush");
         var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
 
         // The arc the items sit on, so the shape reads as a quarter of the ring rather than four
-        // loose bubbles that happen to be curved. A single item has no arc to speak of — and an
-        // arc whose ends meet is ambiguous to draw — so it goes without.
-        if (items.Count > 1)
-        {
-            PreviewCanvas.Children.Add(BuildQuadrantArc(
-                corner, cx, cy, previewRadius, items.Count, bubble * RingMetrics.HoverScale, radius, muted));
-        }
+        // loose bubbles that happen to be curved.
+        PreviewCanvas.Children.Add(BuildQuadrantArc(
+            corner, cx, cy, previewRadius, slots, hoverBubble, radius, muted));
 
-        for (int i = 0; i < items.Count; i++)
+        var badges = new List<UIElement>();
+        for (int i = 0; i < slots; i++)
         {
-            var item = items[i];
-            double local = QuadrantLayout.LocalAngleRad(
-                i, items.Count, bubble * RingMetrics.HoverScale, radius);
-            double angle = QuadrantLayout.ScreenAngleRad(corner, local);
+            double angle = QuadrantLayout.ScreenAngleRad(
+                corner, QuadrantLayout.LocalAngleRad(i, slots, hoverBubble, radius));
+            _quadrantSlotAngles[i] = angle;
+
+            double left = cx + previewRadius * Math.Cos(angle) - previewBubble / 2;
+            double top = cy + previewRadius * Math.Sin(angle) - previewBubble / 2;
+            var item = i < items.Count ? items[i] : null;
 
             var border = new Border
             {
@@ -342,13 +367,49 @@ public sealed partial class SettingsWindow : Window
                 Background = ThemeHelper.Brush(Root, "RingBubbleBackground"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
-                Child = PreviewGlyph(item.Glyph, glyphSize, item.IsSystem ? muted : foreground),
+                Tag = item,
+                Child = PreviewGlyph(
+                    item?.Glyph ?? "\uE710", glyphSize, item is null || item.IsSystem ? muted : foreground),
             };
-            ToolTipService.SetToolTip(border, item.DisplayName);
-            Canvas.SetLeft(border, cx + previewRadius * Math.Cos(angle) - previewBubble / 2);
-            Canvas.SetTop(border, cy + previewRadius * Math.Sin(angle) - previewBubble / 2);
+            ToolTipService.SetToolTip(border, item?.DisplayName ?? "Add to this corner");
+            Canvas.SetLeft(border, left);
+            Canvas.SetTop(border, top);
             PreviewCanvas.Children.Add(border);
+            _quadrantSlotBorders[i] = border;
+
+            // The last item stays: a corner with nothing on it would summon an empty screen.
+            if (item is not null && items.Count > 1)
+                badges.Add(BuildQuadrantRemoveBadge(i, item, left, top, previewBubble));
         }
+
+        // Badges go on last so a bubble drawn after its neighbour can't cover one.
+        foreach (var badge in badges)
+            PreviewCanvas.Children.Add(badge);
+    }
+
+    /// <summary>The small × that takes one item back off the corner.</summary>
+    private Button BuildQuadrantRemoveBadge(int slot, RingItem item, double left, double top, double bubble)
+    {
+        const double badge = 18;
+        var button = new Button
+        {
+            Width = badge,
+            Height = badge,
+            Padding = new Thickness(0),
+            MinWidth = 0,
+            MinHeight = 0,
+            CornerRadius = new CornerRadius(badge / 2),
+            Content = new FontIcon { Glyph = char.ConvertFromUtf32(0xE711), FontSize = 9 },
+        };
+        ToolTipService.SetToolTip(button, $"Remove {item.DisplayName} from this corner");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            button, $"Remove {item.DisplayName} from this corner");
+        button.Click += (_, _) => RemoveQuadrantItem(slot);
+
+        // Riding the bubble's upper-right shoulder, half on and half off it.
+        Canvas.SetLeft(button, left + bubble - badge * 0.75);
+        Canvas.SetTop(button, top - badge * 0.25);
+        return button;
     }
 
     /// <summary>The thin guide arc the quadrant's items are strung along.</summary>
@@ -440,17 +501,11 @@ public sealed partial class SettingsWindow : Window
     /// </summary>
     private void Preview_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        // The quadrant preview shows a fixed four items rather than the ring's editable slots,
-        // so there is nothing here to pick up, drag, or drop into.
-        if (_previewQuadrant)
-        {
-            EndPreviewDrag();
-            return;
-        }
-
         var point = e.GetCurrentPoint(PreviewCanvas).Position;
-        _dragSlot = PreviewSlotAt(point);
-        _dragBorder = _dragSlot >= 0 ? _slotBorders[_dragSlot] : null;
+        _dragSlot = _previewQuadrant ? QuadrantSlotAt(point) : PreviewSlotAt(point);
+        _dragBorder = _dragSlot >= 0
+            ? (_previewQuadrant ? _quadrantSlotBorders[_dragSlot] : _slotBorders[_dragSlot])
+            : null;
         _dragItem = _dragBorder?.Tag as RingItem;
         _dragStart = point;
         _dragMoved = false;
@@ -473,9 +528,6 @@ public sealed partial class SettingsWindow : Window
 
     private void Preview_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
-        if (_previewQuadrant)
-            return;
-
         var point = e.GetCurrentPoint(PreviewCanvas).Position;
         int slot = _dragSlot;
         var item = _dragItem;
@@ -486,6 +538,25 @@ public sealed partial class SettingsWindow : Window
 
         if (slot < 0)
             return;
+
+        if (_previewQuadrant)
+        {
+            if (moved)
+            {
+                // A drag out of an empty place is not an add — it is a drag of nothing.
+                if (item is not null)
+                    MoveQuadrantItem(slot, QuadrantSlotAt(point, requireHit: false));
+            }
+            else if (item is not null)
+            {
+                ShowItemInfo(item);
+            }
+            else
+            {
+                AddQuadrantItem();
+            }
+            return;
+        }
 
         if (moved)
         {
@@ -529,6 +600,89 @@ public sealed partial class SettingsWindow : Window
     /// point must actually be on that slot's bubble, so a press in the empty middle or out past
     /// the ring doesn't pick one up.
     /// </summary>
+    /// <summary>
+    /// Which of the corner's four places <paramref name="point"/> is in — by proximity to the
+    /// slot centers rather than by angle, so a drop lands where the pointer visibly is. Without
+    /// <paramref name="requireHit"/> the nearest place is returned however far away the pointer
+    /// is, which is what a drop wants: the intent is the nearest slot, not a precise landing.
+    /// </summary>
+    private int QuadrantSlotAt(Point point, bool requireHit = true)
+    {
+        int best = -1;
+        double bestGap = double.MaxValue;
+        for (int i = 0; i < _quadrantSlotAngles.Length; i++)
+        {
+            double x = _quadrantCenter.X + _quadrantRadius * Math.Cos(_quadrantSlotAngles[i]);
+            double y = _quadrantCenter.Y + _quadrantRadius * Math.Sin(_quadrantSlotAngles[i]);
+            double gap = Math.Sqrt((point.X - x) * (point.X - x) + (point.Y - y) * (point.Y - y));
+            if (gap < bestGap)
+            {
+                bestGap = gap;
+                best = i;
+            }
+        }
+
+        if (!requireHit)
+            return best;
+        return bestGap <= _quadrantBubble / 2 + 4 ? best : -1;
+    }
+
+    /// <summary>Drags one of the corner's items into another of its places.</summary>
+    private void MoveQuadrantItem(int from, int to)
+    {
+        var list = HotCornerItems.Edit(_manager.Config, SystemRingItems.CreateSettings());
+        if (from < 0 || from >= list.Count || to < 0)
+            return;
+
+        // Dropping past the last item means "put it at the end", not "into an empty place".
+        to = Math.Min(to, list.Count - 1);
+        if (from == to)
+        {
+            RenderPreview();
+            return;
+        }
+
+        var entry = list[from];
+        list.RemoveAt(from);
+        list.Insert(to, entry);
+        _manager.Save();
+        RenderPreview();
+    }
+
+    /// <summary>Takes one item off the corner. The ring itself keeps it.</summary>
+    private void RemoveQuadrantItem(int slot)
+    {
+        var list = HotCornerItems.Edit(_manager.Config, SystemRingItems.CreateSettings());
+        if (slot < 0 || slot >= list.Count || list.Count <= 1)
+            return;
+
+        list.RemoveAt(slot);
+        _manager.Save();
+        HideInfo();
+        RenderPreview();
+    }
+
+    /// <summary>
+    /// Fills an empty place on the corner. The item belongs to the corner rather than to the ring
+    /// — this is the corner's own arrangement — so it goes into that list and nowhere else.
+    /// </summary>
+    private void AddQuadrantItem()
+    {
+        var settings = SystemRingItems.CreateSettings();
+        if (HotCornerItems.Resolve(_manager.Config, settings).Count >= QuadrantLayout.ItemCount)
+            return;
+
+        _manager.OpenAddItem(added =>
+        {
+            var list = HotCornerItems.Edit(_manager.Config, SystemRingItems.CreateSettings());
+            if (list.Count >= QuadrantLayout.ItemCount)
+                return;
+            list.Add(added);
+            _manager.Save();
+            RenderPreview();
+        }, _manager.Config.HotCornerRing);
+    }
+
     private int PreviewSlotAt(Point point, bool requireHit = true)
     {
         double dx = point.X - _previewCenter.X;
@@ -865,6 +1019,9 @@ public sealed partial class SettingsWindow : Window
         // Every item the selection/expansion state could be pointing at is about to be replaced.
         HideInfo();
         CollapseGroup();
+        // The corner's own arrangement was built out of the items being replaced, so it goes back
+        // to following the ring rather than holding four copies of the old one.
+        HotCornerItems.Reset(_manager.Config);
         _manager.SeedDefaults(_manager.Config.Primary);
         _manager.NotifyItemsChanged();
         RenderPreview();
@@ -969,6 +1126,7 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.HotCornerEnabled = true;
         _manager.Config.HotCorner = HotCorner.TopLeft;
         _manager.Config.HotCornerLayout = HotCornerLayout.Ring;
+        HotCornerItems.Reset(_manager.Config);
         _manager.Config.ShowDataTool = true;
         _manager.Config.ShowSecureValuesTool = true;
         _manager.Config.ShowBase64Tool = true;
@@ -1048,18 +1206,14 @@ public sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// Brings the hot corner's dependent controls in line with the switch: the corner picker is
-    /// dead while the corner is off, the "corner shows" row only exists while it is on, and the
-    /// canvas drops any quadrant preview it was showing the moment there is no corner to preview.
+    /// Brings the hot corner's second row in line with the switch above it — which corner, and how
+    /// much of the ring it opens, mean nothing while the corner is off — and drops any quadrant
+    /// preview the canvas was showing once there is no corner left to preview.
     /// </summary>
     private void SyncHotCornerControls()
     {
         bool on = HotCornerEnabledToggle.IsOn;
-        HotCornerBox.IsEnabled = on;
-        HotCornerLayoutCard.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
-        HotCornerLayoutHint.Text = _manager.Config.HotCornerLayout == HotCornerLayout.Quadrant
-            ? "Four items fanned out around the corner itself."
-            : "The whole ring, drawn at the corner.";
+        HotCornerOptionsRow.IsEnabled = on;
         if (!on)
             _previewQuadrant = false;
     }

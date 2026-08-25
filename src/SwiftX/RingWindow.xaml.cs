@@ -356,7 +356,7 @@ public sealed partial class RingWindow : Window
                 .ToList();
         }
 
-        var items = QuadrantLayout.Compose(_manager.Config.Primary.Items, _settingsItem);
+        var items = HotCornerItems.Resolve(_manager.Config, _settingsItem);
         var layout = new List<(RingItem Item, int Index, double AngleRad)>(items.Count);
         for (int i = 0; i < items.Count; i++)
         {

@@ -126,13 +126,6 @@ public static class QuadrantLayout
     };
 
     /// <summary>
-    /// Middle of the quarter's usable span, in canvas angle terms — where a label, or anything
-    /// else that wants to sit "in front of" the fan, belongs.
-    /// </summary>
-    public static double MidScreenAngleRad(HotCorner corner) =>
-        ScreenAngleRad(corner, Math.PI / 4);
-
-    /// <summary>
     /// Which items a quadrant shows, in arc order: the user's own first items, then the ring's
     /// Tools item, then Settings — the same "user items first, built-ins last" order the full
     /// ring reads in, so the two layouts never disagree about where anything is.

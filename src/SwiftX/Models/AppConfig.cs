@@ -28,6 +28,13 @@ public sealed class AppConfig
     /// <summary>Whether a hot-corner summon brings up the whole ring or a corner quadrant.</summary>
     public HotCornerLayout HotCornerLayout { get; set; } = HotCornerLayout.Ring;
 
+    /// <summary>
+    /// What the quadrant shows, once the user has arranged it themselves. Empty means "whatever
+    /// the ring suggests" — see <see cref="HotCornerItems"/>, which picks the default and is also
+    /// what writes this list the first time the corner is edited.
+    /// </summary>
+    public List<RingItem> HotCornerRing { get; set; } = new();
+
     public bool Seeded { get; set; }
 
     /// <summary>How large the items around the ring are drawn. The hub is fixed and unaffected.</summary>
@@ -61,6 +68,7 @@ public sealed class AppConfig
         HotCornerEnabled = other.HotCornerEnabled;
         HotCorner = other.HotCorner;
         HotCornerLayout = other.HotCornerLayout;
+        HotCornerRing = other.HotCornerRing;
         ItemSize = other.ItemSize;
         RingRadius = other.RingRadius;
         ShowDataTool = other.ShowDataTool;
