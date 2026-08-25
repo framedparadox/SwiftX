@@ -211,7 +211,11 @@ public sealed partial class SettingsWindow : Window
         if (PreviewCanvas is null) return;
         PreviewCanvas.Children.Clear();
         const double size = 360;
-        double cx = size / 2, cy = size / 2;
+        // Nudged up from dead center: the canvas now carries the Add item / Reset defaults row
+        // along its own bottom edge, so the ring sits a little high of true center to keep clear
+        // breathing room under it instead of crowding those buttons.
+        const double verticalNudge = 24;
+        double cx = size / 2, cy = size / 2 - verticalNudge;
 
         if (_previewQuadrant && _manager.Config.HotCornerEnabled)
         {
@@ -1221,7 +1225,7 @@ public sealed partial class SettingsWindow : Window
     private void SyncHotCornerControls()
     {
         bool on = HotCornerEnabledToggle.IsOn;
-        HotCornerOptionsRow.IsEnabled = on;
+        HotCornerOptionsRow.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         if (!on)
             _previewQuadrant = false;
     }

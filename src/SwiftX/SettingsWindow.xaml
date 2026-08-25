@@ -165,11 +165,13 @@
                                      app-wide one, so it lives here beside size and radius. Two rows:
                                      the switch, then — as part of the same section rather than a
                                      card of its own — which corner and how much of the ring it
-                                     opens. Both of the second row's controls are only meaningful
-                                     while the corner is armed, so they go dead with the switch
-                                     rather than disappearing and shuffling the column. -->
+                                     opens. The second row means nothing while the corner is off, so
+                                     it is collapsed rather than merely disabled — no dead controls
+                                     left sitting in the card. Margin carries the gap between the two
+                                     rows instead of Grid.RowSpacing, which pads a collapsed row's
+                                     empty space too and would leave a bare gap when it disappears. -->
                                 <Border Style="{StaticResource Card}">
-                                    <Grid ColumnSpacing="10" RowSpacing="10">
+                                    <Grid ColumnSpacing="10">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
@@ -193,7 +195,8 @@
                                                       Toggled="HotCornerEnabled_Toggled" />
 
                                         <StackPanel x:Name="HotCornerOptionsRow" Grid.Row="1" Grid.Column="0"
-                                                    Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="12">
+                                                    Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="12"
+                                                    Margin="0,10,0,0">
                                             <ComboBox x:Name="HotCornerBox" MinWidth="0" Width="112"
                                                       VerticalAlignment="Center"
                                                       AutomationProperties.AutomationId="SettingsHotCornerBox"
