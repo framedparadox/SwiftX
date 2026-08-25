@@ -64,6 +64,10 @@ public sealed class RingManager
             repaired |= ToolCatalog.EnsureToolsGroup(Config.Primary.Items);
         }
 
+        // After the migrations, not inside one: a tool item EnsureToolsGroup has just added starts
+        // out visible, which is wrong for a tool the user had already switched off.
+        ToolCatalog.ApplyVisibility(Config.Primary.Items, Config);
+
         ApplyTheme();
         SetUpTrayAndHotkey();
 

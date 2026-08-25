@@ -47,6 +47,20 @@ public sealed class AppConfig
     public bool ShowCertificateTool { get; set; } = true;
     public bool ReuseToolWindows { get; set; } = true;
 
+    /// <summary>
+    /// Whether <paramref name="kind"/> is one of the tools the ring is currently set to show —
+    /// the read side of the Tools page's switches, which <see cref="ToolCatalog.ApplyVisibility"/>
+    /// turns into the <see cref="RingItem.Hidden"/> flag on the ring's own tool items.
+    /// </summary>
+    public bool IsToolShown(ToolKind kind) => kind switch
+    {
+        ToolKind.Data => ShowDataTool,
+        ToolKind.SecureValues => ShowSecureValuesTool,
+        ToolKind.Base64 => ShowBase64Tool,
+        ToolKind.Certificate => ShowCertificateTool,
+        _ => true,
+    };
+
     [JsonIgnore]
     public RingProfile Primary => Rings.Count > 0
         ? Rings[0]

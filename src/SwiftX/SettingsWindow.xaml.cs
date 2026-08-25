@@ -47,6 +47,7 @@ public sealed partial class SettingsWindow : Window
     // landed in from these rather than by walking the visual tree.
     private readonly Border?[] _quadrantSlotBorders = new Border?[QuadrantLayout.ItemCount];
     private readonly double[] _quadrantSlotAngles = new double[QuadrantLayout.ItemCount];
+    private int _quadrantSlotCount;
     private Point _quadrantCenter;
     private double _quadrantRadius;
     private double _quadrantBubble;
@@ -305,10 +306,10 @@ public sealed partial class SettingsWindow : Window
     /// the canvas — centered on the canvas corner that matches the chosen screen corner, so the
     /// picture says which corner as much as what.
     /// <para>
-    /// Editable, like the ring view beside it: all four places are always drawn, an empty one
-    /// offers a +, each filled one carries a remove badge, and any of them can be dragged onto
-    /// another to reorder. The first such edit turns the corner's default pick into an
-    /// arrangement of the user's own — see <see cref="HotCornerItems"/>.
+    /// Editable, like the ring view beside it: one more place than the corner holds is drawn (up
+    /// to the four it can hold) and offers a +, each filled place carries a remove badge, and any
+    /// of them can be dragged onto another to reorder. The first such edit turns the corner's
+    /// default pick into an arrangement of the user's own — see <see cref="HotCornerItems"/>.
     /// </para>
     /// </summary>
     private void RenderQuadrantPreview(double size)
@@ -317,9 +318,11 @@ public sealed partial class SettingsWindow : Window
         var items = HotCornerItems.Resolve(_manager.Config, SystemRingItems.CreateSettings());
 
         double bubble = RingMetrics.Bubble;
-        // Always laid out for the full four places, so adding or removing an item fills or empties
-        // a slot instead of re-spacing the whole fan under the pointer.
-        int slots = QuadrantLayout.ItemCount;
+        // The places the corner will actually use, plus one empty place to add into while there is
+        // room for it. Laying out for what is really there is what keeps this a picture of the
+        // corner rather than an approximation of it — a corner holding all four is drawn exactly
+        // as the corner draws it.
+        int slots = Math.Min(QuadrantLayout.ItemCount, items.Count + 1);
         double hoverBubble = bubble * RingMetrics.HoverScale;
         double radius = QuadrantLayout.Radius(slots, hoverBubble, RingMetrics.Radius);
 
@@ -337,6 +340,7 @@ public sealed partial class SettingsWindow : Window
         _quadrantCenter = new Point(cx, cy);
         _quadrantRadius = previewRadius;
         _quadrantBubble = previewBubble;
+        _quadrantSlotCount = slots;
         Array.Clear(_quadrantSlotBorders);
 
         var borderBrush = ThemeHelper.Brush(Root, "SwiftXBorderBrush");
@@ -344,9 +348,13 @@ public sealed partial class SettingsWindow : Window
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
 
         // The arc the items sit on, so the shape reads as a quarter of the ring rather than four
-        // loose bubbles that happen to be curved.
-        PreviewCanvas.Children.Add(BuildQuadrantArc(
-            corner, cx, cy, previewRadius, slots, hoverBubble, radius, muted));
+        // loose bubbles that happen to be curved. One place has no arc to speak of, and an arc
+        // whose two ends are the same point is ambiguous to draw, so it goes without.
+        if (slots > 1)
+        {
+            PreviewCanvas.Children.Add(BuildQuadrantArc(
+                corner, cx, cy, previewRadius, slots, hoverBubble, radius, muted));
+        }
 
         var badges = new List<UIElement>();
         for (int i = 0; i < slots; i++)
@@ -610,7 +618,7 @@ public sealed partial class SettingsWindow : Window
     {
         int best = -1;
         double bestGap = double.MaxValue;
-        for (int i = 0; i < _quadrantSlotAngles.Length; i++)
+        for (int i = 0; i < _quadrantSlotCount; i++)
         {
             double x = _quadrantCenter.X + _quadrantRadius * Math.Cos(_quadrantSlotAngles[i]);
             double y = _quadrantCenter.Y + _quadrantRadius * Math.Sin(_quadrantSlotAngles[i]);
@@ -1486,7 +1494,7 @@ public sealed partial class SettingsWindow : Window
         {
             if (_loading) return;
             row.SetShown(_manager.Config, toggle.IsOn);
-            ApplyToolVisibility(_manager.Config.Primary.Items);
+            ApplyToolVisibility();
             _manager.NotifyItemsChanged();
             RenderPreview();
         };
@@ -1623,18 +1631,6 @@ public sealed partial class SettingsWindow : Window
         RenderPreview();
     }
 
-    private void ApplyToolVisibility(IEnumerable<RingItem> items)
-    {
-        foreach (var item in items)
-        {
-            if (item.IsTool)
-            {
-                var row = ToolRows.FirstOrDefault(r => string.Equals(r.Target, item.Target, StringComparison.OrdinalIgnoreCase));
-                if (row is not null)
-                    item.Hidden = !row.GetShown(_manager.Config);
-            }
-            if (item.Children.Count > 0)
-                ApplyToolVisibility(item.Children);
-        }
-    }
+    private void ApplyToolVisibility() =>
+        ToolCatalog.ApplyVisibility(_manager.Config.Primary.Items, _manager.Config);
 }

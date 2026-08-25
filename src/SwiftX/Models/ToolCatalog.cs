@@ -214,6 +214,23 @@ public static class ToolCatalog
         return changed;
     }
 
+    /// <summary>
+    /// Points every tool item on the ring at the Tools page's switches, so a tool that is turned
+    /// off is hidden wherever it sits. Run at startup as well as on a toggle: a tool item
+    /// <see cref="EnsureToolsGroup"/> has just added has no idea yet whether it is meant to be
+    /// showing, and a hand-edited config can disagree with itself.
+    /// </summary>
+    public static void ApplyVisibility(List<RingItem> items, AppConfig config)
+    {
+        foreach (var item in items)
+        {
+            if (item.IsTool && Enum.TryParse<ToolKind>(item.Target, ignoreCase: true, out var kind))
+                item.Hidden = !config.IsToolShown(kind);
+            if (item.Children.Count > 0)
+                ApplyVisibility(item.Children, config);
+        }
+    }
+
     private static RingItem? FindToolsGroup(List<RingItem> items)
     {
         var byTarget = items.FirstOrDefault(
