@@ -1,6 +1,6 @@
 # SwiftX
 
-A quick-access **radial ring** for Windows 11 — summon with a hotkey, launch apps/files/folders/links, pop groups open into an outer ring, and open built-in JSON/XML formatters.
+A quick-access **radial ring** for Windows 11 — summon with a hotkey, launch apps/files/folders/links, pop groups open into an outer ring, and open a built-in Data Formatter (JSON/XML/CSV).
 
 ## Requirements
 
@@ -37,7 +37,16 @@ Or launch the built `SwiftX.exe` from the output folder under `bin\x64\Debug\net
 - **Settings** and **Close** are built in to the last two slots — never hidden, reordered, or removed, leaving 6 user slots
 - **Esc** collapses an open group, or dismisses the ring when none is open; click empty space / dead zone to dismiss
 - **Tray → Settings** opens the home ring editor and other pages
-- **Tools:** JSON and XML formatters (Format / Minify / Validate / indent / Copy / Save / Clear)
+- **Tools:** Data Formatter (auto-detect JSON/XML/CSV), local Secure values,
+  Base64 encode/decode, and a Certificate inspector
+  - Basic bar: Format / Validate (clean + pretty-print) / Copy / Clear / Save
+  - Pasting into the editor auto-formats and auto-detects the type immediately, not just the
+    debounced keystroke-by-keystroke detection typing gets
+  - Advanced sidebar: Minify, Sort keys, Escape/Unescape, Convert, indent
+  - Secure values: DPAPI-protected key/secret store with masked display + copy
+  - Base64: Encode / Decode, URL-safe alphabet, encode straight from a file
+  - Certificate: inspects .cer/.crt/.der/.pem, PKCS#7 bundles, password-protected PKCS#12/PFX,
+    and Java KeyStore (.jks) files — full field detail per certificate, nothing uploaded anywhere
 
 ## Settings
 
@@ -49,7 +58,7 @@ Persisted at `%AppData%\SwiftX\ring.json` (override with `SWIFTX_DATA_DIR`).
 | General | Theme (Light / Dark / System), ring item size (Small / Medium / Large), ring radius, start with Windows, import/export, reset |
 | Shortcuts | Summon hotkey capture |
 | Apps & links | Flat list with show/hide and remove — Settings and Close aren't listed |
-| Tools | Toggle JSON / XML on the ring; open formatters |
+| Tools | Toggle Data / Secure values / Base64 / Certificate on the ring; open tools |
 | About | Version and privacy note |
 
 ## Theme
@@ -58,7 +67,7 @@ Solid **black** (dark) / **white** (light) surfaces only — no acrylic, Mica, o
 
 ## Phase 1 scope
 
-Hotkey ring + settings home customizer + JSON/XML tools. Full item kinds including Group → outer-ring flyout. English only.
+Hotkey ring + settings home customizer + JSON/XML/CSV data tools + local secure values. Full item kinds including Group → outer-ring flyout. English only.
 
 
 ## TODO
@@ -70,4 +79,24 @@ Hotkey ring + settings home customizer + JSON/XML tools. Full item kinds includi
 - Change layout from circular to 
  - pyramid
  - timer scroll
- 
+
+### Data Formatter enhancement ideas
+
+Popular JSON tools (JSONFormatter.org, JSONLint, RJL.io) commonly offer these on top of
+format/minify/validate. Not started; noted here as candidates for a future pass, roughly in
+order of how well they fit the current sidebar-button architecture:
+
+- YAML conversion - fits the existing "Convert to JSON/XML/CSV" pattern directly (add a YAML
+  IDataFormat to FormatRegistry).
+- JSONPath query - a query box that filters/highlights matches; a new interaction, not just a
+  button.
+- Tree view - a collapsible node view of the parsed document, alongside or instead of the text
+  editor; a bigger UI addition.
+- Diff/compare - a two-document comparison; likely its own tool page rather than a Data
+  Formatter sidebar addition, given the two-pane layout it needs.
+
+## Add new 
+
+- Add + button to group or folder and auto add to the ring child section
+- Add second circle
+- Ring - Settings  : add Rearrange quick action

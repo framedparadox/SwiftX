@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 using SwiftX.Controls;
 using SwiftX.Models;
 using SwiftX.Services;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
@@ -37,7 +38,7 @@ public sealed partial class AddItemWindow : Window
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
         Title = "Add to ring";
 
-        var titleBar = new AppTitleBar("", "Add to ring");
+        var titleBar = new AppTitleBar("", "Add to ring");
         Grid.SetRow(titleBar, 0);
         Root.Children.Insert(0, titleBar);
 
@@ -154,6 +155,65 @@ public sealed partial class AddItemWindow : Window
         HideError();
     }
 
+    private void Root_DragOver(object sender, DragEventArgs e)
+    {
+        bool acceptable = e.DataView.Contains(StandardDataFormats.StorageItems)
+            || e.DataView.Contains(StandardDataFormats.WebLink)
+            || e.DataView.Contains(StandardDataFormats.Text);
+        e.AcceptedOperation = acceptable ? DataPackageOperation.Copy : DataPackageOperation.None;
+        if (acceptable)
+            e.DragUIOverride.Caption = "Add to ring";
+    }
+
+    /// <summary>
+    /// Lets a file/folder/shortcut/app (from Explorer, the Start menu, a desktop icon) or a web
+    /// link (a browser's address bar or an anchor drag) be dropped straight onto this window
+    /// instead of always going through Browse. Tries storage items first, then a web link, then
+    /// falls back to plain text in case some source only offers that —
+    /// <see cref="RingItemFactory.Classify"/> re-derives the actual kind from the string either
+    /// way. Only fills the form (type tile, target, name); the user still reviews and presses Add.
+    /// </summary>
+    private async void Root_Drop(object sender, DragEventArgs e)
+    {
+        string? target = null;
+
+        if (e.DataView.Contains(StandardDataFormats.StorageItems))
+        {
+            var items = await e.DataView.GetStorageItemsAsync();
+            target = items.FirstOrDefault()?.Path;
+        }
+
+        if (string.IsNullOrEmpty(target) && e.DataView.Contains(StandardDataFormats.WebLink))
+        {
+            var uri = await e.DataView.GetWebLinkAsync();
+            target = uri?.ToString();
+        }
+
+        if (string.IsNullOrEmpty(target) && e.DataView.Contains(StandardDataFormats.Text))
+        {
+            var text = (await e.DataView.GetTextAsync())?.Trim();
+            if (!string.IsNullOrEmpty(text) &&
+                Uri.TryCreate(text, UriKind.Absolute, out var uri) &&
+                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+                target = text;
+        }
+
+        if (string.IsNullOrEmpty(target))
+            return;
+
+        SelectType(ToAddKind(RingItemFactory.Classify(target)));
+        SetTarget(target);
+    }
+
+    private static AddKind ToAddKind(RingItemKind kind) => kind switch
+    {
+        RingItemKind.Folder => AddKind.Folder,
+        RingItemKind.WebLink => AddKind.Link,
+        RingItemKind.Shortcut => AddKind.Shortcut,
+        RingItemKind.File => AddKind.File,
+        _ => AddKind.App,
+    };
+
     private async void Browse_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -198,13 +258,14 @@ public sealed partial class AddItemWindow : Window
 
         if (_kind == AddKind.Tool)
         {
-            var tool = (ToolBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Json";
+            var tool = (ToolBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Data";
+            var def = ToolCatalog.GetByName(tool);
             item.Kind = RingItemKind.Tool;
             item.Target = tool;
             item.DisplayName = string.IsNullOrWhiteSpace(NameBox.Text)
-                ? tool.ToUpperInvariant()
+                ? (def?.DisplayName ?? tool)
                 : NameBox.Text.Trim();
-            item.CustomGlyph = tool.Equals("Xml", StringComparison.OrdinalIgnoreCase) ? "</>" : "\uE943";
+            item.CustomGlyph = def?.Glyph ?? "\uE8A5";
         }
         else if (_kind == AddKind.Group)
         {

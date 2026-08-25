@@ -30,6 +30,15 @@ public sealed class RingManager
     public ToolWindowManager ToolWindows { get; }
     public ToolWindowLauncher Tools { get; }
 
+    /// <summary>Whether Settings is currently open — <see cref="RingWindow"/> checks this so it can
+    /// stay on screen instead of dismissing itself the instant Settings takes foreground
+    /// activation away from it.</summary>
+    public bool IsSettingsOpen => _settingsWindow is not null;
+
+    /// <summary>Same idea as <see cref="IsSettingsOpen"/>, for the "Add new" quick action's own
+    /// window (a Settings ring item flyout child — see SystemRingItems.CreateAddNew).</summary>
+    public bool IsAddItemOpen => _addItemWindow is not null;
+
     public event Action? ItemsChanged;
 
     public void Start()
@@ -43,9 +52,14 @@ public sealed class RingManager
         if (firstRun && Config.Primary.Items.Count == 0)
             SeedDefaults(Config.Primary);
         else
-            // Settings and Close are synthesized onto the ring now, not stored — drop the copies
+        {
+            // Settings and Close are synthesized onto the ring now, not stored. Drop the copies
             // a config written by an older build still carries. See SystemRingItems.
             repaired = SystemRingItems.Strip(Config.Primary.Items);
+            // JSON and XML were merged into the single Data Formatter tool. Rewrite any ring item
+            // still pointing at either retired target so it keeps working in the same slot.
+            repaired |= ToolCatalog.MigrateLegacyTargets(Config.Primary.Items);
+        }
 
         ApplyTheme();
         SetUpTrayAndHotkey();
@@ -105,25 +119,27 @@ public sealed class RingManager
             CustomGlyph = "\uE90F",
             Children =
             {
-                new RingItem { Kind = RingItemKind.Tool, DisplayName = "JSON", Target = "Json", CustomGlyph = "\uE943" },
-                new RingItem { Kind = RingItemKind.Tool, DisplayName = "XML", Target = "Xml", CustomGlyph = "</>" },
+                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Data", Target = "Data", CustomGlyph = "\uE943" },
+                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Secure values", Target = "SecureValues", CustomGlyph = "\uE72E" },
+                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Base64", Target = "Base64", CustomGlyph = "B64" },
+                new RingItem { Kind = RingItemKind.Tool, DisplayName = "Certificate", Target = "Certificate", CustomGlyph = "\uEB95" },
             },
         });
+        // Data and Secure values are already one tap away inside "Dev tools" above \u2014 a top-level
+        // duplicate of each just doubled up on the same tool, so the two remaining user slots go
+        // to a couple of stock Windows apps instead (the ring's other defaults \u2014 Notepad, GitHub,
+        // Downloads \u2014 are the same idea: something useful out of the box, not an empty ring).
         profile.Items.Add(new RingItem
         {
-            Kind = RingItemKind.Tool,
-            DisplayName = "JSON",
-            Target = "Json",
-            CustomGlyph = "\uE943",
-            Hidden = !Config.ShowJsonTool,
+            Kind = RingItemKind.Application,
+            DisplayName = "Calculator",
+            Target = Path.Combine(Environment.SystemDirectory, "calc.exe"),
         });
         profile.Items.Add(new RingItem
         {
-            Kind = RingItemKind.Tool,
-            DisplayName = "XML",
-            Target = "Xml",
-            CustomGlyph = "</>",
-            Hidden = !Config.ShowXmlTool,
+            Kind = RingItemKind.Application,
+            DisplayName = "File Explorer",
+            Target = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
         });
     }
 
@@ -232,6 +248,15 @@ public sealed class RingManager
         if (string.Equals(item.Target, SystemRingItems.SettingsTarget, StringComparison.OrdinalIgnoreCase))
         {
             OpenSettings();
+            return;
+        }
+
+        if (string.Equals(item.Target, SystemRingItems.AddNewTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            // Same call the tray icon's own Add entry makes: no explicit callback/target list, so
+            // AddItemWindow falls back to adding straight into Config.Primary.Items itself (Settings
+            // › Apps & links) and persists on its own — see AddItemWindow.Add_Click.
+            OpenAddItem();
             return;
         }
 

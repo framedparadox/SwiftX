@@ -13,8 +13,9 @@ using SwiftX.Models;
 using SwiftX.Services;
 using Windows.Foundation;
 using Windows.Graphics;
+using Windows.Storage;
 using Windows.System;
-using Ellipse = Microsoft.UI.Xaml.Shapes.Ellipse;
+using Path = Microsoft.UI.Xaml.Shapes.Path;
 
 namespace SwiftX;
 
@@ -85,6 +86,13 @@ public sealed partial class RingWindow : Window
         WindowChrome.MakeTransparentOverlay(this, _hwnd);
         ApplyTheme();
         _appWindow.Hide();
+
+        // A click outside the ring's own hit-test disc never reaches this window at all — it
+        // passes straight through to whatever is beneath (see LayoutAtCursor) — so it can't be
+        // caught as a pointer event here. What it *does* do is hand foreground activation to
+        // whatever the user just clicked, and that deactivation is something this window is
+        // told about regardless of where on screen the click landed.
+        Activated += RingWindow_Activated;
     }
 
     public void ApplyTheme()
@@ -171,6 +179,28 @@ public sealed partial class RingWindow : Window
 
         _isOpen = false;
         _ = DismissAnimatedAsync();
+    }
+
+    /// <summary>Clicking anywhere else on screen — another window, the desktop, the taskbar —
+    /// hands that window foreground activation and deactivates this one; treat it the same as
+    /// clicking the ring's own dead zone.
+    /// <para>
+    /// Suppressed while Settings or Add-new is open: opening either from the ring's own flyout
+    /// already dismisses the ring on selection (see <see cref="OnSelectAsync"/>), but both can also
+    /// be reached from the tray icon while the ring is sitting open, or the ring can be re-summoned
+    /// while one already has focus — either way, every click into that window would otherwise
+    /// deactivate this one and immediately dismiss the ring out from under the user. Once the
+    /// window closes, the matching <c>RingManager</c> flag goes false again and the very next
+    /// deactivation resumes the normal click-anywhere-to-dismiss behavior.
+    /// </para>
+    /// </summary>
+    private void RingWindow_Activated(object sender, WindowActivatedEventArgs args)
+    {
+        if (args.WindowActivationState != WindowActivationState.Deactivated)
+            return;
+        if (_manager.IsSettingsOpen || _manager.IsAddItemOpen)
+            return;
+        Dismiss();
     }
 
     private async Task DismissAnimatedAsync()
@@ -450,28 +480,15 @@ public sealed partial class RingWindow : Window
         content.Children.Add(icon);
         content.Children.Add(glyph);
 
-        // A group wears a small nub on its outward edge — before you hover it, that dot is the
-        // only thing distinguishing an item that opens a ring of its own from one that launches.
-        // It rides inside the circle rather than protruding, so the Border's corner-radius clip
-        // can never crop it, and it scales with the item because it lives in the same content.
-        Ellipse? bump = null;
+        // A group wears a short arc traced on its own outward edge — before you hover it, that
+        // arc is the only thing distinguishing an item that opens a ring of its own from one that
+        // launches. It rides on the circle's own boundary, centered on the direction the item
+        // already sits from the hub, so it never needs its own transform and scales with the item
+        // because it lives in the same content.
+        Path? bump = null;
         if (item.IsGroup && !isFlyout)
         {
-            double dot = RingMetrics.Bump;
-            bump = new Ellipse
-            {
-                Width = dot,
-                Height = dot,
-                Fill = ThemeBrush("SwiftXForegroundBrush"),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                IsHitTestVisible = false,
-                RenderTransform = new TranslateTransform
-                {
-                    X = Math.Cos(angle) * (diameter / 2 - dot),
-                    Y = Math.Sin(angle) * (diameter / 2 - dot),
-                },
-            };
+            bump = BuildGroupArc(diameter, angle, ThemeBrush("SwiftXForegroundBrush"));
             content.Children.Add(bump);
         }
 
@@ -521,6 +538,56 @@ public sealed partial class RingWindow : Window
         };
 
         return bubble;
+    }
+
+    /// <summary>
+    /// A 30° stroke traced along the bubble's own circular edge, centered on <paramref
+    /// name="angleRad"/> — the same outward direction the bubble already rests on, so the arc
+    /// reads as part of that edge instead of a separate ornament. Drawn as an unfilled
+    /// <see cref="ArcSegment"/> rather than the old filled dot so it hugs the boundary at any
+    /// bubble size instead of floating as a disconnected speck once items get small.
+    /// </summary>
+    private static Path BuildGroupArc(double diameter, double angleRad, Brush stroke)
+    {
+        const double SweepDegrees = 30;
+        double sweep = SweepDegrees * Math.PI / 180.0;
+        double thickness = Math.Max(2, diameter * 0.08);
+        double radius = diameter / 2 - thickness / 2;
+        double center = diameter / 2;
+        double startAngle = angleRad - sweep / 2;
+        double endAngle = angleRad + sweep / 2;
+
+        var figure = new PathFigure
+        {
+            StartPoint = new Point(
+                center + radius * Math.Cos(startAngle),
+                center + radius * Math.Sin(startAngle)),
+            IsClosed = false,
+        };
+        figure.Segments.Add(new ArcSegment
+        {
+            Point = new Point(
+                center + radius * Math.Cos(endAngle),
+                center + radius * Math.Sin(endAngle)),
+            Size = new Size(radius, radius),
+            SweepDirection = SweepDirection.Clockwise,
+            IsLargeArc = false,
+        });
+
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+
+        return new Path
+        {
+            Width = diameter,
+            Height = diameter,
+            Data = geometry,
+            Stroke = stroke,
+            StrokeThickness = thickness,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            IsHitTestVisible = false,
+        };
     }
 
     /// <summary>
@@ -608,14 +675,20 @@ public sealed partial class RingWindow : Window
         if (!bubble.IsFlyout && _flyout.Count > 0 && ReferenceEquals(_flyoutParent, bubble))
         {
             // Once a group is open, its name is the heading of the ring it opened rather than a
-            // label on the item — so it sits directly above the first child in the arc, a fixed
-            // point a user's eye already lands on, instead of centered over the whole arc, which
-            // would drift sideways depending on how many children the group has.
-            var first = _flyout[0];
-            px = first.RestX;
-            py = first.RestY
-                 - (RingMetrics.FlyoutBubble / 2 * RingMetrics.HoverScale
-                    + RingMetrics.PillGap + size.Height / 2);
+            // label on the item — so it sits outward from the whole arc along the same radial the
+            // group itself sits on, clearing every child regardless of how many there are or which
+            // side of the ring the group is on. An earlier version anchored purely above the first
+            // child, which only cleared the arc for groups near the top of the ring — Settings sits
+            // to the side, and its "above the first child" label landed across its own two children
+            // instead of outside them.
+            double ux = Math.Cos(bubble.AngleRad);
+            double uy = Math.Sin(bubble.AngleRad);
+            double reach = (Math.Abs(ux) * size.Width + Math.Abs(uy) * size.Height) / 2;
+            double distance = RingMetrics.FlyoutRadius
+                + RingMetrics.FlyoutBubble / 2 * RingMetrics.HoverScale
+                + RingMetrics.PillGap + reach;
+            px = distance * ux;
+            py = distance * uy;
         }
         else
         {
@@ -1179,7 +1252,7 @@ public sealed partial class RingWindow : Window
         bubble.Host.Background = background;
         bubble.Glyph.Foreground = foreground;
         if (bubble.Bump is not null)
-            bubble.Bump.Fill = foreground;
+            bubble.Bump.Stroke = foreground;
     }
 
     private static bool IsCloseItem(RingItem item) =>
@@ -1219,7 +1292,12 @@ public sealed partial class RingWindow : Window
             return;
         }
 
-        if (item.IsGroup)
+        // Settings is a group now too (it owns the Add new quick action below), but unlike a
+        // user-created group it still has a job of its own to do on click — open Settings
+        // — so it deliberately skips the generic group-click branch, which only ever toggles a
+        // flyout and never activates anything. Hovering it still opens that flyout regardless (see
+        // ScheduleFlyoutForHover, which checks Item.IsGroup independently of this method).
+        if (item.IsGroup && !IsSettingsItem(item))
         {
             // Nested groups inside a flyout would need a third ring to land in; there isn't one,
             // so they simply don't expand.
@@ -1257,8 +1335,21 @@ public sealed partial class RingWindow : Window
 
         await Task.Delay(150);
         _manager.HandleItemActivation(item);
-        Dismiss();
+
+        // Every other selection closes the ring on activation — Settings and Add-new are the
+        // exceptions: each opens its own window and should stay on screen for as long as that
+        // window is open (see RingWindow_Activated's matching IsSettingsOpen/IsAddItemOpen checks,
+        // which keep the deactivation that follows here from dismissing it too). Selecting either
+        // a second time while its window is already open just re-activates that window (see
+        // RingManager.OpenSettings/OpenAddItem) — still no dismiss.
+        bool staysOpen = IsSettingsItem(item) ||
+            string.Equals(item.Target, SystemRingItems.AddNewTarget, StringComparison.OrdinalIgnoreCase);
+        if (!staysOpen)
+            Dismiss();
     }
+
+    private static bool IsSettingsItem(RingItem item) =>
+        string.Equals(item.Target, SystemRingItems.SettingsTarget, StringComparison.OrdinalIgnoreCase);
 
     // ---- Input ---------------------------------------------------------------------------
 
@@ -1414,7 +1505,7 @@ public sealed partial class RingWindow : Window
         public required FontIcon Glyph { get; init; }
 
         /// <summary>The has-children marker, present only on inner-ring groups.</summary>
-        public Ellipse? Bump { get; init; }
+        public Path? Bump { get; init; }
 
         /// <summary>Scale to return to when hover ends — not 1 for an expanded group bubble.</summary>
         public float RestScale { get; set; } = 1f;

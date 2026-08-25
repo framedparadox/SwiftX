@@ -58,12 +58,6 @@
                         <FontIcon Glyph="&#xE713;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
-                <muxc:NavigationViewItem Content="Shortcuts" Tag="shortcuts"
-                                         AutomationProperties.AutomationId="SettingsNavShortcuts">
-                    <muxc:NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE765;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    </muxc:NavigationViewItem.Icon>
-                </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem Content="Apps &amp; links" Tag="apps"
                                          AutomationProperties.AutomationId="SettingsNavApps">
                     <muxc:NavigationViewItem.Icon>
@@ -76,45 +70,113 @@
                         <FontIcon Glyph="&#xE90F;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
+            </muxc:NavigationView.MenuItems>
+
+            <!-- Pinned below the scrollable menu, separated by NavigationView's own divider —
+                 About is a "learn more", not a working page, so it reads as the same footer slot
+                 Windows apps usually give Settings/About rather than just another row in the list. -->
+            <muxc:NavigationView.FooterMenuItems>
                 <muxc:NavigationViewItem Content="About" Tag="about"
                                          AutomationProperties.AutomationId="SettingsNavAbout">
                     <muxc:NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE946;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
-            </muxc:NavigationView.MenuItems>
+            </muxc:NavigationView.FooterMenuItems>
 
-            <Grid Padding="32,24,32,24">
+            <!-- Opaque, painted directly over NavigationView's own ContentGrid: that grid defaults
+                 to a translucent overlay (NavigationViewContentBackground in generic.xaml) which
+                 is not exposed as a settable property, so covering it is the only way to keep the
+                 content area a flat color instead of a tinted see-through one. -->
+            <Grid Padding="32,24,32,24" Background="{ThemeResource SwiftXCanvasBrush}">
                 <!-- ==================== HOME (ring customization) ==================== -->
                 <ScrollViewer x:Name="HomePanel">
-                    <StackPanel Spacing="12" MaxWidth="720" HorizontalAlignment="Left">
+                    <StackPanel Spacing="12" MaxWidth="920" HorizontalAlignment="Left">
                         <TextBlock Text="Home" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,4" />
-                        <TextBlock Text="Customize your ring. Click an empty slot or + to add; click an item to edit or remove; drag an item to rearrange."
+                        <TextBlock Text="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
-                        <Border Style="{StaticResource Card}" HorizontalAlignment="Center" Padding="20">
-                            <Canvas x:Name="PreviewCanvas" Width="360" Height="360" />
-                        </Border>
-                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-                            <Button Content="Add item…" Click="AddItem_Click" />
-                            <Button Content="Reset defaults" Click="ResetDefaults_Click" />
-                        </StackPanel>
-                        <StackPanel x:Name="EditPanel" Visibility="Collapsed" Spacing="8">
-                            <Border Style="{StaticResource Card}">
-                                <StackPanel Spacing="10">
-                                    <TextBlock x:Name="EditTitle" FontWeight="SemiBold" />
-                                    <TextBox x:Name="EditName" Header="Name" />
-                                    <TextBox x:Name="EditTarget" Header="Target" />
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <Button Content="Save" Style="{ThemeResource AccentButtonStyle}" Click="SaveEdit_Click" />
-                                        <Button Content="Remove" Click="RemoveEdit_Click" />
-                                        <Button Content="↑" Click="MoveUp_Click" ToolTipService.ToolTip="Move earlier on ring" />
-                                        <Button Content="↓" Click="MoveDown_Click" ToolTipService.ToolTip="Move later on ring" />
-                                        <Button Content="Open group…" x:Name="OpenGroupBtn" Click="OpenGroup_Click" Visibility="Collapsed" />
-                                        <Button Content="Cancel" Click="CancelEdit_Click" />
-                                    </StackPanel>
-                                </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="20" HorizontalAlignment="Left" VerticalAlignment="Top">
+                            <Border Style="{StaticResource Card}" Background="{ThemeResource SwiftXRingCanvasBrush}"
+                                    HorizontalAlignment="Left" VerticalAlignment="Top" Padding="20">
+                                <Canvas x:Name="PreviewCanvas" Width="360" Height="360" />
                             </Border>
+
+                            <StackPanel Width="280" Spacing="12">
+                                <Border Style="{StaticResource Card}">
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon Grid.Column="0" Glyph="&#xE8A3;"
+                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                                  VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="Size" Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   VerticalAlignment="Center" />
+                                        <ComboBox x:Name="ItemSizeBox" Grid.Column="2" MinWidth="0" Width="110"
+                                                  VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                  SelectionChanged="ItemSizeBox_SelectionChanged">
+                                            <ComboBoxItem Content="Small" Tag="Small" />
+                                            <ComboBoxItem Content="Medium" Tag="Medium" />
+                                            <ComboBoxItem Content="Large" Tag="Large" />
+                                        </ComboBox>
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource Card}">
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon Grid.Column="0" Glyph="&#xE9E9;"
+                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                                  VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="Radius" Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   VerticalAlignment="Center" />
+                                        <Slider x:Name="RadiusSlider" Grid.Column="2" MinWidth="130" Width="130"
+                                                VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                Minimum="80" Maximum="220" StepFrequency="5" TickFrequency="20"
+                                                ValueChanged="RadiusSlider_ValueChanged" />
+                                    </Grid>
+                                </Border>
+
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                                    <Button Content="Add item…" Click="AddItem_Click" />
+                                    <Button Content="Reset defaults" Click="ResetDefaults_Click" />
+                                </StackPanel>
+
+                                <!-- Read-only inspector for whatever item was last clicked, on the
+                                     main ring or inside an expanded group's children row below.
+                                     No edit/save controls here — real edits happen on the "Apps &
+                                     links" tab. Hidden until something is selected. -->
+                                <Border x:Name="InfoBox" Style="{StaticResource Card}" Visibility="Collapsed">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Name" Style="{StaticResource SecondaryCaption}" />
+                                        <TextBlock x:Name="InfoName" Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Text="Target" Style="{StaticResource SecondaryCaption}" Margin="0,6,0,0" />
+                                        <TextBlock x:Name="InfoTarget" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
                         </StackPanel>
+
+                        <!-- Revealed in place of a group bubble's own slot when it's clicked, instead
+                             of replacing the whole ring view. Uses the ring-canvas grey (not the
+                             white Card look) so it reads as the canvas extended, not another box. -->
+                        <Border x:Name="GroupRow" Visibility="Collapsed" CornerRadius="8" BorderThickness="1"
+                                Background="{ThemeResource SwiftXRingCanvasBrush}"
+                                BorderBrush="{ThemeResource SwiftXCardStrokeBrush}" Padding="16,14">
+                            <StackPanel Spacing="8">
+                                <TextBlock x:Name="GroupRowTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                    <Canvas x:Name="GroupChildrenCanvas" Height="52" />
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -154,41 +216,25 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE8A3;"
-                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Ring item size" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="How large the items around the ring are drawn. The center logo stays a fixed size."
+                                <FontIcon Grid.Column="0" Glyph="&#xE765;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                          VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="Invoke" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Show or hide the ring from the keyboard."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="HotkeyStatus" Style="{StaticResource SecondaryCaption}"
+                                               TextWrapping="Wrap" />
                                 </StackPanel>
-                                <ComboBox x:Name="ItemSizeBox" Grid.Column="2" MinWidth="170" Width="170"
-                                          VerticalAlignment="Center" HorizontalAlignment="Right"
-                                          SelectionChanged="ItemSizeBox_SelectionChanged">
-                                    <ComboBoxItem Content="Small" Tag="Small" />
-                                    <ComboBoxItem Content="Medium" Tag="Medium" />
-                                    <ComboBoxItem Content="Large" Tag="Large" />
-                                </ComboBox>
-                            </Grid>
-                        </Border>
-
-                        <Border Style="{StaticResource Card}">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE9E9;"
-                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Ring radius" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="How far the items sit from the center of the ring."
-                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10"
+                                            VerticalAlignment="Center" HorizontalAlignment="Right">
+                                    <controls:HotkeyCaptureButton x:Name="HotkeyCapture"
+                                                                  VerticalAlignment="Center" />
+                                    <ToggleSwitch x:Name="HotkeyEnabledToggle"
+                                                  OnContent="" OffContent="" MinWidth="0"
+                                                  VerticalAlignment="Center"
+                                                  Toggled="HotkeyEnabled_Toggled" />
                                 </StackPanel>
-                                <Slider x:Name="RadiusSlider" Grid.Column="2" MinWidth="170" Width="170"
-                                        VerticalAlignment="Center" HorizontalAlignment="Right"
-                                        Minimum="80" Maximum="220" StepFrequency="5" TickFrequency="20"
-                                        ValueChanged="RadiusSlider_ValueChanged" />
                             </Grid>
                         </Border>
 
@@ -256,48 +302,18 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- ==================== SHORTCUTS ==================== -->
-                <ScrollViewer x:Name="ShortcutsPanel" Visibility="Collapsed"
-                              AutomationProperties.AutomationId="SettingsShortcutsPanel">
-                    <StackPanel Spacing="6" VerticalAlignment="Top">
-                        <TextBlock Text="Shortcuts" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,8" />
-
-                        <Border Style="{StaticResource Card}">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE765;"
-                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
-                                          VerticalAlignment="Center" />
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock Text="Invoke" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Show or hide the ring from the keyboard."
-                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
-                                    <TextBlock x:Name="HotkeyStatus" Style="{StaticResource SecondaryCaption}"
-                                               TextWrapping="Wrap" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10"
-                                            VerticalAlignment="Center" HorizontalAlignment="Right">
-                                    <controls:HotkeyCaptureButton x:Name="HotkeyCapture"
-                                                                  VerticalAlignment="Center" />
-                                    <ToggleSwitch x:Name="HotkeyEnabledToggle"
-                                                  OnContent="" OffContent="" MinWidth="0"
-                                                  VerticalAlignment="Center"
-                                                  Toggled="HotkeyEnabled_Toggled" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-
                 <!-- ==================== APPS & LINKS ==================== -->
                 <ScrollViewer x:Name="AppsPanel" Visibility="Collapsed"
                               AutomationProperties.AutomationId="SettingsAppsPanel">
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Apps &amp; links" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,12" />
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Apps &amp; links" Style="{ThemeResource TitleTextBlockStyle}" />
+                            <Button Grid.Column="1" Content="Add item…" VerticalAlignment="Center" Click="AddAppItem_Click" />
+                        </Grid>
                         <TextBlock Text="Show, hide, or remove items on the ring. Settings and Close are always on the ring, so they are not listed here."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" Margin="0,0,0,8" />
                         <Grid x:Name="ItemsList" ColumnSpacing="12" RowSpacing="6">
@@ -311,57 +327,28 @@
 
                 <!-- ==================== TOOLS ==================== -->
                 <ScrollViewer x:Name="ToolsPanel" Visibility="Collapsed">
-                    <StackPanel Spacing="6" MaxWidth="720" HorizontalAlignment="Left">
+                    <StackPanel Spacing="6">
                         <TextBlock Text="Tools" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,12" />
+                        <TextBlock Text="Drag a tool by its handle to change where it sits on the ring."
+                                   Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" Margin="0,0,0,4" />
 
-                        <Border Style="{StaticResource Card}">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE943;"
-                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="JSON on ring" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Show the JSON formatter as a ring item."
-                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
-                                </StackPanel>
-                                <ToggleSwitch x:Name="JsonToggle" Grid.Column="2"
-                                              OnContent="" OffContent="" MinWidth="0"
-                                              HorizontalAlignment="Right"
-                                              Toggled="ToolToggle_Toggled" />
-                            </Grid>
-                        </Border>
-
-                        <Border Style="{StaticResource Card}">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE8A5;"
-                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="XML on ring" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Show the XML formatter as a ring item."
-                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
-                                </StackPanel>
-                                <ToggleSwitch x:Name="XmlToggle" Grid.Column="2"
-                                              OnContent="" OffContent="" MinWidth="0"
-                                              HorizontalAlignment="Right"
-                                              Toggled="ToolToggle_Toggled" />
-                            </Grid>
-                        </Border>
-
-                        <Border Style="{StaticResource Card}">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Content="Open JSON" Click="OpenJson_Click" />
-                                <Button Content="Open XML" Click="OpenXml_Click" />
-                            </StackPanel>
-                        </Border>
+                        <!-- Rows are built in code-behind (RebuildToolsList) — six fixed built-in
+                             tools, each shown once here regardless of how many ring instances they
+                             have. CanReorderItems + AllowDrop is WinUI's own drag-to-reorder; it
+                             drives ToolCards directly (see ToolCards_CollectionChanged). -->
+                        <ListView x:Name="ToolsList" SelectionMode="None"
+                                  CanReorderItems="True" AllowDrop="True"
+                                  ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0,0,0,6" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="MinHeight" Value="0" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                        </ListView>
                     </StackPanel>
                 </ScrollViewer>
 

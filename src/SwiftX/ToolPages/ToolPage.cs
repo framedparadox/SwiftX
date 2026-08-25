@@ -1,4 +1,5 @@
 using SwiftX.Models;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
 namespace SwiftX.ToolPages;
@@ -19,6 +20,14 @@ public abstract class ToolPage : UserControl
     /// <summary>Commands surfaced in the host's command bar and bound to accelerators.</summary>
     public abstract IReadOnlyList<ToolCommand> Commands { get; }
 
+    /// <summary>
+    /// Optional content seated in the title bar itself, beside the minimize/maximize/close
+    /// buttons — for the handful of actions important enough to stay visible without opening
+    /// the command bar (Formatter's Advanced toggle, Secure values' Add/Save/Clear). Null for
+    /// every page that doesn't need this.
+    /// </summary>
+    public virtual FrameworkElement? HeaderActions => null;
+
     /// <summary>The hosting <c>ToolWindowBase</c>'s window handle, set once at construction — the
     /// one thing a page needs to show a WinRT file picker (an unpackaged app must tell WinRT which
     /// window owns it; see <c>Services.FilePickers</c>).</summary>
@@ -32,6 +41,17 @@ public abstract class ToolPage : UserControl
 
     /// <summary>Loads clipboard text into the page in response to the "Paste clipboard" chip.</summary>
     public virtual void PasteClipboardText(string text) { }
+
+    /// <summary>Whether this page can save its own content directly — adds a Save option beside
+    /// Discard/Cancel on the close-without-saving prompt (<c>ToolWindowBase.OnClosing</c>). False
+    /// for pages with nothing file-shaped to save (Certificate is read-only; Secure values
+    /// persists every row as it's edited, not as a document).</summary>
+    public virtual bool CanSave => false;
+
+    /// <summary>Saves the page's content. Only called when <see cref="CanSave"/> is true. Returns
+    /// false if the save didn't happen — a picker the user cancelled, or a write that failed —
+    /// so the close prompt knows to leave the window open rather than discard unsaved work.</summary>
+    public virtual Task<bool> SaveAsync() => Task.FromResult(false);
 
     private readonly CancellationTokenSource _pageClosing = new();
 

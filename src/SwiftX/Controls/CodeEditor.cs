@@ -65,6 +65,15 @@ public sealed class CodeEditor : Grid
 
     public event EventHandler? TextChanged;
 
+    /// <summary>
+    /// Raised after a paste has actually landed in the document — one dispatcher cycle later,
+    /// since <see cref="RichEditBox.Paste"/> itself fires before the text is inserted (that's
+    /// what lets a handler override the operation). A page that wants to auto-format pasted
+    /// content, rather than content the user is still typing, listens here instead of debouncing
+    /// every <see cref="TextChanged"/>.
+    /// </summary>
+    public event EventHandler? Pasted;
+
     /// <summary>The tokenizer to colour with, or null to leave the text plain. Setting it
     /// re-colours what is already in the editor.</summary>
     public ITokenizer? Tokenizer
@@ -189,6 +198,11 @@ public sealed class CodeEditor : Grid
             _highlightTimer.Start(); // restarts the countdown on every keystroke
             TextChanged?.Invoke(this, EventArgs.Empty);
         };
+
+        // Deferred past the paste itself: at the point Paste fires the clipboard content hasn't
+        // been inserted yet (that's what would let a handler override the operation), so reading
+        // Text here would still see the pre-paste document.
+        TextBox.Paste += (_, _) => DispatcherQueue.TryEnqueue(() => Pasted?.Invoke(this, EventArgs.Empty));
 
         ActualThemeChanged += (_, _) => Highlight();
         RefreshGutter();

@@ -16,6 +16,13 @@ public partial class App : Application
         UnhandledException += (_, e) =>
         {
             Diag.Log($"UNHANDLED: {e.Message}\n{e.Exception}");
+            // Leaving Handled false here does not just skip a log line — WinUI terminates the
+            // process once this handler returns unless it is set. That is right for a genuine
+            // application bug, but wrong for the composition/backdrop-layer exceptions this app
+            // has already hit (see TransparentBackdrop's own doc comment): framework-internal
+            // noise unrelated to any corrupted app state, where crashing the whole ring over a
+            // theme-change repaint glitch is a worse outcome than logging it and continuing.
+            e.Handled = true;
         };
     }
 
