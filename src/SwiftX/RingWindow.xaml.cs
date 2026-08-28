@@ -1366,21 +1366,24 @@ public sealed partial class RingWindow : Window
     }
 
     /// <summary>
-    /// Active state reads as an inverted fill (no border in either theme) rather than an outline —
-    /// swaps the same two brushes CreateBubble already applies at rest, just reversed. Close is
-    /// the exception: it goes red under the pointer, because it is the one item on the ring whose
-    /// effect can't be undone by clicking again.
+    /// Active state under <see cref="RingHoverStyle.Invert"/> reads as an inverted fill (no border
+    /// in either theme) rather than an outline — swaps the same two brushes CreateBubble already
+    /// applies at rest, just reversed. Under <see cref="RingHoverStyle.Zoom"/> the fill never
+    /// changes at all; <see cref="HoverScaleFor"/> shrinking the bubble is the only hover cue.
+    /// Close is the exception to both: it goes red under the pointer regardless of the setting,
+    /// because it is the one item on the ring whose effect can't be undone by clicking again.
     /// </summary>
     private void ApplyBubbleFill(BubbleView bubble, bool active)
     {
         bool destructive = active && IsCloseItem(bubble.Item);
+        bool invert = active && !destructive && _manager.Config.HoverStyle == RingHoverStyle.Invert;
 
         Brush background = destructive ? ThemeBrush("RingCloseHoverBackground")
-            : active ? ThemeBrush("SwiftXForegroundBrush")
+            : invert ? ThemeBrush("SwiftXForegroundBrush")
             : ThemeBrush("RingBubbleBackground");
 
         Brush foreground = destructive ? ThemeBrush("RingCloseHoverForeground")
-            : active ? ThemeBrush("RingBubbleBackground")
+            : invert ? ThemeBrush("RingBubbleBackground")
             : ThemeBrush("SwiftXForegroundBrush");
 
         bubble.Host.Background = background;
@@ -1392,9 +1395,14 @@ public sealed partial class RingWindow : Window
     private static bool IsCloseItem(RingItem item) =>
         string.Equals(item.Target, SystemRingItems.CloseTarget, StringComparison.OrdinalIgnoreCase);
 
-    private static float HoverScaleFor(BubbleView bubble) => (float)(IsCloseItem(bubble.Item)
-        ? RingMetrics.CloseHoverScale
-        : RingMetrics.HoverScale);
+    private float HoverScaleFor(BubbleView bubble)
+    {
+        if (IsCloseItem(bubble.Item))
+            return (float)RingMetrics.CloseHoverScale;
+        return (float)(_manager.Config.HoverStyle == RingHoverStyle.Zoom
+            ? RingMetrics.ZoomHoverScale
+            : RingMetrics.HoverScale);
+    }
 
     private static void AnimateScale(BubbleView bubble, float target, int durationMs)
     {

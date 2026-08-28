@@ -218,10 +218,11 @@ following it.
 | Setting | What it does |
 |---------|--------------|
 | **Theme** | Light, Dark, or System. Solid surfaces only. |
+| **Hover style** | **Invert** (default) swaps an item's fill to the opposite theme color under the pointer, growing it slightly. **Zoom** keeps the item's resting color and just shrinks it slightly instead. Close is unaffected either way — it always goes red. |
 | **Invoke** | The summon shortcut, its capture button, and an on/off switch. Reports whether Windows accepted the combination. |
 | **Start with Windows** | Per-user autostart. Unpackaged builds use the `HKCU\...\Run` key (no elevation); the MSIX build uses a declared startup task, so Windows lists it in Task Manager's Startup tab and honors a user override there. |
 | **Backup & restore** | Export the whole configuration to JSON, or import one back. |
-| **Reset** | Restores theme, item size, radius, shortcut, hot corner, tools, and ring items to defaults. |
+| **Reset** | Restores theme, hover style, item size, radius, shortcut, hot corner, tools, and ring items to defaults. |
 
 ### Apps & links
 
@@ -297,6 +298,7 @@ parse falls back to defaults rather than taking the app down with it.
 | `Rings` | array | one profile | Ring profiles. Only the first is used today; it holds your items. |
 | `LaunchAtStartup` | bool | `false` | Mirrors the "Start with Windows" switch. |
 | `Theme` | `Light`/`Dark`/`System` | `Dark` | Window and ring theme. |
+| `HoverStyle` | `Invert`/`Zoom` | `Invert` | How a ring item reacts to the pointer — swap to the opposite color, or keep color and shrink slightly. |
 | `Hotkey` | string | `"Ctrl+Shift+S"` | Summon shortcut, in readable form so a hand-edited file stays legible. |
 | `HotkeyEnabled` | bool | `true` | Whether the shortcut is registered at all. |
 | `HotCornerEnabled` | bool | `true` | Whether a screen corner summons the ring. |

@@ -9,6 +9,18 @@ public enum AppTheme
     System,
 }
 
+/// <summary>
+/// How a ring item reads as "under the pointer".
+/// </summary>
+public enum RingHoverStyle
+{
+    /// <summary>Fill and glyph swap to the opposite theme color while the item grows slightly. The original behavior.</summary>
+    Invert,
+
+    /// <summary>Fill and glyph keep their resting color; the item just shrinks slightly instead.</summary>
+    Zoom,
+}
+
 /// <summary>Persisted app settings and ring profiles.</summary>
 public sealed class AppConfig
 {
@@ -16,6 +28,10 @@ public sealed class AppConfig
 
     public bool LaunchAtStartup { get; set; }
     public AppTheme Theme { get; set; } = AppTheme.Dark;
+
+    /// <summary>How ring items respond to the pointer. See <see cref="RingHoverStyle"/>.</summary>
+    public RingHoverStyle HoverStyle { get; set; } = RingHoverStyle.Invert;
+
     public string Hotkey { get; set; } = HotkeyGesture.Default.ToString();
     public bool HotkeyEnabled { get; set; } = true;
 
@@ -77,6 +93,7 @@ public sealed class AppConfig
     {
         LaunchAtStartup = other.LaunchAtStartup;
         Theme = other.Theme;
+        HoverStyle = other.HoverStyle;
         Hotkey = other.Hotkey;
         HotkeyEnabled = other.HotkeyEnabled;
         HotCornerEnabled = other.HotCornerEnabled;
