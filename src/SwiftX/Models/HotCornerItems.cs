@@ -13,9 +13,11 @@ namespace SwiftX.Models;
 /// Stored entries are copies, not references — the config is one JSON file with no notion of a
 /// pointer — so <see cref="Resolve"/> maps each one back to the live thing it names before it is
 /// drawn: Settings to the synthesized entry, the tools group to the one on the ring (whose
-/// children follow the Tools page's switches), and everything else to the ring item of the same
-/// id. An entry naming something no longer on the ring keeps working from its stored copy, which
-/// is what lets the corner hold an item the ring itself does not.
+/// children follow the Tools page's switches), QuickAccess to a freshly gathered group of
+/// whatever web links and shortcuts are on the ring right now, and everything else to the ring
+/// item of the same id. An entry naming something no longer on the ring — including a QuickAccess
+/// with nothing left to gather, or a Notepad the ring never really had — keeps working from its
+/// stored copy, which is what lets the corner hold an item the ring itself does not.
 /// </para>
 /// </summary>
 public static class HotCornerItems
@@ -57,6 +59,9 @@ public static class HotCornerItems
 
         if (string.Equals(entry.Target, ToolCatalog.ToolsGroupTarget, StringComparison.OrdinalIgnoreCase))
             return FindByTarget(config.Primary.Items, ToolCatalog.ToolsGroupTarget) ?? entry;
+
+        if (string.Equals(entry.Target, QuadrantLayout.QuickAccessTarget, StringComparison.OrdinalIgnoreCase))
+            return QuadrantLayout.BuildQuickAccess(config.Primary.Items) ?? entry;
 
         return FindById(config.Primary.Items, entry.Id) ?? entry;
     }

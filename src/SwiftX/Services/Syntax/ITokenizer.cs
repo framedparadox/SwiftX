@@ -26,7 +26,7 @@ public interface ITokenizer
 
     /// <summary>The scanner state at the end of a line, so a future incremental implementation of
     /// <see cref="TokenizeRange"/> can resume mid-construct. v1 tokenizers have no cross-line
-    /// state (JSON/CSV never span an unterminated construct across a line in valid input, and the
+    /// state (JSON never spans an unterminated construct across a line in valid input, and the
     /// whole-document fallback makes this moot for XML too), so this returns
     /// <see cref="ScannerState.Initial"/>.</summary>
     ScannerState StateAfter(string text, LineIndex lines, int line, ScannerState entryState);

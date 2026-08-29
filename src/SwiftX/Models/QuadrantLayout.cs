@@ -16,8 +16,20 @@ namespace SwiftX.Models;
 /// </summary>
 public static class QuadrantLayout
 {
-    /// <summary>Items a quadrant shows: two of the user's, the ring's Tools item, and Settings.</summary>
+    /// <summary>Items a quadrant shows: QuickAccess, Notepad, the ring's Tools item, and Settings.</summary>
     public const int ItemCount = 4;
+
+    /// <summary>Stable marker target for the synthesized QuickAccess group — see
+    /// <see cref="BuildQuickAccess"/>. Not a real, stored ring item (nothing is ever added to the
+    /// ring itself), so this exists purely so <see cref="HotCornerItems"/> can recognize a stored
+    /// entry as "the links and shortcuts group" and re-synthesize it fresh on every resolve,
+    /// exactly the way it already does for the ring's own Tools group.</summary>
+    public const string QuickAccessTarget = "swiftx:quickaccess";
+
+    /// <summary>Glyph the QuickAccess group wears on a quadrant — the same one a lone Shortcut
+    /// item falls back to (see <see cref="RingItem.Glyph"/>), since the group is exactly that
+    /// kind of item, gathered up.</summary>
+    public const string QuickAccessGlyph = "\uE71B";
 
     /// <summary>Clear space between two neighbouring items.</summary>
     public const double ItemGap = 10;
@@ -126,9 +138,19 @@ public static class QuadrantLayout
     };
 
     /// <summary>
-    /// Which items a quadrant shows, in arc order: the user's own first items, then the ring's
-    /// Tools item, then Settings — the same "user items first, built-ins last" order the full
-    /// ring reads in, so the two layouts never disagree about where anything is.
+    /// Which items a quadrant shows, in arc order: QuickAccess (every web link and shortcut on the
+    /// ring, gathered into one group), then Notepad, then the ring's Tools item, then Settings —
+    /// content first, built-ins last, the same convention the full ring reads in with Settings and
+    /// Close pinned to its own last two slots, so the two layouts never disagree about where
+    /// anything is.
+    /// <para>
+    /// QuickAccess drops out entirely when there is nothing to gather (see
+    /// <see cref="BuildQuickAccess"/>) rather than taking a place for an empty group, and Notepad
+    /// falls back to the ring's own default entry when the ring has none of its own — see
+    /// <see cref="FindOrDefaultNotepad"/>. Both are a starting point, not a fixture: once the
+    /// corner is edited by hand (<see cref="HotCornerItems.Edit"/>), any of the four can be
+    /// swapped for anything else.
+    /// </para>
     /// <para>
     /// Close is deliberately absent. There are only <see cref="ItemCount"/> places, and a
     /// quadrant is dismissed the way the ring always was: Esc, or a click anywhere off it.
@@ -143,17 +165,93 @@ public static class QuadrantLayout
             i => i.IsGroup &&
                  string.Equals(i.Target, ToolCatalog.ToolsGroupTarget, StringComparison.OrdinalIgnoreCase));
 
-        // Built from the back: whatever places the built-ins don't take go to the user's items.
+        // Built from the back: whatever places the built-ins don't take go to the content items.
         var tail = new List<RingItem>();
         if (tools is not null)
             tail.Add(tools);
         tail.Add(settings);
 
-        var items = visible
-            .Where(i => !ReferenceEquals(i, tools))
-            .Take(Math.Max(0, ItemCount - tail.Count))
-            .ToList();
+        var head = new List<RingItem>();
+        var quickAccess = BuildQuickAccess(visible);
+        if (quickAccess is not null)
+            head.Add(quickAccess);
+        head.Add(FindOrDefaultNotepad(visible));
+
+        var items = head.Take(Math.Max(0, ItemCount - tail.Count)).ToList();
         items.AddRange(tail);
         return items;
+    }
+
+    /// <summary>
+    /// Gathers every <see cref="RingItemKind.WebLink"/> and <see cref="RingItemKind.Shortcut"/>
+    /// item anywhere on the ring — top level or nested inside a user's own group — into one
+    /// synthesized group, in the order they appear. Standing in for "the user's own items" the
+    /// way <see cref="ToolCatalog"/>'s group stands in for the built-in tools, and re-synthesized
+    /// by <see cref="HotCornerItems"/> on every resolve so it stays live even once the corner has
+    /// been customized. Null when there is nothing to gather, so an empty group never occupies
+    /// one of the corner's four places for nothing.
+    /// </summary>
+    public static RingItem? BuildQuickAccess(IEnumerable<RingItem> ringItems)
+    {
+        var children = new List<RingItem>();
+        void Collect(IEnumerable<RingItem> items)
+        {
+            foreach (var item in items)
+            {
+                // A hidden group's children never surface via its own flyout either (see
+                // RingWindow.ExpandFlyout's matching filter), so a hidden item — group or leaf —
+                // takes the rest of its subtree out of the gathering with it.
+                if (item.Hidden)
+                    continue;
+                if (item.Kind is RingItemKind.WebLink or RingItemKind.Shortcut)
+                    children.Add(item);
+                if (item.Children.Count > 0)
+                    Collect(item.Children);
+            }
+        }
+        Collect(ringItems);
+
+        if (children.Count == 0)
+            return null;
+
+        return new RingItem
+        {
+            Kind = RingItemKind.Group,
+            DisplayName = "QuickAccess",
+            Target = QuickAccessTarget,
+            CustomGlyph = QuickAccessGlyph,
+            Children = children,
+        };
+    }
+
+    /// <summary>
+    /// The ring's own Notepad, if it has one — matched by the target's file name so a renamed
+    /// item still counts, and found wherever it sits, nested or not — or else the same entry
+    /// <c>RingManager.SeedDefaults</c> plants on a fresh ring, so the fourth place always opens to
+    /// something useful even on a ring that never had one.
+    /// </summary>
+    public static RingItem FindOrDefaultNotepad(IEnumerable<RingItem> ringItems)
+    {
+        RingItem? Find(IEnumerable<RingItem> items)
+        {
+            foreach (var item in items)
+            {
+                if (item.Hidden)
+                    continue;
+                if (item.Kind == RingItemKind.Application &&
+                    string.Equals(Path.GetFileName(item.Target), "notepad.exe", StringComparison.OrdinalIgnoreCase))
+                    return item;
+                if (item.Children.Count > 0 && Find(item.Children) is { } nested)
+                    return nested;
+            }
+            return null;
+        }
+
+        return Find(ringItems) ?? new RingItem
+        {
+            Kind = RingItemKind.Application,
+            DisplayName = "Notepad",
+            Target = Path.Combine(Environment.SystemDirectory, "notepad.exe"),
+        };
     }
 }

@@ -193,19 +193,23 @@ public sealed class RingManager
 
     /// <summary>
     /// The mouse-only counterpart to the summon hotkey (see <see cref="HotCornerWatcher"/>).
-    /// Summons rather than toggles: the pointer reaching a corner is a request for the ring, and
-    /// re-summoning an open one would only yank it across the screen to the corner, so an already
-    /// open ring is left exactly where it is. Hiding the ring from the tray stays honored — that
-    /// is an explicit "not now", and unlike the hotkey the pointer can wander into a corner
-    /// without being asked to.
+    /// A toggle, the same as the hotkey and the tray icon: the pointer reaching the corner while
+    /// the dock is already open is read as "put it away" rather than a second summon, so parking
+    /// the mouse back in the corner is a reliable way to dismiss it however it was opened — by
+    /// this corner, the other corner, the hotkey, or the tray. Hiding the ring from the tray still
+    /// overrides it — that is an explicit "not now", and unlike the hotkey the pointer can wander
+    /// into a corner without being asked to.
     /// </summary>
     private void SummonFromHotCorner()
     {
         if (_hiddenByUser)
             return;
         _ringWindow ??= new RingWindow(this);
-        if (_ringWindow.IsOpen)
+        if (_ringWindow.IsOpen || _ringWindow.IsClosing)
+        {
+            _ringWindow.Dismiss();
             return;
+        }
 
         // The quadrant form is anchored on the corner the pointer just reached; the full ring
         // comes up under the pointer exactly as the hotkey summons it.
@@ -220,7 +224,10 @@ public sealed class RingManager
             _hiddenByUser = false;
         }
         _ringWindow ??= new RingWindow(this);
-        if (_ringWindow.IsOpen)
+        // IsClosing as well as IsOpen: a click on the tray icon toggles on the button coming up,
+        // by which time that same click may already have dismissed the dock from outside it (see
+        // RingWindow.IsClosing) — one gesture must not both close and reopen it.
+        if (_ringWindow.IsOpen || _ringWindow.IsClosing)
             _ringWindow.Dismiss();
         else
             _ringWindow.Summon();
@@ -244,14 +251,17 @@ public sealed class RingManager
         WindowChrome.CenterOnCursor(_settingsWindow.AppWindow, _settingsWindow.AppWindow.Id);
     }
 
-    public void OpenAddItem(Action<RingItem>? onAdded = null, List<RingItem>? targetList = null)
+    public void OpenAddItem(
+        Action<RingItem>? onAdded = null, List<RingItem>? targetList = null,
+        bool isGenericAddItem = false)
     {
         if (_addItemWindow is not null)
         {
             _addItemWindow.Activate();
             return;
         }
-        _addItemWindow = new AddItemWindow(this, onAdded, targetList ?? Config.Primary.Items);
+        _addItemWindow = new AddItemWindow(
+            this, onAdded, targetList ?? Config.Primary.Items, isGenericAddItem);
         _addItemWindow.Closed += (_, _) => _addItemWindow = null;
         _addItemWindow.Activate();
     }

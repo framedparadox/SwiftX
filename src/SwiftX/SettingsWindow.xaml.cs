@@ -125,6 +125,7 @@ public sealed partial class SettingsWindow : Window
         {
             _loading = true;
             SelectTheme(_manager.Config.Theme);
+            SelectHoverStyle(_manager.Config.HoverStyle);
             SelectItemSize(_manager.Config.ItemSize);
             RadiusSlider.Value = _manager.Config.RingRadius ?? RingMetrics.DefaultRadius;
             HotkeyEnabledToggle.IsOn = _manager.Config.HotkeyEnabled;
@@ -1024,7 +1025,7 @@ public sealed partial class SettingsWindow : Window
             _manager.NotifyItemsChanged();
             RenderPreview();
             RebuildItemsList();
-        }, _manager.Config.Primary.Items);
+        }, _manager.Config.Primary.Items, isGenericAddItem: true);
 
     private void ResetDefaults_Click(object sender, RoutedEventArgs e)
     {
@@ -1052,6 +1053,18 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
+    private void SelectHoverStyle(RingHoverStyle style)
+    {
+        foreach (ComboBoxItem item in HoverStyleBox.Items)
+        {
+            if ((item.Tag as string) == style.ToString())
+            {
+                HoverStyleBox.SelectedItem = item;
+                break;
+            }
+        }
+    }
+
     private void SelectItemSize(RingItemSize size)
     {
         foreach (ComboBoxItem item in ItemSizeBox.Items)
@@ -1073,6 +1086,16 @@ public sealed partial class SettingsWindow : Window
             _manager.Save();
             _manager.ApplyTheme();
             ApplyTheme();
+        }
+    }
+
+    private void HoverStyleBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || HoverStyleBox.SelectedItem is not ComboBoxItem item) return;
+        if (Enum.TryParse<RingHoverStyle>(item.Tag as string, out var style))
+        {
+            _manager.Config.HoverStyle = style;
+            _manager.Save();
         }
     }
 
@@ -1133,6 +1156,7 @@ public sealed partial class SettingsWindow : Window
         HideInfo();
         CollapseGroup();
         _manager.Config.Theme = AppTheme.Dark;
+        _manager.Config.HoverStyle = RingHoverStyle.Invert;
         _manager.Config.Hotkey = HotkeyGesture.Default.ToString();
         _manager.Config.HotkeyEnabled = true;
         _manager.Config.HotCornerEnabled = true;
@@ -1155,6 +1179,7 @@ public sealed partial class SettingsWindow : Window
         ApplyTheme();
         _loading = true;
         SelectTheme(AppTheme.Dark);
+        SelectHoverStyle(RingHoverStyle.Invert);
         SelectItemSize(RingItemSize.Medium);
         RadiusSlider.Value = RingMetrics.DefaultRadius;
         HotkeyEnabledToggle.IsOn = true;
@@ -1390,7 +1415,7 @@ public sealed partial class SettingsWindow : Window
 
     private static readonly ToolRow[] ToolRows =
     [
-        new("Data", ToolKind.Data, "Data formatter", "Auto-detect JSON, XML, or CSV and format it.", DataGlyph, false,
+        new("Data", ToolKind.Data, "Data formatter", "Auto-detect JSON or XML and format it.", DataGlyph, false,
             c => c.ShowDataTool, (c, v) => c.ShowDataTool = v),
         new("SecureValues", ToolKind.SecureValues, "Secure values", "Local key/secret store with masked values.", SecureValuesGlyph, false,
             c => c.ShowSecureValuesTool, (c, v) => c.ShowSecureValuesTool = v),

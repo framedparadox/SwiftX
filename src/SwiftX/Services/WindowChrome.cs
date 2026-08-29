@@ -19,6 +19,47 @@ public static class WindowChrome
         appWindow.Resize(new SizeInt32((int)Math.Ceiling(dipW * scale), (int)Math.Ceiling(dipH * scale)));
     }
 
+    /// <summary>
+    /// Makes <paramref name="hwnd"/> the true foreground window, working around the Windows
+    /// foreground-lock that <c>SetForegroundWindow</c> alone is subject to when the caller cannot
+    /// prove the request rides on a real input event (see the doc comment on
+    /// <see cref="NativeMethods.AttachThreadInput"/>).
+    /// <para>
+    /// This matters for the ring specifically because its own "click anywhere to dismiss" only
+    /// fires when it loses activation it genuinely had — a summon that silently failed to become
+    /// foreground can never later fire that transition, leaving the ring stuck on screen through a
+    /// click elsewhere. A hotkey press or a tray click already carry real input and would likely
+    /// succeed on their own, but routing every summon through here costs nothing and removes the
+    /// one summon path — the hot corner's <c>WM_TIMER</c> poll — that provably would not.
+    /// </para>
+    /// </summary>
+    public static void ForceForeground(nint hwnd)
+    {
+        nint current = NativeMethods.GetForegroundWindow();
+        if (current == hwnd)
+        {
+            NativeMethods.SetForegroundWindow(hwnd);
+            return;
+        }
+
+        uint currentThread = NativeMethods.GetCurrentThreadId();
+        uint foregroundThread = current == nint.Zero
+            ? 0
+            : NativeMethods.GetWindowThreadProcessId(current, out _);
+
+        bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
+            NativeMethods.AttachThreadInput(currentThread, foregroundThread, true);
+        try
+        {
+            NativeMethods.SetForegroundWindow(hwnd);
+        }
+        finally
+        {
+            if (attached)
+                NativeMethods.AttachThreadInput(currentThread, foregroundThread, false);
+        }
+    }
+
     /// <summary>Centers a window on whichever monitor currently hosts the cursor.</summary>
     public static void CenterOnCursor(AppWindow appWindow, WindowId windowId)
     {

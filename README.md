@@ -2,7 +2,7 @@
 
 A quick-access **radial ring** for Windows 11. Summon it with a keyboard shortcut, a screen corner,
 or the tray icon; launch apps, files, folders and links from it; pop groups open into an outer
-ring; and reach a set of built-in developer tools (JSON/XML/CSV formatter, local secure values,
+ring; and reach a set of built-in developer tools (JSON/XML formatter, local secure values,
 Base64, certificate inspector) without leaving it.
 
 Everything runs on your own machine. There is no account, no telemetry, and nothing is uploaded.
@@ -25,8 +25,8 @@ Everything runs on your own machine. There is no account, no telemetry, and noth
   - [General](#general)
   - [Apps & links](#apps--links)
   - [Tools](#tools-page)
-  - [Privacy](#privacy)
   - [About](#about)
+  - [Privacy](#privacy)
 - [Built-in tools](#built-in-tools)
 - [Configuration file](#configuration-file)
 - [How it works](#how-it-works)
@@ -116,7 +116,7 @@ How it behaves, and why:
 | **Re-arm** | Having fired, it will not fire again until the pointer leaves the patch — parking the mouse in the corner summons once, not twenty times a second. |
 | **Drag guard** | While any mouse button is held, the dwell does not even start. Dragging a window into a corner still hits Windows' own snap, and a text selection that ends in a corner is not a summon. |
 | **Per monitor** | The corner belongs to whichever display the pointer is on, measured against that display's full bounds rather than its work area — the corner of the *screen* is where the pointer actually stops, taskbar or not. |
-| **Already open** | A hot corner never re-summons an open ring; it would only yank it across the screen. |
+| **A toggle** | Reaching the corner while the dock is already open puts it away rather than summoning a second time — the same toggle the hotkey and the tray icon already are. Parking the mouse back in the corner is a reliable way to dismiss it however it was opened. |
 | **Hidden** | "Hide ring" from the tray is honored — unlike a keypress, a pointer can wander into a corner without being asked to. |
 | **Detection** | The pointer is polled every 50 ms on a `WM_TIMER`, riding the same hidden message window the tray icon and hotkeys already use. No system-wide mouse hook is installed for this. |
 
@@ -124,7 +124,8 @@ Pick the corner and what it opens in **Settings → Home → Hot corner**: a swi
 dropdown, and two choices for the shape —
 
 - **Ring** (default) — the whole ring, drawn at the corner.
-- **Quadrant** — four items only, on a quarter circle centered on the corner itself.
+- **Quadrant** — four items only, on a quarter circle centered on the corner itself: QuickAccess,
+  Notepad, Tools, and Settings by default (see [The corner quadrant](#the-corner-quadrant)).
 
 ---
 
@@ -132,13 +133,13 @@ dropdown, and two choices for the shape —
 
 | Action | Result |
 |--------|--------|
-| **Hover** an item | Its full name pops out in a pill beside it, along the same radial the item sits on, so the label never covers the item. |
-| **Hover** a group | After a short dwell it opens into the outer ring. Sweeping past on the way to a neighbour does not fire it. |
+| **Hover** an item | Its full name pops out in a pill beside it, along the same radial the item sits on, so the label never covers the item — always in exactly one place, even for a group whose flyout is open. |
+| **Hover** a group | After a short dwell it opens into the outer ring. Sweeping past on the way to a neighbour does not fire it. Its own label stays put beside the group — it never relocates to a heading above the arc, on the full ring or a quadrant alike. |
 | **Click** a leaf | Launches it and dismisses the ring. Settings and Add-new are the exceptions: they open their own window and leave the ring up. |
 | **Click** a group | Opens it (never toggles it shut — that would make groups flicker under a normal point-and-click). |
-| **Click** the gaps | The whole disc is live: a click between two items activates whichever one the pointer is angularly nearest, exactly as clicking the item would. |
-| **Click** the hub / dead zone | Closes an open group, or dismisses the ring when none is open. |
-| **Esc** | Same as above: first the group, then the ring. |
+| **Click** the gaps | The whole disc is live: a click between two items activates whichever one the pointer is angularly nearest, exactly as clicking the item would. Nothing hovered — a gap with no item in it, or empty space past an open flyout's arc — dismisses the ring instead. |
+| **Click** the hub / dead zone | Dismisses the ring, closing any open flyout along with it. |
+| **Esc** | Closes an open group first, then the ring. |
 | **Click anywhere else** | Dismisses. The click reaches whatever is under it — the ring is not covering the screen for input purposes. |
 
 A group wears a short arc on its outward edge, so an item that opens a ring of its own can be told
@@ -157,15 +158,27 @@ items must not touch, and the first and last must clear the two screen edges the
 as it must, which is what keeps the layout correct at any item size and any radius you have set.
 Items are then spread evenly across whatever the edge clearance leaves.
 
-**The four items**, until you say otherwise, are your first two ring items, then Tools, then
-Settings — the ring's own "user items first, built-ins last" order, so the two layouts never
-disagree about where anything is. Close is deliberately absent: there are only four places, and a
-quadrant is dismissed the way the ring always was.
+**The four items**, until you say otherwise, are:
+
+1. **QuickAccess** — every web link and shortcut on your ring, gathered into one group, wherever
+   they sit (top level or nested inside your own groups). Drops out entirely if you have none, so
+   an empty group never takes a place for nothing.
+2. **Notepad** — your ring's own Notepad if it has one, or the same default `SeedDefaults` plants
+   on a fresh ring otherwise, so this place always opens to something.
+3. **Tools**
+4. **Settings**
+
+— content first, built-ins last, the same convention the full ring reads in with Settings and
+Close pinned to its own last two slots. Close is deliberately absent from the quadrant: there are
+only four places, and it is dismissed the way the ring always was (Esc, a click elsewhere, or the
+corner itself again). QuickAccess stays live even after you have arranged the corner by hand — a
+link you add to the ring later still joins it — and so does Tools, following the Tools page's
+switches the same way it does on the full ring.
 
 **Editing the corner** happens on the Home page's canvas (see below). Until you touch it, the
-corner has nothing stored and simply follows the ring — add an item to the ring and the corner
-picks it up. Your first edit writes the current selection into the config, and from then on the
-corner is your arrangement and stays put as the ring changes.
+corner has nothing stored and simply follows the rules above — add a link to the ring and
+QuickAccess picks it up. Your first edit writes the current selection into the config, and from
+then on the corner is your own arrangement; any of the four can be swapped for anything else.
 
 Groups still work inside a quadrant: expanding one fans its children out into an outer arc, slid
 back inside the quarter if it would otherwise throw half of them off the screen.
@@ -218,10 +231,11 @@ following it.
 | Setting | What it does |
 |---------|--------------|
 | **Theme** | Light, Dark, or System. Solid surfaces only. |
+| **Hover style** | **Invert** (default) swaps an item's fill to the opposite theme color under the pointer, growing it slightly. **Zoom** keeps the item's resting color and just shrinks it slightly instead. Close is unaffected either way — it always goes red. |
 | **Invoke** | The summon shortcut, its capture button, and an on/off switch. Reports whether Windows accepted the combination. |
 | **Start with Windows** | Per-user autostart. Unpackaged builds use the `HKCU\...\Run` key (no elevation); the MSIX build uses a declared startup task, so Windows lists it in Task Manager's Startup tab and honors a user override there. |
 | **Backup & restore** | Export the whole configuration to JSON, or import one back. |
-| **Reset** | Restores theme, item size, radius, shortcut, hot corner, tools, and ring items to defaults. |
+| **Reset** | Restores theme, hover style, item size, radius, shortcut, hot corner, tools, and ring items to defaults. |
 
 ### Apps & links
 
@@ -229,20 +243,24 @@ A flat list of your ring items — show/hide each one, or delete it. Groups are 
 children beneath them. Built-in tools are not listed here (the Tools page owns them), and neither
 are Settings and Close, which the ring always draws itself.
 
+Its own **Add item…** button opens the same dialog as the ring's "Add to ring" quick action, but
+titled "Add item" and without the Tool tile — a built-in tool already has its own home on the
+Tools page, so that tile only makes sense from a ring or corner slot that can actually hold one.
+
 ### Tools page
 
 One row per built-in tool: a switch that puts it in the ring's Tools item or takes it out, an
 open button, and a drag handle. Dragging reorders the tools inside that group.
+
+### About
+
+What the app is, and its version.
 
 ### Privacy
 
 What happens to what you put into SwiftX, in plain terms: everything stays on the device, no
 tracking or analytics, secure values encrypted for your account, the tools running offline, the one
 thing that touches the network, and how to export or reset your data.
-
-### About
-
-What the app is, and its version.
 
 ---
 
@@ -255,12 +273,12 @@ forward rather than stacking another one up (`ReuseToolWindows` in the config fi
 
 ### Data Formatter
 
-Auto-detects and works with **JSON, XML, and CSV**.
+Auto-detects and works with **JSON and XML**.
 
 - Basic bar: **Format**, **Validate** (clean + pretty-print), **Copy**, **Clear**, **Save**.
 - Pasting into the editor formats and detects the type immediately — not just on the debounced
   keystroke-by-keystroke detection that typing gets.
-- Advanced sidebar: **Minify**, **Sort keys**, **Escape/Unescape**, **Convert to JSON/XML/CSV**, and
+- Advanced sidebar: **Minify**, **Sort keys**, **Escape/Unescape**, **Convert to JSON/XML**, and
   indent width.
 - XML parsing is hardened against the usual entity-expansion and external-entity traps.
 
@@ -297,6 +315,7 @@ parse falls back to defaults rather than taking the app down with it.
 | `Rings` | array | one profile | Ring profiles. Only the first is used today; it holds your items. |
 | `LaunchAtStartup` | bool | `false` | Mirrors the "Start with Windows" switch. |
 | `Theme` | `Light`/`Dark`/`System` | `Dark` | Window and ring theme. |
+| `HoverStyle` | `Invert`/`Zoom` | `Invert` | How a ring item reacts to the pointer — swap to the opposite color, or keep color and shrink slightly. |
 | `Hotkey` | string | `"Ctrl+Shift+S"` | Summon shortcut, in readable form so a hand-edited file stays legible. |
 | `HotkeyEnabled` | bool | `true` | Whether the shortcut is registered at all. |
 | `HotCornerEnabled` | bool | `true` | Whether a screen corner summons the ring. |
@@ -334,13 +353,17 @@ config written by an older build that did store them is repaired on load.
 
 ### How `HotCornerRing` resolves
 
-Empty means the corner follows the ring: the four places are filled from your ring items plus Tools
-and Settings, recomputed every time. Once you arrange the corner by hand the list is written out,
-and each entry is mapped back to the live thing it names before it is drawn — Settings to the
-synthesized entry, `swiftx:toolsgroup` to the Tools item on the ring (so the Tools page's switches
-still govern its children), everything else to the ring item with the same `Id`. An entry naming
-something that has since left the ring keeps working from its own stored copy, which is what lets
-the corner hold an item the ring itself does not.
+Empty means the corner follows the ring: the four places are QuickAccess (every web link and
+shortcut on the ring, gathered into one group), Notepad (the ring's own, or a default stand-in),
+Tools, and Settings, recomputed every time. Once you arrange the corner by hand the list is
+written out, and each entry is mapped back to the live thing it names before it is drawn —
+Settings to the synthesized entry, `swiftx:toolsgroup` to the Tools item on the ring (so the Tools
+page's switches still govern its children), `swiftx:quickaccess` to a freshly gathered QuickAccess
+group (so it too keeps up with new links and shortcuts after being locked into an arrangement),
+everything else to the ring item with the same `Id`. An entry naming something that has since left
+the ring — including a QuickAccess with nothing left to gather, or a Notepad the ring never really
+had — keeps working from its own stored copy, which is what lets the corner hold an item the ring
+itself does not.
 
 ### Migrations run at startup
 
@@ -367,7 +390,7 @@ src/SwiftX/
   RingManager.cs           Owns config, tray, hotkey, hot corner, windows, activation
   RingWindow.xaml(.cs)     The ring itself: layout, animation, hover, flyout, input
   SettingsWindow.xaml(.cs) Settings shell and every page in it
-  AddItemWindow.xaml(.cs)  "Add to ring", including drag-and-drop from Explorer
+  AddItemWindow.xaml(.cs)  "Add to ring" / "Add item", including drag-and-drop from Explorer
 
   Models/
     AppConfig.cs           Persisted settings
@@ -391,7 +414,7 @@ src/SwiftX/
     RingStore.cs           Load/save/import/export
     Launcher.cs            Starting whatever an item points at
     SecureValueStore.cs    DPAPI-protected key/secret storage
-    Formats/, Syntax/      JSON/XML/CSV parsing, validation, tokenizing
+    Formats/, Syntax/      JSON/XML parsing, validation, tokenizing
   ToolPages/               The four tool UIs
   Interop/NativeMethods.cs The Win32 surface, grouped by what needs it
 ```
@@ -421,21 +444,25 @@ The suite covers the parts that can be reasoned about without a window on screen
   that stops an oversized patch swallowing half the screen.
 - `Models/QuadrantLayoutTests` — every item wholly on screen from all four corners, no two touching,
   the round trip between corner-local and canvas angles, a radius left alone when it already fits,
-  and which items the corner picks.
+  and which items the corner picks by default: QuickAccess gathering links and shortcuts from
+  anywhere on the ring (skipping hidden ones, dropping out when there's nothing to gather), and
+  Notepad preferring the ring's own over the synthesized fallback.
 - `Models/HotCornerItemsTests` — following the ring until edited, seeding on first edit, an
-  arrangement surviving ring changes, live re-linking, the fallback copy, reset, and the four-place
-  cap.
+  arrangement surviving ring changes, QuickAccess and Tools staying live once locked into an
+  arrangement, the fallback copy for an item that left the ring, reset, and the four-place cap.
 - `Models/ToolsGroupTests` — the Tools-group migration: adoption by name, consolidation, adding a
   missing tool, slot placement, and leaving an intentionally tool-free ring alone.
 - `Models/HotkeyGestureTests`, `Models/SystemRingItemsTests`.
-- `Formats/…` — JSON/XML/CSV formatting, validation, sanitizing, and XML security.
+- `Formats/…` — JSON/XML formatting, validation, sanitizing, and XML security.
 
 ---
 
 ## Theme
 
 Solid **black** (Dark) or solid **white** (Light) surfaces only — no acrylic, Mica, or glass.
-System follows Windows and re-themes open windows as it changes.
+System follows Windows and re-themes open windows as it changes. In Settings, the sidebar sits a
+shade lighter/greyer than the content area beside it (Dark: `#141414` pane against `#000000`
+content) so the two read as distinct panels rather than one seamless field.
 
 ---
 
@@ -476,7 +503,7 @@ Not started; noted here as candidates.
 **Data Formatter** — commonly offered elsewhere, roughly in order of how well each fits the current
 sidebar-button architecture:
 
-- **YAML conversion** — fits the existing "Convert to JSON/XML/CSV" pattern directly (add a YAML
+- **YAML conversion** — fits the existing "Convert to JSON/XML" pattern directly (add a YAML
   `IDataFormat` to `FormatRegistry`).
 - **JSONPath query** — a query box that filters/highlights matches; a new interaction, not just a
   button.

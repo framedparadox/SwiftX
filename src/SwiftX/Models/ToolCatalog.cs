@@ -27,9 +27,9 @@ public static class ToolCatalog
     [
         // JSON and XML used to be their own catalog entries, each this same FormatterPage pinned
         // to a fixed format. Since the page already auto-detects and offers "Convert to
-        // JSON/XML/CSV" in its Advanced sidebar, a fixed format was never more than "Auto, minus
+        // JSON/XML" in its Advanced sidebar, a fixed format was never more than "Auto, minus
         // the detection step", so they were merged into this one entry.
-        new ToolDefinition(ToolKind.Data, "Data Formatter", "Auto-detect and format JSON, XML, or CSV.", "\uE943",
+        new ToolDefinition(ToolKind.Data, "Data Formatter", "Auto-detect and format JSON or XML.", "\uE943",
             () => new FormatterPage()),
         new ToolDefinition(ToolKind.SecureValues, "Secure values", "Store keys and secrets locally (masked).", "\uE72E",
             () => new SecureValuesPage()),
