@@ -43,6 +43,11 @@ public sealed partial class RingWindow : Window
     /// <summary>Resting scale of the group bubble whose flyout is open, so it reads as active.</summary>
     private const float ExpandedParentScale = 1.08f;
 
+    /// <summary>How long after a dismiss a summon is still read as part of that same gesture.
+    /// Comfortably longer than a click's own down-to-up, and shorter than any deliberate
+    /// close-then-reopen.</summary>
+    private const int ClosingGraceMs = 500;
+
     private readonly RingManager _manager;
     private readonly nint _hwnd;
     private readonly AppWindow _appWindow;
@@ -56,12 +61,17 @@ public sealed partial class RingWindow : Window
 
     private BubbleView? _flyoutParent;
     private Border? _hub;
+    private double _hubSize;
+
+    /// <summary>Which corner (or null for the full ring) <see cref="_hub"/> was last built for —
+    /// tracked separately from <see cref="_hubSize"/> because two different corners can want the
+    /// exact same box size, and the wedge drawn inside it is corner-specific.</summary>
+    private HotCorner? _hubQuadrant;
     private Border? _pill;
     private TextBlock? _pillText;
     private bool _pillShown;
     private double _pillLeft;
     private double _pillTop;
-    private double _hubSize;
     private double _cx;
     private double _cy;
 
@@ -82,11 +92,45 @@ public sealed partial class RingWindow : Window
     private double _contentRadius = RingMetrics.ContentRadius;
     private bool _isOpen;
     private bool _isAnimating;
+
+    /// <summary>
+    /// Polls the mouse buttons while the ring is up so a press anywhere off it closes it — see
+    /// <see cref="OutsideClick_Tick"/>. Deliberately not a global mouse hook: this is the same
+    /// trade the hot corner already makes (see <see cref="Services.HotCornerWatcher"/>), and a
+    /// short-lived 40 ms timer that only runs while the ring is on screen costs nothing.
+    /// </summary>
+    private readonly DispatcherTimer _outsideClick = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(40),
+    };
+
+    /// <summary>Whether a mouse button was already down at the previous <see cref="_outsideClick"/>
+    /// tick, so only the press itself — not the whole time a button is held — is acted on.</summary>
+    private bool _buttonWasDown;
     private int _renderGeneration;
     private BubbleView? _hovered;
     private int _hoverGeneration;
 
+    /// <summary><c>Environment.TickCount64</c> of the most recent <see cref="Dismiss"/>, or zero
+    /// when the ring has not been dismissed yet. Read by <see cref="IsClosing"/>.</summary>
+    private long _dismissedAt;
+
     public bool IsOpen => _isOpen;
+
+    /// <summary>
+    /// Whether the ring is on its way out: the closing animation is still playing, or a dismiss
+    /// was asked for a moment ago. The toggles that summon it (tray icon, hotkey) read this
+    /// alongside <see cref="IsOpen"/> so that a gesture which has <em>already</em> closed the ring
+    /// through another route doesn't then read as "it's closed, open it".
+    /// <para>
+    /// The tray icon is the case that needs it: it toggles on the mouse button coming <em>up</em>,
+    /// while <see cref="OutsideClick_Tick"/> has already closed the ring on the way <em>down</em>,
+    /// so without this a click on the tray would shut the ring and immediately re-summon it.
+    /// </para>
+    /// </summary>
+    public bool IsClosing =>
+        _isAnimating ||
+        (_dismissedAt != 0 && Environment.TickCount64 - _dismissedAt < ClosingGraceMs);
 
     public RingWindow(RingManager manager)
     {
@@ -109,6 +153,10 @@ public sealed partial class RingWindow : Window
         // whatever the user just clicked, and that deactivation is something this window is
         // told about regardless of where on screen the click landed.
         Activated += RingWindow_Activated;
+
+        // The belt to that suspenders: deactivation alone can't be relied on (see
+        // OutsideClick_Tick).
+        _outsideClick.Tick += OutsideClick_Tick;
     }
 
     public void ApplyTheme()
@@ -187,6 +235,10 @@ public sealed partial class RingWindow : Window
         // breaks "click anywhere to dismiss".
         WindowChrome.ForceForeground(_hwnd);
         _isOpen = true;
+        // Seeded from the buttons' current state so the release of the very click that opened the
+        // ring (a tray click, say) doesn't read as a fresh press against it.
+        _buttonWasDown = IsAnyMouseButtonDown();
+        _outsideClick.Start();
         RenderCurrent(animate: true);
     }
 
@@ -248,6 +300,8 @@ public sealed partial class RingWindow : Window
         if (!_isOpen && !_isAnimating)
             return;
 
+        _outsideClick.Stop();
+        _dismissedAt = Environment.TickCount64;
         _isOpen = false;
         _ = DismissAnimatedAsync();
     }
@@ -272,6 +326,74 @@ public sealed partial class RingWindow : Window
         if (_manager.IsSettingsOpen || _manager.IsAddItemOpen)
             return;
         Dismiss();
+    }
+
+    /// <summary>
+    /// Closes the ring on a mouse press that lands anywhere outside it — another window, the
+    /// desktop, the taskbar, or the empty screen past the fan — which is the whole of "click
+    /// anywhere to dismiss" that <see cref="RingWindow_Activated"/> cannot cover on its own.
+    /// <para>
+    /// Deactivation is not enough by itself, and this is measured rather than assumed: a summon
+    /// that doesn't win the foreground — the hot corner fires from a <c>WM_TIMER</c>, which
+    /// Windows won't treat as real input, so <see cref="Services.WindowChrome.ForceForeground"/>
+    /// can still lose the race — has no activation to lose later, and the ring then sits there
+    /// through click after click. Presses land on this window only inside its own hit region (see
+    /// <see cref="ApplyHitRegions"/>); everything outside passes straight through to whatever is
+    /// beneath, so polling the buttons is what makes those presses visible here at all.
+    /// </para>
+    /// <para>
+    /// A press <em>inside</em> the region is left alone: it belongs to
+    /// <see cref="RingCanvas_PointerPressed"/> and a bubble's own Tapped handler, which pick an
+    /// item when one is under the pointer and dismiss when none is.
+    /// </para>
+    /// </summary>
+    private void OutsideClick_Tick(object? sender, object e)
+    {
+        if (!_isOpen)
+        {
+            _outsideClick.Stop();
+            return;
+        }
+
+        bool down = IsAnyMouseButtonDown();
+        bool pressed = down && !_buttonWasDown;
+        _buttonWasDown = down;
+        if (!pressed)
+            return;
+
+        // Same exemption the deactivation path makes: Settings and Add-new are reached from the
+        // ring and stay open in front of it, so clicking into either must not close it.
+        if (_manager.IsSettingsOpen || _manager.IsAddItemOpen)
+            return;
+
+        if (!NativeMethods.GetCursorPos(out var cursor) || IsOverRing(cursor))
+            return;
+
+        Dismiss();
+    }
+
+    private static bool IsAnyMouseButtonDown() =>
+        IsButtonDown(NativeMethods.VK_LBUTTON) ||
+        IsButtonDown(NativeMethods.VK_RBUTTON) ||
+        IsButtonDown(NativeMethods.VK_MBUTTON);
+
+    private static bool IsButtonDown(int virtualKey) =>
+        (NativeMethods.GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+
+    /// <summary>
+    /// Whether a screen point falls on the ring's own disc — the same circle
+    /// <see cref="ApplyHitRegions"/> hands the window, so this agrees by construction with which
+    /// presses the window receives for itself. The hover pill's extra region is deliberately left
+    /// out: it takes no input (it isn't hit-testable), so a press out on a label means the same
+    /// thing as a press on bare desktop.
+    /// </summary>
+    private bool IsOverRing(NativeMethods.POINT screenPoint)
+    {
+        double scale = NativeMethods.GetDpiForWindow(_hwnd) / 96.0;
+        var origin = _appWindow.Position;
+        double dx = (screenPoint.X - origin.X) / scale - _cx;
+        double dy = (screenPoint.Y - origin.Y) / scale - _cy;
+        return dx * dx + dy * dy <= _contentRadius * _contentRadius;
     }
 
     private async Task DismissAnimatedAsync()
@@ -381,10 +503,11 @@ public sealed partial class RingWindow : Window
         _flyoutParent = null;
         _hovered = null;
 
-        // The hub is the ring's center mark; a quarter circle's center is the screen corner, where
-        // three quarters of that mark would be off the screen, so it simply isn't drawn there.
-        if (_quadrant is null)
-            AttachHub();
+        // The hub is the ring's center mark. A quarter circle's center is the screen corner, so
+        // three quarters of a full-sized one would be off the screen — AttachHub draws a smaller
+        // mark there instead, and the corner itself is what clips it down to the sliver that
+        // actually shows.
+        AttachHub();
 
         foreach (var (item, slot, angle) in CurrentLayout())
         {
@@ -465,8 +588,8 @@ public sealed partial class RingWindow : Window
     /// </summary>
     private void AttachHub()
     {
-        double hub = RingMetrics.Hub;
-        if (_hub is null || _hubSize != hub)
+        double hub = HubSize;
+        if (_hub is null || _hubSize != hub || _hubQuadrant != _quadrant)
         {
             BuildHub(hub);
             return;
@@ -494,9 +617,23 @@ public sealed partial class RingWindow : Window
     }
 
     /// <summary>
-    /// The hub is the app's own mark and nothing else: no plate, no border, no fill — the logo
-    /// sits directly on the desktop. Its size is fixed (<see cref="RingMetrics.HubLogo"/>) and no
-    /// setting scales it; item size governs the ring, not the center.
+    /// Full-ring hub size — a fixed small mark that no item-size setting scales — or, on a
+    /// quarter circle, the radius of the corner's own wedge mark (see
+    /// <see cref="BuildCornerWedge"/>) doubled back into a box size so <see cref="BuildHub"/> can
+    /// center it the same way regardless of which shape it holds. Scales with
+    /// <see cref="RingMetrics.Bubble"/> so it grows and shrinks along with the corner dock's own
+    /// items rather than sitting at one fixed size regardless of theirs.
+    /// </summary>
+    private double HubSize => _quadrant is null ? RingMetrics.Hub : RingMetrics.Bubble;
+
+    /// <summary>
+    /// The full ring's hub is the app's own mark and nothing else: no plate, no border, no fill —
+    /// the logo sits directly on the desktop, sized to the fixed
+    /// <see cref="RingMetrics.HubLogo"/>/<see cref="RingMetrics.Hub"/> proportion no item-size
+    /// setting scales. A quadrant's corner has no such center to mark — its "center" is the
+    /// screen corner itself — so it gets a small quarter-disc wedge instead
+    /// (<see cref="BuildCornerWedge"/>), spanning the same arc its items fan across and carrying
+    /// no mark of its own.
     /// <para>
     /// Item names pop out beside the item they belong to (<see cref="ShowPill"/>), which is what
     /// freed the center up.
@@ -505,18 +642,40 @@ public sealed partial class RingWindow : Window
     private void BuildHub(double hub)
     {
         _hubSize = hub;
+        _hubQuadrant = _quadrant;
+        UIElement content = _quadrant is { } corner
+            ? BuildCornerWedge(hub, corner)
+            : AppLogo.Create(hub * (RingMetrics.HubLogo / RingMetrics.Hub));
         _hub = new Border
         {
             Width = hub,
             Height = hub,
             Background = null,
             BorderThickness = new Thickness(0),
-            Child = AppLogo.Create(RingMetrics.HubLogo),
+            Child = content,
             IsHitTestVisible = false,
         };
         Canvas.SetLeft(_hub, _cx - hub / 2);
         Canvas.SetTop(_hub, _cy - hub / 2);
         RingCanvas.Children.Add(_hub);
+
+        // The corner's wedge is shown immediately, with no entrance fade. It is the backdrop the
+        // fan sits on rather than one of the things that burst in, and the composition
+        // Opacity/Scale entrance below was measured not to reach it at all — with the animation
+        // applied, the wedge stayed invisible for the life of the summon. The full ring's own hub
+        // is the app's mark rather than a backdrop, so it keeps the spring entrance.
+        if (_quadrant is not null)
+        {
+            try
+            {
+                ElementCompositionPreview.GetElementVisual(_hub).Opacity = 1;
+            }
+            catch
+            {
+                // ignore
+            }
+            return;
+        }
 
         // Same spring family as the bubble burst-in (AnimateBurstIn), not a flat linear fade, so
         // the hub reads as part of one physical motion instead of popping in on its own timeline.
@@ -544,6 +703,58 @@ public sealed partial class RingWindow : Window
         {
             // ignore
         }
+    }
+
+    /// <summary>
+    /// The corner's own hub: a small quarter-disc wedge spanning the same arc its items fan
+    /// across — background only, with no mark inside it. The app logo used to sit in here, but at
+    /// this size it read as a fifth item crowding the corner rather than as the backdrop the fan
+    /// sits on. Built in a <paramref name="box"/>-sized square centered on <c>(box/2, box/2)</c>
+    /// — the same convention <see cref="BuildHub"/> already centers <em>on the corner point
+    /// itself</em> for — so the caller's positioning needs no special case for which shape it is
+    /// centering.
+    /// <para>
+    /// Real geometry rather than a full-sized mark left for the screen edge to clip down to a
+    /// sliver: drawn entirely inside the box, so it renders identically regardless of how the
+    /// host window happens to clip content past its own edge.
+    /// </para>
+    /// </summary>
+    private UIElement BuildCornerWedge(double box, HotCorner corner)
+    {
+        double radius = box / 2;
+        double startAngle = QuadrantLayout.ScreenAngleRad(corner, 0);
+        double endAngle = QuadrantLayout.ScreenAngleRad(corner, Math.PI / 2);
+
+        Point PointAt(double angle) => new(
+            radius + radius * Math.Cos(angle),
+            radius + radius * Math.Sin(angle));
+
+        var figure = new PathFigure
+        {
+            StartPoint = new Point(radius, radius),
+            IsClosed = true,
+            IsFilled = true,
+        };
+        figure.Segments.Add(new LineSegment { Point = PointAt(startAngle) });
+        figure.Segments.Add(new ArcSegment
+        {
+            Point = PointAt(endAngle),
+            Size = new Size(radius, radius),
+            SweepDirection = endAngle > startAngle ? SweepDirection.Clockwise : SweepDirection.Counterclockwise,
+            IsLargeArc = false,
+        });
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+
+        return new Path
+        {
+            Width = box,
+            Height = box,
+            Data = geometry,
+            Fill = ThemeBrush("RingBubbleBackground"),
+            Stroke = ThemeBrush("SwiftXBorderBrush"),
+            StrokeThickness = 1,
+        };
     }
 
     private BubbleView CreateBubble(
@@ -749,6 +960,17 @@ public sealed partial class RingWindow : Window
         RingCanvas.Children.Add(_pill);
         _pillShown = false;
 
+        // Every motion this pill makes rides on Translation, never on the element visual's own
+        // Offset — see GlidePill. Enabling it here, once, is what makes that property exist.
+        try
+        {
+            ElementCompositionPreview.SetIsTranslationEnabled(_pill, true);
+        }
+        catch
+        {
+            // ignore
+        }
+
         // Hidden via the composition visual, not Border.Opacity: XAML owns that property and
         // re-asserts it on the same visual the fade animates, which left the pill permanently
         // invisible. Nothing else touches Opacity on this element, so the animation is unopposed.
@@ -846,9 +1068,18 @@ public sealed partial class RingWindow : Window
     }
 
     /// <summary>
-    /// Slides an already-visible pill to a new spot instead of letting it blink out and back in.
-    /// Opening a group moves its label from beside the item up to the top of the outer ring, and
-    /// that jump is the most visible motion on screen if it isn't animated.
+    /// Slides an already-visible pill from where it was to where <see cref="ShowPill"/> has just
+    /// put it, instead of letting it blink out and back in: the animation runs from the old spot's
+    /// delta back to zero, so it is purely a decoration on top of the Canvas position.
+    /// <para>
+    /// It moves <c>Translation</c>, never the element visual's <c>Offset</c>. Offset is how XAML
+    /// itself carries this element's <c>Canvas.Left</c>/<c>Top</c>, so writing it hands the pill's
+    /// position to composition and leaves it stranded wherever the animation ended — zero, i.e.
+    /// the canvas origin, which on a corner dock is the screen corner the ring is centered on.
+    /// That is the second "label" that used to appear in the corner on hover. Translation is
+    /// applied on top of the layout position instead, so the pill can only ever be beside its own
+    /// item (see <see cref="BuildPill"/>, which enables the property).
+    /// </para>
     /// </summary>
     private void GlidePill(double fromDx, double fromDy)
     {
@@ -856,13 +1087,14 @@ public sealed partial class RingWindow : Window
         try
         {
             var visual = ElementCompositionPreview.GetElementVisual(_pill);
-            visual.Offset = new Vector3((float)fromDx, (float)fromDy, 0);
+            visual.Properties.InsertVector3(
+                "Translation", new Vector3((float)fromDx, (float)fromDy, 0));
             var compositor = visual.Compositor;
             var glide = compositor.CreateVector3KeyFrameAnimation();
             glide.InsertKeyFrame(1, Vector3.Zero, compositor.CreateCubicBezierEasingFunction(
                 new Vector2(0.2f, 0.9f), new Vector2(0.2f, 1f)));
             glide.Duration = TimeSpan.FromMilliseconds(200);
-            visual.StartAnimation("Offset", glide);
+            visual.StartAnimation("Translation", glide);
         }
         catch
         {
@@ -884,7 +1116,10 @@ public sealed partial class RingWindow : Window
         {
             var visual = ElementCompositionPreview.GetElementVisual(_pill);
             visual.CenterPoint = new Vector3((float)(size.Width / 2), (float)(size.Height / 2), 0);
-            visual.Offset = Vector3.Zero;
+            // Land on the Canvas position exactly, cancelling any glide still in flight — and,
+            // like GlidePill, through Translation so XAML keeps ownership of where the pill is.
+            visual.StopAnimation("Translation");
+            visual.Properties.InsertVector3("Translation", Vector3.Zero);
             var compositor = visual.Compositor;
 
             var fade = compositor.CreateScalarKeyFrameAnimation();

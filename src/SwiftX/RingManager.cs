@@ -205,7 +205,7 @@ public sealed class RingManager
         if (_hiddenByUser)
             return;
         _ringWindow ??= new RingWindow(this);
-        if (_ringWindow.IsOpen)
+        if (_ringWindow.IsOpen || _ringWindow.IsClosing)
         {
             _ringWindow.Dismiss();
             return;
@@ -224,7 +224,10 @@ public sealed class RingManager
             _hiddenByUser = false;
         }
         _ringWindow ??= new RingWindow(this);
-        if (_ringWindow.IsOpen)
+        // IsClosing as well as IsOpen: a click on the tray icon toggles on the button coming up,
+        // by which time that same click may already have dismissed the dock from outside it (see
+        // RingWindow.IsClosing) — one gesture must not both close and reopen it.
+        if (_ringWindow.IsOpen || _ringWindow.IsClosing)
             _ringWindow.Dismiss();
         else
             _ringWindow.Summon();
