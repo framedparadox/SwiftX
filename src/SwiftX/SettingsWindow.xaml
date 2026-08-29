@@ -289,6 +289,29 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE962;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Hover style" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Invert swaps an item's fill to the opposite color under the pointer. Zoom keeps its color and shrinks it slightly instead."
+                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <ComboBox x:Name="HoverStyleBox" Grid.Column="2" MinWidth="170" Width="170"
+                                          VerticalAlignment="Center" HorizontalAlignment="Right"
+                                          SelectionChanged="HoverStyleBox_SelectionChanged">
+                                    <ComboBoxItem Content="Invert" Tag="Invert" />
+                                    <ComboBoxItem Content="Zoom" Tag="Zoom" />
+                                </ComboBox>
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE765;"
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
                                           VerticalAlignment="Center" />
@@ -365,7 +388,7 @@
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="Reset" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Restore default theme, item size, radius, hotkey, tools, and ring items."
+                                    <TextBlock Text="Restore default theme, hover style, item size, radius, hotkey, tools, and ring items."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <Button Grid.Column="2" Content="Reset" VerticalAlignment="Center"

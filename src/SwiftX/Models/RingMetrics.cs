@@ -84,6 +84,13 @@ public static class RingMetrics
     public const double HoverScale = 1.14;
 
     /// <summary>
+    /// How much an item shrinks under the pointer when <see cref="RingHoverStyle.Zoom"/> is
+    /// active — the alternative to <see cref="HoverScale"/> for someone who wants hover to read
+    /// as a recede rather than a color-inverted grow.
+    /// </summary>
+    public const double ZoomHoverScale = 0.92;
+
+    /// <summary>
     /// Close is the one item that moves the other way under the pointer: it shrinks, reading as
     /// pressed-in rather than offered-up, which sets it apart from every other item without
     /// competing with the red fill for attention.
