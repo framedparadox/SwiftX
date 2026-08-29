@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SwiftX/SwiftX.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SwiftX.Tests/SwiftX.Tests.csproj" />
+  </Folder>
+</Solution>

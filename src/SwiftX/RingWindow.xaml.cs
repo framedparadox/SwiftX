@@ -1,0 +1,1898 @@
+using System.ComponentModel;
+using System.Numerics;
+using Microsoft.UI;
+using Microsoft.UI.Composition;
+using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using SwiftX.Interop;
+using SwiftX.Models;
+using SwiftX.Services;
+using Windows.Foundation;
+using Windows.Graphics;
+using Windows.Storage;
+using Windows.System;
+using Path = Microsoft.UI.Xaml.Shapes.Path;
+
+namespace SwiftX;
+
+public sealed partial class RingWindow : Window
+{
+    private const float SpringDamping = 0.65f;
+    private const int SpringPeriodMs = 220;
+    private const int StaggerMs = 28;
+
+    // Flyout ("water drop") motion. Looser damping than the main ring's entrance so the children
+    // visibly overshoot and settle, and a slower period so the travel out to the outer ring reads
+    // as one liquid gesture rather than a snap. The same constants drive the reverse (collapse)
+    // motion, so opening and closing always share one physical language.
+    private const float FlyoutDamping = 0.58f;
+    private const int FlyoutPeriodMs = 320;
+    private const int FlyoutScaleMs = 380;
+    private const int FlyoutStaggerMs = 26;
+
+    /// <summary>
+    /// Dwell before hovering a group opens it. Long enough that sweeping the pointer across a
+    /// group on the way to its neighbour doesn't fire the flyout, short enough to feel automatic.
+    /// </summary>
+    private const int FlyoutHoverDelayMs = 220;
+
+    /// <summary>Resting scale of the group bubble whose flyout is open, so it reads as active.</summary>
+    private const float ExpandedParentScale = 1.08f;
+
+    /// <summary>How long after a dismiss a summon is still read as part of that same gesture.
+    /// Comfortably longer than a click's own down-to-up, and shorter than any deliberate
+    /// close-then-reopen.</summary>
+    private const int ClosingGraceMs = 500;
+
+    private readonly RingManager _manager;
+    private readonly nint _hwnd;
+    private readonly AppWindow _appWindow;
+    private readonly List<BubbleView> _bubbles = new();
+    private readonly List<BubbleView> _flyout = new();
+
+    // Cached rather than rebuilt per render so their resolved icon and PropertyChanged wiring
+    // survive a re-render, exactly like the user's own items do.
+    private readonly RingItem _settingsItem = SystemRingItems.CreateSettings();
+    private readonly RingItem _closeItem = SystemRingItems.CreateClose();
+
+    private BubbleView? _flyoutParent;
+    private Border? _hub;
+    private double _hubSize;
+
+    /// <summary>Which corner (or null for the full ring) <see cref="_hub"/> was last built for —
+    /// tracked separately from <see cref="_hubSize"/> because two different corners can want the
+    /// exact same box size, and the wedge drawn inside it is corner-specific.</summary>
+    private HotCorner? _hubQuadrant;
+    private Border? _pill;
+    private TextBlock? _pillText;
+    private bool _pillShown;
+    private double _pillLeft;
+    private double _pillTop;
+    private double _cx;
+    private double _cy;
+
+    /// <summary>
+    /// The corner this summon is anchored to when the ring came up as a quarter circle, or null
+    /// when it is the whole ring. Set by <see cref="Summon"/> and read by everything that has to
+    /// know where the items are: layout, hover, and the hit region.
+    /// </summary>
+    private HotCorner? _quadrant;
+
+    // Radii of the current summon's bands. The quarter circle sits further out than the full
+    // ring (it has to clear two screen edges), so these are resolved per summon from
+    // RingMetrics' *For(radius) helpers rather than read straight off RingMetrics.
+    private double _itemRadius = RingMetrics.Radius;
+    private double _flyoutRadius = RingMetrics.FlyoutRadius;
+    private double _flyoutBandStart = RingMetrics.FlyoutBandStart;
+    private double _flyoutStepDegrees = RingMetrics.FlyoutStepDegrees;
+    private double _contentRadius = RingMetrics.ContentRadius;
+    private bool _isOpen;
+    private bool _isAnimating;
+
+    /// <summary>
+    /// Polls the mouse buttons while the ring is up so a press anywhere off it closes it — see
+    /// <see cref="OutsideClick_Tick"/>. Deliberately not a global mouse hook: this is the same
+    /// trade the hot corner already makes (see <see cref="Services.HotCornerWatcher"/>), and a
+    /// short-lived 40 ms timer that only runs while the ring is on screen costs nothing.
+    /// </summary>
+    private readonly DispatcherTimer _outsideClick = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(40),
+    };
+
+    /// <summary>Whether a mouse button was already down at the previous <see cref="_outsideClick"/>
+    /// tick, so only the press itself — not the whole time a button is held — is acted on.</summary>
+    private bool _buttonWasDown;
+    private int _renderGeneration;
+    private BubbleView? _hovered;
+    private int _hoverGeneration;
+
+    /// <summary><c>Environment.TickCount64</c> of the most recent <see cref="Dismiss"/>, or zero
+    /// when the ring has not been dismissed yet. Read by <see cref="IsClosing"/>.</summary>
+    private long _dismissedAt;
+
+    public bool IsOpen => _isOpen;
+
+    /// <summary>
+    /// Whether the ring is on its way out: the closing animation is still playing, or a dismiss
+    /// was asked for a moment ago. The toggles that summon it (tray icon, hotkey) read this
+    /// alongside <see cref="IsOpen"/> so that a gesture which has <em>already</em> closed the ring
+    /// through another route doesn't then read as "it's closed, open it".
+    /// <para>
+    /// The tray icon is the case that needs it: it toggles on the mouse button coming <em>up</em>,
+    /// while <see cref="OutsideClick_Tick"/> has already closed the ring on the way <em>down</em>,
+    /// so without this a click on the tray would shut the ring and immediately re-summon it.
+    /// </para>
+    /// </summary>
+    public bool IsClosing =>
+        _isAnimating ||
+        (_dismissedAt != 0 && Environment.TickCount64 - _dismissedAt < ClosingGraceMs);
+
+    public RingWindow(RingManager manager)
+    {
+        _manager = manager;
+        InitializeComponent();
+
+        _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        var windowId = Win32Interop.GetWindowIdFromWindow(_hwnd);
+        _appWindow = AppWindow.GetFromWindowId(windowId);
+
+        WindowChrome.MakeBorderlessToolWindow(_appWindow, _hwnd);
+        WindowChrome.StripFrame(_hwnd);
+        WindowChrome.MakeTransparentOverlay(this, _hwnd);
+        ApplyTheme();
+        _appWindow.Hide();
+
+        // A click outside the ring's own hit-test disc never reaches this window at all — it
+        // passes straight through to whatever is beneath (see LayoutAtCursor) — so it can't be
+        // caught as a pointer event here. What it *does* do is hand foreground activation to
+        // whatever the user just clicked, and that deactivation is something this window is
+        // told about regardless of where on screen the click landed.
+        Activated += RingWindow_Activated;
+
+        // The belt to that suspenders: deactivation alone can't be relied on (see
+        // OutsideClick_Tick).
+        _outsideClick.Tick += OutsideClick_Tick;
+    }
+
+    public void ApplyTheme()
+    {
+        Root.RequestedTheme = ThemeHelper.Resolve(_manager.Config.Theme);
+        // Re-paint bubbles with theme-correct brushes when already open (Light/Dark switch).
+        if (_isOpen)
+            RenderCurrent();
+    }
+
+    public void ReloadItems()
+    {
+        if (!_isOpen) return;
+        UpdateGeometry();
+        RecenterForMetrics();
+        RenderCurrent();
+    }
+
+    /// <summary>
+    /// Re-clamps the ring's center after a radius / item-size change so a ring that just grew
+    /// still fits on screen. The window itself spans the whole work area and never resizes, so —
+    /// unlike the old ring-sized window — there is nothing here that can leave the outer bubbles
+    /// hanging outside the HWND.
+    /// </summary>
+    private void RecenterForMetrics()
+    {
+        // A quarter circle is anchored on its corner and never recentered — clamping it inward
+        // would pull the fan off the very point the pointer is sitting on.
+        if (_quadrant is not null)
+            return;
+        double r = _contentRadius;
+        _cx = ClampCenter(_cx, RingCanvas.Width, r);
+        _cy = ClampCenter(_cy, RingCanvas.Height, r);
+    }
+
+    private static double ClampCenter(double value, double extent, double radius) =>
+        extent >= radius * 2 ? Math.Clamp(value, radius, extent - radius) : extent / 2;
+
+    /// <summary>
+    /// Resolves the band radii for the summon that is about to happen. Everything downstream —
+    /// item placement, the flyout ring, hover bands, the hit region — reads these rather than
+    /// RingMetrics directly, which is what lets one set of drawing code serve both the full ring
+    /// and the quarter circle.
+    /// </summary>
+    private void UpdateGeometry()
+    {
+        _itemRadius = _quadrant is null ? RingMetrics.Radius : RingMetrics.QuadrantRadius;
+        _flyoutRadius = RingMetrics.FlyoutRadiusFor(_itemRadius);
+        _flyoutBandStart = RingMetrics.FlyoutBandStartFor(_itemRadius);
+        _flyoutStepDegrees = RingMetrics.FlyoutStepDegreesFor(_flyoutRadius);
+        _contentRadius = RingMetrics.ContentRadiusFor(_itemRadius);
+    }
+
+    /// <summary>
+    /// Brings the ring up under the pointer, or — when <paramref name="quadrant"/> names a corner
+    /// — as a quarter circle anchored on that corner of the screen the pointer is on. The
+    /// quadrant form is what a hot corner set to <see cref="HotCornerLayout.Quadrant"/> summons.
+    /// </summary>
+    public void Summon(HotCorner? quadrant = null)
+    {
+        // Cancel any in-flight dismiss hide.
+        _renderGeneration++;
+        _quadrant = quadrant;
+        UpdateGeometry();
+        WindowChrome.MakeTransparentOverlay(this, _hwnd);
+        ApplyTheme();
+        if (quadrant is { } corner)
+            LayoutAtCorner(corner);
+        else
+            LayoutAtCursor();
+        _appWindow.Show();
+        Activate();
+        // Not a plain SetForegroundWindow: a hot-corner summon fires from a WM_TIMER, which
+        // Windows does not treat as a real input event, so the plain call can silently fail to
+        // make the ring truly active — see WindowChrome.ForceForeground for why that specifically
+        // breaks "click anywhere to dismiss".
+        WindowChrome.ForceForeground(_hwnd);
+        _isOpen = true;
+        // Seeded from the buttons' current state so the release of the very click that opened the
+        // ring (a tray click, say) doesn't read as a fresh press against it.
+        _buttonWasDown = IsAnyMouseButtonDown();
+        _outsideClick.Start();
+        RenderCurrent(animate: true);
+    }
+
+    /// <summary>
+    /// Spreads the window over the whole work area of the monitor under the cursor and places the
+    /// ring's center at the cursor inside it.
+    /// <para>
+    /// The window used to be a ring-sized square moved to the cursor, which forced two
+    /// compromises: near a screen edge the square got clamped into the work area and dragged the
+    /// ring's center away from the cursor with it, and the window had to grow whenever the ring
+    /// did. A work-area-sized window has neither problem — only the <em>center point</em> is
+    /// clamped, by exactly enough for the ring to fit, and an expanding flyout needs no resize at
+    /// all. Nothing is visible outside what XAML paints (see
+    /// <see cref="WindowChrome.MakeTransparentOverlay"/>) and nothing outside the ring's own disc
+    /// takes input (see <see cref="ApplyHitRegions"/>), so the extra extent costs nothing.
+    /// </para>
+    /// </summary>
+    private void LayoutAtCursor()
+    {
+        NativeMethods.GetCursorPos(out var cursor);
+        var area = DisplayArea.GetFromPoint(
+            new PointInt32(cursor.X, cursor.Y), DisplayAreaFallback.Nearest).WorkArea;
+        _appWindow.MoveAndResize(area);
+
+        // Read the DPI only after the move, so a summon onto a differently-scaled monitor sizes
+        // the canvas for the monitor the window actually landed on.
+        double scale = NativeMethods.GetDpiForWindow(_hwnd) / 96.0;
+        RingCanvas.Width = area.Width / scale;
+        RingCanvas.Height = area.Height / scale;
+
+        double r = _contentRadius;
+        _cx = ClampCenter((cursor.X - area.X) / scale, RingCanvas.Width, r);
+        _cy = ClampCenter((cursor.Y - area.Y) / scale, RingCanvas.Height, r);
+    }
+
+    /// <summary>
+    /// Spreads the window over the whole of the monitor the pointer is on — outer bounds, not the
+    /// work area — and puts the ring's center on <paramref name="corner"/> itself. The taskbar's
+    /// strip has to be inside the window for a bottom corner's fan to be drawn around the point
+    /// the pointer actually stopped at; nothing outside the painted items takes input anyway (see
+    /// <see cref="ApplyHitRegions"/>), so covering it costs nothing.
+    /// </summary>
+    private void LayoutAtCorner(HotCorner corner)
+    {
+        NativeMethods.GetCursorPos(out var cursor);
+        var area = DisplayArea.GetFromPoint(
+            new PointInt32(cursor.X, cursor.Y), DisplayAreaFallback.Nearest).OuterBounds;
+        _appWindow.MoveAndResize(area);
+
+        double scale = NativeMethods.GetDpiForWindow(_hwnd) / 96.0;
+        RingCanvas.Width = area.Width / scale;
+        RingCanvas.Height = area.Height / scale;
+
+        (_cx, _cy) = QuadrantLayout.Center(corner, RingCanvas.Width, RingCanvas.Height);
+    }
+
+    public void Dismiss()
+    {
+        if (!_isOpen && !_isAnimating)
+            return;
+
+        _outsideClick.Stop();
+        _dismissedAt = Environment.TickCount64;
+        _isOpen = false;
+        _ = DismissAnimatedAsync();
+    }
+
+    /// <summary>Clicking anywhere else on screen — another window, the desktop, the taskbar —
+    /// hands that window foreground activation and deactivates this one; treat it the same as
+    /// clicking the ring's own dead zone.
+    /// <para>
+    /// Suppressed while Settings or Add-new is open: opening either from the ring's own flyout
+    /// already dismisses the ring on selection (see <see cref="OnSelectAsync"/>), but both can also
+    /// be reached from the tray icon while the ring is sitting open, or the ring can be re-summoned
+    /// while one already has focus — either way, every click into that window would otherwise
+    /// deactivate this one and immediately dismiss the ring out from under the user. Once the
+    /// window closes, the matching <c>RingManager</c> flag goes false again and the very next
+    /// deactivation resumes the normal click-anywhere-to-dismiss behavior.
+    /// </para>
+    /// </summary>
+    private void RingWindow_Activated(object sender, WindowActivatedEventArgs args)
+    {
+        if (args.WindowActivationState != WindowActivationState.Deactivated)
+            return;
+        if (_manager.IsSettingsOpen || _manager.IsAddItemOpen)
+            return;
+        Dismiss();
+    }
+
+    /// <summary>
+    /// Closes the ring on a mouse press that lands anywhere outside it — another window, the
+    /// desktop, the taskbar, or the empty screen past the fan — which is the whole of "click
+    /// anywhere to dismiss" that <see cref="RingWindow_Activated"/> cannot cover on its own.
+    /// <para>
+    /// Deactivation is not enough by itself, and this is measured rather than assumed: a summon
+    /// that doesn't win the foreground — the hot corner fires from a <c>WM_TIMER</c>, which
+    /// Windows won't treat as real input, so <see cref="Services.WindowChrome.ForceForeground"/>
+    /// can still lose the race — has no activation to lose later, and the ring then sits there
+    /// through click after click. Presses land on this window only inside its own hit region (see
+    /// <see cref="ApplyHitRegions"/>); everything outside passes straight through to whatever is
+    /// beneath, so polling the buttons is what makes those presses visible here at all.
+    /// </para>
+    /// <para>
+    /// A press <em>inside</em> the region is left alone: it belongs to
+    /// <see cref="RingCanvas_PointerPressed"/> and a bubble's own Tapped handler, which pick an
+    /// item when one is under the pointer and dismiss when none is.
+    /// </para>
+    /// </summary>
+    private void OutsideClick_Tick(object? sender, object e)
+    {
+        if (!_isOpen)
+        {
+            _outsideClick.Stop();
+            return;
+        }
+
+        bool down = IsAnyMouseButtonDown();
+        bool pressed = down && !_buttonWasDown;
+        _buttonWasDown = down;
+        if (!pressed)
+            return;
+
+        // Same exemption the deactivation path makes: Settings and Add-new are reached from the
+        // ring and stay open in front of it, so clicking into either must not close it.
+        if (_manager.IsSettingsOpen || _manager.IsAddItemOpen)
+            return;
+
+        if (!NativeMethods.GetCursorPos(out var cursor) || IsOverRing(cursor))
+            return;
+
+        Dismiss();
+    }
+
+    private static bool IsAnyMouseButtonDown() =>
+        IsButtonDown(NativeMethods.VK_LBUTTON) ||
+        IsButtonDown(NativeMethods.VK_RBUTTON) ||
+        IsButtonDown(NativeMethods.VK_MBUTTON);
+
+    private static bool IsButtonDown(int virtualKey) =>
+        (NativeMethods.GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+
+    /// <summary>
+    /// Whether a screen point falls on the ring's own disc — the same circle
+    /// <see cref="ApplyHitRegions"/> hands the window, so this agrees by construction with which
+    /// presses the window receives for itself. The hover pill's extra region is deliberately left
+    /// out: it takes no input (it isn't hit-testable), so a press out on a label means the same
+    /// thing as a press on bare desktop.
+    /// </summary>
+    private bool IsOverRing(NativeMethods.POINT screenPoint)
+    {
+        double scale = NativeMethods.GetDpiForWindow(_hwnd) / 96.0;
+        var origin = _appWindow.Position;
+        double dx = (screenPoint.X - origin.X) / scale - _cx;
+        double dy = (screenPoint.Y - origin.Y) / scale - _cy;
+        return dx * dx + dy * dy <= _contentRadius * _contentRadius;
+    }
+
+    private async Task DismissAnimatedAsync()
+    {
+        int gen = ++_renderGeneration;
+        _isAnimating = true;
+        try
+        {
+            HidePill();
+            FadeOutHub();
+            // Inner ring and any open flyout children reverse their own entrances, at once — the
+            // exact opposite of Summon's AnimateBurstIn / ExpandFlyout's AnimateDropletOut.
+            await Task.WhenAll(AnimateBurstOutAsync(_bubbles), AnimateFlyoutBackAsync(_flyout));
+            if (gen != _renderGeneration) return;
+        }
+        finally
+        {
+            _isAnimating = false;
+        }
+
+        ClearRing();
+        WindowChrome.SetEllipticHitRegions(_hwnd, 1, Array.Empty<(double, double, double)>());
+        _appWindow.Hide();
+    }
+
+    private void ClearRing()
+    {
+        DetachAll();
+        RingCanvas.Children.Clear();
+        _bubbles.Clear();
+        _flyout.Clear();
+        _flyoutParent = null;
+        _hub = null;
+        _pill = null;
+        _pillText = null;
+        _hovered = null;
+
+        // Back to the full ring: the next summon says for itself whether it is a quadrant, and
+        // anything that reads this between now and then (a metrics change, say) should see the
+        // ring's own geometry rather than the last corner's.
+        _quadrant = null;
+        UpdateGeometry();
+    }
+
+    /// <summary>
+    /// Drops the per-item PropertyChanged subscriptions a render installed. Items outlive the
+    /// bubbles that show them (they are the user's config objects), so without this every summon
+    /// would leave another handler on them pointing at discarded UI.
+    /// </summary>
+    private void DetachAll()
+    {
+        foreach (var bubble in _bubbles.Concat(_flyout))
+            bubble.Detach?.Invoke();
+    }
+
+    private IReadOnlyList<(RingItem Item, int Slot)> CurrentItems()
+    {
+        var slots = new List<(RingItem, int)>();
+        int slot = 0;
+        foreach (var item in _manager.Config.Primary.Items.Where(i => !i.Hidden))
+        {
+            if (slot >= RingMetrics.UserSlotCount) break;
+            slots.Add((item, slot++));
+        }
+
+        // Always last, always present, always in the same place — see SystemRingItems.
+        slots.Add((_settingsItem, RingMetrics.SlotCount - 2));
+        slots.Add((_closeItem, RingMetrics.SlotCount - 1));
+        return slots;
+    }
+
+    /// <summary>
+    /// What to draw and where, for whichever shape this summon took: the eight-slot ring, or the
+    /// quarter circle's fan. Index is the bubble's position in its own layout — a ring slot, or a
+    /// place along the arc — and the angle is already in canvas terms.
+    /// </summary>
+    private IReadOnlyList<(RingItem Item, int Index, double AngleRad)> CurrentLayout()
+    {
+        if (_quadrant is not { } corner)
+        {
+            return CurrentItems()
+                .Select(entry => (
+                    Item: entry.Item,
+                    Index: entry.Slot,
+                    AngleRad: RingMetrics.SlotAngleRad(entry.Slot)))
+                .ToList();
+        }
+
+        var items = HotCornerItems.Resolve(_manager.Config, _settingsItem);
+        var layout = new List<(RingItem Item, int Index, double AngleRad)>(items.Count);
+        for (int i = 0; i < items.Count; i++)
+        {
+            double local = QuadrantLayout.LocalAngleRad(
+                i, items.Count, RingMetrics.Bubble * RingMetrics.HoverScale, _itemRadius);
+            layout.Add((items[i], i, QuadrantLayout.ScreenAngleRad(corner, local)));
+        }
+        return layout;
+    }
+
+    private void RenderCurrent(bool animate = false)
+    {
+        _renderGeneration++;
+        DetachAll();
+        RingCanvas.Children.Clear();
+        _bubbles.Clear();
+        _flyout.Clear();
+        _flyoutParent = null;
+        _hovered = null;
+
+        // The hub is the ring's center mark. A quarter circle's center is the screen corner, so
+        // three quarters of a full-sized one would be off the screen — AttachHub draws a smaller
+        // mark there instead, and the corner itself is what clips it down to the sliver that
+        // actually shows.
+        AttachHub();
+
+        foreach (var (item, slot, angle) in CurrentLayout())
+        {
+            var bubble = CreateBubble(
+                item, slot, angle,
+                radius: _itemRadius,
+                diameter: RingMetrics.Bubble,
+                iconSize: RingMetrics.Icon,
+                glyphSize: RingMetrics.Glyph,
+                origin: Vector2.Zero,
+                isFlyout: false);
+            _bubbles.Add(bubble);
+            RingCanvas.Children.Add(bubble.Host);
+            _ = ResolveIconAsync(item);
+        }
+
+        BuildPill();
+
+        // Composition Offset/Scale must start after the element is in the visual tree.
+        foreach (var bubble in _bubbles)
+        {
+            if (animate)
+                AnimateBurstIn(bubble);
+            else
+                ResetBubbleVisual(bubble, rested: true);
+        }
+
+        ApplyHitRegions();
+    }
+
+    /// <summary>
+    /// One circle covering everything the ring can paint — hub, bubbles, a hover-grown bubble, an
+    /// expanded flyout ring, and the hover pill beyond it (<see cref="RingMetrics.ContentRadius"/>)
+    /// — so the whole disk receives pointer input the way a real action ring does, and the rest of
+    /// the work-area-sized window stays click-through.
+    /// <para>
+    /// The radius has to bound the <em>painted</em> content, not just the resting bubbles:
+    /// <see cref="WindowChrome.SetEllipticHitRegions"/> genuinely clips DWM's composited pixels,
+    /// so a region drawn tight to the ring is what used to shave the outer edge off every bubble
+    /// the moment hover scaled it up.
+    /// </para>
+    /// </summary>
+    private void ApplyHitRegions(double pillCx = 0, double pillCy = 0, double pillRadius = 0)
+    {
+        double scale = NativeMethods.GetDpiForWindow(_hwnd) / 96.0;
+        var regions = new List<(double, double, double)>
+        {
+            (_cx, _cy, _contentRadius),
+        };
+
+        // The region clips painting, so a pill that reaches past the ring disc needs its own
+        // circle unioned in or its far end is simply cut off. Adding it per-pill, instead of
+        // permanently padding ContentRadius by the longest name a user might have, keeps the
+        // ring's own footprint tight enough to still open under the cursor near a screen edge.
+        if (pillRadius > 0)
+            regions.Add((pillCx, pillCy, pillRadius));
+
+        WindowChrome.SetEllipticHitRegions(_hwnd, scale, regions);
+    }
+
+    private static async Task ResolveIconAsync(RingItem ringItem)
+    {
+        // Every render fires one of these per item, unconditionally and with no de-dup — if the
+        // item's Target is edited while a slow resolution (e.g. a favicon fetch) for the old
+        // Target is still in flight, that stale result must not overwrite whatever the new
+        // Target already resolved to.
+        string targetAtStart = ringItem.Target;
+        var src = await IconService.LoadIconAsync(ringItem);
+        if (src is not null && ringItem.Target == targetAtStart)
+            ringItem.IconImage = src;
+    }
+
+    /// <summary>
+    /// Adds the hub to the canvas for the current render — reusing the existing instance (and
+    /// leaving it visually untouched) whenever one is already alive and still the right size, so
+    /// a re-render doesn't replay its entrance animation. <see cref="RenderCurrent"/> clears every
+    /// canvas child on every call, so even a reused hub still needs re-adding here.
+    /// </summary>
+    private void AttachHub()
+    {
+        double hub = HubSize;
+        if (_hub is null || _hubSize != hub || _hubQuadrant != _quadrant)
+        {
+            BuildHub(hub);
+            return;
+        }
+
+        Canvas.SetLeft(_hub, _cx - hub / 2);
+        Canvas.SetTop(_hub, _cy - hub / 2);
+        RingCanvas.Children.Add(_hub);
+
+        // A dismiss that a new summon interrupted leaves FadeOutHub's shrink still applied to
+        // this very visual — ClearRing, which would have discarded it, never ran. Put it back
+        // before reusing it, or the ring comes up with an invisible centre.
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(_hub);
+            visual.StopAnimation("Opacity");
+            visual.StopAnimation("Scale");
+            visual.Opacity = 1;
+            visual.Scale = Vector3.One;
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    /// <summary>
+    /// Full-ring hub size — a fixed small mark that no item-size setting scales — or, on a
+    /// quarter circle, the radius of the corner's own wedge mark (see
+    /// <see cref="BuildCornerWedge"/>) doubled back into a box size so <see cref="BuildHub"/> can
+    /// center it the same way regardless of which shape it holds. Scales with
+    /// <see cref="RingMetrics.Bubble"/> so it grows and shrinks along with the corner dock's own
+    /// items rather than sitting at one fixed size regardless of theirs.
+    /// </summary>
+    private double HubSize => _quadrant is null ? RingMetrics.Hub : RingMetrics.Bubble;
+
+    /// <summary>
+    /// The full ring's hub is the app's own mark and nothing else: no plate, no border, no fill —
+    /// the logo sits directly on the desktop, sized to the fixed
+    /// <see cref="RingMetrics.HubLogo"/>/<see cref="RingMetrics.Hub"/> proportion no item-size
+    /// setting scales. A quadrant's corner has no such center to mark — its "center" is the
+    /// screen corner itself — so it gets a small quarter-disc wedge instead
+    /// (<see cref="BuildCornerWedge"/>), spanning the same arc its items fan across and carrying
+    /// no mark of its own.
+    /// <para>
+    /// Item names pop out beside the item they belong to (<see cref="ShowPill"/>), which is what
+    /// freed the center up.
+    /// </para>
+    /// </summary>
+    private void BuildHub(double hub)
+    {
+        _hubSize = hub;
+        _hubQuadrant = _quadrant;
+        UIElement content = _quadrant is { } corner
+            ? BuildCornerWedge(hub, corner)
+            : AppLogo.Create(hub * (RingMetrics.HubLogo / RingMetrics.Hub));
+        _hub = new Border
+        {
+            Width = hub,
+            Height = hub,
+            Background = null,
+            BorderThickness = new Thickness(0),
+            Child = content,
+            IsHitTestVisible = false,
+        };
+        Canvas.SetLeft(_hub, _cx - hub / 2);
+        Canvas.SetTop(_hub, _cy - hub / 2);
+        RingCanvas.Children.Add(_hub);
+
+        // The corner's wedge is shown immediately, with no entrance fade. It is the backdrop the
+        // fan sits on rather than one of the things that burst in, and the composition
+        // Opacity/Scale entrance below was measured not to reach it at all — with the animation
+        // applied, the wedge stayed invisible for the life of the summon. The full ring's own hub
+        // is the app's mark rather than a backdrop, so it keeps the spring entrance.
+        if (_quadrant is not null)
+        {
+            try
+            {
+                ElementCompositionPreview.GetElementVisual(_hub).Opacity = 1;
+            }
+            catch
+            {
+                // ignore
+            }
+            return;
+        }
+
+        // Same spring family as the bubble burst-in (AnimateBurstIn), not a flat linear fade, so
+        // the hub reads as part of one physical motion instead of popping in on its own timeline.
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(_hub);
+            visual.CenterPoint = new Vector3((float)(hub / 2), (float)(hub / 2), 0);
+            visual.Opacity = 0;
+            visual.Scale = new Vector3(0.7f, 0.7f, 1);
+            var compositor = visual.Compositor;
+
+            var scale = compositor.CreateSpringVector3Animation();
+            scale.Target = "Scale";
+            scale.FinalValue = Vector3.One;
+            scale.DampingRatio = SpringDamping;
+            scale.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            visual.StartAnimation("Scale", scale);
+
+            var opacity = compositor.CreateScalarKeyFrameAnimation();
+            opacity.InsertKeyFrame(1, 1);
+            opacity.Duration = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            visual.StartAnimation("Opacity", opacity);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    /// <summary>
+    /// The corner's own hub: a small quarter-disc wedge spanning the same arc its items fan
+    /// across — background only, with no mark inside it. The app logo used to sit in here, but at
+    /// this size it read as a fifth item crowding the corner rather than as the backdrop the fan
+    /// sits on. Built in a <paramref name="box"/>-sized square centered on <c>(box/2, box/2)</c>
+    /// — the same convention <see cref="BuildHub"/> already centers <em>on the corner point
+    /// itself</em> for — so the caller's positioning needs no special case for which shape it is
+    /// centering.
+    /// <para>
+    /// Real geometry rather than a full-sized mark left for the screen edge to clip down to a
+    /// sliver: drawn entirely inside the box, so it renders identically regardless of how the
+    /// host window happens to clip content past its own edge.
+    /// </para>
+    /// </summary>
+    private UIElement BuildCornerWedge(double box, HotCorner corner)
+    {
+        double radius = box / 2;
+        double startAngle = QuadrantLayout.ScreenAngleRad(corner, 0);
+        double endAngle = QuadrantLayout.ScreenAngleRad(corner, Math.PI / 2);
+
+        Point PointAt(double angle) => new(
+            radius + radius * Math.Cos(angle),
+            radius + radius * Math.Sin(angle));
+
+        var figure = new PathFigure
+        {
+            StartPoint = new Point(radius, radius),
+            IsClosed = true,
+            IsFilled = true,
+        };
+        figure.Segments.Add(new LineSegment { Point = PointAt(startAngle) });
+        figure.Segments.Add(new ArcSegment
+        {
+            Point = PointAt(endAngle),
+            Size = new Size(radius, radius),
+            SweepDirection = endAngle > startAngle ? SweepDirection.Clockwise : SweepDirection.Counterclockwise,
+            IsLargeArc = false,
+        });
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+
+        return new Path
+        {
+            Width = box,
+            Height = box,
+            Data = geometry,
+            Fill = ThemeBrush("RingBubbleBackground"),
+            Stroke = ThemeBrush("SwiftXBorderBrush"),
+            StrokeThickness = 1,
+        };
+    }
+
+    private BubbleView CreateBubble(
+        RingItem item, int index, double angle, double radius, double diameter,
+        double iconSize, double glyphSize, Vector2 origin, bool isFlyout)
+    {
+        float restX = (float)(radius * Math.Cos(angle));
+        float restY = (float)(radius * Math.Sin(angle));
+
+        var icon = new Image
+        {
+            Width = iconSize,
+            Height = iconSize,
+            Stretch = Stretch.Uniform,
+            Source = item.IconImage,
+            Visibility = item.ImageVisibility,
+        };
+
+        var glyph = new FontIcon
+        {
+            Glyph = item.Glyph,
+            FontSize = glyphSize,
+            Foreground = ThemeBrush("SwiftXForegroundBrush"),
+            Visibility = item.GlyphVisibility,
+        };
+        if (GlyphFonts.IsTextGlyph(item.Glyph))
+            glyph.FontFamily = new FontFamily("Segoe UI");
+
+        PropertyChangedEventHandler onItemChanged = (_, e) =>
+        {
+            if (e.PropertyName is nameof(RingItem.IconImage) or nameof(RingItem.ImageVisibility) or nameof(RingItem.GlyphVisibility))
+            {
+                icon.Source = item.IconImage;
+                icon.Visibility = item.ImageVisibility;
+                glyph.Visibility = item.GlyphVisibility;
+            }
+        };
+        item.PropertyChanged += onItemChanged;
+
+        var content = new Grid();
+        content.Children.Add(icon);
+        content.Children.Add(glyph);
+
+        // A group wears a short arc traced on its own outward edge — before you hover it, that
+        // arc is the only thing distinguishing an item that opens a ring of its own from one that
+        // launches. It rides on the circle's own boundary, centered on the direction the item
+        // already sits from the hub, so it never needs its own transform and scales with the item
+        // because it lives in the same content.
+        Path? bump = null;
+        if (item.IsGroup && !isFlyout)
+        {
+            bump = BuildGroupArc(diameter, angle, ThemeBrush("SwiftXForegroundBrush"));
+            content.Children.Add(bump);
+        }
+
+        var border = new Border
+        {
+            Width = diameter,
+            Height = diameter,
+            CornerRadius = new CornerRadius(diameter / 2),
+            Background = ThemeBrush("RingBubbleBackground"),
+            Child = content,
+            Tag = item,
+        };
+        Canvas.SetLeft(border, _cx + restX - diameter / 2);
+        Canvas.SetTop(border, _cy + restY - diameter / 2);
+
+        var bubble = new BubbleView
+        {
+            Host = border,
+            Item = item,
+            Index = index,
+            AngleRad = angle,
+            RestX = restX,
+            RestY = restY,
+            OriginX = origin.X,
+            OriginY = origin.Y,
+            Diameter = diameter,
+            IsFlyout = isFlyout,
+            StaggerIndex = index,
+            Glyph = glyph,
+            Bump = bump,
+            Detach = () => item.PropertyChanged -= onItemChanged,
+        };
+
+        // Precise hover: the pointer is directly over this bubble's own shape. This and the
+        // angle-driven hover in RingCanvas_PointerMoved both funnel through SetHovered so the
+        // visual treatment (OnHover) never runs twice or gets out of sync between the two paths.
+        border.PointerEntered += (_, _) => SetHovered(bubble);
+        border.PointerExited += (_, _) =>
+        {
+            if (ReferenceEquals(_hovered, bubble))
+                SetHovered(null);
+        };
+        border.Tapped += async (_, e) =>
+        {
+            e.Handled = true;
+            await OnSelectAsync(bubble);
+        };
+
+        return bubble;
+    }
+
+    /// <summary>
+    /// A 30° stroke traced along the bubble's own circular edge, centered on <paramref
+    /// name="angleRad"/> — the same outward direction the bubble already rests on, so the arc
+    /// reads as part of that edge instead of a separate ornament. Drawn as an unfilled
+    /// <see cref="ArcSegment"/> rather than the old filled dot so it hugs the boundary at any
+    /// bubble size instead of floating as a disconnected speck once items get small.
+    /// </summary>
+    private static Path BuildGroupArc(double diameter, double angleRad, Brush stroke)
+    {
+        const double SweepDegrees = 30;
+        double sweep = SweepDegrees * Math.PI / 180.0;
+        double thickness = Math.Max(2, diameter * 0.08);
+        double radius = diameter / 2 - thickness / 2;
+        double center = diameter / 2;
+        double startAngle = angleRad - sweep / 2;
+        double endAngle = angleRad + sweep / 2;
+
+        var figure = new PathFigure
+        {
+            StartPoint = new Point(
+                center + radius * Math.Cos(startAngle),
+                center + radius * Math.Sin(startAngle)),
+            IsClosed = false,
+        };
+        figure.Segments.Add(new ArcSegment
+        {
+            Point = new Point(
+                center + radius * Math.Cos(endAngle),
+                center + radius * Math.Sin(endAngle)),
+            Size = new Size(radius, radius),
+            SweepDirection = SweepDirection.Clockwise,
+            IsLargeArc = false,
+        });
+
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+
+        return new Path
+        {
+            Width = diameter,
+            Height = diameter,
+            Data = geometry,
+            Stroke = stroke,
+            StrokeThickness = thickness,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            IsHitTestVisible = false,
+        };
+    }
+
+    /// <summary>
+    /// Shared with Settings/chrome via ThemeHelper — never Application.Current.Resources alone,
+    /// or Light mode under a Dark OS paints dark surfaces with dark glyphs.
+    /// Keys: RingBubbleBackground, RingHubBackground, SwiftX* brushes in Themes/Colors.xaml.
+    /// <para>
+    /// An explicit Light/Dark choice is read from the config rather than from
+    /// <c>Root.ActualTheme</c>. Summon assigns <c>RequestedTheme</c> and paints the whole ring in
+    /// the same pass, and ActualTheme does not always reflect the assignment that early — when it
+    /// hadn't, the ring came up inverted (white bubbles under a Dark config) until the next
+    /// re-render. Only "System" still has to ask the element, which is the one case where the
+    /// element is the authority.
+    /// </para>
+    /// </summary>
+    private Brush ThemeBrush(string key)
+    {
+        var requested = ThemeHelper.Resolve(_manager.Config.Theme);
+        bool dark = requested == ElementTheme.Default
+            ? ThemeHelper.IsDark(Root)
+            : requested == ElementTheme.Dark;
+        return new SolidColorBrush(ThemeHelper.ColorFor(dark, key));
+    }
+
+    // ---- Hover name pill -----------------------------------------------------------------
+
+    /// <summary>
+    /// The hover label. One reused element rather than one per bubble, kept at the top of the
+    /// canvas z-order so it always sits over the ring — including over an expanded flyout, whose
+    /// bubbles are added to the canvas after it.
+    /// </summary>
+    private void BuildPill()
+    {
+        _pillText = new TextBlock
+        {
+            FontSize = RingMetrics.PillFontSize,
+            TextWrapping = TextWrapping.WrapWholeWords,
+            TextAlignment = TextAlignment.Center,
+            MaxWidth = RingMetrics.PillMaxWidth,
+            Foreground = ThemeBrush("SwiftXForegroundBrush"),
+        };
+        _pill = new Border
+        {
+            Background = ThemeBrush("RingHubBackground"),
+            BorderBrush = ThemeBrush("SwiftXBorderBrush"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(9, 4, 9, 4),
+            Child = _pillText,
+            IsHitTestVisible = false,
+        };
+        Canvas.SetZIndex(_pill, 100);
+        RingCanvas.Children.Add(_pill);
+        _pillShown = false;
+
+        // Every motion this pill makes rides on Translation, never on the element visual's own
+        // Offset — see GlidePill. Enabling it here, once, is what makes that property exist.
+        try
+        {
+            ElementCompositionPreview.SetIsTranslationEnabled(_pill, true);
+        }
+        catch
+        {
+            // ignore
+        }
+
+        // Hidden via the composition visual, not Border.Opacity: XAML owns that property and
+        // re-asserts it on the same visual the fade animates, which left the pill permanently
+        // invisible. Nothing else touches Opacity on this element, so the animation is unopposed.
+        try
+        {
+            ElementCompositionPreview.GetElementVisual(_pill).Opacity = 0;
+        }
+        catch
+        {
+            _pill.Opacity = 0;
+        }
+    }
+
+    private void ShowPill(BubbleView bubble)
+    {
+        if (_pill is null || _pillText is null) return;
+        if (string.IsNullOrWhiteSpace(bubble.Item.DisplayName))
+        {
+            HidePill();
+            return;
+        }
+
+        _pillText.Text = bubble.Item.DisplayName;
+        // Measure explicitly: the position depends on the pill's own size, and the layout pass
+        // that would fill DesiredSize in hasn't run yet for the text we just assigned.
+        _pill.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var size = _pill.DesiredSize;
+        _pill.CornerRadius = new CornerRadius(size.Height / 2);
+
+        // Always sit wholly outside the item, along the same radial it sits on — never anywhere
+        // else — so the label reads as belonging to that item and never covers it, and a hovered
+        // item's name is drawn in exactly one place for the life of the hover instead of jumping
+        // to a second spot (e.g. a "heading" above the ring) the moment its flyout opens. The
+        // offset uses the pill's own extent measured along that radial — the projection of its box
+        // onto the radial axis, which is its width when the item is due east and its height when
+        // the item is due north — rather than one constant that would tuck a wide pill under a
+        // sideways item.
+        double ux = Math.Cos(bubble.AngleRad);
+        double uy = Math.Sin(bubble.AngleRad);
+        double reach = (Math.Abs(ux) * size.Width + Math.Abs(uy) * size.Height) / 2;
+
+        double restRadius = Math.Sqrt(bubble.RestX * bubble.RestX + bubble.RestY * bubble.RestY);
+        double clearance = restRadius + bubble.Diameter / 2 * HoverScaleFor(bubble);
+
+        // An item whose label reaches into an open flyout's arc has to clear those children as
+        // well as its own circle — including the group itself, whose children fan out around its
+        // own angle.
+        if (!bubble.IsFlyout && _flyout.Count > 0 && PointsIntoFlyoutArc(bubble.AngleRad))
+        {
+            clearance = Math.Max(
+                clearance,
+                _flyoutRadius + RingMetrics.FlyoutBubble / 2 * RingMetrics.HoverScale);
+        }
+
+        double distance = clearance + RingMetrics.PillGap + reach;
+        double px = distance * ux;
+        double py = distance * uy;
+
+        // Only the window edge may move it, and only sideways — the clearance above is never
+        // traded away, because a label sitting on top of its own item is worse than one that runs
+        // close to the screen edge.
+        double left = Math.Clamp(
+            _cx + px - size.Width / 2, 0, Math.Max(0, RingCanvas.Width - size.Width));
+        double top = Math.Clamp(
+            _cy + py - size.Height / 2, 0, Math.Max(0, RingCanvas.Height - size.Height));
+
+        bool moving = _pillShown;
+        double previousLeft = _pillLeft;
+        double previousTop = _pillTop;
+
+        Canvas.SetLeft(_pill, left);
+        Canvas.SetTop(_pill, top);
+        _pillLeft = left;
+        _pillTop = top;
+        _pillShown = true;
+
+        double halfDiagonal = Math.Sqrt(size.Width * size.Width + size.Height * size.Height) / 2;
+        ApplyHitRegions(left + size.Width / 2, top + size.Height / 2, halfDiagonal + 2);
+
+        if (moving)
+            GlidePill(previousLeft - left, previousTop - top);
+        else
+            FadePill(1, new Vector3(1, 1, 1), size);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="angleRad"/> aims into the arc the open flyout occupies. The flyout
+    /// is an arc rather than a full circle, so an item on the far side of the ring keeps its
+    /// label close in — only the ones actually pointing at the children get pushed past them.
+    /// </summary>
+    private bool PointsIntoFlyoutArc(double angleRad)
+    {
+        double tolerance = (_flyoutStepDegrees * 0.5 + 12) * Math.PI / 180.0;
+        return _flyout.Any(b => Math.Abs(NormalizeAngle(angleRad - b.AngleRad)) <= tolerance);
+    }
+
+    /// <summary>
+    /// Slides an already-visible pill from where it was to where <see cref="ShowPill"/> has just
+    /// put it, instead of letting it blink out and back in: the animation runs from the old spot's
+    /// delta back to zero, so it is purely a decoration on top of the Canvas position.
+    /// <para>
+    /// It moves <c>Translation</c>, never the element visual's <c>Offset</c>. Offset is how XAML
+    /// itself carries this element's <c>Canvas.Left</c>/<c>Top</c>, so writing it hands the pill's
+    /// position to composition and leaves it stranded wherever the animation ended — zero, i.e.
+    /// the canvas origin, which on a corner dock is the screen corner the ring is centered on.
+    /// That is the second "label" that used to appear in the corner on hover. Translation is
+    /// applied on top of the layout position instead, so the pill can only ever be beside its own
+    /// item (see <see cref="BuildPill"/>, which enables the property).
+    /// </para>
+    /// </summary>
+    private void GlidePill(double fromDx, double fromDy)
+    {
+        if (_pill is null) return;
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(_pill);
+            visual.Properties.InsertVector3(
+                "Translation", new Vector3((float)fromDx, (float)fromDy, 0));
+            var compositor = visual.Compositor;
+            var glide = compositor.CreateVector3KeyFrameAnimation();
+            glide.InsertKeyFrame(1, Vector3.Zero, compositor.CreateCubicBezierEasingFunction(
+                new Vector2(0.2f, 0.9f), new Vector2(0.2f, 1f)));
+            glide.Duration = TimeSpan.FromMilliseconds(200);
+            visual.StartAnimation("Translation", glide);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private void HidePill()
+    {
+        if (_pill is null) return;
+        _pillShown = false;
+        FadePill(0, new Vector3(0.92f, 0.92f, 1), _pill.DesiredSize);
+    }
+
+    private void FadePill(float opacity, Vector3 scale, Size size)
+    {
+        if (_pill is null) return;
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(_pill);
+            visual.CenterPoint = new Vector3((float)(size.Width / 2), (float)(size.Height / 2), 0);
+            // Land on the Canvas position exactly, cancelling any glide still in flight — and,
+            // like GlidePill, through Translation so XAML keeps ownership of where the pill is.
+            visual.StopAnimation("Translation");
+            visual.Properties.InsertVector3("Translation", Vector3.Zero);
+            var compositor = visual.Compositor;
+
+            var fade = compositor.CreateScalarKeyFrameAnimation();
+            fade.InsertKeyFrame(1, opacity);
+            fade.Duration = TimeSpan.FromMilliseconds(120);
+            visual.StartAnimation("Opacity", fade);
+
+            var grow = compositor.CreateVector3KeyFrameAnimation();
+            grow.InsertKeyFrame(1, scale);
+            grow.Duration = TimeSpan.FromMilliseconds(120);
+            visual.StartAnimation("Scale", grow);
+        }
+        catch
+        {
+            _pill.Opacity = opacity;
+        }
+    }
+
+    // ---- Motion --------------------------------------------------------------------------
+
+    private static void ResetBubbleVisual(BubbleView bubble, bool rested)
+    {
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
+            visual.CenterPoint = new Vector3(
+                (float)(bubble.Diameter / 2),
+                (float)(bubble.Diameter / 2),
+                0);
+            if (rested)
+            {
+                visual.Offset = Vector3.Zero;
+                visual.Scale = new Vector3(bubble.RestScale, bubble.RestScale, 1);
+                visual.Opacity = 1;
+            }
+            else
+            {
+                // Layout puts the bubble at its resting place, so "emerging from the hub" (or,
+                // for a flyout child, from its parent bubble) is an offset back to that origin.
+                visual.Offset = bubble.EntryOffset;
+                visual.Scale = new Vector3(0.15f, 0.15f, 1);
+                visual.Opacity = 0;
+            }
+        }
+        catch
+        {
+            // Composition may be unavailable in some hosts.
+        }
+    }
+
+    private void AnimateBurstIn(BubbleView bubble)
+    {
+        try
+        {
+            ResetBubbleVisual(bubble, rested: false);
+            var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
+            var compositor = visual.Compositor;
+            var delay = TimeSpan.FromMilliseconds(bubble.StaggerIndex * StaggerMs);
+
+            var offset = compositor.CreateSpringVector3Animation();
+            offset.Target = "Offset";
+            offset.FinalValue = Vector3.Zero;
+            offset.DampingRatio = SpringDamping;
+            offset.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            offset.DelayTime = delay;
+            visual.StartAnimation("Offset", offset);
+
+            var scale = compositor.CreateSpringVector3Animation();
+            scale.Target = "Scale";
+            scale.FinalValue = Vector3.One;
+            scale.DampingRatio = SpringDamping;
+            scale.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            scale.DelayTime = delay;
+            visual.StartAnimation("Scale", scale);
+
+            var opacity = compositor.CreateScalarKeyFrameAnimation();
+            opacity.InsertKeyFrame(1, 1);
+            opacity.Duration = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            opacity.DelayTime = delay;
+            visual.StartAnimation("Opacity", opacity);
+        }
+        catch
+        {
+            // skip animation
+        }
+    }
+
+    /// <summary>
+    /// Closing companion to <see cref="AnimateBurstIn"/>, but deliberately not its mirror image:
+    /// the entrance travels from the hub out to each bubble's resting spot, so reversing that
+    /// motion pulls every bubble back along its own radial — which, for a ring whose populated
+    /// items lean to one side, reads as the whole dock sliding sideways rather than fading.
+    /// Closing instead leaves each bubble exactly where it rests and only fades/shrinks it in
+    /// place, so the dock always dissolves symmetrically no matter how the items are arranged.
+    /// Stagger is still reversed — whichever bubble was the last to arrive is the first to leave.
+    /// </summary>
+    private void AnimateBurstOut(BubbleView bubble, int staggerIndex)
+    {
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
+            visual.CenterPoint = new Vector3(
+                (float)(bubble.Diameter / 2), (float)(bubble.Diameter / 2), 0);
+            var compositor = visual.Compositor;
+            var delay = TimeSpan.FromMilliseconds(staggerIndex * StaggerMs);
+            var ease = compositor.CreateCubicBezierEasingFunction(
+                new Vector2(0.3f, 0f), new Vector2(0.2f, 1f));
+
+            var scale = compositor.CreateVector3KeyFrameAnimation();
+            scale.InsertKeyFrame(1, new Vector3(0.85f, 0.85f, 1), ease);
+            scale.Duration = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            scale.DelayTime = delay;
+            visual.StartAnimation("Scale", scale);
+
+            var opacity = compositor.CreateScalarKeyFrameAnimation();
+            opacity.InsertKeyFrame(1, 0, ease);
+            opacity.Duration = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            opacity.DelayTime = delay;
+            visual.StartAnimation("Opacity", opacity);
+        }
+        catch
+        {
+            // skip animation
+        }
+    }
+
+    /// <summary>Runs <see cref="AnimateBurstOut"/> across the whole inner ring and waits for it to settle.</summary>
+    private async Task AnimateBurstOutAsync(IReadOnlyList<BubbleView> bubbles)
+    {
+        if (bubbles.Count == 0)
+            return;
+
+        int maxStagger = bubbles.Max(b => b.StaggerIndex);
+        foreach (var bubble in bubbles)
+            AnimateBurstOut(bubble, maxStagger - bubble.StaggerIndex);
+
+        await Task.Delay(SpringPeriodMs + maxStagger * StaggerMs + 30);
+    }
+
+    /// <summary>The exact reverse of <see cref="BuildHub"/>'s entrance spring.</summary>
+    private void FadeOutHub()
+    {
+        if (_hub is null) return;
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(_hub);
+            visual.CenterPoint = new Vector3((float)(_hubSize / 2), (float)(_hubSize / 2), 0);
+            var compositor = visual.Compositor;
+
+            var scale = compositor.CreateSpringVector3Animation();
+            scale.Target = "Scale";
+            scale.FinalValue = new Vector3(0.7f, 0.7f, 1);
+            scale.DampingRatio = SpringDamping;
+            scale.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            visual.StartAnimation("Scale", scale);
+
+            var opacity = compositor.CreateScalarKeyFrameAnimation();
+            opacity.InsertKeyFrame(1, 0);
+            opacity.Duration = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            visual.StartAnimation("Opacity", opacity);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    // ---- Flyout (outer ring) ---------------------------------------------------------------
+
+    /// <summary>
+    /// Canvas angles for an expanding group's children: a fan of
+    /// <see cref="_flyoutStepDegrees"/> centered on the group itself.
+    /// <para>
+    /// On a quarter circle that fan also has to stay inside the quarter — a group sitting near
+    /// one of the two screen edges would otherwise throw half its children off the screen — so
+    /// there the whole fan is slid back inside the span its own radius leaves, keeping its
+    /// spacing. On the full ring there is no such constraint and the fan is simply centered.
+    /// </para>
+    /// </summary>
+    private IReadOnlyList<double> FlyoutAngles(BubbleView parent, int count)
+    {
+        double step = _flyoutStepDegrees * Math.PI / 180.0;
+        double spread = step * (count - 1);
+
+        if (_quadrant is not { } corner)
+        {
+            double start = parent.AngleRad - spread / 2;
+            return Enumerable.Range(0, count).Select(i => start + i * step).ToList();
+        }
+
+        double inset = QuadrantLayout.EdgeInsetRad(
+            RingMetrics.FlyoutBubble * RingMetrics.HoverScale, _flyoutRadius);
+        double lowest = inset;
+        double highest = Math.Max(inset, Math.PI / 2 - inset - spread);
+        double localStart = Math.Clamp(
+            QuadrantLayout.LocalAngleFromScreenRad(corner, parent.AngleRad) - spread / 2,
+            lowest, highest);
+
+        return Enumerable.Range(0, count)
+            .Select(i => QuadrantLayout.ScreenAngleRad(corner, localStart + i * step))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Pops a group's children out into a concentric ring <em>around</em> the ring that is already
+    /// on screen, rather than replacing it. The children are born at the parent bubble's own
+    /// center and travel outward on a loose spring while their scale runs a stretch-then-settle
+    /// curve, so the group reads as shedding droplets that swell into place — the inner ring never
+    /// moves, so the user keeps their bearings and can pick a sibling group without going "back".
+    /// </summary>
+    private void ExpandFlyout(BubbleView parent)
+    {
+        var children = parent.Item.Children
+            .Where(c => !c.Hidden)
+            .Take(RingMetrics.FlyoutSlotCount)
+            .ToList();
+        if (children.Count == 0)
+            return;
+
+        _flyoutParent = parent;
+        parent.RestScale = ExpandedParentScale;
+        ApplyBubbleFill(parent, active: true);
+        AnimateScale(parent, ExpandedParentScale, 180);
+
+        var angles = FlyoutAngles(parent, children.Count);
+        var origin = new Vector2(parent.RestX, parent.RestY);
+
+        for (int i = 0; i < children.Count; i++)
+        {
+            var bubble = CreateBubble(
+                children[i], i, angles[i],
+                radius: _flyoutRadius,
+                diameter: RingMetrics.FlyoutBubble,
+                iconSize: RingMetrics.FlyoutIcon,
+                glyphSize: RingMetrics.FlyoutGlyph,
+                origin: origin,
+                isFlyout: true);
+            _flyout.Add(bubble);
+            RingCanvas.Children.Add(bubble.Host);
+            _ = ResolveIconAsync(children[i]);
+        }
+
+        // Fan out from the middle of the arc rather than from one end, so the group looks like it
+        // splits open symmetrically instead of unrolling.
+        double middle = (children.Count - 1) / 2.0;
+        foreach (var bubble in _flyout)
+        {
+            bubble.StaggerIndex = (int)Math.Round(Math.Abs(bubble.Index - middle));
+            AnimateDropletOut(bubble, bubble.StaggerIndex);
+        }
+
+        // Hover placed the pill before these children existed — and, since hover is what opens a
+        // group, that is the normal order of events, not an edge case. Re-place it now that there
+        // is an outer ring for it to clear.
+        if (_hovered is not null)
+            ShowPill(_hovered);
+    }
+
+    private void AnimateDropletOut(BubbleView bubble, int staggerIndex)
+    {
+        try
+        {
+            ResetBubbleVisual(bubble, rested: false);
+            var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
+            var compositor = visual.Compositor;
+            var delay = TimeSpan.FromMilliseconds(staggerIndex * FlyoutStaggerMs);
+
+            var offset = compositor.CreateSpringVector3Animation();
+            offset.Target = "Offset";
+            offset.FinalValue = Vector3.Zero;
+            offset.DampingRatio = FlyoutDamping;
+            offset.Period = TimeSpan.FromMilliseconds(FlyoutPeriodMs);
+            offset.DelayTime = delay;
+            visual.StartAnimation("Offset", offset);
+
+            // Swell past full size on the way out and dip back under it on arrival — the surface
+            // tension half of the droplet, and the part a plain spring can't express.
+            var scale = compositor.CreateVector3KeyFrameAnimation();
+            scale.InsertKeyFrame(0f, new Vector3(0.18f, 0.18f, 1));
+            scale.InsertKeyFrame(0.55f, new Vector3(1.22f, 1.22f, 1));
+            scale.InsertKeyFrame(0.78f, new Vector3(0.93f, 0.93f, 1));
+            scale.InsertKeyFrame(1f, Vector3.One);
+            scale.Duration = TimeSpan.FromMilliseconds(FlyoutScaleMs);
+            scale.DelayTime = delay;
+            visual.StartAnimation("Scale", scale);
+
+            var opacity = compositor.CreateScalarKeyFrameAnimation();
+            opacity.InsertKeyFrame(1, 1);
+            opacity.Duration = TimeSpan.FromMilliseconds(130);
+            opacity.DelayTime = delay;
+            visual.StartAnimation("Opacity", opacity);
+        }
+        catch
+        {
+            ResetBubbleVisual(bubble, rested: true);
+        }
+    }
+
+    /// <summary>
+    /// Closing companion to <see cref="AnimateDropletOut"/>, but — like <see cref="AnimateBurstOut"/>
+    /// versus its own entrance — deliberately not its mirror image. The entrance travels from the
+    /// parent bubble out to each child's resting spot; reversing that motion would pull every
+    /// child back toward the parent along its own radial, which for an arc of children reads as
+    /// the whole flyout sliding sideways rather than fading. Hiding instead leaves each child
+    /// exactly where it rests and only fades/shrinks it in place.
+    /// </summary>
+    private void AnimateDropletBack(BubbleView bubble, int staggerIndex)
+    {
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
+            visual.CenterPoint = new Vector3(
+                (float)(bubble.Diameter / 2), (float)(bubble.Diameter / 2), 0);
+            var compositor = visual.Compositor;
+            var delay = TimeSpan.FromMilliseconds(staggerIndex * FlyoutStaggerMs);
+            var ease = compositor.CreateCubicBezierEasingFunction(
+                new Vector2(0.3f, 0f), new Vector2(0.2f, 1f));
+
+            var scale = compositor.CreateVector3KeyFrameAnimation();
+            scale.InsertKeyFrame(1, new Vector3(0.85f, 0.85f, 1), ease);
+            scale.Duration = TimeSpan.FromMilliseconds(FlyoutScaleMs);
+            scale.DelayTime = delay;
+            visual.StartAnimation("Scale", scale);
+
+            var opacity = compositor.CreateScalarKeyFrameAnimation();
+            opacity.InsertKeyFrame(1, 0, ease);
+            opacity.Duration = TimeSpan.FromMilliseconds(FlyoutScaleMs);
+            opacity.DelayTime = delay;
+            visual.StartAnimation("Opacity", opacity);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    /// <summary>Runs <see cref="AnimateDropletBack"/> across a flyout's children and waits for it to settle.</summary>
+    private async Task AnimateFlyoutBackAsync(IReadOnlyList<BubbleView> children)
+    {
+        if (children.Count == 0)
+            return;
+
+        int maxStagger = children.Max(c => c.StaggerIndex);
+        foreach (var bubble in children)
+            AnimateDropletBack(bubble, maxStagger - bubble.StaggerIndex);
+
+        await Task.Delay(FlyoutScaleMs + maxStagger * FlyoutStaggerMs + 30);
+    }
+
+    private async Task CollapseFlyoutAsync()
+    {
+        if (_flyoutParent is null && _flyout.Count == 0)
+            return;
+
+        var parent = _flyoutParent;
+        var children = _flyout.ToList();
+        _flyoutParent = null;
+        _flyout.Clear();
+
+        if (parent is not null)
+        {
+            parent.RestScale = 1f;
+            bool hovered = ReferenceEquals(_hovered, parent);
+            ApplyBubbleFill(parent, active: hovered);
+            AnimateScale(parent, hovered ? HoverScaleFor(parent) : 1f, 180);
+        }
+
+        if (_hovered is not null && _hovered.IsFlyout)
+            SetHovered(null);
+
+        int gen = _renderGeneration;
+        // Children shed back into the parent item they emerged from, reversing AnimateDropletOut.
+        await AnimateFlyoutBackAsync(children);
+
+        if (gen != _renderGeneration)
+            return;
+
+        foreach (var child in children)
+        {
+            child.Detach?.Invoke();
+            RingCanvas.Children.Remove(child.Host);
+        }
+
+        // Nothing to clear out there any more, so the label can come back in beside its item.
+        if (_hovered is not null)
+            ShowPill(_hovered);
+    }
+
+    // ---- Hover / selection -------------------------------------------------------------------
+
+    /// <summary>
+    /// Single entry point for "which bubble is hovered right now" — fed both by a bubble's own
+    /// PointerEntered/Exited (precise hover) and by the angle-nearest calculation in
+    /// RingCanvas_PointerMoved (hover from anywhere in the ring, including the gaps between
+    /// bubbles). Diffs against <see cref="_hovered"/> so the enter/exit treatment only runs on the
+    /// bubbles that actually changed state.
+    /// </summary>
+    private void SetHovered(BubbleView? bubble)
+    {
+        if (ReferenceEquals(_hovered, bubble))
+            return;
+
+        if (_hovered is not null)
+            OnHover(_hovered, false);
+
+        _hovered = bubble;
+
+        if (bubble is not null)
+        {
+            OnHover(bubble, true);
+            ShowPill(bubble);
+        }
+        else
+        {
+            HidePill();
+        }
+
+        ScheduleFlyoutForHover(bubble);
+    }
+
+    /// <summary>
+    /// Dwelling on a group opens its flyout without a click, and dwelling on a plain item closes
+    /// whichever flyout is open — so the outer ring follows the pointer instead of having to be
+    /// clicked open and Esc'd shut.
+    /// <para>
+    /// Both halves are on a delay and both are cancelled by the next hover change (via
+    /// <see cref="_hoverGeneration"/>), so sweeping the pointer across a group on the way
+    /// somewhere else doesn't fire anything. Moving onto the flyout's own children is explicitly
+    /// inert: those sit past the group that spawned them, and collapsing the ring out from under
+    /// the pointer on the way to them would make them unreachable.
+    /// </para>
+    /// </summary>
+    private async void ScheduleFlyoutForHover(BubbleView? bubble)
+    {
+        int hoverGen = ++_hoverGeneration;
+        int renderGen = _renderGeneration;
+
+        if (bubble is null || bubble.IsFlyout)
+            return;
+
+        bool wantsOpen = bubble.Item.IsGroup && !ReferenceEquals(_flyoutParent, bubble);
+        bool wantsClose = !bubble.Item.IsGroup && _flyoutParent is not null;
+        if (!wantsOpen && !wantsClose)
+            return;
+
+        await Task.Delay(FlyoutHoverDelayMs);
+        if (hoverGen != _hoverGeneration || renderGen != _renderGeneration || !_isOpen)
+            return;
+
+        await CollapseFlyoutAsync();
+        if (hoverGen != _hoverGeneration || renderGen != _renderGeneration || !_isOpen)
+            return;
+
+        if (wantsOpen)
+            ExpandFlyout(bubble);
+    }
+
+    private void OnHover(BubbleView bubble, bool entered)
+    {
+        AnimateScale(bubble, entered ? HoverScaleFor(bubble) : bubble.RestScale, 130);
+
+        // An expanded group stays lit while its flyout is open, so exiting it must not reset the
+        // fill the way exiting an ordinary bubble does.
+        ApplyBubbleFill(bubble, entered || ReferenceEquals(bubble, _flyoutParent));
+    }
+
+    /// <summary>
+    /// Active state under <see cref="RingHoverStyle.Invert"/> reads as an inverted fill (no border
+    /// in either theme) rather than an outline — swaps the same two brushes CreateBubble already
+    /// applies at rest, just reversed. Under <see cref="RingHoverStyle.Zoom"/> the fill never
+    /// changes at all; <see cref="HoverScaleFor"/> shrinking the bubble is the only hover cue.
+    /// Close is the exception to both: it goes red under the pointer regardless of the setting,
+    /// because it is the one item on the ring whose effect can't be undone by clicking again.
+    /// </summary>
+    private void ApplyBubbleFill(BubbleView bubble, bool active)
+    {
+        bool destructive = active && IsCloseItem(bubble.Item);
+        bool invert = active && !destructive && _manager.Config.HoverStyle == RingHoverStyle.Invert;
+
+        Brush background = destructive ? ThemeBrush("RingCloseHoverBackground")
+            : invert ? ThemeBrush("SwiftXForegroundBrush")
+            : ThemeBrush("RingBubbleBackground");
+
+        Brush foreground = destructive ? ThemeBrush("RingCloseHoverForeground")
+            : invert ? ThemeBrush("RingBubbleBackground")
+            : ThemeBrush("SwiftXForegroundBrush");
+
+        bubble.Host.Background = background;
+        bubble.Glyph.Foreground = foreground;
+        if (bubble.Bump is not null)
+            bubble.Bump.Stroke = foreground;
+    }
+
+    private static bool IsCloseItem(RingItem item) =>
+        string.Equals(item.Target, SystemRingItems.CloseTarget, StringComparison.OrdinalIgnoreCase);
+
+    private float HoverScaleFor(BubbleView bubble)
+    {
+        if (IsCloseItem(bubble.Item))
+            return (float)RingMetrics.CloseHoverScale;
+        return (float)(_manager.Config.HoverStyle == RingHoverStyle.Zoom
+            ? RingMetrics.ZoomHoverScale
+            : RingMetrics.HoverScale);
+    }
+
+    private static void AnimateScale(BubbleView bubble, float target, int durationMs)
+    {
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
+            visual.CenterPoint = new Vector3(
+                (float)(bubble.Diameter / 2),
+                (float)(bubble.Diameter / 2),
+                0);
+            var scale = visual.Compositor.CreateVector3KeyFrameAnimation();
+            scale.InsertKeyFrame(1, new Vector3(target, target, 1));
+            scale.Duration = TimeSpan.FromMilliseconds(durationMs);
+            visual.StartAnimation("Scale", scale);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private async Task OnSelectAsync(BubbleView bubble)
+    {
+        var item = bubble.Item;
+
+        if (IsCloseItem(item))
+        {
+            Dismiss();
+            return;
+        }
+
+        // Settings is a group now too (it owns the Add new quick action below), but unlike a
+        // user-created group it still has a job of its own to do on click — open Settings
+        // — so it deliberately skips the generic group-click branch, which only ever toggles a
+        // flyout and never activates anything. Hovering it still opens that flyout regardless (see
+        // ScheduleFlyoutForHover, which checks Item.IsGroup independently of this method).
+        if (item.IsGroup && !IsSettingsItem(item))
+        {
+            // Nested groups inside a flyout would need a third ring to land in; there isn't one,
+            // so they simply don't expand.
+            if (bubble.IsFlyout)
+                return;
+
+            // Hover has usually opened this one already, so a click must not toggle it shut —
+            // that would make a group flicker open and closed under a normal point-and-click.
+            // Esc, the hub, and hovering away are the ways back out.
+            if (!ReferenceEquals(_flyoutParent, bubble))
+            {
+                await CollapseFlyoutAsync();
+                ExpandFlyout(bubble);
+            }
+            return;
+        }
+
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
+            visual.CenterPoint = new Vector3(
+                (float)(bubble.Diameter / 2),
+                (float)(bubble.Diameter / 2),
+                0);
+            var pulse = visual.Compositor.CreateVector3KeyFrameAnimation();
+            pulse.InsertKeyFrame(0.5f, new Vector3(1.25f, 1.25f, 1));
+            pulse.InsertKeyFrame(1, Vector3.One);
+            pulse.Duration = TimeSpan.FromMilliseconds(150);
+            visual.StartAnimation("Scale", pulse);
+        }
+        catch
+        {
+            // ignore
+        }
+
+        await Task.Delay(150);
+        _manager.HandleItemActivation(item);
+
+        // Every other selection closes the ring on activation — Settings and Add-new are the
+        // exceptions: each opens its own window and should stay on screen for as long as that
+        // window is open (see RingWindow_Activated's matching IsSettingsOpen/IsAddItemOpen checks,
+        // which keep the deactivation that follows here from dismissing it too). Selecting either
+        // a second time while its window is already open just re-activates that window (see
+        // RingManager.OpenSettings/OpenAddItem) — still no dismiss.
+        bool staysOpen = IsSettingsItem(item) ||
+            string.Equals(item.Target, SystemRingItems.AddNewTarget, StringComparison.OrdinalIgnoreCase);
+        if (!staysOpen)
+            Dismiss();
+    }
+
+    private static bool IsSettingsItem(RingItem item) =>
+        string.Equals(item.Target, SystemRingItems.SettingsTarget, StringComparison.OrdinalIgnoreCase);
+
+    // ---- Input ---------------------------------------------------------------------------
+
+    private async void RingCanvas_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        var pos = e.GetCurrentPoint(RingCanvas).Position;
+        double dx = pos.X - _cx;
+        double dy = pos.Y - _cy;
+        double dist = Math.Sqrt(dx * dx + dy * dy);
+
+        if (dist < RingMetrics.DeadZone)
+        {
+            // Nothing lives in the dead zone to select, so a press here always means "close this",
+            // whether or not a flyout happens to be open — see the matching gap case below.
+            Dismiss();
+            return;
+        }
+
+        // A press landing directly on a bubble is handled by that bubble's own Tapped handler
+        // (e.OriginalSource is then the Border or one of its children, not the Canvas). This
+        // covers presses in the gaps between bubbles: with the hit-region covering the whole
+        // disk, a press out here should activate whichever item angular-hover currently targets,
+        // the same as clicking the bubble itself would.
+        if (e.OriginalSource is Canvas)
+        {
+            if (_hovered is { } bubble)
+            {
+                e.Handled = true;
+                await OnSelectAsync(bubble);
+            }
+            else
+            {
+                // Nothing is hovered/selected — a gap with no bubble in it, or empty space past an
+                // open flyout's arc — so the click means "dismiss the dock", not "step back one
+                // level". Dismiss() already reverses an open flyout alongside the inner ring.
+                Dismiss();
+            }
+        }
+    }
+
+    private void RingCanvas_PointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        var pos = e.GetCurrentPoint(RingCanvas).Position;
+        double dx = pos.X - _cx;
+        double dy = pos.Y - _cy;
+        double dist = Math.Sqrt(dx * dx + dy * dy);
+
+        if (dist < RingMetrics.DeadZone || (_bubbles.Count == 0 && _flyout.Count == 0))
+        {
+            // Back in the dead zone (or nothing to hover): don't leave a stale bubble highlighted.
+            SetHovered(null);
+            return;
+        }
+
+        // Past the flyout band the outer ring owns the pointer; inside it, the inner ring does.
+        if (_flyout.Count > 0 && dist >= _flyoutBandStart)
+        {
+            SetHovered(NearestOnArc(_flyout, dx, dy, _flyoutStepDegrees * 0.6 * Math.PI / 180.0));
+            return;
+        }
+
+        // A quarter circle is an arc too, so it is hovered the same way its flyout is rather than
+        // through the eight-slot lookup below, which only knows about the full ring's geometry.
+        if (_quadrant is not null)
+        {
+            SetHovered(NearestOnArc(_bubbles, dx, dy, QuadrantHoverToleranceRad()));
+            return;
+        }
+
+        // Angularly-nearest slot from ANY point in the ring beyond the dead zone — not just a
+        // precise hover over a bubble's own small circle — so the gaps between bubbles feel like
+        // part of the ring instead of dead space. A gap that points at a slot with no bubble in
+        // it simply clears the hover.
+        int index = RingMetrics.NearestSlotIndex(dx, dy);
+        SetHovered(_bubbles.FirstOrDefault(b => b.Index == index));
+    }
+
+    /// <summary>
+    /// Half the gap between two neighbours on the quarter circle, with a little slack: far enough
+    /// that the space between items still points at one of them, tight enough that the screen
+    /// beyond either end of the fan points at nothing.
+    /// </summary>
+    private double QuadrantHoverToleranceRad()
+    {
+        if (_bubbles.Count < 2)
+            return Math.PI / 4;
+        double step = Math.Abs(NormalizeAngle(_bubbles[1].AngleRad - _bubbles[0].AngleRad));
+        return step * 0.6;
+    }
+
+    /// <summary>
+    /// An arc occupies part of the circle, not all of it — unlike the full ring's slot lookup — so
+    /// a pointer out in the band still has to be near the arc to hover anything on it.
+    /// </summary>
+    private static BubbleView? NearestOnArc(
+        IReadOnlyList<BubbleView> bubbles, double dx, double dy, double toleranceRad)
+    {
+        double pointer = Math.Atan2(dy, dx);
+
+        BubbleView? best = null;
+        double bestDelta = double.MaxValue;
+        foreach (var bubble in bubbles)
+        {
+            double delta = Math.Abs(NormalizeAngle(pointer - bubble.AngleRad));
+            if (delta < bestDelta)
+            {
+                bestDelta = delta;
+                best = bubble;
+            }
+        }
+
+        return bestDelta <= toleranceRad ? best : null;
+    }
+
+    private static double NormalizeAngle(double radians)
+    {
+        double twoPi = Math.PI * 2;
+        radians %= twoPi;
+        if (radians > Math.PI) radians -= twoPi;
+        if (radians < -Math.PI) radians += twoPi;
+        return radians;
+    }
+
+    private void RingCanvas_PointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        SetHovered(null);
+    }
+
+    private async void Root_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.Escape)
+            return;
+
+        e.Handled = true;
+        if (_flyoutParent is not null)
+            await CollapseFlyoutAsync();
+        else
+            Dismiss();
+    }
+
+    private sealed class BubbleView
+    {
+        public required Border Host { get; init; }
+        public required RingItem Item { get; init; }
+
+        /// <summary>Inner slot index, or position along the flyout arc.</summary>
+        public required int Index { get; init; }
+
+        /// <summary>
+        /// Position in the entrance stagger, which is not always <see cref="Index"/>: the flyout
+        /// fans out from the middle of its arc, so collapsing it in mirror image needs the
+        /// distance-from-middle, not the arc position.
+        /// </summary>
+        public int StaggerIndex { get; set; }
+
+        public required double AngleRad { get; init; }
+
+        /// <summary>Resting position relative to the ring center.</summary>
+        public required float RestX { get; init; }
+
+        public required float RestY { get; init; }
+
+        /// <summary>Where the bubble is born and dies — the hub, or its parent group bubble.</summary>
+        public required float OriginX { get; init; }
+
+        public required float OriginY { get; init; }
+
+        public required double Diameter { get; init; }
+        public required bool IsFlyout { get; init; }
+        public required FontIcon Glyph { get; init; }
+
+        /// <summary>The has-children marker, present only on inner-ring groups.</summary>
+        public Path? Bump { get; init; }
+
+        /// <summary>Scale to return to when hover ends — not 1 for an expanded group bubble.</summary>
+        public float RestScale { get; set; } = 1f;
+
+        public Action? Detach { get; set; }
+
+        /// <summary>Composition offset that puts the bubble back at its origin.</summary>
+        public Vector3 EntryOffset => new(OriginX - RestX, OriginY - RestY, 0);
+    }
+}
