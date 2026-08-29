@@ -2,7 +2,7 @@
 
 A quick-access **radial ring** for Windows 11. Summon it with a keyboard shortcut, a screen corner,
 or the tray icon; launch apps, files, folders and links from it; pop groups open into an outer
-ring; and reach a set of built-in developer tools (JSON/XML/CSV formatter, local secure values,
+ring; and reach a set of built-in developer tools (JSON/XML formatter, local secure values,
 Base64, certificate inspector) without leaving it.
 
 Everything runs on your own machine. There is no account, no telemetry, and nothing is uploaded.
@@ -134,12 +134,12 @@ dropdown, and two choices for the shape —
 | Action | Result |
 |--------|--------|
 | **Hover** an item | Its full name pops out in a pill beside it, along the same radial the item sits on, so the label never covers the item — always in exactly one place, even for a group whose flyout is open. |
-| **Hover** a group | After a short dwell it opens into the outer ring. Sweeping past on the way to a neighbour does not fire it. On the full ring, an open group's own label moves to sit outward of the whole arc it opened rather than beside itself; on a quadrant, where the flyout never leaves the same quarter, it just stays put beside the group. |
+| **Hover** a group | After a short dwell it opens into the outer ring. Sweeping past on the way to a neighbour does not fire it. Its own label stays put beside the group — it never relocates to a heading above the arc, on the full ring or a quadrant alike. |
 | **Click** a leaf | Launches it and dismisses the ring. Settings and Add-new are the exceptions: they open their own window and leave the ring up. |
 | **Click** a group | Opens it (never toggles it shut — that would make groups flicker under a normal point-and-click). |
-| **Click** the gaps | The whole disc is live: a click between two items activates whichever one the pointer is angularly nearest, exactly as clicking the item would. |
-| **Click** the hub / dead zone | Closes an open group, or dismisses the ring when none is open. |
-| **Esc** | Same as above: first the group, then the ring. |
+| **Click** the gaps | The whole disc is live: a click between two items activates whichever one the pointer is angularly nearest, exactly as clicking the item would. Nothing hovered — a gap with no item in it, or empty space past an open flyout's arc — dismisses the ring instead. |
+| **Click** the hub / dead zone | Dismisses the ring, closing any open flyout along with it. |
+| **Esc** | Closes an open group first, then the ring. |
 | **Click anywhere else** | Dismisses. The click reaches whatever is under it — the ring is not covering the screen for input purposes. |
 
 A group wears a short arc on its outward edge, so an item that opens a ring of its own can be told
@@ -243,6 +243,10 @@ A flat list of your ring items — show/hide each one, or delete it. Groups are 
 children beneath them. Built-in tools are not listed here (the Tools page owns them), and neither
 are Settings and Close, which the ring always draws itself.
 
+Its own **Add item…** button opens the same dialog as the ring's "Add to ring" quick action, but
+titled "Add item" and without the Tool tile — a built-in tool already has its own home on the
+Tools page, so that tile only makes sense from a ring or corner slot that can actually hold one.
+
 ### Tools page
 
 One row per built-in tool: a switch that puts it in the ring's Tools item or takes it out, an
@@ -269,12 +273,12 @@ forward rather than stacking another one up (`ReuseToolWindows` in the config fi
 
 ### Data Formatter
 
-Auto-detects and works with **JSON, XML, and CSV**.
+Auto-detects and works with **JSON and XML**.
 
 - Basic bar: **Format**, **Validate** (clean + pretty-print), **Copy**, **Clear**, **Save**.
 - Pasting into the editor formats and detects the type immediately — not just on the debounced
   keystroke-by-keystroke detection that typing gets.
-- Advanced sidebar: **Minify**, **Sort keys**, **Escape/Unescape**, **Convert to JSON/XML/CSV**, and
+- Advanced sidebar: **Minify**, **Sort keys**, **Escape/Unescape**, **Convert to JSON/XML**, and
   indent width.
 - XML parsing is hardened against the usual entity-expansion and external-entity traps.
 
@@ -386,7 +390,7 @@ src/SwiftX/
   RingManager.cs           Owns config, tray, hotkey, hot corner, windows, activation
   RingWindow.xaml(.cs)     The ring itself: layout, animation, hover, flyout, input
   SettingsWindow.xaml(.cs) Settings shell and every page in it
-  AddItemWindow.xaml(.cs)  "Add to ring", including drag-and-drop from Explorer
+  AddItemWindow.xaml(.cs)  "Add to ring" / "Add item", including drag-and-drop from Explorer
 
   Models/
     AppConfig.cs           Persisted settings
@@ -410,7 +414,7 @@ src/SwiftX/
     RingStore.cs           Load/save/import/export
     Launcher.cs            Starting whatever an item points at
     SecureValueStore.cs    DPAPI-protected key/secret storage
-    Formats/, Syntax/      JSON/XML/CSV parsing, validation, tokenizing
+    Formats/, Syntax/      JSON/XML parsing, validation, tokenizing
   ToolPages/               The four tool UIs
   Interop/NativeMethods.cs The Win32 surface, grouped by what needs it
 ```
@@ -449,7 +453,7 @@ The suite covers the parts that can be reasoned about without a window on screen
 - `Models/ToolsGroupTests` — the Tools-group migration: adoption by name, consolidation, adding a
   missing tool, slot placement, and leaving an intentionally tool-free ring alone.
 - `Models/HotkeyGestureTests`, `Models/SystemRingItemsTests`.
-- `Formats/…` — JSON/XML/CSV formatting, validation, sanitizing, and XML security.
+- `Formats/…` — JSON/XML formatting, validation, sanitizing, and XML security.
 
 ---
 
@@ -499,7 +503,7 @@ Not started; noted here as candidates.
 **Data Formatter** — commonly offered elsewhere, roughly in order of how well each fits the current
 sidebar-button architecture:
 
-- **YAML conversion** — fits the existing "Convert to JSON/XML/CSV" pattern directly (add a YAML
+- **YAML conversion** — fits the existing "Convert to JSON/XML" pattern directly (add a YAML
   `IDataFormat` to `FormatRegistry`).
 - **JSONPath query** — a query box that filters/highlights matches; a new interaction, not just a
   button.

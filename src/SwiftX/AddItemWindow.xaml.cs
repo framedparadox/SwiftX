@@ -27,7 +27,15 @@ public sealed partial class AddItemWindow : Window
     private AddKind _kind = AddKind.App;
     private bool _nameEdited;
 
-    public AddItemWindow(RingManager manager, Action<RingItem>? onAdded, List<RingItem> targetList)
+    /// <summary>
+    /// Same dialog, two names: every "Add new" reached from the ring, the tray icon, or the ring
+    /// preview itself is still adding "to the ring", but the "Apps &amp; links" tab's own "Add
+    /// item…" button is not adding to any specific ring slot, so it gets the more generic title —
+    /// see the callers of <see cref="RingManager.OpenAddItem"/>.
+    /// </summary>
+    public AddItemWindow(
+        RingManager manager, Action<RingItem>? onAdded, List<RingItem> targetList,
+        bool isGenericAddItem = false)
     {
         _manager = manager;
         _onAdded = onAdded;
@@ -36,9 +44,17 @@ public sealed partial class AddItemWindow : Window
 
         _hwnd = WindowNative.GetWindowHandle(this);
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
-        Title = "Add to ring";
+        string heading = isGenericAddItem ? "Add item" : "Add to ring";
+        Title = heading;
+        HeadingText.Text = heading;
 
-        var titleBar = new AppTitleBar("", "Add to ring");
+        // Adding a plain item (App/File/Folder/Link/Shortcut/Group) is the generic flow's whole
+        // job; a built-in tool already has its own home on the Tools page, so that tile only makes
+        // sense from a ring/corner slot that can actually hold one.
+        if (isGenericAddItem)
+            ToolType.Visibility = Visibility.Collapsed;
+
+        var titleBar = new AppTitleBar("", heading);
         Grid.SetRow(titleBar, 0);
         Root.Children.Insert(0, titleBar);
 

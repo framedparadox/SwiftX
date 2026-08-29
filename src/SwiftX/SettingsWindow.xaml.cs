@@ -1025,7 +1025,7 @@ public sealed partial class SettingsWindow : Window
             _manager.NotifyItemsChanged();
             RenderPreview();
             RebuildItemsList();
-        }, _manager.Config.Primary.Items);
+        }, _manager.Config.Primary.Items, isGenericAddItem: true);
 
     private void ResetDefaults_Click(object sender, RoutedEventArgs e)
     {
@@ -1415,7 +1415,7 @@ public sealed partial class SettingsWindow : Window
 
     private static readonly ToolRow[] ToolRows =
     [
-        new("Data", ToolKind.Data, "Data formatter", "Auto-detect JSON, XML, or CSV and format it.", DataGlyph, false,
+        new("Data", ToolKind.Data, "Data formatter", "Auto-detect JSON or XML and format it.", DataGlyph, false,
             c => c.ShowDataTool, (c, v) => c.ShowDataTool = v),
         new("SecureValues", ToolKind.SecureValues, "Secure values", "Local key/secret store with masked values.", SecureValuesGlyph, false,
             c => c.ShowSecureValuesTool, (c, v) => c.ShowSecureValuesTool = v),

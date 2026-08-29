@@ -15,7 +15,7 @@ using DispatcherQueueTimer = Microsoft.UI.Dispatching.DispatcherQueueTimer;
 namespace SwiftX.ToolPages;
 
 /// <summary>
-/// Backs the one Data Formatter catalog entry: auto-detects JSON, XML, or CSV and formats it.
+/// Backs the one Data Formatter catalog entry: auto-detects JSON or XML and formats it.
 /// (JSON and XML used to be separate catalog entries, each this same page pinned to a fixed
 /// format — Phase 1 shipped them that way, but a fixed format was never more than "Auto, minus
 /// the detection step", so they were merged into this single auto-detecting tool.) Basic chrome
@@ -407,7 +407,6 @@ public sealed class FormatterPage : EditorToolPage
             string extension = format.Id switch
             {
                 "xml" => ".xml",
-                "csv" => ".csv",
                 _ => ".json",
             };
 
@@ -484,7 +483,6 @@ public sealed class FormatterPage : EditorToolPage
         });
         stack.Children.Add(SidebarButton(Loc.Get("Formatter.ToJson"), "\uE943", () => ConvertTo(FormatRegistry.Json)));
         stack.Children.Add(SidebarButton(Loc.Get("Formatter.ToXml"), "</>", () => ConvertTo(FormatRegistry.Xml)));
-        stack.Children.Add(SidebarButton(Loc.Get("Formatter.ToCsv"), "\uE8A5", () => ConvertTo(FormatRegistry.Csv)));
 
         return new Border
         {

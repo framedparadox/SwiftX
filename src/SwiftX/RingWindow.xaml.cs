@@ -778,58 +778,34 @@ public sealed partial class RingWindow : Window
         var size = _pill.DesiredSize;
         _pill.CornerRadius = new CornerRadius(size.Height / 2);
 
-        double px, py;
-        // A quadrant's flyout never leaves the quarter its parent already sits in — its children
-        // are clamped inside that same arc (see FlyoutAngles) — so the parent's own beside-item
-        // spot is never crowded by them the way the full ring's up-to-eight-child flyout could be.
-        // Skipping the "heading" relocation there means a hovered item's name is drawn in exactly
-        // one place for the life of the hover, on the full ring or the quadrant alike, instead of
-        // jumping to a second spot the moment its flyout opens.
-        if (_quadrant is null && !bubble.IsFlyout && _flyout.Count > 0 && ReferenceEquals(_flyoutParent, bubble))
+        // Always sit wholly outside the item, along the same radial it sits on — never anywhere
+        // else — so the label reads as belonging to that item and never covers it, and a hovered
+        // item's name is drawn in exactly one place for the life of the hover instead of jumping
+        // to a second spot (e.g. a "heading" above the ring) the moment its flyout opens. The
+        // offset uses the pill's own extent measured along that radial — the projection of its box
+        // onto the radial axis, which is its width when the item is due east and its height when
+        // the item is due north — rather than one constant that would tuck a wide pill under a
+        // sideways item.
+        double ux = Math.Cos(bubble.AngleRad);
+        double uy = Math.Sin(bubble.AngleRad);
+        double reach = (Math.Abs(ux) * size.Width + Math.Abs(uy) * size.Height) / 2;
+
+        double restRadius = Math.Sqrt(bubble.RestX * bubble.RestX + bubble.RestY * bubble.RestY);
+        double clearance = restRadius + bubble.Diameter / 2 * HoverScaleFor(bubble);
+
+        // An item whose label reaches into an open flyout's arc has to clear those children as
+        // well as its own circle — including the group itself, whose children fan out around its
+        // own angle.
+        if (!bubble.IsFlyout && _flyout.Count > 0 && PointsIntoFlyoutArc(bubble.AngleRad))
         {
-            // Once a group is open, its name is the heading of the ring it opened rather than a
-            // label on the item — so it sits outward from the whole arc along the same radial the
-            // group itself sits on, clearing every child regardless of how many there are or which
-            // side of the ring the group is on. An earlier version anchored purely above the first
-            // child, which only cleared the arc for groups near the top of the ring — Settings sits
-            // to the side, and its "above the first child" label landed across its own two children
-            // instead of outside them.
-            double ux = Math.Cos(bubble.AngleRad);
-            double uy = Math.Sin(bubble.AngleRad);
-            double reach = (Math.Abs(ux) * size.Width + Math.Abs(uy) * size.Height) / 2;
-            double distance = _flyoutRadius
-                + RingMetrics.FlyoutBubble / 2 * RingMetrics.HoverScale
-                + RingMetrics.PillGap + reach;
-            px = distance * ux;
-            py = distance * uy;
+            clearance = Math.Max(
+                clearance,
+                _flyoutRadius + RingMetrics.FlyoutBubble / 2 * RingMetrics.HoverScale);
         }
-        else
-        {
-            // Sit wholly outside the item, along the same radial it sits on, so the label reads
-            // as belonging to that item and never covers it. The offset uses the pill's own
-            // extent measured along that radial — the projection of its box onto the radial axis,
-            // which is its width when the item is due east and its height when the item is due
-            // north — rather than one constant that would tuck a wide pill under a sideways item.
-            double ux = Math.Cos(bubble.AngleRad);
-            double uy = Math.Sin(bubble.AngleRad);
-            double reach = (Math.Abs(ux) * size.Width + Math.Abs(uy) * size.Height) / 2;
 
-            double restRadius = Math.Sqrt(bubble.RestX * bubble.RestX + bubble.RestY * bubble.RestY);
-            double clearance = restRadius + bubble.Diameter / 2 * HoverScaleFor(bubble);
-
-            // Any other item whose label reaches into an open flyout's arc has to clear those
-            // children as well as its own circle.
-            if (!bubble.IsFlyout && _flyout.Count > 0 && PointsIntoFlyoutArc(bubble.AngleRad))
-            {
-                clearance = Math.Max(
-                    clearance,
-                    _flyoutRadius + RingMetrics.FlyoutBubble / 2 * RingMetrics.HoverScale);
-            }
-
-            double distance = clearance + RingMetrics.PillGap + reach;
-            px = distance * ux;
-            py = distance * uy;
-        }
+        double distance = clearance + RingMetrics.PillGap + reach;
+        double px = distance * ux;
+        double py = distance * uy;
 
         // Only the window edge may move it, and only sideways — the clearance above is never
         // traded away, because a label sitting on top of its own item is worse than one that runs
@@ -1514,11 +1490,9 @@ public sealed partial class RingWindow : Window
 
         if (dist < RingMetrics.DeadZone)
         {
-            // The hub is the way back out of a flyout before it is the way out of the ring.
-            if (_flyoutParent is not null)
-                await CollapseFlyoutAsync();
-            else
-                Dismiss();
+            // Nothing lives in the dead zone to select, so a press here always means "close this",
+            // whether or not a flyout happens to be open — see the matching gap case below.
+            Dismiss();
             return;
         }
 
@@ -1526,7 +1500,7 @@ public sealed partial class RingWindow : Window
         // (e.OriginalSource is then the Border or one of its children, not the Canvas). This
         // covers presses in the gaps between bubbles: with the hit-region covering the whole
         // disk, a press out here should activate whichever item angular-hover currently targets,
-        // the same as clicking the bubble itself would — not fall through to a dismiss.
+        // the same as clicking the bubble itself would.
         if (e.OriginalSource is Canvas)
         {
             if (_hovered is { } bubble)
@@ -1534,13 +1508,11 @@ public sealed partial class RingWindow : Window
                 e.Handled = true;
                 await OnSelectAsync(bubble);
             }
-            else if (_flyoutParent is not null)
-            {
-                await CollapseFlyoutAsync();
-            }
             else
             {
-                // Genuinely empty ring space (a slot with no bubble in it): same as before.
+                // Nothing is hovered/selected — a gap with no bubble in it, or empty space past an
+                // open flyout's arc — so the click means "dismiss the dock", not "step back one
+                // level". Dismiss() already reverses an open flyout alongside the inner ring.
                 Dismiss();
             }
         }

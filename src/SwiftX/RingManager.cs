@@ -248,14 +248,17 @@ public sealed class RingManager
         WindowChrome.CenterOnCursor(_settingsWindow.AppWindow, _settingsWindow.AppWindow.Id);
     }
 
-    public void OpenAddItem(Action<RingItem>? onAdded = null, List<RingItem>? targetList = null)
+    public void OpenAddItem(
+        Action<RingItem>? onAdded = null, List<RingItem>? targetList = null,
+        bool isGenericAddItem = false)
     {
         if (_addItemWindow is not null)
         {
             _addItemWindow.Activate();
             return;
         }
-        _addItemWindow = new AddItemWindow(this, onAdded, targetList ?? Config.Primary.Items);
+        _addItemWindow = new AddItemWindow(
+            this, onAdded, targetList ?? Config.Primary.Items, isGenericAddItem);
         _addItemWindow.Closed += (_, _) => _addItemWindow = null;
         _addItemWindow.Activate();
     }

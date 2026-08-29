@@ -31,7 +31,7 @@
                               FontSize="22" Foreground="{ThemeResource SwiftXSurfaceBrush}" />
                 </Border>
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Add to ring" Style="{ThemeResource TitleTextBlockStyle}" />
+                    <TextBlock x:Name="HeadingText" Text="Add to ring" Style="{ThemeResource TitleTextBlockStyle}" />
                     <TextBlock Text="Choose a type, then set a target and name."
                                Style="{ThemeResource CaptionTextBlockStyle}"
                                Foreground="{ThemeResource SwiftXMutedBrush}" />
@@ -136,8 +136,6 @@
                     <TextBlock Text="Tool" />
                     <ComboBox x:Name="ToolBox" Width="280">
                         <ComboBoxItem Content="Data" Tag="Data" IsSelected="True" />
-                        <ComboBoxItem Content="JSON" Tag="Json" />
-                        <ComboBoxItem Content="XML" Tag="Xml" />
                         <ComboBoxItem Content="Secure values" Tag="SecureValues" />
                         <ComboBoxItem Content="Base64" Tag="Base64" />
                         <ComboBoxItem Content="Certificate" Tag="Certificate" />
