@@ -291,7 +291,7 @@
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="Theme" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Frosted dark glass (Dark) or solid white (Light). System follows Windows."
+                                    <TextBlock Text="Frosted dark glass (Dark), true black glass (Black), or solid white (Light). System follows Windows."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <ComboBox x:Name="ThemeBox" Grid.Column="2" MinWidth="170" Width="170"
@@ -299,6 +299,7 @@
                                           SelectionChanged="ThemeBox_SelectionChanged">
                                     <ComboBoxItem Content="Light" Tag="Light" />
                                     <ComboBoxItem Content="Dark" Tag="Dark" />
+                                    <ComboBoxItem Content="Black" Tag="Black" />
                                     <ComboBoxItem Content="System" Tag="System" />
                                 </ComboBox>
                             </Grid>

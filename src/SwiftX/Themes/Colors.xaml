@@ -4,17 +4,26 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!--
-        Light chrome is the original solid theme: #FFFFFF, no acrylic anywhere.
-        Dark chrome is also solid — no backdrop of any kind — but built as deliberately different,
-        opaque grey plates (nav pane, content canvas, cards, and the recessed "tray" areas) rather
-        than flat black everywhere, so the surfaces stay visually distinct from one another without
-        needing a translucent material to do it. An earlier iteration ran these same plates over a
-        real DesktopAcrylicBackdrop with alpha-carrying fills; that backdrop was removed and every
-        fill below converted back to a solid color, keeping the same layering/step-lighter design.
+        Light chrome stays the original solid theme: #FFFFFF, no acrylic/Mica, unchanged — scoped
+        deliberately, see below.
+        Dark chrome sits on a real MicaBackdrop (SettingsWindow's constructor) as of the Windows
+        acrylic theme work: the nav pane, content canvas, cards, and the recessed "tray" areas keep
+        their original raised/recessed layering, just as alpha-carrying (~0xD9) versions of the same
+        opaque colors instead of fully solid, so Mica's own subtle wallpaper tint shows through each
+        plate rather than replacing the layering. Only Dark changed — Light's brushes are still
+        100% opaque, so Light stays pixel-identical to before; MicaBackdrop is attached to the window
+        regardless of theme, it simply never shows through anything under Light. (An earlier,
+        pre-Windows-acrylic-theme iteration tried a similar alpha-over-backdrop approach and was
+        reverted with no reason on record — this pass re-does it deliberately, incrementally, with
+        each plate re-checked for legibility rather than converted in one pass.)
+        Ring bubbles (RingWindow) get their own live per-bubble DesktopAcrylicBackdrop — see
+        RingBubbleGlassTint below and RingWindow.xaml.cs's CreateBubble — independent of Settings'
+        window-level Mica.
         Ring* keys are shared with RingWindow; the ring agent owns geometry/animation and should
         resolve these via ThemeHelper.Brush(Root, …) or {ThemeResource}, never Application.Current.
         RingWindow.xaml holds no resource references at all (it paints from ThemeHelper.ColorFor,
-        a hard-coded C# switch), so nothing here can reach it.
+        a hard-coded C# switch — see ThemeHelper.ColorFor's own RingBubbleGlassTint case), so
+        nothing here can reach it.
     -->
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Dark">
@@ -24,6 +33,12 @@
             <Color x:Key="SwiftXMutedColor">#888888</Color>
             <Color x:Key="SwiftXAccentColor">#FFFFFF</Color>
             <Color x:Key="RingBubbleBackgroundColor">#000000</Color>
+            <!-- The ring bubbles' live-glass tint (RingWindow's CreateBubble/ApplyBubbleFill) —
+                 sits over a real DesktopAcrylicBackdrop, so this only needs to carry SwiftX's own
+                 dark/light identity; the backdrop's own recipe already handles blur-vs-legibility
+                 contrast. RingBubbleBackgroundColor above stays opaque black/white — it's still
+                 used by hover-invert/close states and by Settings' own (non-glass) ring preview. -->
+            <Color x:Key="RingBubbleGlassTintColor">#66000000</Color>
             <Color x:Key="RingHubBackgroundColor">#000000</Color>
             <Color x:Key="RingWindowBackgroundColor">#00000000</Color>
 
@@ -33,6 +48,7 @@
             <SolidColorBrush x:Key="SwiftXMutedBrush" Color="{StaticResource SwiftXMutedColor}"/>
             <SolidColorBrush x:Key="SwiftXAccentBrush" Color="{StaticResource SwiftXAccentColor}"/>
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
+            <SolidColorBrush x:Key="RingBubbleGlassTint" Color="{StaticResource RingBubbleGlassTintColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
             <!-- Settings-only root fill (SettingsWindow.xaml's Root Grid uses this, not
@@ -41,7 +57,14 @@
                  AddItemWindow and the tool windows share that key and are out of scope here — see
                  the longer comment a few lines down by the other Settings-exclusive keys. -->
             <Color x:Key="SettingsSurfaceColor">#202020</Color>
-            <SolidColorBrush x:Key="SettingsSurfaceBrush" Color="{StaticResource SettingsSurfaceColor}"/>
+            <!-- Alpha-carrying so SettingsWindow's MicaBackdrop (see the constructor) shows through
+                 — 0xD9 (~85%) keeps Mica's own wallpaper-derived tint to a subtle hint rather than a
+                 strong blur, matching how understated Mica reads everywhere else in Windows; the
+                 four plates' own distinct hues (below) are what still carries the raised/recessed
+                 hierarchy, the same way they did at full opacity. Scoped to Dark only, per the ask —
+                 Light's brushes below stay 100% opaque and so stay pixel-identical to today; Mica is
+                 still attached to the window in Light too, it just never shows through anything. -->
+            <SolidColorBrush x:Key="SettingsSurfaceBrush" Color="#D9202020"/>
             <!-- Dark Settings palette anchored on sample-data/design-colours.md's Windows colour
                  spec: Surface.Base (#202020) is the canonical Win11 dark-app surface — used here
                  for the content canvas, which is also what Root's own Background resolves to (see
@@ -57,10 +80,10 @@
                  a single flat surface plus system semantic tokens), so they keep this app's existing
                  raised/recessed layering, just re-centered around the new, lighter #202020 anchor
                  instead of the old #000000-adjacent one. -->
-            <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#2C2C2C"/>
+            <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#D92C2C2C"/>
             <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#4A4A4A"/>
-            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#202020"/>
-            <SolidColorBrush x:Key="SwiftXNavPaneBrush" Color="#1C1C1C"/>
+            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#D9202020"/>
+            <SolidColorBrush x:Key="SwiftXNavPaneBrush" Color="#D91C1C1C"/>
             <!-- Overrides the framework's own key so NavigationView's pane (which reads this key
                  straight from its control template, not from an exposed CLR property) picks up
                  our plate instead of the WinUI default of in-app Acrylic. -->
@@ -78,7 +101,7 @@
                  The recessed layer: darker than every other plate, so the Home tab's ring-preview
                  canvas and its group-children strip read as a tray sunk into the page rather than
                  as another card raised off it. -->
-            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#1A1A1A"/>
+            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#D91A1A1A"/>
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Light">
@@ -88,6 +111,8 @@
             <Color x:Key="SwiftXMutedColor">#666666</Color>
             <Color x:Key="SwiftXAccentColor">#000000</Color>
             <Color x:Key="RingBubbleBackgroundColor">#FFFFFF</Color>
+            <!-- See the matching comment in the Dark dictionary above. -->
+            <Color x:Key="RingBubbleGlassTintColor">#66FFFFFF</Color>
             <Color x:Key="RingHubBackgroundColor">#FFFFFF</Color>
             <Color x:Key="RingWindowBackgroundColor">#00000000</Color>
 
@@ -97,6 +122,7 @@
             <SolidColorBrush x:Key="SwiftXMutedBrush" Color="{StaticResource SwiftXMutedColor}"/>
             <SolidColorBrush x:Key="SwiftXAccentBrush" Color="{StaticResource SwiftXAccentColor}"/>
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
+            <SolidColorBrush x:Key="RingBubbleGlassTint" Color="{StaticResource RingBubbleGlassTintColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
             <!-- Settings-only root fill, same idea as the Dark dictionary's: sample-data/
@@ -150,6 +176,12 @@
             <Color x:Key="SwiftXMutedColor">#888888</Color>
             <Color x:Key="SwiftXAccentColor">#FFFFFF</Color>
             <Color x:Key="RingBubbleBackgroundColor">#000000</Color>
+            <!-- The ring bubbles' live-glass tint (RingWindow's CreateBubble/ApplyBubbleFill) —
+                 sits over a real DesktopAcrylicBackdrop, so this only needs to carry SwiftX's own
+                 dark/light identity; the backdrop's own recipe already handles blur-vs-legibility
+                 contrast. RingBubbleBackgroundColor above stays opaque black/white — it's still
+                 used by hover-invert/close states and by Settings' own (non-glass) ring preview. -->
+            <Color x:Key="RingBubbleGlassTintColor">#66000000</Color>
             <Color x:Key="RingHubBackgroundColor">#000000</Color>
             <Color x:Key="RingWindowBackgroundColor">#00000000</Color>
 
@@ -159,24 +191,26 @@
             <SolidColorBrush x:Key="SwiftXMutedBrush" Color="{StaticResource SwiftXMutedColor}"/>
             <SolidColorBrush x:Key="SwiftXAccentBrush" Color="{StaticResource SwiftXAccentColor}"/>
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
+            <SolidColorBrush x:Key="RingBubbleGlassTint" Color="{StaticResource RingBubbleGlassTintColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
             <!-- See the matching comment in the Dark dictionary above. -->
-            <Color x:Key="SettingsSurfaceColor">#202020</Color>
+            <Color x:Key="SettingsSurfaceColor">#D9202020</Color>
             <SolidColorBrush x:Key="SettingsSurfaceBrush" Color="{StaticResource SettingsSurfaceColor}"/>
-            <!-- Every fill below is the Dark dictionary's value verbatim. Default is what is live
-                 in the brief window before ActualTheme resolves, so any drift between the two
-                 would show up as a flash of a different palette as the window comes up. -->
-            <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#2C2C2C"/>
+            <!-- Every fill below is the Dark dictionary's value verbatim (now alpha-carrying, same
+                 as Dark, for the same MicaBackdrop reason) — Default is what is live in the brief
+                 window before ActualTheme resolves, so any drift between the two would show up as a
+                 flash of a different palette as the window comes up. -->
+            <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#D92C2C2C"/>
             <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#4A4A4A"/>
-            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#202020"/>
+            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#D9202020"/>
             <!-- See the matching comment in the Dark dictionary above. -->
-            <SolidColorBrush x:Key="SwiftXNavPaneBrush" Color="#1C1C1C"/>
+            <SolidColorBrush x:Key="SwiftXNavPaneBrush" Color="#D91C1C1C"/>
             <StaticResource x:Key="NavigationViewDefaultPaneBackground" ResourceKey="SwiftXNavPaneBrush"/>
             <StaticResource x:Key="NavigationViewContentBackground" ResourceKey="SwiftXCanvasBrush"/>
             <!-- See the matching comment in the Dark dictionary above — this key is referenced
                  unconditionally from SettingsWindow.xaml and must exist here too. -->
-            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#1A1A1A"/>
+            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#D91A1A1A"/>
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>

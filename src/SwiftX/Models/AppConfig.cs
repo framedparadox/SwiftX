@@ -6,6 +6,11 @@ public enum AppTheme
 {
     Light,
     Dark,
+    /// <summary>Dark's own native ElementTheme (chrome stays dark-themed) but with SwiftX's own
+    /// surfaces swapped to a flat, higher-opacity black instead of Dark's graduated greys — see
+    /// ThemeHelper.ColorFor's isBlack overload and SettingsWindow's resource-override pair
+    /// (ApplyBlackOverrides). Never reachable via System — there is no OS-level "Black".</summary>
+    Black,
     System,
 }
 

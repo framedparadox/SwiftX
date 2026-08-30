@@ -771,12 +771,19 @@ public sealed partial class RingWindow : Window
         var geometry = new PathGeometry();
         geometry.Figures.Add(figure);
 
+        // Tint-only, not a live backdrop like CreateBubble's bubbles: SystemBackdropElement only
+        // clips to a rounded rect (CornerRadius), and this wedge is a pie slice with its apex at
+        // the box's center, not its corner — genuine per-pixel blur here would need an arbitrary
+        // path clip, which isn't available without adding Win2D as a dependency for one decorative
+        // shape. Translucent tint over the real desktop (RingWindow has no window-level backdrop —
+        // see TransparentBackdrop) is the honest middle ground: no blur, but no longer flat opaque
+        // black/white either.
         return new Path
         {
             Width = box,
             Height = box,
             Data = geometry,
-            Fill = ThemeBrush("RingBubbleBackground"),
+            Fill = ThemeBrush("RingBubbleGlassTint"),
             Stroke = ThemeBrush("SwiftXBorderBrush"),
             StrokeThickness = 1,
         };
@@ -819,7 +826,33 @@ public sealed partial class RingWindow : Window
         };
         item.PropertyChanged += onItemChanged;
 
+        // Live frosted glass, bottom-most so it samples the real desktop behind the bubble.
+        // Lives inside the same Border every entrance/hover/flyout animation already targets as
+        // one Composition visual (bubble.Host below), so it travels with those animations for
+        // free — nothing in the motion code needs to know it's there.
+        var backdrop = new SystemBackdropElement
+        {
+            Width = diameter,
+            Height = diameter,
+            CornerRadius = new CornerRadius(diameter / 2),
+            SystemBackdrop = new DesktopAcrylicBackdrop(),
+        };
+
+        // The theme tint over the blur — what ApplyBubbleFill actually swaps for hover/close
+        // states, not border.Background below (left unset, or it would paint over the blur and
+        // hide it). Semi-transparent at rest so the glass shows through; hover/close still swap
+        // it to a fully opaque brush for contrast, same as the old solid-fill behavior.
+        var tint = new Border
+        {
+            Width = diameter,
+            Height = diameter,
+            CornerRadius = new CornerRadius(diameter / 2),
+            Background = ThemeBrush("RingBubbleGlassTint"),
+        };
+
         var content = new Grid();
+        content.Children.Add(backdrop);
+        content.Children.Add(tint);
         content.Children.Add(icon);
         content.Children.Add(glyph);
 
@@ -847,7 +880,6 @@ public sealed partial class RingWindow : Window
             Width = diameter,
             Height = diameter,
             CornerRadius = new CornerRadius(diameter / 2),
-            Background = ThemeBrush("RingBubbleBackground"),
             Child = content,
             Tag = item,
         };
@@ -869,6 +901,7 @@ public sealed partial class RingWindow : Window
             StaggerIndex = index,
             Glyph = glyph,
             Bump = bump,
+            TintLayer = tint,
             Detach = () => item.PropertyChanged -= onItemChanged,
         };
 
@@ -959,7 +992,8 @@ public sealed partial class RingWindow : Window
         bool dark = requested == ElementTheme.Default
             ? ThemeHelper.IsDark(Root)
             : requested == ElementTheme.Dark;
-        return new SolidColorBrush(ThemeHelper.ColorFor(dark, key));
+        bool isBlack = _manager.Config.Theme == AppTheme.Black;
+        return new SolidColorBrush(ThemeHelper.ColorFor(dark, isBlack, key));
     }
 
     // ---- Hover name pill -----------------------------------------------------------------
@@ -1633,13 +1667,13 @@ public sealed partial class RingWindow : Window
 
         Brush background = destructive ? ThemeBrush("RingCloseHoverBackground")
             : invert ? ThemeBrush("SwiftXForegroundBrush")
-            : ThemeBrush("RingBubbleBackground");
+            : ThemeBrush("RingBubbleGlassTint");
 
         Brush foreground = destructive ? ThemeBrush("RingCloseHoverForeground")
             : invert ? ThemeBrush("RingBubbleBackground")
             : ThemeBrush("SwiftXForegroundBrush");
 
-        bubble.Host.Background = background;
+        bubble.TintLayer.Background = background;
         bubble.Glyph.Foreground = foreground;
         if (bubble.Bump is not null)
             bubble.Bump.Stroke = foreground;
@@ -1918,6 +1952,10 @@ public sealed partial class RingWindow : Window
 
         /// <summary>The has-children marker, present only on inner-ring groups.</summary>
         public Path? Bump { get; init; }
+
+        /// <summary>The glass tint layer ApplyBubbleFill swaps for hover/close states — see
+        /// CreateBubble's comment on why this, and not Host.Background, carries the fill.</summary>
+        public required Border TintLayer { get; init; }
 
         /// <summary>Scale to return to when hover ends — not 1 for an expanded group bubble.</summary>
         public float RestScale { get; set; } = 1f;

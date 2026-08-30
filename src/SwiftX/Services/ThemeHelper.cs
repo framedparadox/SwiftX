@@ -20,7 +20,11 @@ public static class ThemeHelper
     public static ElementTheme Resolve(AppTheme theme) => theme switch
     {
         AppTheme.Light => ElementTheme.Light,
-        AppTheme.Dark => ElementTheme.Dark,
+        // Black is a SwiftX-only surface palette, not a native one — it rides on Dark's own
+        // ElementTheme (native chrome/title bar/controls stay dark-themed) and is told apart at
+        // the brush level instead, via the isBlack overloads below. There is no OS-level "Black"
+        // for System to ever resolve to.
+        AppTheme.Dark or AppTheme.Black => ElementTheme.Dark,
         _ => ElementTheme.Default,
     };
 
@@ -35,8 +39,38 @@ public static class ThemeHelper
     public static Brush Brush(FrameworkElement element, string key) =>
         new SolidColorBrush(ColorFor(IsDark(element), key));
 
+    /// <summary>
+    /// Black-aware overload for callers that can tell Black apart from plain Dark directly (i.e.
+    /// they hold the live <see cref="AppTheme"/>, not just an ActualTheme that can't express it —
+    /// see the class doc's own warning about that gap). Used by Settings' own ring/quadrant preview
+    /// bubbles so they match the real ring's glass under Black the same way they already do under
+    /// Dark.
+    /// </summary>
+    public static Brush Brush(FrameworkElement element, bool isBlack, string key) =>
+        new SolidColorBrush(ColorFor(IsDark(element), isBlack, key));
+
     public static Color ColorFor(FrameworkElement element, string key) =>
         ColorFor(IsDark(element), key);
+
+    /// <summary>
+    /// Black-aware color lookup — see the <see cref="Brush(FrameworkElement, bool, string)"/>
+    /// overload's doc for why <paramref name="isBlack"/> has to be passed in rather than inferred.
+    /// Every key but the ring bubbles' own glass tint behaves exactly like
+    /// <see cref="ColorFor(bool, string)"/> regardless of <paramref name="isBlack"/> — Black only
+    /// ever changes SwiftX's own surface fills (this key, and Settings' resource overrides in
+    /// SettingsWindow.ApplyBlackOverrides), never foreground/border/muted/accent, which read the
+    /// same on any dark surface.
+    /// </summary>
+    public static Color ColorFor(bool dark, bool isBlack, string key) => key switch
+    {
+        // Black's ring bubbles read as a deeper, more opaque black glass than Dark's lighter 40%
+        // tint — Dark's own tint is already pure black (there's no "grey ring" to darken further),
+        // so a higher alpha is what actually tells the two apart on the ring itself.
+        "RingBubbleGlassTint" or "RingBubbleGlassTintColor" when isBlack =>
+            Color.FromArgb(0xCC, 0, 0, 0),
+
+        _ => ColorFor(dark, key),
+    };
 
     public static Color ColorFor(bool dark, string key) => key switch
     {
@@ -47,6 +81,12 @@ public static class ThemeHelper
         "SwiftXForegroundBrush" or "SwiftXForegroundColor"
             or "SwiftXAccentBrush" or "SwiftXAccentColor" =>
             dark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 0, 0, 0),
+
+        // The ring bubbles' glass tint (see RingWindow's CreateBubble/ApplyBubbleFill) — sits over
+        // a real DesktopAcrylicBackdrop, so it only needs to carry SwiftX's own dark/light identity
+        // at partial opacity; the backdrop's own recipe already handles blur-vs-legibility contrast.
+        "RingBubbleGlassTint" or "RingBubbleGlassTintColor" =>
+            dark ? Color.FromArgb(0x66, 0, 0, 0) : Color.FromArgb(0x66, 255, 255, 255),
 
         "SwiftXBorderBrush" or "SwiftXBorderColor" =>
             dark ? Color.FromArgb(255, 0x33, 0x33, 0x33) : Color.FromArgb(255, 0xCC, 0xCC, 0xCC),
