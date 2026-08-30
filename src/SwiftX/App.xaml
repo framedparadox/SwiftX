@@ -7,8 +7,11 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
-                <!-- Solid black/white ThemeDictionaries (no acrylic). Prefer ThemeHelper.Brush
-                     or {ThemeResource} against a window root — not Application.Current alone. -->
+                <!-- ThemeDictionaries: a solid white Light, and a Dark built from solid, opaque
+                     grey plates (nav pane, content canvas, cards, and the recessed "tray" areas
+                     each a deliberately different shade) — no Mica/acrylic backdrop anywhere.
+                     Prefer ThemeHelper.Brush or {ThemeResource} against a window root — not
+                     Application.Current alone. -->
                 <ResourceDictionary Source="Themes/Colors.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>

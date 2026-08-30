@@ -310,20 +310,23 @@ public sealed partial class RingWindow : Window
     /// hands that window foreground activation and deactivates this one; treat it the same as
     /// clicking the ring's own dead zone.
     /// <para>
-    /// Suppressed while Settings or Add-new is open: opening either from the ring's own flyout
-    /// already dismisses the ring on selection (see <see cref="OnSelectAsync"/>), but both can also
-    /// be reached from the tray icon while the ring is sitting open, or the ring can be re-summoned
-    /// while one already has focus — either way, every click into that window would otherwise
-    /// deactivate this one and immediately dismiss the ring out from under the user. Once the
-    /// window closes, the matching <c>RingManager</c> flag goes false again and the very next
-    /// deactivation resumes the normal click-anywhere-to-dismiss behavior.
+    /// Suppressed only while Settings or Add-new is the window that just took activation (see
+    /// <see cref="RingManager.IsExemptWindowForeground"/>) — not merely while either is open
+    /// somewhere. Opening either from the ring's own flyout already dismisses the ring on selection
+    /// (see <see cref="OnSelectAsync"/>), but both can also be reached from the tray icon while the
+    /// ring is sitting open, or the ring can be re-summoned while one already has focus — either
+    /// way, every click into that window would otherwise deactivate this one and immediately
+    /// dismiss the ring out from under the user. Checking by foreground rather than "is it open at
+    /// all" is what keeps that exemption to the one moment it's for: a Settings window left open in
+    /// the background for the rest of the session must not permanently disable click-anywhere on
+    /// every later summon.
     /// </para>
     /// </summary>
     private void RingWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
         if (args.WindowActivationState != WindowActivationState.Deactivated)
             return;
-        if (_manager.IsSettingsOpen || _manager.IsAddItemOpen)
+        if (_manager.IsExemptWindowForeground())
             return;
         Dismiss();
     }
@@ -361,9 +364,10 @@ public sealed partial class RingWindow : Window
         if (!pressed)
             return;
 
-        // Same exemption the deactivation path makes: Settings and Add-new are reached from the
-        // ring and stay open in front of it, so clicking into either must not close it.
-        if (_manager.IsSettingsOpen || _manager.IsAddItemOpen)
+        // Same exemption the deactivation path makes, and by the same foreground check: a press
+        // that actually landed on Settings or Add-new must not close the ring, but either window
+        // merely existing elsewhere must not block every other click from closing it either.
+        if (_manager.IsExemptWindowForeground())
             return;
 
         if (!NativeMethods.GetCursorPos(out var cursor) || IsOverRing(cursor))
@@ -449,6 +453,26 @@ public sealed partial class RingWindow : Window
             bubble.Detach?.Invoke();
     }
 
+    /// <summary>
+    /// Keeps the Settings bubble's "Add new" child (see <see cref="SystemRingItems.CreateAddNew"/>)
+    /// in sync with whether there is anywhere left to add into: a full ring — all
+    /// <see cref="RingMetrics.UserSlotCount"/> user slots taken — or a full quadrant — all
+    /// <see cref="QuadrantLayout.ItemCount"/> places taken, Settings among them — both leave
+    /// nothing for it to open into, so it drops out of the flyout instead of offering an add that
+    /// cannot succeed. Recomputed on every render rather than only when items change, since which
+    /// shape is showing — ring or quadrant — is itself part of what "full" means.
+    /// </summary>
+    private void UpdateSettingsAddNew()
+    {
+        bool full = _quadrant is not null
+            ? HotCornerItems.Resolve(_manager.Config, _settingsItem).Count >= QuadrantLayout.ItemCount
+            : _manager.Config.Primary.Items.Count(i => !i.Hidden) >= RingMetrics.UserSlotCount;
+
+        _settingsItem.Children.Clear();
+        if (!full)
+            _settingsItem.Children.Add(SystemRingItems.CreateAddNew());
+    }
+
     private IReadOnlyList<(RingItem Item, int Slot)> CurrentItems()
     {
         var slots = new List<(RingItem, int)>();
@@ -502,6 +526,7 @@ public sealed partial class RingWindow : Window
         _flyout.Clear();
         _flyoutParent = null;
         _hovered = null;
+        UpdateSettingsAddNew();
 
         // The hub is the ring's center mark. A quarter circle's center is the screen corner, so
         // three quarters of a full-sized one would be off the screen — AttachHub draws a smaller
@@ -803,8 +828,15 @@ public sealed partial class RingWindow : Window
         // launches. It rides on the circle's own boundary, centered on the direction the item
         // already sits from the hub, so it never needs its own transform and scales with the item
         // because it lives in the same content.
+        //
+        // Only drawn when the group actually has something to expand into — the same
+        // Where(!Hidden) filter ExpandFlyout itself uses, since that is what decides whether
+        // hovering this bubble opens a flyout at all. Settings is the item this matters for: it is
+        // always Kind.Group, but its one child — "Add new" — drops out once the ring is full (see
+        // UpdateSettingsAddNew), and a full Settings bubble wearing an arc that promises a flyout
+        // it can no longer open would be a lie the moment you hovered it.
         Path? bump = null;
-        if (item.IsGroup && !isFlyout)
+        if (item.IsGroup && !isFlyout && item.Children.Any(c => !c.Hidden))
         {
             bump = BuildGroupArc(diameter, angle, ThemeBrush("SwiftXForegroundBrush"));
             content.Children.Add(bump);
@@ -1701,8 +1733,8 @@ public sealed partial class RingWindow : Window
 
         // Every other selection closes the ring on activation — Settings and Add-new are the
         // exceptions: each opens its own window and should stay on screen for as long as that
-        // window is open (see RingWindow_Activated's matching IsSettingsOpen/IsAddItemOpen checks,
-        // which keep the deactivation that follows here from dismissing it too). Selecting either
+        // window is open (see RingWindow_Activated's matching IsExemptWindowForeground check,
+        // which keeps the deactivation that follows here from dismissing it too). Selecting either
         // a second time while its window is already open just re-activates that window (see
         // RingManager.OpenSettings/OpenAddItem) — still no dismiss.
         bool staysOpen = IsSettingsItem(item) ||

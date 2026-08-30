@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Shapes;
 using SwiftX.Controls;
 using SwiftX.Models;
@@ -19,9 +20,14 @@ namespace SwiftX;
 
 /// <summary>
 /// Settings shell patterned after Anchor: left NavigationView with Home (ring customize,
-/// including the hot corner), General (the invoke shortcut and app-wide settings), Apps &amp;
-/// links, Tools, and — pinned to the footer — Privacy and About. Solid surfaces only — no
-/// Mica / acrylic.
+/// including the hot corner), General (the invoke shortcut and app-wide settings), Elements,
+/// Tools, and — pinned to the footer — Privacy and About.
+/// <para>
+/// Both themes are solid, opaque surfaces — no Mica / acrylic. Light is a flat white surface;
+/// Dark uses the layered, opaque plates in the Dark dictionary of <c>Themes/Colors.xaml</c>
+/// (nav pane, content canvas, cards, and the recessed "tray" areas each a deliberately different
+/// shade) so the surfaces stay visually distinct without needing a translucent backdrop.
+/// </para>
 /// </summary>
 public sealed partial class SettingsWindow : Window
 {
@@ -34,6 +40,13 @@ public sealed partial class SettingsWindow : Window
     private Point _dragStart;
     private bool _dragMoved;
     private int _dragSlot = -1;
+    // Tentative reorder target computed live while a drag is in progress, so the other bubbles can
+    // reflow to preview where they'll land — see Preview_PointerMoved/UpdateDragReflow. -1 means
+    // "no drag in progress" / "not yet computed". Preview_PointerReleased reuses these directly
+    // rather than recomputing from the drop point, so the committed order can never disagree with
+    // whatever the live preview last showed.
+    private int _dragTentativeSlot = -1;
+    private int _dragTentativeQuadrantSlot = -1;
 
     // Preview geometry and slot occupancy, recorded by RenderPreview so the canvas-level pointer
     // handlers can work out which slot an event landed in without walking the visual tree.
@@ -90,8 +103,10 @@ public sealed partial class SettingsWindow : Window
         Grid.SetRow(titleBar, 0);
         Root.Children.Insert(0, titleBar);
 
-        // Extend content under caption (solid surface, not glass). Must precede HideWindowBorder
-        // or ExtendsContentIntoTitleBar clobbers the rim color.
+        // Extend content under the caption so the title bar strip is part of the same surface as
+        // the rest of the window (AppTitleBar paints nothing of its own, so the window's own
+        // background reaches all the way up). Must precede HideWindowBorder or
+        // ExtendsContentIntoTitleBar clobbers the rim color.
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(titleBar);
 
@@ -117,7 +132,13 @@ public sealed partial class SettingsWindow : Window
             p.IsMaximizable = false;
         _appWindow.IsShownInSwitchers = true;
 
-        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 1000, 700);
+        // 1000 used to leave only a couple of px of margin for the Home tab's ring-preview card +
+        // sidebar row (~998px of fixed content against a 1000px client width) — razor-thin enough
+        // that ordinary font-metric/DPI variance could tip it into visible clipping. 1040 restores
+        // a real margin; the Home tab's sidebar column is also now Grid-adaptive (see
+        // SettingsWindow.xaml) rather than a fixed width, so it degrades gracefully even if the
+        // window is later resized narrower still.
+        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 1040, 700);
         WindowChrome.SetRoundedCorners(_hwnd);
         WindowChrome.CenterOnCursor(_appWindow, _appWindow.Id);
 
@@ -153,7 +174,7 @@ public sealed partial class SettingsWindow : Window
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                // An edit from elsewhere (e.g. a delete on the "Apps & links" tab) can remove the
+                // An edit from elsewhere (e.g. a delete on the "Elements" tab) can remove the
                 // item this tab currently has selected or expanded — drop stale state rather than
                 // leave the inspector or children row pointing at something that no longer exists.
                 if (_expandedGroup is not null && !ItemExists(_manager.Config.Primary.Items, _expandedGroup))
@@ -188,8 +209,17 @@ public sealed partial class SettingsWindow : Window
     {
         bool dark = ThemeHelper.IsDark(Root);
         WindowChrome.SetTitleBarTheme(_appWindow, dark);
-        WindowChrome.HideWindowBorder(_hwnd, dark);
+        WindowChrome.HideWindowBorder(_hwnd, dark, dark ? SettingsRimColorDark : SettingsRimColorLight);
     }
+
+    /// <summary>
+    /// Rim colors for Settings, as COLORREFs (0x00BBGGRR) — match <c>SettingsSurfaceColor</c>/
+    /// <c>SwiftXCanvasBrush</c> in <c>Themes/Colors.xaml</c> (sample-data/design-colours.md's
+    /// Surface.Base/Surface.Rim, which are the same value in both themes there), not the shared
+    /// black/white every other window's rim still uses. Neutral greys, so channel order is moot.
+    /// </summary>
+    private const int SettingsRimColorDark = 0x00202020;
+    private const int SettingsRimColorLight = 0x00F3F3F3;
 
     private Style SecondaryCaptionStyle => (Style)Root.Resources["SecondaryCaption"];
 
@@ -258,6 +288,14 @@ public sealed partial class SettingsWindow : Window
         PreviewCanvas.Children.Add(hub);
 
         var items = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(RingMetrics.UserSlotCount).ToList();
+
+        // A full ring has no empty slot left to add into, so the button that would open the add
+        // dialog goes away rather than sitting there offering something the ring cannot take.
+        // Reset defaults stays: it is still meaningful on a full ring.
+        AddItemButton.Visibility = items.Count >= RingMetrics.UserSlotCount
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+
         for (int i = 0; i < RingMetrics.SlotCount; i++)
         {
             double angle = (-90 + i * 45) * Math.PI / 180.0;
@@ -522,6 +560,11 @@ public sealed partial class SettingsWindow : Window
         _dragItem = _dragBorder?.Tag as RingItem;
         _dragStart = point;
         _dragMoved = false;
+        // Starts equal to the origin slot, not -1: until the pointer actually crosses into a
+        // different target, "tentative" is just "still where it started", so a drop with no real
+        // movement resolves as a no-op the same way it always did.
+        _dragTentativeSlot = _dragSlot;
+        _dragTentativeQuadrantSlot = _dragSlot;
         if (_dragSlot >= 0)
             PreviewCanvas.CapturePointer(e.Pointer);
     }
@@ -536,15 +579,165 @@ public sealed partial class SettingsWindow : Window
         if (!_dragMoved && (Math.Abs(dx) > 4 || Math.Abs(dy) > 4))
             _dragMoved = true;
         if (_dragMoved)
+        {
             _dragBorder.RenderTransform = new TranslateTransform { X = dx, Y = dy };
+            UpdateDragReflow(point);
+        }
+    }
+
+    /// <summary>
+    /// The live "make room" preview: while a bubble is mid-drag, every other bubble shifts to
+    /// where it would actually land if the pointer released right now, instead of staying frozen
+    /// until the drop. Only recomputes when the tentative target slot actually changes, so a
+    /// pointer held still costs nothing on every move tick.
+    /// <para>
+    /// Simulates the same remove-then-insert <see cref="ReorderItem"/> / <see cref="MoveQuadrantItem"/>
+    /// perform, but against a throwaway copy of the order (<c>_manager.Config.Primary.Items</c>
+    /// filtered/copied the same way <see cref="ReorderItem"/> does, or a fresh
+    /// <see cref="HotCornerItems.Resolve"/> list for the quadrant — never <see cref="HotCornerItems.Edit"/>,
+    /// which has the side effect of turning a corner that was still following the ring into a
+    /// stored arrangement the moment it's called) — nothing is persisted until the actual drop.
+    /// </para>
+    /// <para>
+    /// <see cref="Preview_PointerReleased"/> reuses <see cref="_dragTentativeSlot"/> /
+    /// <see cref="_dragTentativeQuadrantSlot"/> directly rather than recomputing a target from the
+    /// release point, so the committed order can never land somewhere different from what this
+    /// last showed on screen.
+    /// </para>
+    /// </summary>
+    private void UpdateDragReflow(Point point)
+    {
+        if (_dragItem is null) return;
+
+        if (_previewQuadrant)
+        {
+            int target = QuadrantSlotAt(point, requireHit: false);
+            if (target == _dragTentativeQuadrantSlot) return;
+            _dragTentativeQuadrantSlot = target;
+            if (target < 0) return;
+
+            var list = HotCornerItems.Resolve(_manager.Config, SystemRingItems.CreateSettings());
+            int from = list.IndexOf(_dragItem);
+            if (from < 0) return;
+            int to = Math.Min(target, list.Count - 1);
+            if (to != from)
+            {
+                list.RemoveAt(from);
+                list.Insert(to, _dragItem);
+            }
+            ReflowQuadrantBorders(list);
+            return;
+        }
+
+        int targetSlot = PreviewSlotAt(point, requireHit: false);
+        if (targetSlot == _dragTentativeSlot) return;
+        _dragTentativeSlot = targetSlot;
+        if (targetSlot < 0 || targetSlot >= RingMetrics.UserSlotCount) return;
+
+        var visible = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(RingMetrics.UserSlotCount).ToList();
+        int vFrom = visible.IndexOf(_dragItem);
+        if (vFrom < 0) return;
+        int vTo = Math.Min(targetSlot, visible.Count - 1);
+        if (vTo != vFrom)
+        {
+            visible.RemoveAt(vFrom);
+            visible.Insert(vTo, _dragItem);
+        }
+        ReflowRingBorders(visible);
+    }
+
+    /// <summary>
+    /// Glides every bubble in <paramref name="tentativeOrder"/> other than the one actually being
+    /// dragged (that one follows the pointer via <c>RenderTransform</c> instead) to the ring
+    /// position its index in that order implies. Pinned slots (Settings/Close) are never part of
+    /// <paramref name="tentativeOrder"/> to begin with — it is built the same way
+    /// <see cref="ReorderItem"/>'s own <c>visible</c> list is — so they can never be moved here.
+    /// </summary>
+    private void ReflowRingBorders(List<RingItem> tentativeOrder)
+    {
+        for (int i = 0; i < tentativeOrder.Count; i++)
+        {
+            var item = tentativeOrder[i];
+            if (ReferenceEquals(item, _dragItem)) continue;
+            var border = FindSlotBorder(_slotBorders, item);
+            if (border is null) continue;
+            double angle = RingMetrics.SlotAngleRad(i);
+            double x = _previewCenter.X + _previewRadius * Math.Cos(angle) - _previewBubble / 2;
+            double y = _previewCenter.Y + _previewRadius * Math.Sin(angle) - _previewBubble / 2;
+            AnimateBubbleTo(border, x, y);
+        }
+    }
+
+    /// <summary>Quadrant counterpart of <see cref="ReflowRingBorders"/>.</summary>
+    private void ReflowQuadrantBorders(List<RingItem> tentativeOrder)
+    {
+        for (int i = 0; i < tentativeOrder.Count && i < _quadrantSlotBorders.Length; i++)
+        {
+            var item = tentativeOrder[i];
+            if (ReferenceEquals(item, _dragItem)) continue;
+            var border = FindSlotBorder(_quadrantSlotBorders, item);
+            if (border is null) continue;
+            double angle = _quadrantSlotAngles[i];
+            double x = _quadrantCenter.X + _quadrantRadius * Math.Cos(angle) - _quadrantBubble / 2;
+            double y = _quadrantCenter.Y + _quadrantRadius * Math.Sin(angle) - _quadrantBubble / 2;
+            AnimateBubbleTo(border, x, y);
+        }
+    }
+
+    private static Border? FindSlotBorder(Border?[] borders, RingItem item)
+    {
+        foreach (var border in borders)
+        {
+            if (border?.Tag is RingItem tagged && ReferenceEquals(tagged, item))
+                return border;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Short glide of a preview bubble to a new canvas position for the live drag reflow — distinct
+    /// from the dragged bubble's own pointer-following <c>RenderTransform</c> in
+    /// <see cref="Preview_PointerMoved"/>. Falls back to an instant reposition if animating the
+    /// attached properties fails for any reason: landing the other bubbles in the right place is
+    /// what actually matters, the glide is just polish on top of that.
+    /// </summary>
+    private static void AnimateBubbleTo(Border border, double x, double y)
+    {
+        try
+        {
+            var duration = TimeSpan.FromMilliseconds(160);
+            var ease = new QuadraticEase { EasingMode = EasingMode.EaseOut };
+
+            var animX = new DoubleAnimation { To = x, Duration = duration, EasingFunction = ease };
+            Storyboard.SetTarget(animX, border);
+            Storyboard.SetTargetProperty(animX, "(Canvas.Left)");
+
+            var animY = new DoubleAnimation { To = y, Duration = duration, EasingFunction = ease };
+            Storyboard.SetTarget(animY, border);
+            Storyboard.SetTargetProperty(animY, "(Canvas.Top)");
+
+            var storyboard = new Storyboard();
+            storyboard.Children.Add(animX);
+            storyboard.Children.Add(animY);
+            storyboard.Begin();
+        }
+        catch
+        {
+            Canvas.SetLeft(border, x);
+            Canvas.SetTop(border, y);
+        }
     }
 
     private void Preview_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
-        var point = e.GetCurrentPoint(PreviewCanvas).Position;
         int slot = _dragSlot;
         var item = _dragItem;
         bool moved = _dragMoved;
+        // Captured before EndPreviewDrag resets them to -1. Reusing these instead of recomputing a
+        // target from the release point is what guarantees the committed order matches whatever
+        // UpdateDragReflow last showed on screen.
+        int tentativeSlot = _dragTentativeSlot;
+        int tentativeQuadrantSlot = _dragTentativeQuadrantSlot;
 
         PreviewCanvas.ReleasePointerCapture(e.Pointer);
         EndPreviewDrag();
@@ -558,7 +751,7 @@ public sealed partial class SettingsWindow : Window
             {
                 // A drag out of an empty place is not an add — it is a drag of nothing.
                 if (item is not null)
-                    MoveQuadrantItem(slot, QuadrantSlotAt(point, requireHit: false));
+                    MoveQuadrantItem(slot, tentativeQuadrantSlot);
             }
             else if (item is not null)
             {
@@ -573,10 +766,8 @@ public sealed partial class SettingsWindow : Window
 
         if (moved)
         {
-            // A drop lands wherever the pointer is, even out past the bubbles — the nearest slot
-            // is the intent, so this lookup deliberately doesn't require a direct hit.
             if (item is not null)
-                ReorderItem(item, PreviewSlotAt(point, requireHit: false));
+                ReorderItem(item, tentativeSlot);
             return;
         }
 
@@ -606,6 +797,8 @@ public sealed partial class SettingsWindow : Window
         _dragItem = null;
         _dragSlot = -1;
         _dragMoved = false;
+        _dragTentativeSlot = -1;
+        _dragTentativeQuadrantSlot = -1;
     }
 
     /// <summary>
@@ -772,7 +965,7 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// Shows <paramref name="item"/>'s name/target in the read-only <c>InfoBox</c>. Re-clicking the
     /// item already shown hides it again — the simplest "close" affordance that doesn't need a
-    /// dedicated button. This is display-only: real edits happen on the "Apps &amp; links" tab.
+    /// dedicated button. This is display-only: real edits happen on the "Elements" tab.
     /// <para>
     /// A click on a plain main-ring item is unrelated to whatever group row is currently expanded
     /// (if any), so that row is collapsed first — otherwise it kept sitting there showing a group
@@ -1297,99 +1490,65 @@ public sealed partial class SettingsWindow : Window
             : "Could not register that hotkey (maybe another app owns it).";
     }
 
+    /// <summary>
+    /// Builds the "Elements" page: every top-level item and every top-level group in one flat
+    /// two-column card grid, all cards the same width — a group's own card immediately followed by
+    /// a card for each of its children, in ring order.
+    /// <para>
+    /// A group used to be skipped entirely here — only its children were listed, folded into the
+    /// flat grid under the group's name — which meant a group with nothing in it yet (exactly what
+    /// "Add item… › Group" produces) appeared nowhere at all and read as a broken add. A later
+    /// design gave each group its own full-width section (a header plus a nested sub-grid of
+    /// children), which fixed that but made a group's own card noticeably wider than every other
+    /// element's. This is the version that keeps the first fix without the second problem: a
+    /// group gets exactly one card — same shape and width as <see cref="BuildItemRow"/>, via
+    /// <see cref="BuildGroupRow"/> — and its children are just more cards in the same shared grid
+    /// right after it, distinguished from a top-level item only by the group's name already
+    /// appearing in their own caption (<c>BuildItemRow</c>'s <c>ring</c> parameter).
+    /// </para>
+    /// </summary>
     private void RebuildItemsList()
     {
         if (ItemsList is null) return;
         ItemsList.Children.Clear();
         ItemsList.RowDefinitions.Clear();
+
         var cards = new List<Border>();
-        void AddRows(IEnumerable<RingItem> items, string ring)
+        foreach (var item in _manager.Config.Primary.Items)
         {
-            foreach (var item in items)
+            // Tools are managed from the Tools tab's own toggles, not listed here too.
+            if (item.IsTool)
+                continue;
+
+            // Nor is the built-in Tools group: it is wholly owned by the dedicated Tools tab, so
+            // showing it here too would duplicate that tab instead of listing something new.
+            if (item.IsGroup && string.Equals(
+                    item.Target, ToolCatalog.ToolsGroupTarget, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (item.IsGroup)
             {
-                // Tools are managed from the Tools tab's own toggles, not listed here too.
-                if (item.IsTool)
-                    continue;
-
-                // Groups (e.g. "Dev tools") are structure, not a flat show/hide/delete target —
-                // this list isn't the source of truth for what's arranged on the ring or how it's
-                // grouped, the Home tab's ring preview is. Recurse into a group's children (in
-                // case it holds a plain item worth listing) without listing the group itself.
-                if (item.IsGroup)
+                cards.Add(new Border
                 {
-                    AddRows(item.Children, item.DisplayName);
-                    continue;
-                }
-
-                var card = new Border { Style = (Style)Root.Resources["Card"] };
-                var row = new Grid();
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                var labels = new StackPanel();
-                labels.Children.Add(new TextBlock
-                {
-                    Text = item.DisplayName,
-                    Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
-                    VerticalAlignment = VerticalAlignment.Center,
+                    Style = (Style)Root.Resources["Card"],
+                    Child = BuildGroupRow(item),
                 });
-                labels.Children.Add(new TextBlock
+                foreach (var child in item.Children.Where(c => !c.IsTool))
+                    cards.Add(new Border
+                    {
+                        Style = (Style)Root.Resources["Card"],
+                        Child = BuildItemRow(child, item.DisplayName),
+                    });
+            }
+            else
+            {
+                cards.Add(new Border
                 {
-                    Text = $"{ring} · {item.Kind}",
-                    Style = SecondaryCaptionStyle,
+                    Style = (Style)Root.Resources["Card"],
+                    Child = BuildItemRow(item, "Home"),
                 });
-
-                var toggle = new ToggleSwitch
-                {
-                    IsOn = !item.Hidden,
-                    OnContent = "",
-                    OffContent = "",
-                    MinWidth = 0,
-                    Margin = new Thickness(12, 0, 0, 0),
-                };
-                var captured = item;
-                toggle.Toggled += (_, _) =>
-                {
-                    captured.Hidden = !toggle.IsOn;
-                    _manager.NotifyItemsChanged();
-                    RenderPreview();
-                };
-                Grid.SetColumn(toggle, 1);
-                row.Children.Add(labels);
-                row.Children.Add(toggle);
-
-                var remove = new Button
-                {
-                    Content = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D), FontSize = 14 },
-                    Width = 40,
-                    Padding = new Thickness(0),
-                    Margin = new Thickness(4, 0, 0, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
-                    BorderThickness = new Thickness(0),
-                };
-                ToolTipService.SetToolTip(remove, "Delete");
-                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(remove, "Delete");
-                remove.Click += (_, _) =>
-                {
-                    _manager.Config.Primary.Items.Remove(captured);
-                    foreach (var group in _manager.Config.Primary.Items.Where(i => i.IsGroup))
-                        group.Children.Remove(captured);
-                    _manager.NotifyItemsChanged();
-                    RebuildItemsList();
-                    RenderPreview();
-                };
-                Grid.SetColumn(remove, 2);
-                row.Children.Add(remove);
-                card.Child = row;
-                cards.Add(card);
-
-                if (item.IsGroup)
-                    AddRows(item.Children, item.DisplayName);
             }
         }
-        AddRows(_manager.Config.Primary.Items, "Home");
 
         int rowCount = (cards.Count + 1) / 2;
         for (int r = 0; r < rowCount; r++)
@@ -1400,6 +1559,250 @@ public sealed partial class SettingsWindow : Window
             Grid.SetColumn(cards[i], i % 2);
             ItemsList.Children.Add(cards[i]);
         }
+    }
+
+    /// <summary>
+    /// A top-level group's own row: the same shape <see cref="BuildItemRow"/> uses — icon, name,
+    /// a caption, a show/hide switch — so a group's card is never wider than an ungrouped item's.
+    /// Two icon buttons stand in for <c>BuildItemRow</c>'s one, an "Add item…" scoped to this
+    /// group's own children alongside the same delete every row carries — icon-only rather than a
+    /// labeled button, since a labeled "Add item…" button is what used to force this row onto its
+    /// own full-width section; a delete-sized icon button fits the same half-width card everything
+    /// else uses.
+    /// </summary>
+    private Grid BuildGroupRow(RingItem group)
+    {
+        var children = group.Children.Where(c => !c.IsTool).ToList();
+
+        var row = new Grid { ColumnSpacing = 12 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var icon = BuildItemIcon(group);
+        Grid.SetColumn(icon, 0);
+        row.Children.Add(icon);
+
+        var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        labels.Children.Add(new TextBlock
+        {
+            Text = group.DisplayName,
+            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+        });
+        labels.Children.Add(new TextBlock
+        {
+            Text = children.Count switch
+            {
+                0 => "No items yet",
+                1 => "Group · 1 item",
+                _ => $"Group · {children.Count} items",
+            },
+            Style = SecondaryCaptionStyle,
+        });
+        Grid.SetColumn(labels, 1);
+        row.Children.Add(labels);
+
+        // Same show/hide switch every other element's row carries — a group is hidden from the
+        // ring the same way a plain item is, so it needs the same control, not just its children's.
+        var toggle = new ToggleSwitch
+        {
+            IsOn = !group.Hidden,
+            OnContent = "",
+            OffContent = "",
+            MinWidth = 0,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        toggle.Toggled += (_, _) =>
+        {
+            group.Hidden = !toggle.IsOn;
+            _manager.NotifyItemsChanged();
+            RenderPreview();
+        };
+        Grid.SetColumn(toggle, 2);
+        row.Children.Add(toggle);
+
+        // Into this group's own children, not the top-level ring — and with the Group tile taken
+        // away, since the ring has no third ring to expand a group inside a group into.
+        var add = BuildRowIconButton(0xE710, "Add item…", "Add item to " + group.DisplayName);
+        add.Click += (_, _) => _manager.OpenAddItem(added =>
+        {
+            group.Children.Add(added);
+            _manager.NotifyItemsChanged();
+            RenderPreview();
+            RebuildItemsList();
+        }, group.Children, isGenericAddItem: true, allowGroups: false);
+        Grid.SetColumn(add, 3);
+        row.Children.Add(add);
+
+        var remove = BuildRowIconButton(0xE74D, "Delete", "Delete " + group.DisplayName);
+        remove.Click += (_, _) =>
+        {
+            // The whole group goes, children and all — they only exist inside it.
+            _manager.Config.Primary.Items.Remove(group);
+            _manager.NotifyItemsChanged();
+            RebuildItemsList();
+            RenderPreview();
+        };
+        Grid.SetColumn(remove, 4);
+        row.Children.Add(remove);
+
+        return row;
+    }
+
+    /// <summary>
+    /// One item's row — icon, name, where it lives and what kind it is, a show/hide switch, and a
+    /// delete. Shared by the top-level cards and by a group section's children, so both look and
+    /// behave the same.
+    /// </summary>
+    private Grid BuildItemRow(RingItem item, string ring)
+    {
+        var row = new Grid { ColumnSpacing = 12 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var icon = BuildItemIcon(item);
+        Grid.SetColumn(icon, 0);
+        row.Children.Add(icon);
+
+        var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        labels.Children.Add(new TextBlock
+        {
+            Text = item.DisplayName,
+            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+        });
+        labels.Children.Add(new TextBlock
+        {
+            Text = $"{ring} · {item.Kind}",
+            Style = SecondaryCaptionStyle,
+        });
+        Grid.SetColumn(labels, 1);
+        row.Children.Add(labels);
+
+        var toggle = new ToggleSwitch
+        {
+            IsOn = !item.Hidden,
+            OnContent = "",
+            OffContent = "",
+            MinWidth = 0,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        toggle.Toggled += (_, _) =>
+        {
+            item.Hidden = !toggle.IsOn;
+            _manager.NotifyItemsChanged();
+            RenderPreview();
+        };
+        Grid.SetColumn(toggle, 2);
+        row.Children.Add(toggle);
+
+        var remove = BuildRowIconButton(0xE74D, "Delete", "Delete " + item.DisplayName);
+        remove.Click += (_, _) =>
+        {
+            // Top level and inside a group both, since the same row builds for either.
+            _manager.Config.Primary.Items.Remove(item);
+            foreach (var group in _manager.Config.Primary.Items.Where(i => i.IsGroup))
+                group.Children.Remove(item);
+            _manager.NotifyItemsChanged();
+            RebuildItemsList();
+            RenderPreview();
+        };
+        Grid.SetColumn(remove, 3);
+        row.Children.Add(remove);
+
+        return row;
+    }
+
+    /// <summary>The borderless icon button an item row and a group row both carry — trash for
+    /// delete, "+" for a group's own scoped add.</summary>
+    private static Button BuildRowIconButton(int glyph, string tooltip, string automationName)
+    {
+        var button = new Button
+        {
+            Content = new FontIcon { Glyph = char.ConvertFromUtf32(glyph), FontSize = 14 },
+            Width = 40,
+            Padding = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+        };
+        ToolTipService.SetToolTip(button, tooltip);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, automationName);
+        return button;
+    }
+
+    /// <summary>
+    /// The small plate at the head of an item row: the item's own glyph to begin with, replaced by
+    /// its real shell / folder / favicon icon if <see cref="IconService"/> resolves one. The same
+    /// image-over-glyph pair the ring itself draws, just built imperatively here rather than bound.
+    /// A group resolves nothing (it has no target), so it simply keeps its group glyph.
+    /// </summary>
+    private FrameworkElement BuildItemIcon(RingItem item)
+    {
+        const double plate = 28;
+
+        var glyph = new FontIcon
+        {
+            Glyph = item.Glyph,
+            FontSize = 15,
+            Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        // Same non-Fluent-glyph handling the ring and the preview do — "B64" and friends are tofu
+        // boxes in the icon font.
+        if (GlyphFonts.IsTextGlyph(item.Glyph))
+            glyph.FontFamily = new FontFamily("Segoe UI");
+
+        var image = new Image
+        {
+            Width = plate - 6,
+            Height = plate - 6,
+            Stretch = Stretch.Uniform,
+            Visibility = Visibility.Collapsed,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var content = new Grid();
+        content.Children.Add(glyph);
+        content.Children.Add(image);
+
+        LoadRowIcon(item, image, glyph);
+
+        // Transparent, not a plate of its own: this row already sits inside a Card (background
+        // SwiftXCardBackgroundBrush), so the card's own fill shows straight through and the glyph
+        // just reads as part of the row. It used to paint RingBubbleBackground here — the ring
+        // dock's own opaque bubble color (solid black in Dark) — which was a copy/paste of the
+        // preview bubble styling and had nothing to do with this list; sitting on top of the
+        // translucent acrylic card it read as a stray solid-black square on every row.
+        return new Border
+        {
+            Width = plate,
+            Height = plate,
+            CornerRadius = new CornerRadius(6),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = content,
+        };
+    }
+
+    /// <summary>
+    /// Fire-and-forget icon resolution for one row. Started on the UI thread, so the continuation
+    /// comes back to it and can touch the two elements directly. A null result means "nothing
+    /// resolved, or the user picked a glyph" — the glyph already on screen is then simply left
+    /// alone.
+    /// </summary>
+    private static async void LoadRowIcon(RingItem item, Image image, FontIcon glyph)
+    {
+        var source = await IconService.LoadIconAsync(item);
+        if (source is null) return;
+        image.Source = source;
+        image.Visibility = Visibility.Visible;
+        glyph.Visibility = Visibility.Collapsed;
     }
 
     private sealed record ToolRow(

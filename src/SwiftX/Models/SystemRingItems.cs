@@ -6,7 +6,7 @@ namespace SwiftX.Models;
 /// <para>
 /// They are <em>not</em> stored in <see cref="RingProfile.Items"/>: the ring synthesizes them at
 /// render time into the last two slots. Keeping them out of the profile is what stops them
-/// showing up in Settings › Apps &amp; links as ordinary rows the user can toggle or delete, and
+/// showing up in Settings › Elements as ordinary rows the user can toggle or delete, and
 /// removes the whole class of "config saved before Close existed" repairs — there is nothing to
 /// repair when the items do not live in the config at all. <see cref="Strip"/> migrates configs
 /// written by the versions that did store them.
@@ -47,7 +47,7 @@ public static class SystemRingItems
     };
 
     /// <summary>Opens the same "Add to ring" window as the tray icon's Add entry, targeting the
-    /// same list (<c>Config.Primary.Items</c> — Settings › Apps &amp; links). That window
+    /// same list (<c>Config.Primary.Items</c> — Settings › Elements). That window
     /// itself now accepts a drag-and-drop, so this is also the entry point for "bring something in
     /// from outside" — see AddItemWindow's own drop handling.</summary>
     public static RingItem CreateAddNew() => new()

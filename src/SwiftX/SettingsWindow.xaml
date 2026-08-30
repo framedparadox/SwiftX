@@ -7,8 +7,12 @@
     xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
     Title="SwiftX Settings">
 
-    <!-- WinUI Window has no Resources; shared styles live on the root Grid. -->
-    <Grid x:Name="Root" Background="{ThemeResource SwiftXSurfaceBrush}">
+    <!-- WinUI Window has no Resources; shared styles live on the root Grid. SettingsSurfaceBrush,
+         not the shared SwiftXSurfaceBrush: AddItemWindow and the tool windows also key off
+         SwiftXSurfaceBrush and must keep its #000000 Dark value, so Settings' own lighter,
+         design-colours.md-anchored surface (#202020) lives under a Settings-exclusive name instead
+         of changing that shared one out from under them. -->
+    <Grid x:Name="Root" Background="{ThemeResource SettingsSurfaceBrush}">
         <Grid.Resources>
             <Style x:Key="Card" TargetType="Border">
                 <Setter Property="Background" Value="{ThemeResource SwiftXCardBackgroundBrush}" />
@@ -58,7 +62,7 @@
                         <FontIcon Glyph="&#xE713;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
-                <muxc:NavigationViewItem Content="Apps &amp; links" Tag="apps"
+                <muxc:NavigationViewItem Content="Elements" Tag="apps"
                                          AutomationProperties.AutomationId="SettingsNavApps">
                     <muxc:NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE71D;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
@@ -91,10 +95,13 @@
                 </muxc:NavigationViewItem>
             </muxc:NavigationView.FooterMenuItems>
 
-            <!-- Opaque, painted directly over NavigationView's own ContentGrid: that grid defaults
-                 to a translucent overlay (NavigationViewContentBackground in generic.xaml) which
-                 is not exposed as a settable property, so covering it is the only way to keep the
-                 content area a flat color instead of a tinted see-through one. -->
+            <!-- The content-area plate, painted directly over NavigationView's own ContentGrid:
+                 that grid's background is not exposed as a settable property, so covering it is
+                 the only way to control the content area's tint. Both themes are flat, opaque
+                 solid colors — in Dark this is deliberately a step lighter than the nav pane
+                 beside it so the two read as separate surfaces, in Light it is the flat near-white
+                 it has always been. Colors.xaml points NavigationViewContentBackground at the same
+                 opaque brush so nothing shows through the edges of this Grid either. -->
             <Grid Padding="32,24,32,24" Background="{ThemeResource SwiftXCanvasBrush}">
                 <!-- ==================== HOME (ring customization) ==================== -->
                 <ScrollViewer x:Name="HomePanel">
@@ -102,25 +109,40 @@
                         <TextBlock Text="Home" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,4" />
                         <TextBlock Text="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange. The corner button switches to what the hot corner opens, which is arranged the same way."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
-                        <StackPanel Orientation="Horizontal" Spacing="20" HorizontalAlignment="Left" VerticalAlignment="Top">
+                        <!-- An adaptive Grid rather than two fixed-width blocks in a horizontal
+                             StackPanel: a horizontal StackPanel never constrains its children to
+                             the space actually available, so if the ring-preview card plus a fixed
+                             336px sidebar plus the nav pane and content padding ever add up to more
+                             than the window's client width — a near-miss under some font metrics/
+                             DPI combinations — the sidebar simply got clipped at the window edge.
+                             Auto for the ring-preview card (it has a fixed pixel footprint) and a
+                             capped Star for the sidebar means the sidebar instead shrinks to
+                             whatever room is actually left, so the row can never exceed the space
+                             it's given. -->
+                        <Grid ColumnSpacing="20" VerticalAlignment="Top">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" MaxWidth="336" />
+                            </Grid.ColumnDefinitions>
+
                             <!-- The two ring-wide actions sit on the canvas itself, in the space
                                  below the ring: they act on what is drawn there, and the ring's own
                                  footprint never reaches the bottom of the canvas (it is scaled to
                                  fit well inside), so nothing is covered. -->
-                            <Border Style="{StaticResource Card}" Background="{ThemeResource SwiftXRingCanvasBrush}"
+                            <Border Grid.Column="0" Style="{StaticResource Card}" Background="{ThemeResource SwiftXRingCanvasBrush}"
                                     HorizontalAlignment="Left" VerticalAlignment="Top" Padding="8">
                                 <Grid>
                                     <Canvas x:Name="PreviewCanvas" Width="360" Height="360" />
                                     <StackPanel x:Name="CanvasActions" Orientation="Horizontal" Spacing="8"
                                                 HorizontalAlignment="Center" VerticalAlignment="Bottom"
                                                 Margin="0,0,0,4">
-                                        <Button Content="Add item…" Click="AddItem_Click" />
+                                        <Button x:Name="AddItemButton" Content="Add item…" Click="AddItem_Click" />
                                         <Button Content="Reset defaults" Click="ResetDefaults_Click" />
                                     </StackPanel>
                                 </Grid>
                             </Border>
 
-                            <StackPanel Width="336" Spacing="12">
+                            <StackPanel Grid.Column="1" Spacing="12" MinWidth="0">
                                 <Border Style="{StaticResource Card}">
                                     <Grid ColumnSpacing="12">
                                         <Grid.ColumnDefinitions>
@@ -223,8 +245,8 @@
 
                                 <!-- Read-only inspector for whatever item was last clicked, on the
                                      main ring or inside an expanded group's children row below.
-                                     No edit/save controls here — real edits happen on the "Apps &
-                                     links" tab. Hidden until something is selected. -->
+                                     No edit/save controls here — real edits happen on the "Elements"
+                                     tab. Hidden until something is selected. -->
                                 <Border x:Name="InfoBox" Style="{StaticResource Card}" Visibility="Collapsed">
                                     <StackPanel Spacing="4">
                                         <TextBlock Text="Name" Style="{StaticResource SecondaryCaption}" />
@@ -235,7 +257,7 @@
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
-                        </StackPanel>
+                        </Grid>
 
                         <!-- Revealed in place of a group bubble's own slot when it's clicked, instead
                              of replacing the whole ring view. Uses the ring-canvas grey (not the
@@ -269,7 +291,7 @@
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="Theme" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Solid black (Dark) or solid white (Light). System follows Windows."
+                                    <TextBlock Text="Frosted dark glass (Dark) or solid white (Light). System follows Windows."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <ComboBox x:Name="ThemeBox" Grid.Column="2" MinWidth="170" Width="170"
@@ -398,7 +420,7 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- ==================== APPS & LINKS ==================== -->
+                <!-- ==================== ELEMENTS ==================== -->
                 <ScrollViewer x:Name="AppsPanel" Visibility="Collapsed"
                               AutomationProperties.AutomationId="SettingsAppsPanel">
                     <StackPanel Spacing="6">
@@ -407,10 +429,10 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Apps &amp; links" Style="{ThemeResource TitleTextBlockStyle}" />
+                            <TextBlock Grid.Column="0" Text="Elements" Style="{ThemeResource TitleTextBlockStyle}" />
                             <Button Grid.Column="1" Content="Add item…" VerticalAlignment="Center" Click="AddAppItem_Click" />
                         </Grid>
-                        <TextBlock Text="Show, hide, or remove items on the ring. Settings and Close are always on the ring, so they are not listed here."
+                        <TextBlock Text="Elements are the apps, files, folders, links, and groups you've added to the ring. Show, hide, or remove items on the ring. Settings and Close are always on the ring, so they are not listed here."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" Margin="0,0,0,8" />
                         <Grid x:Name="ItemsList" ColumnSpacing="12" RowSpacing="6">
                             <Grid.ColumnDefinitions>

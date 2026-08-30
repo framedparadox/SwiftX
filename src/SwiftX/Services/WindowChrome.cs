@@ -169,11 +169,19 @@ public static class WindowChrome
     /// — single digits per channel, against the tens-to-hundreds that made the old rim obvious.
     /// </para>
     /// </summary>
-    public static void HideWindowBorder(nint hwnd, bool dark)
+    /// <param name="surfaceOverride">
+    /// A COLORREF (0x00BBGGRR) to paint the rim instead of the theme's flat <see cref="SurfaceDark"/>/
+    /// <see cref="SurfaceLight"/>, for a window whose surface is not that flat color. Settings in
+    /// Dark is the one such window: its root now resolves to a lighter, design-colours.md-anchored
+    /// surface (#202020, see SettingsSurfaceBrush in Themes/Colors.xaml) rather than the shared
+    /// #000000 every other window still uses, so painting the rim pure black would draw a hard edge
+    /// around the window instead of disappearing into it.
+    /// </param>
+    public static void HideWindowBorder(nint hwnd, bool dark, int? surfaceOverride = null)
     {
         SetFrameTheme(hwnd, dark);
 
-        int surface = dark ? SurfaceDark : SurfaceLight;
+        int surface = surfaceOverride ?? (dark ? SurfaceDark : SurfaceLight);
         NativeMethods.DwmSetWindowAttribute(
             hwnd, NativeMethods.DWMWA_BORDER_COLOR, ref surface, sizeof(int));
     }

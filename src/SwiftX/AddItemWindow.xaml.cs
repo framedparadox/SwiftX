@@ -29,13 +29,19 @@ public sealed partial class AddItemWindow : Window
 
     /// <summary>
     /// Same dialog, two names: every "Add new" reached from the ring, the tray icon, or the ring
-    /// preview itself is still adding "to the ring", but the "Apps &amp; links" tab's own "Add
-    /// item…" button is not adding to any specific ring slot, so it gets the more generic title —
-    /// see the callers of <see cref="RingManager.OpenAddItem"/>.
+    /// preview itself is still adding "to the ring", but the "Elements" tab's own "Add item…" button
+    /// is not adding to any specific ring slot, so it gets the more generic title — see the
+    /// callers of <see cref="RingManager.OpenAddItem"/>.
     /// </summary>
+    /// <param name="allowGroups">
+    /// False when the target list is a group's own children. A group inside a group would need a
+    /// third ring to land in and the ring has none (see <c>RingWindow.OnSelectAsync</c>), so the
+    /// tile that would create one is taken away rather than left to add something the ring can
+    /// never expand.
+    /// </param>
     public AddItemWindow(
         RingManager manager, Action<RingItem>? onAdded, List<RingItem> targetList,
-        bool isGenericAddItem = false)
+        bool isGenericAddItem = false, bool allowGroups = true)
     {
         _manager = manager;
         _onAdded = onAdded;
@@ -53,6 +59,9 @@ public sealed partial class AddItemWindow : Window
         // sense from a ring/corner slot that can actually hold one.
         if (isGenericAddItem)
             ToolType.Visibility = Visibility.Collapsed;
+
+        if (!allowGroups)
+            GroupType.Visibility = Visibility.Collapsed;
 
         var titleBar = new AppTitleBar("", heading);
         Grid.SetRow(titleBar, 0);
