@@ -311,6 +311,12 @@ public abstract class EditorToolPage : ToolPage
     /// </summary>
     private IReadOnlyList<ToolCommand> _boundCommands = [];
 
+    /// <summary>The bound commands paired with the button each landed in the bar — only entries
+    /// whose <see cref="ToolCommand.IsVisible"/> is non-null are worth tracking, but every command
+    /// with a button is kept here regardless, so <see cref="RefreshCommandVisibility"/> is one
+    /// simple loop rather than needing a second pass over <see cref="ToolPage.Commands"/>.</summary>
+    private readonly List<(ToolCommand Command, AppBarButton Button)> _commandButtons = new();
+
     /// <summary>Builds the command bar and keyboard accelerators from <see cref="ToolPage.Commands"/>.
     /// Call once, at the end of the derived constructor, after every field a command's lambda
     /// closes over has been assigned.</summary>
@@ -331,6 +337,7 @@ public abstract class EditorToolPage : ToolPage
         PreviewKeyDown += OnPreviewKeyDown;
 
         _commandBar.PrimaryCommands.Clear();
+        _commandButtons.Clear();
         foreach (var command in _boundCommands)
         {
             // A command carrying a control rather than an action (the formatter's indent spinner)
@@ -371,8 +378,12 @@ public abstract class EditorToolPage : ToolPage
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, command.Label);
             }
 
+            if (command.IsVisible is { } isVisible)
+                button.Visibility = isVisible() ? Visibility.Visible : Visibility.Collapsed;
+
             button.Click += (_, _) => command.Invoke();
             _commandBar.PrimaryCommands.Add(button);
+            _commandButtons.Add((command, button));
 
             if (command.Key is { } key)
             {
@@ -384,6 +395,21 @@ public abstract class EditorToolPage : ToolPage
                 };
                 KeyboardAccelerators.Add(accelerator);
             }
+        }
+    }
+
+    /// <summary>
+    /// Re-evaluates every bound command's <see cref="ToolCommand.IsVisible"/> and shows or hides
+    /// its button to match. A command with no <see cref="ToolCommand.IsVisible"/> is skipped —
+    /// its button's visibility was set once in <see cref="InitializeChrome"/> and never needs
+    /// touching again. Call whenever page state a command's visibility depends on changes.
+    /// </summary>
+    protected void RefreshCommandVisibility()
+    {
+        foreach (var (command, button) in _commandButtons)
+        {
+            if (command.IsVisible is { } isVisible)
+                button.Visibility = isVisible() ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 

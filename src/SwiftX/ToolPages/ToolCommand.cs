@@ -42,6 +42,15 @@ public sealed class ToolCommand(
     /// command whose meaning lives in its wording — Format, Minify, Convert — keeps its text.</summary>
     public bool IconOnly { get; init; }
 
+    /// <summary>
+    /// Whether this command's button belongs in the bar right now — null means always. Checked
+    /// once when the bar is built and again whenever the page calls
+    /// <see cref="EditorToolPage.RefreshCommandVisibility"/>, for a command whose relevance
+    /// depends on page state rather than being fixed for the page's lifetime (Formatter's search,
+    /// hidden until there's something to search).
+    /// </summary>
+    public Func<bool>? IsVisible { get; init; }
+
     public bool CanExecute() => canExecute?.Invoke() ?? true;
 
     public void Invoke()
@@ -72,6 +81,7 @@ public sealed class ToolCommand(
         public const string Convert = "convert";
         public const string Generate = "generate";
         public const string Advanced = "advanced";
+        public const string Search = "search";
     }
 
     /// <summary>Copy the tool's result to the clipboard. Ctrl+Shift+C.</summary>

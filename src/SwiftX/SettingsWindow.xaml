@@ -291,7 +291,7 @@
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="Theme" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Frosted dark glass (Dark), true black glass (Black), or solid white (Light). System follows Windows."
+                                    <TextBlock Text="Frosted dark glass (Dark), true black glass (Midnight), or solid white (Light). System follows Windows."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <ComboBox x:Name="ThemeBox" Grid.Column="2" MinWidth="170" Width="170"
@@ -299,7 +299,11 @@
                                           SelectionChanged="ThemeBox_SelectionChanged">
                                     <ComboBoxItem Content="Light" Tag="Light" />
                                     <ComboBoxItem Content="Dark" Tag="Dark" />
-                                    <ComboBoxItem Content="Black" Tag="Black" />
+                                    <!-- Displayed as "Midnight" — Tag stays "Black" to match the AppTheme.Black
+                                         enum member, which JsonStringEnumConverter persists by name in ring.json;
+                                         renaming the enum itself would strand every saved config that already
+                                         has "Black" written into it. -->
+                                    <ComboBoxItem Content="Midnight" Tag="Black" />
                                     <ComboBoxItem Content="System" Tag="System" />
                                 </ComboBox>
                             </Grid>

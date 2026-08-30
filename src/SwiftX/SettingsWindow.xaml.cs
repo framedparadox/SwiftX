@@ -212,10 +212,33 @@ public sealed partial class SettingsWindow : Window
 
     public void ApplyTheme()
     {
-        Root.RequestedTheme = ThemeHelper.Resolve(_manager.Config.Theme);
         ApplyBlackOverrides();
+        ForceThemeResourceRefresh(ThemeHelper.Resolve(_manager.Config.Theme));
         ApplyChromeTheme();
         RenderPreview();
+    }
+
+    /// <summary>
+    /// Assigns <see cref="Root"/>'s RequestedTheme, forcing every <c>{ThemeResource}</c> binding
+    /// under it to re-resolve even when <paramref name="target"/> is the value it's already at.
+    /// <para>
+    /// WinUI only re-walks <c>{ThemeResource}</c> lookups when RequestedTheme/ActualTheme actually
+    /// changes value — a plain edit to <see cref="Root"/>'s own Resources (see
+    /// <see cref="ApplyBlackOverrides"/>) is invisible to bindings that already resolved earlier.
+    /// Black rides on Dark's own ElementTheme and is told apart purely through that resource
+    /// override, so switching Dark &lt;-&gt; Black never changes RequestedTheme's value at all —
+    /// without the nudge below, SettingsSurfaceBrush and the rest of <see cref="BlackOverrideKeys"/>
+    /// kept showing whatever they'd resolved to before, until some unrelated theme flip (a real
+    /// Light/Dark switch, or an OS theme change under System) came along later and finally picked
+    /// the override up. That's what made switching to/from Black look like it "did nothing" at
+    /// first.
+    /// </para>
+    /// </summary>
+    private void ForceThemeResourceRefresh(ElementTheme target)
+    {
+        if (Root.RequestedTheme == target)
+            Root.RequestedTheme = target == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
+        Root.RequestedTheme = target;
     }
 
     /// <summary>

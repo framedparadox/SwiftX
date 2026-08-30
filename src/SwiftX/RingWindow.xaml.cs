@@ -455,20 +455,20 @@ public sealed partial class RingWindow : Window
 
     /// <summary>
     /// Keeps the Settings bubble's "Add new" child (see <see cref="SystemRingItems.CreateAddNew"/>)
-    /// in sync with whether there is anywhere left to add into: a full ring — all
-    /// <see cref="RingMetrics.UserSlotCount"/> user slots taken — or a full quadrant — all
-    /// <see cref="QuadrantLayout.ItemCount"/> places taken, Settings among them — both leave
-    /// nothing for it to open into, so it drops out of the flyout instead of offering an add that
-    /// cannot succeed. Recomputed on every render rather than only when items change, since which
-    /// shape is showing — ring or quadrant — is itself part of what "full" means.
+    /// in sync with whether there is anywhere left to add into. The full ring never needs this
+    /// fallback — <see cref="CurrentItems"/> already puts an "Add new" placeholder directly on
+    /// every empty user slot, which is reachable without opening Settings at all — so this only
+    /// ever fires for the quadrant, whose four places (Settings among them) have no such per-slot
+    /// placeholder of their own. Recomputed on every render since which shape is showing — ring or
+    /// quadrant — is itself part of what "room to add" means.
     /// </summary>
     private void UpdateSettingsAddNew()
     {
-        bool full = _quadrant is not null
-            ? HotCornerItems.Resolve(_manager.Config, _settingsItem).Count >= QuadrantLayout.ItemCount
-            : _manager.Config.Primary.Items.Count(i => !i.Hidden) >= RingMetrics.UserSlotCount;
-
         _settingsItem.Children.Clear();
+        if (_quadrant is not { } corner)
+            return;
+
+        bool full = HotCornerItems.Resolve(_manager.Config, _settingsItem).Count >= QuadrantLayout.ItemCount;
         if (!full)
             _settingsItem.Children.Add(SystemRingItems.CreateAddNew());
     }
@@ -482,6 +482,12 @@ public sealed partial class RingWindow : Window
             if (slot >= RingMetrics.UserSlotCount) break;
             slots.Add((item, slot++));
         }
+
+        // Fewer than UserSlotCount items leaves the rest of the ring empty — fill each remaining
+        // user slot with its own "Add new" placeholder rather than leaving a bare gap, so the ring
+        // always reads as a full circle and every empty slot is itself an obvious way to fill it.
+        while (slot < RingMetrics.UserSlotCount)
+            slots.Add((SystemRingItems.CreateAddNew(), slot++));
 
         // Always last, always present, always in the same place — see SystemRingItems.
         slots.Add((_settingsItem, RingMetrics.SlotCount - 2));
@@ -865,9 +871,11 @@ public sealed partial class RingWindow : Window
         // Only drawn when the group actually has something to expand into — the same
         // Where(!Hidden) filter ExpandFlyout itself uses, since that is what decides whether
         // hovering this bubble opens a flyout at all. Settings is the item this matters for: it is
-        // always Kind.Group, but its one child — "Add new" — drops out once the ring is full (see
-        // UpdateSettingsAddNew), and a full Settings bubble wearing an arc that promises a flyout
-        // it can no longer open would be a lie the moment you hovered it.
+        // always Kind.Group, but its one child — "Add new" — only exists on the quadrant, where it
+        // drops out once that's full too (see UpdateSettingsAddNew); on the full ring it never has
+        // one at all, since every empty user slot already carries its own "Add new" placeholder.
+        // Either way, a Settings bubble wearing an arc that promises a flyout it can no longer open
+        // would be a lie the moment you hovered it.
         Path? bump = null;
         if (item.IsGroup && !isFlyout && item.Children.Any(c => !c.Hidden))
         {
