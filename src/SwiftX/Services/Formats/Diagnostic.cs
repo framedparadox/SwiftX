@@ -1,7 +1,7 @@
 namespace SwiftX.Services.Formats;
 
 /// <summary>One validation problem, 1-based line/column so it lines up with what a text editor
-/// (and dockdev's own status bar) would show.</summary>
+/// (and SwiftX's own status bar) would show.</summary>
 public sealed record Diagnostic(int Line, int Column, string Message);
 
 /// <summary>Indent width, sort-keys and similar per-format knobs a tool page exposes.</summary>

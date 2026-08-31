@@ -21,7 +21,7 @@ using WinRT.Interop;
 namespace SwiftX;
 
 /// <summary>
-/// Settings shell patterned after Anchor: left NavigationView with Home (ring customize,
+/// Settings shell: left NavigationView with Home (ring customize,
 /// including the hot corner), General (the invoke shortcut and app-wide settings), Elements,
 /// Tools, and — pinned to the footer — Privacy and About.
 /// <para>

@@ -12,8 +12,7 @@ using WinRT.Interop;
 namespace SwiftX;
 
 /// <summary>
-/// Add-item dialog patterned after Anchor's AddNewWindow: type tiles, target/name form,
-/// solid theme chrome (no Mica).
+/// Add-item dialog: type tiles, target/name form, solid theme chrome (no Mica).
 /// </summary>
 public sealed partial class AddItemWindow : Window
 {

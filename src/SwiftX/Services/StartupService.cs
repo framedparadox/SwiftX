@@ -4,7 +4,7 @@ using Windows.ApplicationModel;
 namespace SwiftX.Services;
 
 /// <summary>
-/// Toggles "launch Anchor at sign-in", by whichever mechanism this build's packaging supports.
+/// Toggles "launch SwiftX at sign-in", by whichever mechanism this build's packaging supports.
 /// <para>
 /// <b>Unpackaged</b> (the portable zip) uses the per-user <c>Run</c> registry key — per-user
 /// (HKCU) so it needs no elevation.
@@ -42,13 +42,13 @@ public static class StartupService
     /// <summary>What the startup entry ended up as after a request to change it.</summary>
     public enum StartupState
     {
-        /// <summary>Anchor will not start at sign-in.</summary>
+        /// <summary>SwiftX will not start at sign-in.</summary>
         Disabled,
 
-        /// <summary>Anchor will start at sign-in.</summary>
+        /// <summary>SwiftX will start at sign-in.</summary>
         Enabled,
 
-        /// <summary>The user turned Anchor off in Task Manager / Settings ▸ Startup apps. Only the
+        /// <summary>The user turned SwiftX off in Task Manager / Settings ▸ Startup apps. Only the
         /// user can turn it back on there — the app is not allowed to override that choice.</summary>
         BlockedByUser,
 
@@ -56,7 +56,7 @@ public static class StartupService
         BlockedByPolicy,
     }
 
-    /// <summary>True when Anchor is currently set to start at sign-in.</summary>
+    /// <summary>True when SwiftX is currently set to start at sign-in.</summary>
     public static async Task<bool> IsEnabledAsync()
     {
         if (!PackagedRuntime.IsPackaged)

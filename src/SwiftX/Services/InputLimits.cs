@@ -88,7 +88,7 @@ public static class InputLimits
             if (!IsWithin(info.Length, limit))
                 return Failed(Loc.Format("Tool.FileTooLarge", Describe(limit)));
 
-            // Encoding spelled out rather than left to detection: every tool in dockdev works in
+            // Encoding spelled out rather than left to detection: every tool in SwiftX works in
             // UTF-8, and a byte-order mark is consumed rather than becoming a stray leading
             // character in the editor.
             var text = await File.ReadAllTextAsync(path, Encoding.UTF8);

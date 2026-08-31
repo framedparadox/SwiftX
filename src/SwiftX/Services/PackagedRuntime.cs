@@ -6,7 +6,7 @@ namespace SwiftX.Services;
 /// Whether this process is running from an MSIX package (the Microsoft Store build) or as the
 /// plain unpackaged exe (the portable zip).
 /// <para>
-/// Anchor ships both ways from one codebase, and a handful of behaviors genuinely have to differ
+/// SwiftX ships both ways from one codebase, and a handful of behaviors genuinely have to differ
 /// between them — not for cosmetic reasons but because the packaged form changes what works and
 /// what the Store permits:
 /// </para>
@@ -17,9 +17,9 @@ namespace SwiftX.Services;
 ///   equivalent is the <c>windows.startupTask</c> manifest extension driven by the
 ///   <c>StartupTask</c> API. See <see cref="StartupService"/>.</description></item>
 ///   <item><description><b>The update check.</b> The Store delivers updates itself, so a packaged
-///   Anchor pointing users at a GitHub release would be both redundant and a distribution route
+///   SwiftX pointing users at a GitHub release would be both redundant and a distribution route
 ///   outside the Store. The whole feature is therefore hidden when packaged — see
-///   <see cref="DockManager.UpdateChecksSupported"/>.</description></item>
+///   <see cref="RingManager.UpdateChecksSupported"/>.</description></item>
 /// </list>
 /// <para>
 /// Resolved once: package identity cannot change while a process runs.
@@ -27,7 +27,7 @@ namespace SwiftX.Services;
 /// </summary>
 public static class PackagedRuntime
 {
-    /// <summary>True when Anchor is running from its MSIX package (the Store build).</summary>
+    /// <summary>True when SwiftX is running from its MSIX package (the Store build).</summary>
     public static bool IsPackaged { get; } = Resolve();
 
     private static bool Resolve()
@@ -46,7 +46,7 @@ public static class PackagedRuntime
         }
         catch (Exception ex)
         {
-            // The API is missing only on pre-Windows-8 systems, which Anchor doesn't target — but
+            // The API is missing only on pre-Windows-8 systems, which SwiftX doesn't target — but
             // a failed lookup must not stop the app starting, and unpackaged is what a portable
             // copy is.
             Diag.Log($"PackagedRuntime: identity lookup failed ({ex.GetType().Name}) — assuming unpackaged");
