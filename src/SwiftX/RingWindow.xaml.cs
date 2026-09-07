@@ -455,20 +455,20 @@ public sealed partial class RingWindow : Window
 
     /// <summary>
     /// Keeps the Settings bubble's "Add new" child (see <see cref="SystemRingItems.CreateAddNew"/>)
-    /// in sync with whether there is anywhere left to add into: a full ring — all
-    /// <see cref="RingMetrics.UserSlotCount"/> user slots taken — or a full quadrant — all
-    /// <see cref="QuadrantLayout.ItemCount"/> places taken, Settings among them — both leave
-    /// nothing for it to open into, so it drops out of the flyout instead of offering an add that
-    /// cannot succeed. Recomputed on every render rather than only when items change, since which
-    /// shape is showing — ring or quadrant — is itself part of what "full" means.
+    /// in sync with whether there is anywhere left to add into. The full ring never needs this
+    /// fallback — <see cref="CurrentItems"/> already puts an "Add new" placeholder directly on
+    /// every empty user slot, which is reachable without opening Settings at all — so this only
+    /// ever fires for the quadrant, whose four places (Settings among them) have no such per-slot
+    /// placeholder of their own. Recomputed on every render since which shape is showing — ring or
+    /// quadrant — is itself part of what "room to add" means.
     /// </summary>
     private void UpdateSettingsAddNew()
     {
-        bool full = _quadrant is not null
-            ? HotCornerItems.Resolve(_manager.Config, _settingsItem).Count >= QuadrantLayout.ItemCount
-            : _manager.Config.Primary.Items.Count(i => !i.Hidden) >= RingMetrics.UserSlotCount;
-
         _settingsItem.Children.Clear();
+        if (_quadrant is not { } corner)
+            return;
+
+        bool full = HotCornerItems.Resolve(_manager.Config, _settingsItem).Count >= QuadrantLayout.ItemCount;
         if (!full)
             _settingsItem.Children.Add(SystemRingItems.CreateAddNew());
     }
@@ -482,6 +482,12 @@ public sealed partial class RingWindow : Window
             if (slot >= RingMetrics.UserSlotCount) break;
             slots.Add((item, slot++));
         }
+
+        // Fewer than UserSlotCount items leaves the rest of the ring empty — fill each remaining
+        // user slot with its own "Add new" placeholder rather than leaving a bare gap, so the ring
+        // always reads as a full circle and every empty slot is itself an obvious way to fill it.
+        while (slot < RingMetrics.UserSlotCount)
+            slots.Add((SystemRingItems.CreateAddNew(), slot++));
 
         // Always last, always present, always in the same place — see SystemRingItems.
         slots.Add((_settingsItem, RingMetrics.SlotCount - 2));
@@ -771,12 +777,19 @@ public sealed partial class RingWindow : Window
         var geometry = new PathGeometry();
         geometry.Figures.Add(figure);
 
+        // Tint-only, not a live backdrop like CreateBubble's bubbles: SystemBackdropElement only
+        // clips to a rounded rect (CornerRadius), and this wedge is a pie slice with its apex at
+        // the box's center, not its corner — genuine per-pixel blur here would need an arbitrary
+        // path clip, which isn't available without adding Win2D as a dependency for one decorative
+        // shape. Translucent tint over the real desktop (RingWindow has no window-level backdrop —
+        // see TransparentBackdrop) is the honest middle ground: no blur, but no longer flat opaque
+        // black/white either.
         return new Path
         {
             Width = box,
             Height = box,
             Data = geometry,
-            Fill = ThemeBrush("RingBubbleBackground"),
+            Fill = ThemeBrush("RingBubbleGlassTint"),
             Stroke = ThemeBrush("SwiftXBorderBrush"),
             StrokeThickness = 1,
         };
@@ -819,7 +832,33 @@ public sealed partial class RingWindow : Window
         };
         item.PropertyChanged += onItemChanged;
 
+        // Live frosted glass, bottom-most so it samples the real desktop behind the bubble.
+        // Lives inside the same Border every entrance/hover/flyout animation already targets as
+        // one Composition visual (bubble.Host below), so it travels with those animations for
+        // free — nothing in the motion code needs to know it's there.
+        var backdrop = new SystemBackdropElement
+        {
+            Width = diameter,
+            Height = diameter,
+            CornerRadius = new CornerRadius(diameter / 2),
+            SystemBackdrop = new DesktopAcrylicBackdrop(),
+        };
+
+        // The theme tint over the blur — what ApplyBubbleFill actually swaps for hover/close
+        // states, not border.Background below (left unset, or it would paint over the blur and
+        // hide it). Semi-transparent at rest so the glass shows through; hover/close still swap
+        // it to a fully opaque brush for contrast, same as the old solid-fill behavior.
+        var tint = new Border
+        {
+            Width = diameter,
+            Height = diameter,
+            CornerRadius = new CornerRadius(diameter / 2),
+            Background = ThemeBrush("RingBubbleGlassTint"),
+        };
+
         var content = new Grid();
+        content.Children.Add(backdrop);
+        content.Children.Add(tint);
         content.Children.Add(icon);
         content.Children.Add(glyph);
 
@@ -832,9 +871,11 @@ public sealed partial class RingWindow : Window
         // Only drawn when the group actually has something to expand into — the same
         // Where(!Hidden) filter ExpandFlyout itself uses, since that is what decides whether
         // hovering this bubble opens a flyout at all. Settings is the item this matters for: it is
-        // always Kind.Group, but its one child — "Add new" — drops out once the ring is full (see
-        // UpdateSettingsAddNew), and a full Settings bubble wearing an arc that promises a flyout
-        // it can no longer open would be a lie the moment you hovered it.
+        // always Kind.Group, but its one child — "Add new" — only exists on the quadrant, where it
+        // drops out once that's full too (see UpdateSettingsAddNew); on the full ring it never has
+        // one at all, since every empty user slot already carries its own "Add new" placeholder.
+        // Either way, a Settings bubble wearing an arc that promises a flyout it can no longer open
+        // would be a lie the moment you hovered it.
         Path? bump = null;
         if (item.IsGroup && !isFlyout && item.Children.Any(c => !c.Hidden))
         {
@@ -847,7 +888,6 @@ public sealed partial class RingWindow : Window
             Width = diameter,
             Height = diameter,
             CornerRadius = new CornerRadius(diameter / 2),
-            Background = ThemeBrush("RingBubbleBackground"),
             Child = content,
             Tag = item,
         };
@@ -869,6 +909,7 @@ public sealed partial class RingWindow : Window
             StaggerIndex = index,
             Glyph = glyph,
             Bump = bump,
+            TintLayer = tint,
             Detach = () => item.PropertyChanged -= onItemChanged,
         };
 
@@ -959,7 +1000,8 @@ public sealed partial class RingWindow : Window
         bool dark = requested == ElementTheme.Default
             ? ThemeHelper.IsDark(Root)
             : requested == ElementTheme.Dark;
-        return new SolidColorBrush(ThemeHelper.ColorFor(dark, key));
+        bool isBlack = _manager.Config.Theme == AppTheme.Black;
+        return new SolidColorBrush(ThemeHelper.ColorFor(dark, isBlack, key));
     }
 
     // ---- Hover name pill -----------------------------------------------------------------
@@ -1633,13 +1675,13 @@ public sealed partial class RingWindow : Window
 
         Brush background = destructive ? ThemeBrush("RingCloseHoverBackground")
             : invert ? ThemeBrush("SwiftXForegroundBrush")
-            : ThemeBrush("RingBubbleBackground");
+            : ThemeBrush("RingBubbleGlassTint");
 
         Brush foreground = destructive ? ThemeBrush("RingCloseHoverForeground")
             : invert ? ThemeBrush("RingBubbleBackground")
             : ThemeBrush("SwiftXForegroundBrush");
 
-        bubble.Host.Background = background;
+        bubble.TintLayer.Background = background;
         bubble.Glyph.Foreground = foreground;
         if (bubble.Bump is not null)
             bubble.Bump.Stroke = foreground;
@@ -1918,6 +1960,10 @@ public sealed partial class RingWindow : Window
 
         /// <summary>The has-children marker, present only on inner-ring groups.</summary>
         public Path? Bump { get; init; }
+
+        /// <summary>The glass tint layer ApplyBubbleFill swaps for hover/close states — see
+        /// CreateBubble's comment on why this, and not Host.Background, carries the fill.</summary>
+        public required Border TintLayer { get; init; }
 
         /// <summary>Scale to return to when hover ends — not 1 for an expanded group bubble.</summary>
         public float RestScale { get; set; } = 1f;

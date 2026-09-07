@@ -6,6 +6,17 @@ public enum AppTheme
 {
     Light,
     Dark,
+    /// <summary>Dark's own native ElementTheme (chrome stays dark-themed) but with SwiftX's own
+    /// surfaces swapped to a flat, higher-opacity black instead of Dark's graduated greys — see
+    /// ThemeHelper.ColorFor's isBlack overload and SettingsWindow's resource-override pair
+    /// (ApplyBlackOverrides). Never reachable via System — there is no OS-level "Black".
+    /// <para>
+    /// Shown to the user as "Midnight" (see the Theme ComboBox in SettingsWindow.xaml). The enum
+    /// member itself stays <c>Black</c> — it's persisted by name via JsonStringEnumConverter, so
+    /// renaming it would strand every config that already has "Black" written into ring.json.
+    /// </para>
+    /// </summary>
+    Black,
     System,
 }
 

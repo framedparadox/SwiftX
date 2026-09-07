@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using Microsoft.UI;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -14,19 +15,22 @@ using SwiftX.Models;
 using SwiftX.Services;
 using Windows.Foundation;
 using Windows.Storage.Pickers;
+using Windows.UI;
 using WinRT.Interop;
 
 namespace SwiftX;
 
 /// <summary>
-/// Settings shell patterned after Anchor: left NavigationView with Home (ring customize,
+/// Settings shell: left NavigationView with Home (ring customize,
 /// including the hot corner), General (the invoke shortcut and app-wide settings), Elements,
 /// Tools, and — pinned to the footer — Privacy and About.
 /// <para>
-/// Both themes are solid, opaque surfaces — no Mica / acrylic. Light is a flat white surface;
-/// Dark uses the layered, opaque plates in the Dark dictionary of <c>Themes/Colors.xaml</c>
-/// (nav pane, content canvas, cards, and the recessed "tray" areas each a deliberately different
-/// shade) so the surfaces stay visually distinct without needing a translucent backdrop.
+/// Light stays a flat, opaque white surface, unchanged. Dark sits on a real
+/// <see cref="MicaBackdrop"/> (attached below, regardless of theme — it only ever shows through
+/// Dark's brushes) under the layered, alpha-carrying plates in the Dark dictionary of
+/// <c>Themes/Colors.xaml</c> (nav pane, content canvas, cards, and the recessed "tray" areas each
+/// a deliberately different shade), so the surfaces stay visually distinct from each other while
+/// still letting Mica's own wallpaper tint read through every one of them.
 /// </para>
 /// </summary>
 public sealed partial class SettingsWindow : Window
@@ -93,6 +97,10 @@ public sealed partial class SettingsWindow : Window
         _manager = manager;
         InitializeComponent();
 
+        // Attached regardless of theme — see the class doc above for why that's fine: Light's own
+        // brushes stay fully opaque, so Mica never has anything translucent to show through there.
+        SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+
         _toolCards.CollectionChanged += ToolCards_CollectionChanged;
 
         _hwnd = WindowNative.GetWindowHandle(this);
@@ -123,6 +131,10 @@ public sealed partial class SettingsWindow : Window
         ApplyTheme();
         Root.ActualThemeChanged += (_, _) =>
         {
+            // Fires on an OS theme flip (relevant to AppTheme.System, which never resolves to
+            // Black — see ThemeHelper.Resolve) — reapplying here is a no-op whenever Black isn't
+            // selected, and keeps this in sync with ApplyTheme's own ordering if it ever isn't.
+            ApplyBlackOverrides();
             ApplyChromeTheme();
             RenderPreview();
         };
@@ -200,16 +212,80 @@ public sealed partial class SettingsWindow : Window
 
     public void ApplyTheme()
     {
-        Root.RequestedTheme = ThemeHelper.Resolve(_manager.Config.Theme);
+        ApplyBlackOverrides();
+        ForceThemeResourceRefresh(ThemeHelper.Resolve(_manager.Config.Theme));
         ApplyChromeTheme();
         RenderPreview();
+    }
+
+    /// <summary>
+    /// Assigns <see cref="Root"/>'s RequestedTheme, forcing every <c>{ThemeResource}</c> binding
+    /// under it to re-resolve even when <paramref name="target"/> is the value it's already at.
+    /// <para>
+    /// WinUI only re-walks <c>{ThemeResource}</c> lookups when RequestedTheme/ActualTheme actually
+    /// changes value — a plain edit to <see cref="Root"/>'s own Resources (see
+    /// <see cref="ApplyBlackOverrides"/>) is invisible to bindings that already resolved earlier.
+    /// Black rides on Dark's own ElementTheme and is told apart purely through that resource
+    /// override, so switching Dark &lt;-&gt; Black never changes RequestedTheme's value at all —
+    /// without the nudge below, SettingsSurfaceBrush and the rest of <see cref="BlackOverrideKeys"/>
+    /// kept showing whatever they'd resolved to before, until some unrelated theme flip (a real
+    /// Light/Dark switch, or an OS theme change under System) came along later and finally picked
+    /// the override up. That's what made switching to/from Black look like it "did nothing" at
+    /// first.
+    /// </para>
+    /// </summary>
+    private void ForceThemeResourceRefresh(ElementTheme target)
+    {
+        if (Root.RequestedTheme == target)
+            Root.RequestedTheme = target == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
+        Root.RequestedTheme = target;
+    }
+
+    /// <summary>
+    /// Black rides on Dark's own ElementTheme (see ThemeHelper.Resolve), so it can't be told apart
+    /// through a XAML ThemeDictionary the way Light/Dark are — WinUI only ever resolves
+    /// {ThemeResource} against Light/Dark/Default. Instead, when Black is selected this overrides
+    /// the same keys' resolved brush with a plain, element-local entry in Root.Resources: XAML's
+    /// {ThemeResource} lookup walks up the tree checking each level's own Resources before falling
+    /// back to the app-level ThemeDictionaries, so a same-keyed entry here shadows the Dark
+    /// dictionary's for every Card, NavigationView pane, and canvas Grid under Root — exactly the
+    /// same "closer resource wins" behavior SecondaryCaptionStyle's own {ThemeResource} already
+    /// relies on (see its comment). Removed again the moment Black is no longer selected, so
+    /// switching back to Dark/Light falls straight through to the normal dictionary.
+    /// </summary>
+    private static readonly string[] BlackOverrideKeys =
+    {
+        "SettingsSurfaceBrush", "SwiftXCanvasBrush", "SwiftXNavPaneBrush",
+        "SwiftXCardBackgroundBrush", "SwiftXRingCanvasBrush",
+        "NavigationViewDefaultPaneBackground", "NavigationViewContentBackground",
+    };
+
+    private void ApplyBlackOverrides()
+    {
+        if (_manager.Config.Theme != AppTheme.Black)
+        {
+            foreach (var key in BlackOverrideKeys)
+                Root.Resources.Remove(key);
+            return;
+        }
+
+        // One flat, higher-opacity black shared by every surface — no graduated raised/recessed
+        // steps the way Dark has them, since there is no lighter tone left to graduate through
+        // once the anchor color is already pure black. Card edges (SwiftXCardStrokeBrush, left
+        // untouched) carry the structure instead.
+        var surface = new SolidColorBrush(Color.FromArgb(0xE6, 0, 0, 0));
+        foreach (var key in BlackOverrideKeys)
+            Root.Resources[key] = surface;
     }
 
     private void ApplyChromeTheme()
     {
         bool dark = ThemeHelper.IsDark(Root);
         WindowChrome.SetTitleBarTheme(_appWindow, dark);
-        WindowChrome.HideWindowBorder(_hwnd, dark, dark ? SettingsRimColorDark : SettingsRimColorLight);
+        int rim = _manager.Config.Theme == AppTheme.Black
+            ? SettingsRimColorBlack
+            : dark ? SettingsRimColorDark : SettingsRimColorLight;
+        WindowChrome.HideWindowBorder(_hwnd, dark, rim);
     }
 
     /// <summary>
@@ -217,9 +293,11 @@ public sealed partial class SettingsWindow : Window
     /// <c>SwiftXCanvasBrush</c> in <c>Themes/Colors.xaml</c> (sample-data/design-colours.md's
     /// Surface.Base/Surface.Rim, which are the same value in both themes there), not the shared
     /// black/white every other window's rim still uses. Neutral greys, so channel order is moot.
+    /// SettingsRimColorBlack matches ApplyBlackOverrides' own flat black rather than Dark's #202020.
     /// </summary>
     private const int SettingsRimColorDark = 0x00202020;
     private const int SettingsRimColorLight = 0x00F3F3F3;
+    private const int SettingsRimColorBlack = 0x00000000;
 
     private Style SecondaryCaptionStyle => (Style)Root.Resources["SecondaryCaption"];
 
@@ -314,7 +392,7 @@ public sealed partial class SettingsWindow : Window
                 Width = bubble,
                 Height = bubble,
                 CornerRadius = new CornerRadius(bubble / 2),
-                Background = ThemeHelper.Brush(Root, "RingBubbleBackground"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "RingBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = item,
@@ -415,7 +493,7 @@ public sealed partial class SettingsWindow : Window
                 Width = previewBubble,
                 Height = previewBubble,
                 CornerRadius = new CornerRadius(previewBubble / 2),
-                Background = ThemeHelper.Brush(Root, "RingBubbleBackground"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "RingBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = item,
@@ -1067,7 +1145,7 @@ public sealed partial class SettingsWindow : Window
                 Width = GroupChildBubble,
                 Height = GroupChildBubble,
                 CornerRadius = new CornerRadius(GroupChildBubble / 2),
-                Background = ThemeHelper.Brush(Root, "RingBubbleBackground"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "RingBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = child,
