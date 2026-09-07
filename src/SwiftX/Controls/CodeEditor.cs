@@ -349,12 +349,45 @@ public sealed class CodeEditor : Grid
         RefreshGutter();
     }
 
+    /// <summary>
+    /// The number of display lines, counted off the document's own text without building the
+    /// normalised copy <see cref="Text"/> returns.
+    /// <para>
+    /// This runs on <em>every keystroke</em>, from the <c>TextChanged</c> handler, so what it
+    /// allocates is paid per character typed. Going through <see cref="Text"/> cost two full
+    /// copies of the document each time — one from <c>GetText</c> and a second from its
+    /// <c>Replace('\r', '\n')</c> — which on a multi-megabyte document is megabytes of garbage per
+    /// keypress on the UI thread, felt as typing lag. Note that
+    /// <see cref="MaxHighlightLength"/> does not bound this: it gates colouring only, while the
+    /// gutter is rebuilt for documents all the way up to <c>InputLimits.MaxTextBytes</c>.
+    /// </para>
+    /// <para>
+    /// Counting both <c>\r</c> and <c>\n</c> is what makes this exactly equivalent to counting
+    /// <c>\n</c> in <see cref="Text"/>: that property is this same string with every <c>\r</c>
+    /// rewritten to <c>\n</c>, so the two characters together are the line breaks it would have
+    /// produced. The trailing paragraph mark the document always reports is dropped the same way
+    /// <see cref="Text"/> drops it, over a span rather than a substring so nothing is allocated
+    /// for it.
+    /// </para>
+    /// </summary>
+    private int LineCount()
+    {
+        TextBox.Document.GetText(TextGetOptions.None, out var raw);
+
+        var span = raw.AsSpan();
+        if (span.Length > 0 && span[^1] == '\r')
+            span = span[..^1];
+
+        int lines = 1;
+        foreach (char c in span)
+            if (c is '\r' or '\n')
+                lines++;
+        return lines;
+    }
+
     private void RefreshGutter()
     {
-        int lines = 1;
-        foreach (char c in Text)
-            if (c == '\n')
-                lines++;
+        int lines = LineCount();
 
         if (_gutterMarkers is not { Count: > 0 } markers)
         {
@@ -390,10 +423,7 @@ public sealed class CodeEditor : Grid
         if (_gutterMarkers is not { Count: > 0 } markers || _gutter.ActualHeight <= 0)
             return;
 
-        int lines = 1;
-        foreach (char c in Text)
-            if (c == '\n')
-                lines++;
+        int lines = LineCount();
 
         double y = e.GetCurrentPoint(_gutter).Position.Y;
         int line = 1 + (int)(y / (_gutter.ActualHeight / lines));

@@ -124,7 +124,55 @@ public sealed class XmlFormat : IDataFormat
             MaxCharactersFromEntities = 1024,
             IgnoreWhitespace = true,
         });
-        return XDocument.Load(reader, LoadOptions.None);
+        var document = XDocument.Load(reader, LoadOptions.None);
+        EnsureWithinDepthLimit(document);
+        return document;
+    }
+
+    /// <summary>
+    /// The nesting ceiling, deliberately the same number as <see cref="JsonFormat"/>'s
+    /// <see cref="System.Text.Json.JsonDocumentOptions.MaxDepth"/> so the two formats refuse the
+    /// same shape of input. Real documents nest tens of levels, not hundreds.
+    /// </summary>
+    public const int MaxDepth = 256;
+
+    /// <summary>
+    /// Refuses a document nested past <see cref="MaxDepth"/>, which is §22's "never an OOM, never
+    /// a hang" contract applied to nesting rather than to length. Two separate failures made this
+    /// load-bearing rather than defensive, and both are reachable from a small input:
+    /// <list type="number">
+    /// <item><b>Stack overflow.</b> <see cref="ConvertElement"/> recurses once per level, so
+    /// Convert-to-JSON on a document a few thousand deep overflowed the stack — and a
+    /// <see cref="StackOverflowException"/> cannot be caught, so the process died outright rather
+    /// than reporting a bad document. <c>&lt;a&gt;</c> repeated 4000 times (24 KB of text) was
+    /// enough.</item>
+    /// <item><b>Out of memory.</b> Indentation is quadratic in depth — level <c>n</c> costs
+    /// <c>n</c> indent characters on every line below it — so Format on a 50000-deep document
+    /// (350 KB of text, comfortably inside <see cref="Services.InputLimits.MaxTextBytes"/>) tried
+    /// to build a multi-gigabyte string and threw <see cref="OutOfMemoryException"/>, which the
+    /// <see cref="XmlException"/> handlers around it do not catch.</item>
+    /// </list>
+    /// <para>
+    /// Enforced here, on the one shared load path, so all four public entry points
+    /// (Format/Minify/Validate/ToCanonical) inherit it. The walk is iterative on an explicit
+    /// stack: recursing to measure the nesting would be the very thing being guarded against.
+    /// </para>
+    /// </summary>
+    private static void EnsureWithinDepthLimit(XDocument document)
+    {
+        if (document.Root is null)
+            return;
+
+        var pending = new Stack<(XElement Element, int Depth)>();
+        pending.Push((document.Root, 1));
+        while (pending.Count > 0)
+        {
+            var (element, depth) = pending.Pop();
+            if (depth > MaxDepth)
+                throw new XmlException($"Document is nested more than {MaxDepth} levels deep.");
+            foreach (var child in element.Elements())
+                pending.Push((child, depth + 1));
+        }
     }
 
     private static XmlWriterSettings WriterSettings(bool indent, int indentWidth) => new()
@@ -182,8 +230,18 @@ public sealed class XmlFormat : IDataFormat
         return new ObjectNode(members);
     }
 
-    private static XElement BuildElement(string name, DataNode node)
+    /// <summary>
+    /// The write-side companion to <see cref="EnsureWithinDepthLimit"/>. Every
+    /// <see cref="DataNode"/> reaching here is produced by a <c>ToCanonical</c> that is itself
+    /// depth-capped (XML by that guard, JSON by its parser's <c>MaxDepth</c>), so this is the
+    /// belt to that pair of braces rather than the primary limit — but it is what keeps the
+    /// recursion below provably bounded no matter where a tree came from.
+    /// </summary>
+    private static XElement BuildElement(string name, DataNode node, int depth = 1)
     {
+        if (depth > MaxDepth)
+            throw new XmlException($"Document is nested more than {MaxDepth} levels deep.");
+
         var el = new XElement(name);
         switch (node)
         {
@@ -194,7 +252,7 @@ public sealed class XmlFormat : IDataFormat
                 // Reached only for an array with no member name of its own (e.g. the canonical
                 // root is itself an array); "item" is the least-surprising synthetic tag.
                 foreach (var item in arr.Items)
-                    el.Add(BuildElement("item", item));
+                    el.Add(BuildElement("item", item, depth + 1));
                 break;
             case ObjectNode obj:
                 foreach (var (key, value) in obj.Members)
@@ -205,9 +263,9 @@ public sealed class XmlFormat : IDataFormat
                         el.Value = (value as ScalarNode)?.Raw ?? "";
                     else if (value is ArrayNode valueArray)
                         foreach (var item in valueArray.Items)
-                            el.Add(BuildElement(key, item));
+                            el.Add(BuildElement(key, item, depth + 1));
                     else
-                        el.Add(BuildElement(key, value));
+                        el.Add(BuildElement(key, value, depth + 1));
                 }
                 break;
         }
