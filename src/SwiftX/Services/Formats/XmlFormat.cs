@@ -10,7 +10,7 @@ namespace SwiftX.Services.Formats;
 /// <see cref="XmlReaderSettings.DtdProcessing"/> is <see cref="DtdProcessing.Prohibit"/> and
 /// <see cref="XmlReaderSettings.XmlResolver"/> is null, which blocks both classic XXE (reading
 /// local files via an external entity) and billion-laughs expansion by refusing any DOCTYPE at
-/// all. This is enforced by <c>dockdev.Tests.Formats.XmlFormatSecurityTests</c>, not by convention.
+/// all. This is enforced by <c>SwiftX.Tests.Formats.XmlFormatSecurityTests</c>, not by convention.
 /// </summary>
 public sealed class XmlFormat : IDataFormat
 {

@@ -26,7 +26,7 @@ public sealed class ToolCommand(
     /// A stable, unlocalized handle for this command, surfaced as the command bar button's
     /// <c>AutomationId</c>. <see cref="Label"/> cannot serve: it is a translated string, so a UI
     /// test keyed on it passes in English and fails in German, and breaks outright the first time
-    /// anyone rewords a button. The ids here are the vocabulary <c>tests/dockdev.UITests</c> drives
+    /// anyone rewords a button. The ids here are the vocabulary <c>tests/SwiftX.UITests</c> drives
     /// the app with, so they are part of the contract — rename one and the table row that uses it
     /// stops finding its button.
     /// </summary>
@@ -67,7 +67,7 @@ public sealed class ToolCommand(
     private const VirtualKeyModifiers CtrlShift = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift;
 
     /// <summary>The <see cref="Id"/> values commands carry. Constants rather than loose literals so
-    /// the app and <c>tests/dockdev.UITests</c> cannot drift apart without the compiler noticing.</summary>
+    /// the app and <c>tests/SwiftX.UITests</c> cannot drift apart without the compiler noticing.</summary>
     public static class Ids
     {
         public const string Copy = "copy";

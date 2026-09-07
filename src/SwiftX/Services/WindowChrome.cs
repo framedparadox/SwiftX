@@ -37,10 +37,7 @@ public static class WindowChrome
     {
         nint current = NativeMethods.GetForegroundWindow();
         if (current == hwnd)
-        {
-            NativeMethods.SetForegroundWindow(hwnd);
             return;
-        }
 
         uint currentThread = NativeMethods.GetCurrentThreadId();
         uint foregroundThread = current == nint.Zero
@@ -141,7 +138,7 @@ public static class WindowChrome
     /// <see cref="SetFrameTheme"/>) so DWM renders the window edge / corner anti-aliasing for the
     /// right background.
     /// <para>
-    /// Used by every Anchor window. On the dock it hides a rim that would otherwise read as a
+    /// Used by every SwiftX window. On the ring it hides a rim that would otherwise read as a
     /// rectangle drawn around the rounded glass strip. On the Mica dialogs it hides the one piece
     /// of rim those windows still show: they extend their content into the title bar, so the top
     /// edge is all that is left of the frame, and anything that doesn't match the surface reads as

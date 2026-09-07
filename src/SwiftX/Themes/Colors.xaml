@@ -195,8 +195,8 @@
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
             <!-- See the matching comment in the Dark dictionary above. -->
-            <Color x:Key="SettingsSurfaceColor">#D9202020</Color>
-            <SolidColorBrush x:Key="SettingsSurfaceBrush" Color="{StaticResource SettingsSurfaceColor}"/>
+            <Color x:Key="SettingsSurfaceColor">#202020</Color>
+            <SolidColorBrush x:Key="SettingsSurfaceBrush" Color="#D9202020"/>
             <!-- Every fill below is the Dark dictionary's value verbatim (now alpha-carrying, same
                  as Dark, for the same MicaBackdrop reason) — Default is what is live in the brief
                  window before ActualTheme resolves, so any drift between the two would show up as a

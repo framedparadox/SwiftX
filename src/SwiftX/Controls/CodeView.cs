@@ -199,7 +199,7 @@ public sealed class CodeView : Grid
 /// hex for hex. They are the scheme the largest number of developers already read fluently, so a
 /// JSON document here looks like the same document in their editor: keys light blue, string values
 /// warm, numbers green, <c>true</c>/<c>false</c>/<c>null</c> blue. The previous table was GitHub's
-/// palette, which is equally defensible but meant dockdev agreed with neither the user's editor nor
+/// palette, which is equally defensible but meant SwiftX agreed with neither the user's editor nor
 /// itself.
 /// </para></summary>
 public static class SyntaxPalette

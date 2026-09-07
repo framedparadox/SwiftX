@@ -5,13 +5,13 @@ using SwiftX.Models;
 namespace SwiftX.Services;
 
 /// <summary>
-/// Registers Anchor's system-wide shortcuts with Windows and raises <see cref="Pressed"/> with the
+/// Registers SwiftX's system-wide shortcuts with Windows and raises <see cref="Pressed"/> with the
 /// id of whichever one was used. Windows delivers <c>WM_HOTKEY</c> to a window, so this rides on
 /// the same hidden <see cref="MessageWindow"/> the tray icon uses.
 /// <para>
-/// Several shortcuts can be live at once — the one that summons the docks, the one that opens
+/// Several shortcuts can be live at once — the one that summons the ring, the one that opens
 /// quick-launch search, and one per item that has been given one. Each is keyed by a caller-chosen
-/// id (see <c>DockManager</c>, which allocates them), and <c>WM_HOTKEY</c> is routed on the same
+/// id (see <c>RingManager</c>, which allocates them), and <c>WM_HOTKEY</c> is routed on the same
 /// id, which arrives in <c>wParam</c>.
 /// </para>
 /// <para>

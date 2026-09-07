@@ -19,7 +19,7 @@ public static class IconService
     // reject "no user agent" requests.
     private static readonly HttpClient Http = CreateClient();
 
-    // Alongside ring.json, so an override of Anchor's data directory takes the cache with it
+    // Alongside ring.json, so an override of SwiftX's data directory takes the cache with it
     // rather than leaving downloaded favicons in the real profile (see RingStore.DataDirectory).
     private static readonly string CacheDir = Path.Combine(RingStore.DataDirectory, "IconCache");
 
@@ -28,7 +28,7 @@ public static class IconService
         var c = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         c.DefaultRequestHeaders.TryAddWithoutValidation(
             "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Anchor/1.0");
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) SwiftX/1.0");
         return c;
     }
 

@@ -7,7 +7,7 @@ namespace SwiftX.Services.Syntax;
 /// <para>
 /// <b>Property every tokenizer must satisfy:</b> concatenating every token's span in order, plus
 /// the gaps between them, must reconstruct the input byte for byte. See
-/// <c>dockdev.Tests.Syntax.TokenizerReconstructionTests</c>.
+/// <c>SwiftX.Tests.Syntax.TokenizerReconstructionTests</c>.
 /// </para>
 /// </summary>
 public interface ITokenizer
@@ -19,7 +19,7 @@ public interface ITokenizer
     /// Tokenize only lines [<paramref name="first"/>, <paramref name="last"/>), for
     /// <c>CodeView</c>'s "visible lines only" performance tier (design doc §22). The v1
     /// implementation tokenizes the whole document (cheap relative to layout/render for the sizes
-    /// dockdev targets) and filters to the requested lines, rather than a fully resumable
+    /// SwiftX targets) and filters to the requested lines, rather than a fully resumable
     /// incremental scan — see <see cref="StateAfter"/>.
     /// </summary>
     IReadOnlyList<Token> TokenizeRange(string text, LineIndex lines, int first, int last, ScannerState entryState);

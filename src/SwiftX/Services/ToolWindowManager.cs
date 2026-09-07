@@ -48,7 +48,7 @@ public sealed class ToolWindowManager
     public IEnumerable<ToolWindowBase> AllWindows => _open.Values.SelectMany(w => w);
 
     /// <summary>Re-applies the app-wide theme to every open tool window (called by
-    /// <c>dockdevManager.SetTheme</c>).</summary>
+    /// <c>RingManager.ApplyTheme</c>).</summary>
     public void ApplyThemeToAll()
     {
         foreach (var window in AllWindows)
