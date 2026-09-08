@@ -50,12 +50,56 @@ a script that parses both XAML files and reports every `Button`/`ToggleSwitch`/`
 "probably fine" into the twelve rows of finding 12. The same script re-run after the fix reports
 clean.
 
-**Nothing here was executed.** The target is `net10.0-windows10.0.26100.0` with WinUI 3; this review
-was written on Linux with no .NET SDK, so the suite was not run and the app was not launched. Every
-change was verified by reading, by a brace/paren/bracket balance check over the stripped source of
-all 18 modified files, and by XML well-formedness checks on all five XAML files. **The tests added
-in §7 have not been executed** — running them is the reviewer's next step, and finding 15 is
-explicitly left open rather than fixed blind, for the reason in §6.3.
+### What was executed, and what was not
+
+This review was written on Linux against a `net10.0-windows10.0.26100.0` WinUI 3 target, so the
+normal `dotnet build` / `dotnet test` route is unavailable: the build reaches the Windows-only
+`XamlCompiler.exe` and stops with *"Exec format error"*. That blocks the XAML half of the build, not
+the C# half — so the C# was compiled and the tests were run, by driving Roslyn directly.
+
+**Compiled.** `dotnet restore` succeeds under `-p:EnableWindowsTargeting=true`, which puts all 209
+reference assemblies on disk — the real `Microsoft.WinUI`, `Microsoft.Windows.SDK.NET` and
+WindowsAppSDK projections, not stand-ins. `csc` was then invoked against that reference set with the
+project's own settings (`nullable:enable`, `langversion:latest`, `unsafe+`), the SDK-generated
+`GlobalUsings` and `AssemblyInfo`, and the same source generators the real build uses
+(`LibraryImportGenerator`, `WinRT.SourceGenerator`). Both assemblies compile with **zero errors**:
+the app (every file except three XAML code-behinds, see below) and the **entire** test project.
+
+That is a real semantic check, not a syntax check. It is what confirms, among other things, that
+`DataPackagePropertySet` really does convert to `IDictionary<string, object>` — the one API in this
+change set that was assumed rather than known.
+
+**Executed.** VSTest's runner is platform-gated for this TFM, but `[Fact]`/`[Theory]` are attributes
+and `Assert` is an ordinary library, so a small reflection driver discovers and invokes them. Every
+test in the project was run this way, before and after the change, from the same harness:
+
+| | Passed | Failed |
+|---|---|---|
+| Baseline (`a10b89d`, pre-change) | 247 | 7 |
+| This branch | **289** | 7 |
+
+The two failure sets are **identical, line for line** — verified by diffing them. All seven are
+pre-existing environment limits, not defects: four need DPAPI (`ProtectedData` throws
+`PlatformNotSupportedException` off Windows) and three need real Windows paths such as `C:\Windows`
+to exist. Twenty-one `[Theory]` cases use `MemberData`/`ClassData`, which the small driver does not
+enumerate; that count is identical in both runs too.
+
+So: **+42 passing cases, zero regressions.**
+
+**Not executed, and therefore not claimed:**
+
+- **The XAML markup compile.** `XamlCompiler.exe` cannot run here, so the four `.xaml` files were
+  checked only for XML well-formedness. The attached properties they now set are confirmed to exist
+  by the C# compile, but `AutomationProperties.LabeledBy="{Binding ElementName=TargetLabel}"` in
+  `AddItemWindow.xaml` is markup that no compiler has seen. It is a standard WinUI idiom; it is
+  still the one edit in this change set with no mechanical check behind it.
+- **Three XAML code-behinds** — `App.xaml.cs`, `SettingsWindow.xaml.cs`, `AddItemWindow.xaml.cs` —
+  were replaced with stubs, since compiling them needs generated halves that only the XAML compiler
+  produces. **No C# changed by this review lives in them**; their `.xaml` files changed, their
+  `.cs` files did not. `RingWindow.xaml.cs`, which *was* changed, is compiled for real against a
+  hand-written stand-in for its generated half.
+- **Anything visual.** The app was never launched, no window was rendered, and no screenshot was
+  taken. This is why finding 15 is left open (§6.3) rather than fixed blind.
 
 Sweeps that came back clean, recorded as evidence of absence:
 
@@ -477,6 +521,10 @@ one:
 asserting directly but have no business on the public surface: `IconService.ReadBoundedAsync` and
 `HotCornerWatcher.ContainsPoint`.
 
+All four files were compiled and run (§2): **42 cases, all passing**, against a baseline where the
+same harness reports 247 passed / 7 failed and this branch reports 289 passed / **the same** 7
+failed.
+
 **Not covered, and why:** `Diag`'s 4 MB truncation. Exercising it means driving roughly 70 000
 append-and-close cycles through the file, which is tens of seconds for one assertion about a
 constant. The guard is a single comparison in `Log`; it is reviewed, not tested.
@@ -488,8 +536,11 @@ constant. The guard is a single comparison in `Log`; it is reviewed, not tested.
 1. **High Contrast on the ring** (§6.3) — the largest remaining standards gap. Needs a screen.
 2. **Keyboard and invoke support on the ring** (§6.2) — the largest remaining accessibility gap.
    Naming the bubbles is a floor, not a fix.
-3. **Run the suite** — nothing in this review was executed. The tests in §7 are written against the
-   code as changed but have never been run.
+3. **Run the suite on Windows.** It has been run here (§2: 289 passed, 7 environment-only failures,
+   identical to baseline), but through a reflection driver on Linux. That leaves three things
+   unproven: the XAML markup compile, the seven tests that need DPAPI and real Windows paths, and
+   the 21 `MemberData` cases the driver does not enumerate. A single `dotnet test` on Windows
+   closes all three.
 4. **`App.UnhandledException` swallows everything** — carried over from the previous review's §8.4,
    still unaddressed, still worth a severity distinction.
 5. **Correct the §9 compliance matrix** (§6.6), and treat its remaining rows as unverified until
