@@ -7,7 +7,11 @@
     <Grid x:Name="Root" Background="Transparent" KeyDown="Root_KeyDown">
         <!-- The window spans the whole work area and the ring is positioned inside the canvas, so
              the canvas must sit at the origin rather than being centered by the Grid. -->
+        <!-- Named for Narrator: without it the ring is an anonymous canvas, so a screen reader
+             announces nothing at all for the surface the bubbles inside it live on. The bubbles
+             get their own names in CreateBubble (see NameForNarrator). -->
         <Canvas x:Name="RingCanvas" Background="Transparent"
+                AutomationProperties.Name="SwiftX ring"
                 HorizontalAlignment="Left" VerticalAlignment="Top"
                 PointerPressed="RingCanvas_PointerPressed"
                 PointerMoved="RingCanvas_PointerMoved"

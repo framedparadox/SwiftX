@@ -74,6 +74,10 @@ public sealed class HotCornerWatcher : IDisposable
         _corner = corner;
         _enteredAt = null;
         _armed = true;
+        // Reconfiguration is a good moment to re-resolve the display. A zero-extent rectangle can
+        // contain no point, so this forces the next poll to miss regardless of the clock.
+        _cachedBounds = default;
+        _boundsCachedAt = 0;
 
         if (enabled)
             Start();
@@ -129,11 +133,7 @@ public sealed class HotCornerWatcher : IDisposable
         if (!NativeMethods.GetCursorPos(out var cursor))
             return;
 
-        // The corner of the display the pointer is on, so each monitor has its own hot corner —
-        // OuterBounds, not WorkArea: the corner of the screen is where the pointer stops, taskbar
-        // or not.
-        var bounds = DisplayArea.GetFromPoint(
-            new PointInt32(cursor.X, cursor.Y), DisplayAreaFallback.Nearest).OuterBounds;
+        var bounds = BoundsFor(cursor.X, cursor.Y);
 
         bool inside = HotCornerZone.Contains(
             _corner, cursor.X, cursor.Y, bounds.X, bounds.Y, bounds.Width, bounds.Height);
@@ -170,6 +170,48 @@ public sealed class HotCornerWatcher : IDisposable
         _enteredAt = null;
         Triggered?.Invoke();
     }
+
+    /// <summary>
+    /// The screen bounds of the display the pointer is on, so each monitor has its own hot corner
+    /// — OuterBounds, not WorkArea: the corner of the screen is where the pointer stops, taskbar
+    /// or not.
+    /// <para>
+    /// Memoized, because <see cref="Poll"/> runs twenty times a second for as long as SwiftX is
+    /// in the tray — which is the default — and <see cref="DisplayArea.GetFromPoint"/> is a WinRT
+    /// activation returning a fresh object each time. Resolving it per tick meant a COM call and
+    /// an allocation every 50 ms, forever, to re-derive a rectangle that only changes when the
+    /// pointer crosses to another monitor or the user reconfigures their displays. Both of those
+    /// are handled: leaving the cached rectangle re-resolves immediately, and the entry expires
+    /// after <see cref="BoundsCacheMilliseconds"/> so a resolution change under a stationary
+    /// pointer cannot strand the corner at the old pixel for longer than that.
+    /// </para>
+    /// </summary>
+    private RectInt32 BoundsFor(int x, int y)
+    {
+        long now = Environment.TickCount64;
+        if (now - _boundsCachedAt < BoundsCacheMilliseconds && ContainsPoint(_cachedBounds, x, y))
+            return _cachedBounds;
+
+        _cachedBounds = DisplayArea.GetFromPoint(
+            new PointInt32(x, y), DisplayAreaFallback.Nearest).OuterBounds;
+        _boundsCachedAt = now;
+        return _cachedBounds;
+    }
+
+    /// <summary>How long a resolved display rectangle is reused for. Two orders of magnitude
+    /// above the poll interval, and short enough that a display change is picked up well within
+    /// the time it takes a user to notice one.</summary>
+    private const long BoundsCacheMilliseconds = 2000;
+
+    private RectInt32 _cachedBounds;
+    private long _boundsCachedAt;
+
+    /// <summary>Half-open on the right and bottom edges, matching how Windows lays monitors out:
+    /// a rectangle's last row and column belong to the neighbour that starts there.</summary>
+    internal static bool ContainsPoint(RectInt32 r, int x, int y) =>
+        r.Width > 0 && r.Height > 0 &&
+        x >= r.X && x < r.X + r.Width &&
+        y >= r.Y && y < r.Y + r.Height;
 
     private static bool IsAnyMouseButtonDown() =>
         IsDown(NativeMethods.VK_LBUTTON) || IsDown(NativeMethods.VK_RBUTTON) || IsDown(NativeMethods.VK_MBUTTON);

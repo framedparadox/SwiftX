@@ -85,11 +85,30 @@ public static class RingStore
         }
     }
 
+    /// <summary>
+    /// Reads a configuration the user picked from anywhere on disk, or null — "keep what you
+    /// had" — for anything that isn't one.
+    /// <para>
+    /// The read is bounded by <see cref="InputLimits.MaxConfigBytes"/> from the file's metadata
+    /// before a byte is loaded. Import accepts any path a picker returns, so the guard is not
+    /// against a large configuration (a configuration is kilobytes) but against a file that is
+    /// not a configuration at all: <c>File.ReadAllText</c> on a mis-picked disk image is an
+    /// <see cref="OutOfMemoryException"/> thrown out of a settings command, which is precisely
+    /// the failure §22 says must never happen.
+    /// </para>
+    /// </summary>
     public static AppConfig? ImportFrom(string path)
     {
         try
         {
-            var config = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(path), Options);
+            var read = InputLimits.ReadText(path, InputLimits.MaxConfigBytes);
+            if (!read.Ok)
+            {
+                Diag.Log($"RingStore.ImportFrom('{path}') refused: {read.Error}");
+                return null;
+            }
+
+            var config = JsonSerializer.Deserialize<AppConfig>(read.Text, Options);
             if (config is null)
                 return null;
             if (config.Rings.Count == 0)

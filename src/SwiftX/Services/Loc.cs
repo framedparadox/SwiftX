@@ -60,7 +60,7 @@ public static class Loc
         ["Format.Auto"] = "Auto",
         ["SecureValues.Heading"] = "Your saved values",
         ["SecureValues.InfoLabel"] = "About secure values",
-        ["SecureValues.Blurb"] = "Every key and value you save here is encrypted at rest with Windows DPAPI, tied to your Windows account, and never leaves this PC. Values stay masked on screen until you copy one — Copy always places the real secret on the clipboard.",
+        ["SecureValues.Blurb"] = "Every key and value you save here is encrypted at rest with Windows DPAPI, tied to your Windows account, and never leaves this PC. Values stay masked on screen until you copy one — Copy places the real secret on the clipboard, kept out of clipboard history (Win+V) and never synced to your other devices.",
         ["SecureValues.Add"] = "Add",
         ["SecureValues.Key"] = "Key",
         ["SecureValues.Value"] = "Value",

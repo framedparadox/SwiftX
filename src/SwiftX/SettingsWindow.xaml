@@ -157,6 +157,7 @@
                                                    VerticalAlignment="Center" />
                                         <ComboBox x:Name="ItemSizeBox" Grid.Column="2" MinWidth="0" Width="110"
                                                   VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                  AutomationProperties.Name="Item size"
                                                   SelectionChanged="ItemSizeBox_SelectionChanged">
                                             <ComboBoxItem Content="Small" Tag="Small" />
                                             <ComboBoxItem Content="Medium" Tag="Medium" />
@@ -179,6 +180,7 @@
                                                    VerticalAlignment="Center" />
                                         <Slider x:Name="RadiusSlider" Grid.Column="2" MinWidth="130" Width="130"
                                                 VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                AutomationProperties.Name="Ring radius"
                                                 Minimum="80" Maximum="220" StepFrequency="5" TickFrequency="20"
                                                 ValueChanged="RadiusSlider_ValueChanged" />
                                     </Grid>
@@ -213,6 +215,7 @@
                                                    VerticalAlignment="Center" />
                                         <ToggleSwitch x:Name="HotCornerEnabledToggle" Grid.Row="0" Grid.Column="2"
                                                       OnContent="" OffContent="" MinWidth="0"
+                                                      AutomationProperties.Name="Hot corner"
                                                       VerticalAlignment="Center" HorizontalAlignment="Right"
                                                       AutomationProperties.AutomationId="SettingsHotCornerToggle"
                                                       Toggled="HotCornerEnabled_Toggled" />
@@ -222,6 +225,7 @@
                                                     Margin="0,10,0,0">
                                             <ComboBox x:Name="HotCornerBox" MinWidth="0" Width="112"
                                                       VerticalAlignment="Center"
+                                                      AutomationProperties.Name="Hot corner position"
                                                       AutomationProperties.AutomationId="SettingsHotCornerBox"
                                                       SelectionChanged="HotCornerBox_SelectionChanged">
                                                 <ComboBoxItem Content="Top left" Tag="TopLeft" />
@@ -296,6 +300,7 @@
                                 </StackPanel>
                                 <ComboBox x:Name="ThemeBox" Grid.Column="2" MinWidth="170" Width="170"
                                           VerticalAlignment="Center" HorizontalAlignment="Right"
+                                          AutomationProperties.Name="Theme"
                                           SelectionChanged="ThemeBox_SelectionChanged">
                                     <ComboBoxItem Content="Light" Tag="Light" />
                                     <ComboBoxItem Content="Dark" Tag="Dark" />
@@ -325,6 +330,7 @@
                                 </StackPanel>
                                 <ComboBox x:Name="HoverStyleBox" Grid.Column="2" MinWidth="170" Width="170"
                                           VerticalAlignment="Center" HorizontalAlignment="Right"
+                                          AutomationProperties.Name="Hover style"
                                           SelectionChanged="HoverStyleBox_SelectionChanged">
                                     <ComboBoxItem Content="Invert" Tag="Invert" />
                                     <ComboBoxItem Content="Zoom" Tag="Zoom" />
@@ -355,6 +361,7 @@
                                                                   VerticalAlignment="Center" />
                                     <ToggleSwitch x:Name="HotkeyEnabledToggle"
                                                   OnContent="" OffContent="" MinWidth="0"
+                                                  AutomationProperties.Name="Keyboard shortcut"
                                                   VerticalAlignment="Center"
                                                   Toggled="HotkeyEnabled_Toggled" />
                                 </StackPanel>
@@ -377,6 +384,7 @@
                                 </StackPanel>
                                 <ToggleSwitch x:Name="StartupToggle" Grid.Column="2"
                                               OnContent="" OffContent="" MinWidth="0"
+                                              AutomationProperties.Name="Start with Windows"
                                               HorizontalAlignment="Right"
                                               Toggled="StartupToggle_Toggled" />
                             </Grid>

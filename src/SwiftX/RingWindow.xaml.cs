@@ -599,16 +599,79 @@ public sealed partial class RingWindow : Window
         WindowChrome.SetEllipticHitRegions(_hwnd, scale, regions);
     }
 
+    /// <summary>
+    /// Gives a bubble an accessible name and hides the decoration inside it from Narrator.
+    /// <para>
+    /// The ring is drawn as bare <see cref="Border"/> elements on a <see cref="Canvas"/> with
+    /// pointer handlers, which is why it needs this: a Border is not a control, so nothing here
+    /// carried a name, and a screen reader saw an unnamed canvas where the whole launcher is.
+    /// Naming each bubble after the item it launches is what lets Narrator's scan and touch modes
+    /// report what is on the ring. It does not make the ring keyboard-operable — that needs real
+    /// invokable peers and arrow navigation, which is a feature rather than a fix, and is recorded
+    /// as such in the review — but a surface that cannot be read at all is the worse of the two
+    /// problems and this is the one that is safe to fix without touching input handling.
+    /// </para>
+    /// <para>
+    /// The children are pushed to the raw view deliberately. The glass, the tint and the group arc
+    /// are decoration, and the icon and glyph restate the name — a <c>FontIcon</c> in particular
+    /// carries a private-use codepoint, which is not something to read out.
+    /// </para>
+    /// </summary>
+    private static void NameForNarrator(Border host, RingItem item)
+    {
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            host, string.IsNullOrWhiteSpace(item.DisplayName) ? item.Kind.ToString() : item.DisplayName);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+            host, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Content);
+
+        if (host.Child is Panel panel)
+        {
+            foreach (var child in panel.Children)
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+                    child, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        }
+    }
+
+    /// <summary>
+    /// Resolves an item's icon, unless the picture it already has was resolved from exactly the
+    /// same inputs.
+    /// <para>
+    /// The skip is what makes a summon cheap. <see cref="RenderCurrent"/> fires one of these per
+    /// item, and it runs on every summon, every theme change and every settings save — while
+    /// resolving is not cheap at all: an app or file goes through the shell's jumbo image list,
+    /// <c>GetDIBits</c>, a PNG encode and a XAML decode, and a web link re-reads and re-decodes
+    /// its cached favicon. That is ten of those on every appearance of a window whose entire
+    /// value is appearing instantly, to arrive back at the picture already on screen.
+    /// <see cref="RingItem"/> instances are the user's own config objects and outlive any render,
+    /// so the previous answer is still there to reuse.
+    /// </para>
+    /// <para>
+    /// A failed resolution is not cached — <see cref="RingItem.IconImage"/> stays null and the
+    /// next render tries again, which is what lets a favicon that missed on the first summon
+    /// (no connectivity yet) appear on a later one.
+    /// </para>
+    /// <para>
+    /// The key doubles as the staleness guard the previous <c>Target</c> comparison provided, and
+    /// covers more than it did: editing <see cref="RingItem.CustomIconPath"/> or
+    /// <see cref="RingItem.CustomGlyph"/> also invalidates, so a slow resolution that lands after
+    /// an edit is discarded rather than painted over the newer one. Assigning a null result on a
+    /// changed key is deliberate — it clears a bitmap the item is no longer entitled to, which is
+    /// what lets a glyph chosen for an item that previously showed a shell icon actually appear.
+    /// </para>
+    /// </summary>
     private static async Task ResolveIconAsync(RingItem ringItem)
     {
-        // Every render fires one of these per item, unconditionally and with no de-dup — if the
-        // item's Target is edited while a slow resolution (e.g. a favicon fetch) for the old
-        // Target is still in flight, that stale result must not overwrite whatever the new
-        // Target already resolved to.
-        string targetAtStart = ringItem.Target;
+        string key = ringItem.IconKey;
+        if (ringItem.IconImage is not null && ringItem.IconSignature == key)
+            return;
+
         var src = await IconService.LoadIconAsync(ringItem);
-        if (src is not null && ringItem.Target == targetAtStart)
-            ringItem.IconImage = src;
+
+        if (ringItem.IconKey != key)
+            return; // edited mid-flight; the resolution for the newer key owns the result
+
+        ringItem.IconSignature = key;
+        ringItem.IconImage = src;
     }
 
     /// <summary>
@@ -893,6 +956,8 @@ public sealed partial class RingWindow : Window
         };
         Canvas.SetLeft(border, _cx + restX - diameter / 2);
         Canvas.SetTop(border, _cy + restY - diameter / 2);
+
+        NameForNarrator(border, item);
 
         var bubble = new BubbleView
         {

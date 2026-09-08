@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using SwiftX.Interop;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -294,7 +295,14 @@ public static class WindowChrome
             NativeMethods.DeleteObject(ellipse);
         }
 
-        // SetWindowRgn takes ownership of the region handle.
-        NativeMethods.SetWindowRgn(hwnd, combined, true);
+        // SetWindowRgn takes ownership of the region handle — but only when it succeeds. On
+        // failure the caller still owns it, and this runs on every render and every hover pill,
+        // so a handle dropped here would leak GDI objects for as long as the ring is used. The
+        // process-wide GDI limit is 10 000.
+        if (NativeMethods.SetWindowRgn(hwnd, combined, true) == 0)
+        {
+            Diag.Log($"WindowChrome: SetWindowRgn failed ({Marshal.GetLastWin32Error()})");
+            NativeMethods.DeleteObject(combined);
+        }
     }
 }
