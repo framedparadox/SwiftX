@@ -100,7 +100,7 @@ public sealed class SecureValuesPage : EditorToolPage
         var flyout = BuildBubbleFlyout(Loc.Get("SecureValues.Blurb"));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, Loc.Get("SecureValues.InfoLabel"));
         button.Click += (_, _) => flyout.ShowAt(button);
-        ApplyHoverColors(button, HoverKind.Accent);
+        ApplyHoverIconColor(button, HoverAccent.Accent);
         return button;
     }
 
@@ -381,11 +381,11 @@ public sealed class SecureValuesPage : EditorToolPage
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(valueBox, Loc.Get("SecureValues.Value"));
 
-        var copyButton = IconButton(CopyGlyph, Loc.Get("SecureValues.Copy"), HoverKind.Copy);
+        var copyButton = IconButton(CopyGlyph, Loc.Get("SecureValues.Copy"), HoverAccent.Copy);
         copyButton.IsEnabled = !string.IsNullOrEmpty(entry.Value);
 
         var editButton = IconButton(EditGlyph, Loc.Get("SecureValues.Edit"));
-        var deleteButton = IconButton(DeleteGlyph, Loc.Get("SecureValues.Delete"), HoverKind.Delete);
+        var deleteButton = IconButton(DeleteGlyph, Loc.Get("SecureValues.Delete"), HoverAccent.Delete);
 
         bool Commit()
         {
@@ -506,11 +506,11 @@ public sealed class SecureValuesPage : EditorToolPage
         ToolTipService.SetToolTip(button, label);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
         button.Click += (_, _) => action();
-        ApplyHoverColors(button, HoverKind.Accent);
+        ApplyHoverIconColor(button, HoverAccent.Accent);
         return button;
     }
 
-    private static Button IconButton(int codepoint, string label, HoverKind hover = HoverKind.Accent)
+    private static Button IconButton(int codepoint, string label, HoverAccent hover = HoverAccent.Accent)
     {
         var button = new Button
         {
@@ -522,49 +522,8 @@ public sealed class SecureValuesPage : EditorToolPage
         };
         ToolTipService.SetToolTip(button, label);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
-        ApplyHoverColors(button, hover);
+        ApplyHoverIconColor(button, hover);
         return button;
-    }
-
-    /// <summary>Which hover tint <see cref="ApplyHoverColors"/> paints a button with — Delete's
-    /// destructive red and Copy's informational blue call it out from the rest of the row, every
-    /// other action (Edit, Refresh, Save, the info button) gets the app's own accent instead of
-    /// WinUI's default neutral-grey hover.</summary>
-    private enum HoverKind { Accent, Copy, Delete }
-
-    /// <summary>
-    /// Shadows the framework keys the stock <see cref="Button"/> style reads its pointer-over/
-    /// pressed background and foreground from (<c>ButtonBackgroundPointerOver</c> etc.) on this one
-    /// button instance — the same "closer resource wins" override <c>SettingsWindow</c>'s own
-    /// accent-colour and hot-corner buttons already rely on (see
-    /// <c>SettingsWindow.xaml.cs</c>'s <c>ApplyAccentColorOverride</c>/<c>AddHotCornerButton</c>),
-    /// rather than replacing the whole control template. <see cref="Microsoft.UI.Colors.White"/> is
-    /// the fallback foreground because every one of these fills (critical red, SwiftX's own
-    /// communication blue, the system accent) is dark/saturated enough for white content — the
-    /// framework's own accent-styled buttons pair <c>AccentFillColorDefaultBrush</c> with white text
-    /// the same way.
-    /// </summary>
-    private static void ApplyHoverColors(Button button, HoverKind hover)
-    {
-        // Copy reads from SwiftX's own SwiftXCopyHoverBrush (Themes/Colors.xaml), not WinUI's
-        // SystemFillColorAttentionBrush — that framework key is itself just a tint of the system
-        // accent colour, so on a machine whose Windows accent isn't blue, Copy's hover would have
-        // silently matched every other button's instead of standing apart from Delete's fixed red.
-        var key = hover switch
-        {
-            HoverKind.Delete => "SystemFillColorCriticalBrush",
-            HoverKind.Copy => "SwiftXCopyHoverBrush",
-            _ => "AccentFillColorDefaultBrush",
-        };
-        var fill = ThemeBrush(key);
-        if (fill is null)
-            return;
-        var foreground = ThemeBrush("TextOnAccentFillColorPrimaryBrush")
-            ?? new SolidColorBrush(Microsoft.UI.Colors.White);
-        button.Resources["ButtonBackgroundPointerOver"] = fill;
-        button.Resources["ButtonBackgroundPressed"] = fill;
-        button.Resources["ButtonForegroundPointerOver"] = foreground;
-        button.Resources["ButtonForegroundPressed"] = foreground;
     }
 
     private static Brush? ThemeBrush(string key) =>

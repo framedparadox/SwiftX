@@ -197,6 +197,7 @@ public sealed class FormatterPage : EditorToolPage
         ToolTipService.SetToolTip(_saveButton, Loc.Get("Tool.Save"));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_saveButton, Loc.Get("Tool.Save"));
         _saveButton.Click += (_, _) => _ = SaveToFileAsync();
+        ApplyHoverIconColor(_saveButton, HoverAccent.Accent);
 
         _headerActions = new StackPanel
         {
@@ -616,6 +617,7 @@ public sealed class FormatterPage : EditorToolPage
         };
         ToolTipService.SetToolTip(button, tooltip);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, tooltip);
+        ApplyHoverIconColor(button, HoverAccent.Accent);
         return button;
     }
 
@@ -984,6 +986,7 @@ public sealed class FormatterPage : EditorToolPage
             icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
 
         button.Click += (_, _) => action();
+        ApplyHoverIconColor(button, HoverAccent.Accent);
         return button;
     }
 
