@@ -12,8 +12,7 @@ using WinRT.Interop;
 namespace SwiftX;
 
 /// <summary>
-/// Add-item dialog patterned after Anchor's AddNewWindow: type tiles, target/name form,
-/// solid theme chrome (no Mica).
+/// Add-item dialog: type tiles, target/name form, solid theme chrome (no Mica).
 /// </summary>
 public sealed partial class AddItemWindow : Window
 {
@@ -29,13 +28,19 @@ public sealed partial class AddItemWindow : Window
 
     /// <summary>
     /// Same dialog, two names: every "Add new" reached from the ring, the tray icon, or the ring
-    /// preview itself is still adding "to the ring", but the "Apps &amp; links" tab's own "Add
-    /// item…" button is not adding to any specific ring slot, so it gets the more generic title —
-    /// see the callers of <see cref="RingManager.OpenAddItem"/>.
+    /// preview itself is still adding "to the ring", but the "Elements" tab's own "Add item…" button
+    /// is not adding to any specific ring slot, so it gets the more generic title — see the
+    /// callers of <see cref="RingManager.OpenAddItem"/>.
     /// </summary>
+    /// <param name="allowGroups">
+    /// False when the target list is a group's own children. A group inside a group would need a
+    /// third ring to land in and the ring has none (see <c>RingWindow.OnSelectAsync</c>), so the
+    /// tile that would create one is taken away rather than left to add something the ring can
+    /// never expand.
+    /// </param>
     public AddItemWindow(
         RingManager manager, Action<RingItem>? onAdded, List<RingItem> targetList,
-        bool isGenericAddItem = false)
+        bool isGenericAddItem = false, bool allowGroups = true)
     {
         _manager = manager;
         _onAdded = onAdded;
@@ -54,7 +59,10 @@ public sealed partial class AddItemWindow : Window
         if (isGenericAddItem)
             ToolType.Visibility = Visibility.Collapsed;
 
-        var titleBar = new AppTitleBar("", heading);
+        if (!allowGroups)
+            GroupType.Visibility = Visibility.Collapsed;
+
+        var titleBar = AppTitleBar.WithAppMark(heading);
         Grid.SetRow(titleBar, 0);
         Root.Children.Insert(0, titleBar);
 

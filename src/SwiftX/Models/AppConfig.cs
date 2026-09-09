@@ -6,6 +6,17 @@ public enum AppTheme
 {
     Light,
     Dark,
+    /// <summary>Dark's own native ElementTheme (chrome stays dark-themed) but with SwiftX's own
+    /// surfaces swapped to a flat, higher-opacity black instead of Dark's graduated greys — see
+    /// ThemeHelper.ColorFor's isBlack overload and SettingsWindow's resource-override pair
+    /// (ApplyBlackOverrides). Never reachable via System — there is no OS-level "Black".
+    /// <para>
+    /// Shown to the user as "Midnight" (see the Theme ComboBox in SettingsWindow.xaml). The enum
+    /// member itself stays <c>Black</c> — it's persisted by name via JsonStringEnumConverter, so
+    /// renaming it would strand every config that already has "Black" written into ring.json.
+    /// </para>
+    /// </summary>
+    Black,
     System,
 }
 
@@ -64,6 +75,30 @@ public sealed class AppConfig
     public bool ReuseToolWindows { get; set; } = true;
 
     /// <summary>
+    /// The star rating from Settings' Feedback &amp; Support page, 1-5, or 0 for "not rated yet".
+    /// <para>
+    /// Local-only and inert: nothing reads this but the control that wrote it, and there is no code
+    /// path anywhere in the app that transmits it. It is persisted purely so the page can show the
+    /// user what they already said instead of asking again every time Settings opens — the same
+    /// reason every other field here is persisted. Settings' Privacy page states this explicitly;
+    /// if that ever stops being true, that page has to change with it.
+    /// </para>
+    /// </summary>
+    public int FeedbackRating { get; set; }
+
+    /// <summary>
+    /// A custom Settings accent colour as "#RRGGBB", or null to use the built-in default — the
+    /// same teal already used for the Feedback &amp; Support links (Themes/Colors.xaml's
+    /// SettingsAccentBrush). Set from General's Accent colour picker; applied by
+    /// SettingsWindow.ApplyAccentColorOverride, which shadows the handful of WinUI brush keys that
+    /// drive Settings' toggles, radio buttons, the Radius slider, the rating stars, the nav
+    /// selection indicator, and the Feedback links — all of it Settings-only, the same way the
+    /// rest of this file's appearance fields never reach the ring, AddItemWindow, or the tool
+    /// windows.
+    /// </summary>
+    public string? AccentColorHex { get; set; }
+
+    /// <summary>
     /// Whether <paramref name="kind"/> is one of the tools the ring is currently set to show —
     /// the read side of the Tools page's switches, which <see cref="ToolCatalog.ApplyVisibility"/>
     /// turns into the <see cref="RingItem.Hidden"/> flag on the ring's own tool items.
@@ -107,5 +142,7 @@ public sealed class AppConfig
         ShowBase64Tool = other.ShowBase64Tool;
         ShowCertificateTool = other.ShowCertificateTool;
         ReuseToolWindows = other.ReuseToolWindows;
+        FeedbackRating = other.FeedbackRating;
+        AccentColorHex = other.AccentColorHex;
     }
 }

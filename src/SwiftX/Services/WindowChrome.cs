@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using SwiftX.Interop;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -37,10 +38,7 @@ public static class WindowChrome
     {
         nint current = NativeMethods.GetForegroundWindow();
         if (current == hwnd)
-        {
-            NativeMethods.SetForegroundWindow(hwnd);
             return;
-        }
 
         uint currentThread = NativeMethods.GetCurrentThreadId();
         uint foregroundThread = current == nint.Zero
@@ -141,7 +139,7 @@ public static class WindowChrome
     /// <see cref="SetFrameTheme"/>) so DWM renders the window edge / corner anti-aliasing for the
     /// right background.
     /// <para>
-    /// Used by every Anchor window. On the dock it hides a rim that would otherwise read as a
+    /// Used by every SwiftX window. On the ring it hides a rim that would otherwise read as a
     /// rectangle drawn around the rounded glass strip. On the Mica dialogs it hides the one piece
     /// of rim those windows still show: they extend their content into the title bar, so the top
     /// edge is all that is left of the frame, and anything that doesn't match the surface reads as
@@ -169,11 +167,19 @@ public static class WindowChrome
     /// — single digits per channel, against the tens-to-hundreds that made the old rim obvious.
     /// </para>
     /// </summary>
-    public static void HideWindowBorder(nint hwnd, bool dark)
+    /// <param name="surfaceOverride">
+    /// A COLORREF (0x00BBGGRR) to paint the rim instead of the theme's flat <see cref="SurfaceDark"/>/
+    /// <see cref="SurfaceLight"/>, for a window whose surface is not that flat color. Settings in
+    /// Dark is the one such window: its root now resolves to a lighter, design-colours.md-anchored
+    /// surface (#202020, see SettingsSurfaceBrush in Themes/Colors.xaml) rather than the shared
+    /// #000000 every other window still uses, so painting the rim pure black would draw a hard edge
+    /// around the window instead of disappearing into it.
+    /// </param>
+    public static void HideWindowBorder(nint hwnd, bool dark, int? surfaceOverride = null)
     {
         SetFrameTheme(hwnd, dark);
 
-        int surface = dark ? SurfaceDark : SurfaceLight;
+        int surface = surfaceOverride ?? (dark ? SurfaceDark : SurfaceLight);
         NativeMethods.DwmSetWindowAttribute(
             hwnd, NativeMethods.DWMWA_BORDER_COLOR, ref surface, sizeof(int));
     }
@@ -289,7 +295,14 @@ public static class WindowChrome
             NativeMethods.DeleteObject(ellipse);
         }
 
-        // SetWindowRgn takes ownership of the region handle.
-        NativeMethods.SetWindowRgn(hwnd, combined, true);
+        // SetWindowRgn takes ownership of the region handle — but only when it succeeds. On
+        // failure the caller still owns it, and this runs on every render and every hover pill,
+        // so a handle dropped here would leak GDI objects for as long as the ring is used. The
+        // process-wide GDI limit is 10 000.
+        if (NativeMethods.SetWindowRgn(hwnd, combined, true) == 0)
+        {
+            Diag.Log($"WindowChrome: SetWindowRgn failed ({Marshal.GetLastWin32Error()})");
+            NativeMethods.DeleteObject(combined);
+        }
     }
 }

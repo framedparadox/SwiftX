@@ -49,7 +49,8 @@ public static class JksReader
         try
         {
             _ = cursor.ReadInt32(); // version — both 1 and 2 share the layout this reader handles
-            int count = cursor.ReadPositiveInt32();
+            // An entry costs at least a 4-byte tag, a 2-byte alias length and an 8-byte timestamp.
+            int count = cursor.ReadCount(minimumBytesPerItem: 14);
 
             for (int i = 0; i < count; i++)
             {
@@ -61,7 +62,10 @@ public static class JksReader
                 {
                     int keyLen = cursor.ReadPositiveInt32();
                     cursor.Skip(keyLen); // encrypted; unreadable without the store password
-                    int chainLen = cursor.ReadPositiveInt32();
+                    // Each chain link is at least a 2-byte cert-type length plus a 4-byte DER
+                    // length, so a declared count past Remaining/6 cannot be honest — see
+                    // Cursor.ReadCount for why that has to be checked before the allocation.
+                    int chainLen = cursor.ReadCount(minimumBytesPerItem: 6);
                     var chain = new List<byte[]>(chainLen);
                     for (int c = 0; c < chainLen; c++)
                     {
@@ -110,6 +114,29 @@ public static class JksReader
             if (value < 0)
                 throw new FormatException("Negative length field.");
             return value;
+        }
+
+        /// <summary>
+        /// A repeat count read from the file, rejected when the bytes left in the buffer could not
+        /// possibly hold that many items of <paramref name="minimumBytesPerItem"/> each.
+        /// <para>
+        /// The bounds check has to happen <em>before</em> the caller sizes a collection from the
+        /// count, not merely before it reads the items. Every per-item read is already bounded by
+        /// <see cref="ReadSpan"/>, so a lie about the count used to surface as a
+        /// <see cref="FormatException"/> on the first read past the end — harmless. Sizing a list
+        /// from it first is what made the lie dangerous: a 35-byte file declaring
+        /// <see cref="int.MaxValue"/> certificates in a chain had <c>new List&lt;byte[]&gt;(count)</c>
+        /// ask for a 17 GB backing array and throw <see cref="OutOfMemoryException"/>, which is
+        /// neither a <see cref="FormatException"/> nor anything else this parser's callers catch —
+        /// breaking the "never throws" contract <see cref="CertificateReader"/> documents for it.
+        /// </para>
+        /// </summary>
+        public int ReadCount(int minimumBytesPerItem)
+        {
+            int count = ReadPositiveInt32();
+            if (count > (data.Length - _pos) / minimumBytesPerItem)
+                throw new FormatException("Keystore declares more entries than its own length allows.");
+            return count;
         }
 
         public byte[] ReadBytes(int count) => ReadSpan(count).ToArray();

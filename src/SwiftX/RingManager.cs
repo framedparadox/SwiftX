@@ -40,6 +40,26 @@ public sealed class RingManager
     /// window (a Settings ring item flyout child — see SystemRingItems.CreateAddNew).</summary>
     public bool IsAddItemOpen => _addItemWindow is not null;
 
+    /// <summary>
+    /// Whether Settings or Add-new currently holds foreground focus — checked by hwnd against the
+    /// live foreground window, not by <see cref="IsSettingsOpen"/>/<see cref="IsAddItemOpen"/>
+    /// merely being true. <see cref="RingWindow"/>'s outside-click dismiss uses this rather than
+    /// those, because a window being <em>open</em> (however briefly, or minimized, or sitting
+    /// behind other windows for the rest of the session) is not the same thing as it having just
+    /// taken the activation the ring lost — the whole point of the exemption is to survive the one
+    /// moment focus moves from the ring to one of these, not to suppress click-anywhere-to-dismiss
+    /// for as long as either window happens to still exist.
+    /// </summary>
+    public bool IsExemptWindowForeground()
+    {
+        nint fg = NativeMethods.GetForegroundWindow();
+        if (_settingsWindow is not null && WinRT.Interop.WindowNative.GetWindowHandle(_settingsWindow) == fg)
+            return true;
+        if (_addItemWindow is not null && WinRT.Interop.WindowNative.GetWindowHandle(_addItemWindow) == fg)
+            return true;
+        return false;
+    }
+
     public event Action? ItemsChanged;
 
     public void Start()
@@ -251,9 +271,13 @@ public sealed class RingManager
         WindowChrome.CenterOnCursor(_settingsWindow.AppWindow, _settingsWindow.AppWindow.Id);
     }
 
+    /// <param name="allowGroups">
+    /// Pass false when <paramref name="targetList"/> is a group's own children — the ring cannot
+    /// expand a group nested inside a group, so the dialog must not offer to create one there.
+    /// </param>
     public void OpenAddItem(
         Action<RingItem>? onAdded = null, List<RingItem>? targetList = null,
-        bool isGenericAddItem = false)
+        bool isGenericAddItem = false, bool allowGroups = true)
     {
         if (_addItemWindow is not null)
         {
@@ -261,7 +285,7 @@ public sealed class RingManager
             return;
         }
         _addItemWindow = new AddItemWindow(
-            this, onAdded, targetList ?? Config.Primary.Items, isGenericAddItem);
+            this, onAdded, targetList ?? Config.Primary.Items, isGenericAddItem, allowGroups);
         _addItemWindow.Closed += (_, _) => _addItemWindow = null;
         _addItemWindow.Activate();
     }
@@ -293,7 +317,7 @@ public sealed class RingManager
         {
             // Same call the tray icon's own Add entry makes: no explicit callback/target list, so
             // AddItemWindow falls back to adding straight into Config.Primary.Items itself (Settings
-            // › Apps & links) and persists on its own — see AddItemWindow.Add_Click.
+            // › Elements) and persists on its own — see AddItemWindow.Add_Click.
             OpenAddItem();
             return;
         }

@@ -128,7 +128,7 @@ public sealed partial class HotkeyCaptureButton : Button
             return;
         }
 
-        // Not a key Anchor can bind (see HotkeyGesture's fixed table) — ignore it and stay armed
+        // Not a key SwiftX can bind (see HotkeyGesture's fixed table) — ignore it and stay armed
         // rather than committing something the config can't round-trip.
         if (HotkeyGesture.Name((uint)key) is null)
             return;

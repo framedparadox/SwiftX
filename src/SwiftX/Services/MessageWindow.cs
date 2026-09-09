@@ -11,7 +11,7 @@ namespace SwiftX.Services;
 /// </summary>
 public sealed class MessageWindow : IDisposable
 {
-    // Unique per process: two Anchors in one session are already prevented by the instance mutex,
+    // Unique per process: two SwiftX instances in one session are already prevented by the instance mutex,
     // but a stale class registration from a previous AppDomain would make RegisterClassEx fail.
     private static readonly string ClassName = "SwiftX.MessageWindow." + Environment.ProcessId;
 

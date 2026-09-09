@@ -1,27 +1,48 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using Microsoft.UI;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Shapes;
 using SwiftX.Controls;
 using SwiftX.Models;
 using SwiftX.Services;
 using Windows.Foundation;
 using Windows.Storage.Pickers;
+using Windows.UI;
 using WinRT.Interop;
 
 namespace SwiftX;
 
 /// <summary>
-/// Settings shell patterned after Anchor: left NavigationView with Home (ring customize,
-/// including the hot corner), General (the invoke shortcut and app-wide settings), Apps &amp;
-/// links, Tools, and — pinned to the footer — Privacy and About. Solid surfaces only — no
-/// Mica / acrylic.
+/// Settings shell: left NavigationView with Home (ring customize,
+/// including the hot corner), General (the invoke shortcut and app-wide settings), Elements,
+/// Tools, and — pinned to the footer — Feedback &amp; Support, About, and Privacy.
+/// <para>
+/// This window, and only this window, follows the Logi Options+ palette (see
+/// <c>docs/logi_options_design_features.md</c> and the Settings-exclusive keys in
+/// <c>Themes/Colors.xaml</c>); the ring, AddItemWindow, and the tool windows keep the app's shared
+/// black/white identity, which is why the shared <c>SwiftX*</c> brushes are deliberately left
+/// alone here.
+/// </para>
+/// <para>
+/// Light is flat and fully opaque: a pure white canvas with cards a cool tint <em>darker</em>
+/// (#F0F4F8) inset into it — the reverse of the white-cards-on-grey it used to be. Dark sits on a
+/// real <see cref="MicaBackdrop"/> (attached below, regardless of theme — it only ever shows
+/// through Dark's brushes) under the layered, alpha-carrying plates in the Dark dictionary of
+/// <c>Themes/Colors.xaml</c> (nav pane, content canvas, cards, and the recessed "tray" areas each
+/// a deliberately different shade), so the surfaces stay visually distinct from each other while
+/// still letting Mica's own wallpaper tint read through every one of them. That alpha is why Dark
+/// lands near Logi's flat hexes rather than exactly on them — a deliberate trade to keep the
+/// frosted-glass look rather than making Mica a no-op.
+/// </para>
 /// </summary>
 public sealed partial class SettingsWindow : Window
 {
@@ -34,6 +55,13 @@ public sealed partial class SettingsWindow : Window
     private Point _dragStart;
     private bool _dragMoved;
     private int _dragSlot = -1;
+    // Tentative reorder target computed live while a drag is in progress, so the other bubbles can
+    // reflow to preview where they'll land — see Preview_PointerMoved/UpdateDragReflow. -1 means
+    // "no drag in progress" / "not yet computed". Preview_PointerReleased reuses these directly
+    // rather than recomputing from the drop point, so the committed order can never disagree with
+    // whatever the live preview last showed.
+    private int _dragTentativeSlot = -1;
+    private int _dragTentativeQuadrantSlot = -1;
 
     // Preview geometry and slot occupancy, recorded by RenderPreview so the canvas-level pointer
     // handlers can work out which slot an event landed in without walking the visual tree.
@@ -80,20 +108,31 @@ public sealed partial class SettingsWindow : Window
         _manager = manager;
         InitializeComponent();
 
+        // Attached regardless of theme — see the class doc above for why that's fine: Light's own
+        // brushes stay fully opaque, so Mica never has anything translucent to show through there.
+        SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+
         _toolCards.CollectionChanged += ToolCards_CollectionChanged;
 
         _hwnd = WindowNative.GetWindowHandle(this);
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
         Title = "SwiftX Settings";
 
-        var titleBar = new AppTitleBar("", "SwiftX Settings");
+        var titleBar = AppTitleBar.WithAppMark("SwiftX Settings");
         Grid.SetRow(titleBar, 0);
         Root.Children.Insert(0, titleBar);
 
-        // Extend content under caption (solid surface, not glass). Must precede HideWindowBorder
-        // or ExtendsContentIntoTitleBar clobbers the rim color.
+        // Extend content under the caption so the title bar strip is part of the same surface as
+        // the rest of the window (AppTitleBar paints nothing of its own, so the window's own
+        // background reaches all the way up). Must precede HideWindowBorder or
+        // ExtendsContentIntoTitleBar clobbers the rim color.
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(titleBar);
+
+        // Built once here rather than in the Loaded handler that fills in the rest of the About
+        // card: Loaded can fire again if the tree is ever re-parented, and the mark has nothing to
+        // wait for — unlike the version string and the toggles, it reads no state.
+        AboutMark.Content = AppLogo.Create(48);
 
         PreviewCanvas.PointerPressed += Preview_PointerPressed;
         PreviewCanvas.PointerMoved += Preview_PointerMoved;
@@ -105,9 +144,20 @@ public sealed partial class SettingsWindow : Window
         GroupChildrenCanvas.PointerReleased += GroupRow_PointerReleased;
         GroupChildrenCanvas.PointerCaptureLost += (_, _) => EndGroupDrag();
 
+        // See OnRatingValueChanged for why this is a DP callback and not the ValueChanged event.
+        ExperienceRating.RegisterPropertyChangedCallback(
+            RatingControl.ValueProperty, (_, _) => OnRatingValueChanged());
+
         ApplyTheme();
         Root.ActualThemeChanged += (_, _) =>
         {
+            // Fires on an OS theme flip (relevant to AppTheme.System, which never resolves to
+            // Black — see ThemeHelper.Resolve) — reapplying here is a no-op whenever Black isn't
+            // selected, and keeps this in sync with ApplyTheme's own ordering if it ever isn't.
+            ApplyBlackOverrides();
+            // System follows Windows, so an OS flip changes which built-in teal is the right one.
+            ApplyAccentColorOverride();
+            SyncAccentControls();
             ApplyChromeTheme();
             RenderPreview();
         };
@@ -117,7 +167,13 @@ public sealed partial class SettingsWindow : Window
             p.IsMaximizable = false;
         _appWindow.IsShownInSwitchers = true;
 
-        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 1000, 700);
+        // 1000 used to leave only a couple of px of margin for the Home tab's ring-preview card +
+        // sidebar row (~998px of fixed content against a 1000px client width) — razor-thin enough
+        // that ordinary font-metric/DPI variance could tip it into visible clipping. 1040 restores
+        // a real margin; the Home tab's sidebar column is also now Grid-adaptive (see
+        // SettingsWindow.xaml) rather than a fixed width, so it degrades gracefully even if the
+        // window is later resized narrower still.
+        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 1040, 700);
         WindowChrome.SetRoundedCorners(_hwnd);
         WindowChrome.CenterOnCursor(_appWindow, _appWindow.Id);
 
@@ -141,6 +197,11 @@ public sealed partial class SettingsWindow : Window
             HotkeyCapture.NeedsModifier += () =>
                 HotkeyStatus.Text = "Hold Ctrl, Alt, or Win with that key.";
             RebuildToolsList();
+            ExperienceRating.Value = _manager.Config.FeedbackRating > 0
+                ? _manager.Config.FeedbackRating
+                : -1; // RatingControl's own "unset"; 0 would render as a real zero-star rating.
+            UpdateRatingThanks();
+            SyncAccentControls();
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0");
             _loading = false;
@@ -153,7 +214,7 @@ public sealed partial class SettingsWindow : Window
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                // An edit from elsewhere (e.g. a delete on the "Apps & links" tab) can remove the
+                // An edit from elsewhere (e.g. a delete on the "Elements" tab) can remove the
                 // item this tab currently has selected or expanded — drop stale state rather than
                 // leave the inspector or children row pointing at something that no longer exists.
                 if (_expandedGroup is not null && !ItemExists(_manager.Config.Primary.Items, _expandedGroup))
@@ -179,17 +240,270 @@ public sealed partial class SettingsWindow : Window
 
     public void ApplyTheme()
     {
-        Root.RequestedTheme = ThemeHelper.Resolve(_manager.Config.Theme);
+        ApplyBlackOverrides();
+        ApplyAccentColorOverride();
+        ForceThemeResourceRefresh(ThemeHelper.Resolve(_manager.Config.Theme));
         ApplyChromeTheme();
         RenderPreview();
+    }
+
+    /// <summary>
+    /// Assigns <see cref="Root"/>'s RequestedTheme, forcing every <c>{ThemeResource}</c> binding
+    /// under it to re-resolve even when <paramref name="target"/> is the value it's already at.
+    /// <para>
+    /// WinUI only re-walks <c>{ThemeResource}</c> lookups when RequestedTheme/ActualTheme actually
+    /// changes value — a plain edit to <see cref="Root"/>'s own Resources (see
+    /// <see cref="ApplyBlackOverrides"/>) is invisible to bindings that already resolved earlier.
+    /// Black rides on Dark's own ElementTheme and is told apart purely through that resource
+    /// override, so switching Dark &lt;-&gt; Black never changes RequestedTheme's value at all —
+    /// without the nudge below, SettingsSurfaceBrush and the rest of <see cref="BlackOverrideKeys"/>
+    /// kept showing whatever they'd resolved to before, until some unrelated theme flip (a real
+    /// Light/Dark switch, or an OS theme change under System) came along later and finally picked
+    /// the override up. That's what made switching to/from Black look like it "did nothing" at
+    /// first.
+    /// </para>
+    /// </summary>
+    private void ForceThemeResourceRefresh(ElementTheme target)
+    {
+        if (Root.RequestedTheme == target)
+            Root.RequestedTheme = target == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
+        Root.RequestedTheme = target;
+    }
+
+    /// <summary>
+    /// Black rides on Dark's own ElementTheme (see ThemeHelper.Resolve), so it can't be told apart
+    /// through a XAML ThemeDictionary the way Light/Dark are — WinUI only ever resolves
+    /// {ThemeResource} against Light/Dark/Default. Instead, when Black is selected this overrides
+    /// the same keys' resolved brush with a plain, element-local entry in Root.Resources: XAML's
+    /// {ThemeResource} lookup walks up the tree checking each level's own Resources before falling
+    /// back to the app-level ThemeDictionaries, so a same-keyed entry here shadows the Dark
+    /// dictionary's for every Card, NavigationView pane, and canvas Grid under Root — exactly the
+    /// same "closer resource wins" behavior SecondaryCaptionStyle's own {ThemeResource} already
+    /// relies on (see its comment). Removed again the moment Black is no longer selected, so
+    /// switching back to Dark/Light falls straight through to the normal dictionary.
+    /// </summary>
+    private static readonly string[] BlackOverrideKeys =
+    {
+        "SettingsSurfaceBrush", "SwiftXCanvasBrush", "SwiftXNavPaneBrush",
+        "SwiftXCardBackgroundBrush", "SwiftXRingCanvasBrush",
+        "NavigationViewDefaultPaneBackground", "NavigationViewExpandedPaneBackground",
+        "NavigationViewContentBackground",
+    };
+
+    private void ApplyBlackOverrides()
+    {
+        if (_manager.Config.Theme != AppTheme.Black)
+        {
+            foreach (var key in BlackOverrideKeys)
+                Root.Resources.Remove(key);
+            return;
+        }
+
+        // One flat, higher-opacity black shared by every surface — no graduated raised/recessed
+        // steps the way Dark has them, since there is no lighter tone left to graduate through
+        // once the anchor color is already pure black. Card edges (SwiftXCardStrokeBrush, left
+        // untouched) carry the structure instead.
+        var surface = new SolidColorBrush(Color.FromArgb(0xE6, 0, 0, 0));
+        foreach (var key in BlackOverrideKeys)
+            Root.Resources[key] = surface;
+    }
+
+    /// <summary>
+    /// Paints every WinUI brush key, across the controls Settings actually uses, that a real
+    /// "accent colour" has to reach — always, whether the colour is the user's own pick or the
+    /// built-in teal default. Shadows them in <see cref="Root"/>'s own Resources, the same "closer
+    /// resource wins" mechanism <see cref="ApplyBlackOverrides"/> uses.
+    /// <para>
+    /// It applies the default too, rather than removing the shadow and letting the keys fall
+    /// through, because falling through does not reach SwiftX's teal at all: unset, these keys
+    /// resolve to WinUI's own <c>AccentFillColorDefaultBrush</c>, i.e. the Windows system accent
+    /// (measured at #4CC2FF on this machine). Only the hyperlinks were ever teal by default —
+    /// the toggles, radio buttons, Radius slider, rating stars, and nav selection indicator all
+    /// stayed Windows blue, which is exactly what "the default accent colour is not visible" was.
+    /// </para>
+    /// <para>
+    /// Key names verified against this project's pinned WinUI package (2.3.6)'s own generic.xaml:
+    /// each control template reads its key directly via <c>{ThemeResource KeyName}</c>, not through
+    /// the intermediate <c>AccentFillColorDefault/Secondary/TertiaryBrush</c> aliases those keys are
+    /// themselves defined from — overriding those upstream aliases instead would do nothing,
+    /// because a <c>StaticResource</c> alias resolves once, at the point the framework's own
+    /// dictionary is parsed, not on every lookup. Assigned in (default, pointer-over, pressed)
+    /// triples per control; disabled states are deliberately left to the framework.
+    /// </para>
+    /// </summary>
+    private void ApplyAccentColorOverride()
+    {
+        var accent = CurrentAccentColor();
+        var normal = new SolidColorBrush(accent);
+        // A single stored colour still needs three states everywhere it lands (default/pointer-
+        // over/pressed) — lightening for hover and darkening for pressed mirrors how
+        // AccentFillColorSecondary/TertiaryBrush relate to AccentFillColorDefaultBrush for the
+        // system accent, without asking the user to pick three colours themselves.
+        var hover = new SolidColorBrush(Blend(accent, Colors.White, 0.18));
+        var pressed = new SolidColorBrush(Blend(accent, Colors.Black, 0.18));
+
+        Root.Resources["SettingsAccentBrush"] = normal;
+        Root.Resources["SettingsAccentHoverBrush"] = hover;
+        Root.Resources["HyperlinkButtonForeground"] = normal;
+        Root.Resources["HyperlinkButtonForegroundPointerOver"] = hover;
+        Root.Resources["HyperlinkButtonForegroundPressed"] = hover;
+        Root.Resources["ToggleSwitchFillOn"] = normal;
+        Root.Resources["ToggleSwitchFillOnPointerOver"] = hover;
+        Root.Resources["ToggleSwitchFillOnPressed"] = pressed;
+        Root.Resources["ToggleSwitchStrokeOn"] = normal;
+        Root.Resources["ToggleSwitchStrokeOnPointerOver"] = hover;
+        Root.Resources["ToggleSwitchStrokeOnPressed"] = pressed;
+        Root.Resources["RadioButtonOuterEllipseCheckedFill"] = normal;
+        Root.Resources["RadioButtonOuterEllipseCheckedFillPointerOver"] = hover;
+        Root.Resources["RadioButtonOuterEllipseCheckedFillPressed"] = pressed;
+        Root.Resources["RadioButtonOuterEllipseCheckedStroke"] = normal;
+        Root.Resources["RadioButtonOuterEllipseCheckedStrokePointerOver"] = hover;
+        Root.Resources["RadioButtonOuterEllipseCheckedStrokePressed"] = pressed;
+        Root.Resources["SliderTrackValueFill"] = normal;
+        Root.Resources["SliderTrackValueFillPointerOver"] = hover;
+        Root.Resources["SliderTrackValueFillPressed"] = pressed;
+        Root.Resources["SliderThumbBackground"] = normal;
+        Root.Resources["SliderThumbBackgroundPointerOver"] = hover;
+        Root.Resources["SliderThumbBackgroundPressed"] = pressed;
+        Root.Resources["RatingControlSelectedForeground"] = normal;
+        Root.Resources["RatingControlPointerOverSelectedForeground"] = hover;
+        Root.Resources["NavigationViewSelectionIndicatorForeground"] = normal;
+
+        // The one accented thing a resource override cannot reach on its own — see the comment
+        // on ReadPrivacyLink in SettingsWindow.xaml.
+        ReadPrivacyLink.Foreground = normal;
+    }
+
+    /// <summary>The built-in default, per theme — must track SettingsAccentBrush/
+    /// SettingsAccentHoverBrush in Themes/Colors.xaml, the same duplication-for-a-reason
+    /// SettingsRimColorDark/Light already carries a few lines down (see that comment).</summary>
+    private const string DefaultAccentHexDark = "#3DDCD3";
+    private const string DefaultAccentHexLight = "#0B7C7C";
+
+    /// <summary>
+    /// What the accent colour actually resolves to right now: the user's own pick when they have
+    /// made one, otherwise the built-in teal for the theme in play. Drives both the brushes
+    /// <see cref="ApplyAccentColorOverride"/> paints and the swatch/picker that report them.
+    /// </summary>
+    private Color CurrentAccentColor()
+    {
+        var hex = _manager.Config.AccentColorHex;
+        if (!string.IsNullOrEmpty(hex) && TryParseHexColor(hex, out var custom))
+            return custom;
+        TryParseHexColor(ResolveIsDark() ? DefaultAccentHexDark : DefaultAccentHexLight, out var fallback);
+        return fallback;
+    }
+
+    /// <summary>
+    /// Whether the theme now being applied is a dark one, read from the configured
+    /// <see cref="AppTheme"/> rather than from <c>Root.ActualTheme</c>.
+    /// <para>
+    /// The distinction matters for ordering: <see cref="ApplyTheme"/> has to write the accent
+    /// brushes <em>before</em> <see cref="ForceThemeResourceRefresh"/>, since that refresh is what
+    /// makes every <c>{ThemeResource}</c> under Root re-resolve and pick the new brushes up —
+    /// but at that moment Root.RequestedTheme has not been assigned yet, so ActualTheme can still
+    /// be reporting the previous theme. Config is already correct at that point. Only System, which
+    /// has no fixed answer of its own, defers to what the element actually resolved to.
+    /// </para>
+    /// </summary>
+    private bool ResolveIsDark() => ThemeHelper.Resolve(_manager.Config.Theme) switch
+    {
+        ElementTheme.Dark => true,
+        ElementTheme.Light => false,
+        _ => ThemeHelper.IsDark(Root),
+    };
+
+    /// <summary>
+    /// Brings the swatch and the picker in line with <see cref="CurrentAccentColor"/>. Seeding the
+    /// picker re-enters <see cref="AccentColorPicker_ColorChanged"/>, which would otherwise save
+    /// the value it was just handed as though the user had chosen it — hence the loading
+    /// guard, saved and restored rather than cleared, so this stays safe to call from inside the
+    /// window's own load pass where the flag is already up.
+    /// </summary>
+    private void SyncAccentControls()
+    {
+        var accent = CurrentAccentColor();
+        bool wasLoading = _loading;
+        _loading = true;
+        AccentColorPicker.Color = accent;
+        _loading = wasLoading;
+        AccentColorSwatch.Background = new SolidColorBrush(accent);
+    }
+
+    /// <summary>Parses "#RRGGBB" (the only form <see cref="AppConfig.AccentColorHex"/> is ever
+    /// written in). Never throws — an unparsable stored value just falls back like an unset
+    /// one.</summary>
+    private static bool TryParseHexColor(string hex, out Color color)
+    {
+        color = default;
+        var s = hex.TrimStart('#');
+        if (s.Length != 6)
+            return false;
+        try
+        {
+            byte r = Convert.ToByte(s.Substring(0, 2), 16);
+            byte g = Convert.ToByte(s.Substring(2, 2), 16);
+            byte b = Convert.ToByte(s.Substring(4, 2), 16);
+            color = Color.FromArgb(255, r, g, b);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static string ToHexColor(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+
+    /// <summary>Blends <paramref name="c"/> toward <paramref name="target"/> by
+    /// <paramref name="amount"/> (0-1) — the hover/pressed shades <see cref="ApplyAccentColorOverride"/>
+    /// derives from one stored colour.</summary>
+    private static Color Blend(Color c, Color target, double amount)
+    {
+        byte L(byte a, byte b) => (byte)Math.Clamp(a + (b - a) * amount, 0, 255);
+        return Color.FromArgb(255, L(c.R, target.R), L(c.G, target.G), L(c.B, target.B));
+    }
+
+    private void AccentColorPicker_ColorChanged(ColorPicker sender, ColorChangedEventArgs args)
+    {
+        if (_loading) return;
+        _manager.Config.AccentColorHex = ToHexColor(args.NewColor);
+        _manager.Save();
+        ApplyAccentColorOverride();
+        AccentColorSwatch.Background = new SolidColorBrush(args.NewColor);
+    }
+
+    private void ResetAccentColor_Click(object sender, RoutedEventArgs e)
+    {
+        _manager.Config.AccentColorHex = null;
+        _manager.Save();
+        ApplyAccentColorOverride();
+        SyncAccentControls();
+        AccentColorSwatch.Flyout?.Hide();
     }
 
     private void ApplyChromeTheme()
     {
         bool dark = ThemeHelper.IsDark(Root);
         WindowChrome.SetTitleBarTheme(_appWindow, dark);
-        WindowChrome.HideWindowBorder(_hwnd, dark);
+        int rim = _manager.Config.Theme == AppTheme.Black
+            ? SettingsRimColorBlack
+            : dark ? SettingsRimColorDark : SettingsRimColorLight;
+        WindowChrome.HideWindowBorder(_hwnd, dark, rim);
     }
+
+    /// <summary>
+    /// Rim colors for Settings, as COLORREFs (0x00BBGGRR) — these must track
+    /// <c>SettingsSurfaceColor</c>/<c>SwiftXCanvasBrush</c> in <c>Themes/Colors.xaml</c> (now the
+    /// Logi Options+ canvas values, #FFFFFF and #222222), not the shared black/white every other
+    /// window's rim still uses. Leave one stale after a palette change and the window grows a
+    /// visible hairline where the rim stops matching the surface behind it. Both are neutral greys,
+    /// so channel order is moot; the cool-tinted card/pane colors never reach the rim.
+    /// SettingsRimColorBlack matches ApplyBlackOverrides' own flat black rather than Dark's canvas.
+    /// </summary>
+    private const int SettingsRimColorDark = 0x00222222;
+    private const int SettingsRimColorLight = 0x00FFFFFF;
+    private const int SettingsRimColorBlack = 0x00000000;
 
     private Style SecondaryCaptionStyle => (Style)Root.Resources["SecondaryCaption"];
 
@@ -201,6 +515,7 @@ public sealed partial class SettingsWindow : Window
         AppsPanel.Visibility = tag == "apps" ? Visibility.Visible : Visibility.Collapsed;
         ToolsPanel.Visibility = tag == "tools" ? Visibility.Visible : Visibility.Collapsed;
         PrivacyPanel.Visibility = tag == "privacy" ? Visibility.Visible : Visibility.Collapsed;
+        FeedbackPanel.Visibility = tag == "feedback" ? Visibility.Visible : Visibility.Collapsed;
         AboutPanel.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
         if (tag == "home") RenderPreview();
         if (tag == "apps") RebuildItemsList();
@@ -258,6 +573,14 @@ public sealed partial class SettingsWindow : Window
         PreviewCanvas.Children.Add(hub);
 
         var items = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(RingMetrics.UserSlotCount).ToList();
+
+        // A full ring has no empty slot left to add into, so the button that would open the add
+        // dialog goes away rather than sitting there offering something the ring cannot take.
+        // Reset defaults stays: it is still meaningful on a full ring.
+        AddItemButton.Visibility = items.Count >= RingMetrics.UserSlotCount
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+
         for (int i = 0; i < RingMetrics.SlotCount; i++)
         {
             double angle = (-90 + i * 45) * Math.PI / 180.0;
@@ -276,7 +599,7 @@ public sealed partial class SettingsWindow : Window
                 Width = bubble,
                 Height = bubble,
                 CornerRadius = new CornerRadius(bubble / 2),
-                Background = ThemeHelper.Brush(Root, "RingBubbleBackground"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "RingBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = item,
@@ -377,7 +700,7 @@ public sealed partial class SettingsWindow : Window
                 Width = previewBubble,
                 Height = previewBubble,
                 CornerRadius = new CornerRadius(previewBubble / 2),
-                Background = ThemeHelper.Brush(Root, "RingBubbleBackground"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "RingBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = item,
@@ -465,6 +788,15 @@ public sealed partial class SettingsWindow : Window
     /// The corner button: present on the canvas whenever the hot corner is on, sitting in the
     /// canvas corner that matches the chosen screen one, and switching the canvas between the
     /// ring and what that corner would actually show.
+    /// <para>
+    /// The icon is the same corner-pointing triangle as the Hot corner row above (see
+    /// <see cref="CornerTriangleGeometry"/>/<see cref="CornerTriangleAngle"/>), always rotated to
+    /// the chosen corner regardless of which of the two states below the button is currently in —
+    /// this button sits physically in that corner of the canvas, so pointing at it is what marks
+    /// the button as "this corner" rather than any other one on the canvas. The two states (ring
+    /// vs. quadrant preview) differ only in tooltip and automation name now; they used to swap in
+    /// a generic resize/back glyph that said nothing about which corner it was.
+    /// </para>
     /// </summary>
     private void AddHotCornerButton(double size)
     {
@@ -481,12 +813,28 @@ public sealed partial class SettingsWindow : Window
             Height = diameter,
             Padding = new Thickness(0),
             CornerRadius = new CornerRadius(diameter / 2),
-            Content = new FontIcon
+            Content = new PathIcon
             {
-                Glyph = _previewQuadrant ? "\uE72C" : "\uE740",
-                FontSize = 14,
+                Data = CornerTriangleGeometry(),
+                Width = 14,
+                Height = 14,
+                RenderTransformOrigin = new Point(0.5, 0.5),
+                RenderTransform = new RotateTransform { Angle = CornerTriangleAngle(corner) },
             },
         };
+        // No resting chrome: the triangle marks the corner on its own, and a filled plate around
+        // it read as one more bubble sitting in the ring rather than as the canvas's own corner.
+        // Shadowing the two keys the Button style resolves at rest (its Style sets Background and
+        // BorderBrush from ButtonBackground/ButtonBorderBrush) rather than assigning
+        // button.Background directly, so the change lands at the same layer the framework sets it
+        // and touches nothing else: the pointer-over and pressed states drive
+        // ContentPresenter.Background from ButtonBackgroundPointerOver/Pressed, which are left
+        // alone here, so the full 34px disc still lights up under the pointer and keeps reading as
+        // a button. Only the resting fill goes away.
+        var transparent = new SolidColorBrush(Colors.Transparent);
+        button.Resources["ButtonBackground"] = transparent;
+        button.Resources["ButtonBorderBrush"] = transparent;
+
         ToolTipService.SetToolTip(button, _previewQuadrant
             ? "Back to the full ring"
             : "Show what this corner opens");
@@ -522,6 +870,11 @@ public sealed partial class SettingsWindow : Window
         _dragItem = _dragBorder?.Tag as RingItem;
         _dragStart = point;
         _dragMoved = false;
+        // Starts equal to the origin slot, not -1: until the pointer actually crosses into a
+        // different target, "tentative" is just "still where it started", so a drop with no real
+        // movement resolves as a no-op the same way it always did.
+        _dragTentativeSlot = _dragSlot;
+        _dragTentativeQuadrantSlot = _dragSlot;
         if (_dragSlot >= 0)
             PreviewCanvas.CapturePointer(e.Pointer);
     }
@@ -536,15 +889,165 @@ public sealed partial class SettingsWindow : Window
         if (!_dragMoved && (Math.Abs(dx) > 4 || Math.Abs(dy) > 4))
             _dragMoved = true;
         if (_dragMoved)
+        {
             _dragBorder.RenderTransform = new TranslateTransform { X = dx, Y = dy };
+            UpdateDragReflow(point);
+        }
+    }
+
+    /// <summary>
+    /// The live "make room" preview: while a bubble is mid-drag, every other bubble shifts to
+    /// where it would actually land if the pointer released right now, instead of staying frozen
+    /// until the drop. Only recomputes when the tentative target slot actually changes, so a
+    /// pointer held still costs nothing on every move tick.
+    /// <para>
+    /// Simulates the same remove-then-insert <see cref="ReorderItem"/> / <see cref="MoveQuadrantItem"/>
+    /// perform, but against a throwaway copy of the order (<c>_manager.Config.Primary.Items</c>
+    /// filtered/copied the same way <see cref="ReorderItem"/> does, or a fresh
+    /// <see cref="HotCornerItems.Resolve"/> list for the quadrant — never <see cref="HotCornerItems.Edit"/>,
+    /// which has the side effect of turning a corner that was still following the ring into a
+    /// stored arrangement the moment it's called) — nothing is persisted until the actual drop.
+    /// </para>
+    /// <para>
+    /// <see cref="Preview_PointerReleased"/> reuses <see cref="_dragTentativeSlot"/> /
+    /// <see cref="_dragTentativeQuadrantSlot"/> directly rather than recomputing a target from the
+    /// release point, so the committed order can never land somewhere different from what this
+    /// last showed on screen.
+    /// </para>
+    /// </summary>
+    private void UpdateDragReflow(Point point)
+    {
+        if (_dragItem is null) return;
+
+        if (_previewQuadrant)
+        {
+            int target = QuadrantSlotAt(point, requireHit: false);
+            if (target == _dragTentativeQuadrantSlot) return;
+            _dragTentativeQuadrantSlot = target;
+            if (target < 0) return;
+
+            var list = HotCornerItems.Resolve(_manager.Config, SystemRingItems.CreateSettings());
+            int from = list.IndexOf(_dragItem);
+            if (from < 0) return;
+            int to = Math.Min(target, list.Count - 1);
+            if (to != from)
+            {
+                list.RemoveAt(from);
+                list.Insert(to, _dragItem);
+            }
+            ReflowQuadrantBorders(list);
+            return;
+        }
+
+        int targetSlot = PreviewSlotAt(point, requireHit: false);
+        if (targetSlot == _dragTentativeSlot) return;
+        _dragTentativeSlot = targetSlot;
+        if (targetSlot < 0 || targetSlot >= RingMetrics.UserSlotCount) return;
+
+        var visible = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(RingMetrics.UserSlotCount).ToList();
+        int vFrom = visible.IndexOf(_dragItem);
+        if (vFrom < 0) return;
+        int vTo = Math.Min(targetSlot, visible.Count - 1);
+        if (vTo != vFrom)
+        {
+            visible.RemoveAt(vFrom);
+            visible.Insert(vTo, _dragItem);
+        }
+        ReflowRingBorders(visible);
+    }
+
+    /// <summary>
+    /// Glides every bubble in <paramref name="tentativeOrder"/> other than the one actually being
+    /// dragged (that one follows the pointer via <c>RenderTransform</c> instead) to the ring
+    /// position its index in that order implies. Pinned slots (Settings/Close) are never part of
+    /// <paramref name="tentativeOrder"/> to begin with — it is built the same way
+    /// <see cref="ReorderItem"/>'s own <c>visible</c> list is — so they can never be moved here.
+    /// </summary>
+    private void ReflowRingBorders(List<RingItem> tentativeOrder)
+    {
+        for (int i = 0; i < tentativeOrder.Count; i++)
+        {
+            var item = tentativeOrder[i];
+            if (ReferenceEquals(item, _dragItem)) continue;
+            var border = FindSlotBorder(_slotBorders, item);
+            if (border is null) continue;
+            double angle = RingMetrics.SlotAngleRad(i);
+            double x = _previewCenter.X + _previewRadius * Math.Cos(angle) - _previewBubble / 2;
+            double y = _previewCenter.Y + _previewRadius * Math.Sin(angle) - _previewBubble / 2;
+            AnimateBubbleTo(border, x, y);
+        }
+    }
+
+    /// <summary>Quadrant counterpart of <see cref="ReflowRingBorders"/>.</summary>
+    private void ReflowQuadrantBorders(List<RingItem> tentativeOrder)
+    {
+        for (int i = 0; i < tentativeOrder.Count && i < _quadrantSlotBorders.Length; i++)
+        {
+            var item = tentativeOrder[i];
+            if (ReferenceEquals(item, _dragItem)) continue;
+            var border = FindSlotBorder(_quadrantSlotBorders, item);
+            if (border is null) continue;
+            double angle = _quadrantSlotAngles[i];
+            double x = _quadrantCenter.X + _quadrantRadius * Math.Cos(angle) - _quadrantBubble / 2;
+            double y = _quadrantCenter.Y + _quadrantRadius * Math.Sin(angle) - _quadrantBubble / 2;
+            AnimateBubbleTo(border, x, y);
+        }
+    }
+
+    private static Border? FindSlotBorder(Border?[] borders, RingItem item)
+    {
+        foreach (var border in borders)
+        {
+            if (border?.Tag is RingItem tagged && ReferenceEquals(tagged, item))
+                return border;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Short glide of a preview bubble to a new canvas position for the live drag reflow — distinct
+    /// from the dragged bubble's own pointer-following <c>RenderTransform</c> in
+    /// <see cref="Preview_PointerMoved"/>. Falls back to an instant reposition if animating the
+    /// attached properties fails for any reason: landing the other bubbles in the right place is
+    /// what actually matters, the glide is just polish on top of that.
+    /// </summary>
+    private static void AnimateBubbleTo(Border border, double x, double y)
+    {
+        try
+        {
+            var duration = TimeSpan.FromMilliseconds(160);
+            var ease = new QuadraticEase { EasingMode = EasingMode.EaseOut };
+
+            var animX = new DoubleAnimation { To = x, Duration = duration, EasingFunction = ease };
+            Storyboard.SetTarget(animX, border);
+            Storyboard.SetTargetProperty(animX, "(Canvas.Left)");
+
+            var animY = new DoubleAnimation { To = y, Duration = duration, EasingFunction = ease };
+            Storyboard.SetTarget(animY, border);
+            Storyboard.SetTargetProperty(animY, "(Canvas.Top)");
+
+            var storyboard = new Storyboard();
+            storyboard.Children.Add(animX);
+            storyboard.Children.Add(animY);
+            storyboard.Begin();
+        }
+        catch
+        {
+            Canvas.SetLeft(border, x);
+            Canvas.SetTop(border, y);
+        }
     }
 
     private void Preview_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
-        var point = e.GetCurrentPoint(PreviewCanvas).Position;
         int slot = _dragSlot;
         var item = _dragItem;
         bool moved = _dragMoved;
+        // Captured before EndPreviewDrag resets them to -1. Reusing these instead of recomputing a
+        // target from the release point is what guarantees the committed order matches whatever
+        // UpdateDragReflow last showed on screen.
+        int tentativeSlot = _dragTentativeSlot;
+        int tentativeQuadrantSlot = _dragTentativeQuadrantSlot;
 
         PreviewCanvas.ReleasePointerCapture(e.Pointer);
         EndPreviewDrag();
@@ -558,7 +1061,7 @@ public sealed partial class SettingsWindow : Window
             {
                 // A drag out of an empty place is not an add — it is a drag of nothing.
                 if (item is not null)
-                    MoveQuadrantItem(slot, QuadrantSlotAt(point, requireHit: false));
+                    MoveQuadrantItem(slot, tentativeQuadrantSlot);
             }
             else if (item is not null)
             {
@@ -573,10 +1076,8 @@ public sealed partial class SettingsWindow : Window
 
         if (moved)
         {
-            // A drop lands wherever the pointer is, even out past the bubbles — the nearest slot
-            // is the intent, so this lookup deliberately doesn't require a direct hit.
             if (item is not null)
-                ReorderItem(item, PreviewSlotAt(point, requireHit: false));
+                ReorderItem(item, tentativeSlot);
             return;
         }
 
@@ -606,6 +1107,8 @@ public sealed partial class SettingsWindow : Window
         _dragItem = null;
         _dragSlot = -1;
         _dragMoved = false;
+        _dragTentativeSlot = -1;
+        _dragTentativeQuadrantSlot = -1;
     }
 
     /// <summary>
@@ -772,7 +1275,7 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// Shows <paramref name="item"/>'s name/target in the read-only <c>InfoBox</c>. Re-clicking the
     /// item already shown hides it again — the simplest "close" affordance that doesn't need a
-    /// dedicated button. This is display-only: real edits happen on the "Apps &amp; links" tab.
+    /// dedicated button. This is display-only: real edits happen on the "Elements" tab.
     /// <para>
     /// A click on a plain main-ring item is unrelated to whatever group row is currently expanded
     /// (if any), so that row is collapsed first — otherwise it kept sitting there showing a group
@@ -874,7 +1377,7 @@ public sealed partial class SettingsWindow : Window
                 Width = GroupChildBubble,
                 Height = GroupChildBubble,
                 CornerRadius = new CornerRadius(GroupChildBubble / 2),
-                Background = ThemeHelper.Brush(Root, "RingBubbleBackground"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "RingBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = child,
@@ -1086,7 +1589,108 @@ public sealed partial class SettingsWindow : Window
             _manager.Save();
             _manager.ApplyTheme();
             ApplyTheme();
+            // Light and Dark carry different built-in teals; the swatch has to follow.
+            SyncAccentControls();
         }
+    }
+
+    /// <summary>
+    /// PLACEHOLDER. SwiftX has no Microsoft Store listing yet — it builds unpackaged
+    /// (<c>WindowsPackageType=None</c>), so there is no product id to point at. Every Store link on
+    /// the Feedback &amp; Support page is derived from this one constant: put the real twelve-character
+    /// product id here once the app is listed and all three resolve on their own, with nothing else
+    /// to change. Until then they open a Store page that does not exist.
+    /// </summary>
+    private const string StoreProductId = "0000000000000";
+
+    /// <summary>
+    /// The Store links, as <c>https://apps.microsoft.com</c> URLs rather than
+    /// <c>ms-windows-store://</c> protocol ones. Both reach the same listing, but the page's own
+    /// closing note promises that links open in the browser, and the protocol form opens the Store
+    /// app instead — the web form is the one that keeps that promise. (If a deep link into the Store
+    /// app is ever wanted, the equivalents are <c>ms-windows-store://review/?ProductId=</c> and
+    /// <c>ms-windows-store://pdp/?ProductId=</c>.)
+    /// </summary>
+    private const string StoreListingUrl = "https://apps.microsoft.com/detail/" + StoreProductId;
+    private const string StoreReviewUrl = StoreListingUrl + "#reviews";
+
+    /// <summary>
+    /// The repository itself, not an issue or discussion: this is the "star us" link beside the
+    /// rating, so it wants the page with the star button on it.
+    /// </summary>
+    private const string GitHubRepoUrl = "https://github.com/framedparadox/SwiftX";
+
+    private void ShareFeedback_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(StoreReviewUrl);
+
+    private void RateOnStore_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(StoreReviewUrl);
+
+    private void StarOnGitHub_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(GitHubRepoUrl);
+
+    private void ReportIssue_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(StoreListingUrl);
+
+    /// <summary>
+    /// Moves to the Privacy page instead of opening anything. Selecting the NavigationViewItem
+    /// rather than flipping panel Visibility directly, so Nav_SelectionChanged stays the single
+    /// place that knows which panel belongs to which tag, and the nav pane's own selection follows
+    /// along the way it would if the user had clicked Privacy themselves.
+    /// </summary>
+    private void OpenPrivacyFromFeedback_Click(Hyperlink sender, HyperlinkClickEventArgs args)
+    {
+        foreach (var item in Nav.FooterMenuItems)
+        {
+            if (item is NavigationViewItem nvi && (nvi.Tag as string) == "privacy")
+            {
+                Nav.SelectedItem = nvi;
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Persists the star rating and acknowledges it inline. Saved locally and never transmitted —
+    /// see <see cref="AppConfig.FeedbackRating"/> and Settings' own Privacy page.
+    /// <para>
+    /// Driven by a DependencyProperty change callback (registered in the constructor) rather than
+    /// <c>RatingControl.ValueChanged</c>: that event does not fire when Value is set through the
+    /// control's UIA RangeValue provider, so the rating silently failed to save for anyone driving
+    /// Settings with assistive technology — or with an automated UI test, which is how this was
+    /// caught. The DP callback fires for every path that changes the value, pointer and programmatic
+    /// alike.
+    /// </para>
+    /// </summary>
+    private void OnRatingValueChanged()
+    {
+        if (_loading) return;
+        // RatingControl reports -1 for "cleared", which is the same thing as never having rated as
+        // far as the config is concerned; normalise so the stored value is only ever 0-5.
+        var value = ExperienceRating.Value < 0 ? 0 : (int)ExperienceRating.Value;
+        if (value == _manager.Config.FeedbackRating) return;
+        _manager.Config.FeedbackRating = value;
+        _manager.Save();
+        UpdateRatingThanks();
+    }
+
+    /// <summary>
+    /// The line beside the stars. Deliberately does not thank the user for a low rating — "Thanks
+    /// for rating!" next to one star reads as though nobody looked. Hidden entirely until there is
+    /// a rating to acknowledge.
+    /// </summary>
+    private void UpdateRatingThanks()
+    {
+        int rating = _manager.Config.FeedbackRating;
+        if (rating <= 0)
+        {
+            RatingThanks.Visibility = Visibility.Collapsed;
+            return;
+        }
+        RatingThanks.Text = rating >= 4
+            ? "Thanks — glad it's working for you."
+            : "Thanks. If something's wrong, the support link below will reach us.";
+        RatingThanks.Visibility = Visibility.Visible;
     }
 
     private void HoverStyleBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1167,6 +1771,8 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.ShowSecureValuesTool = true;
         _manager.Config.ShowBase64Tool = true;
         _manager.Config.ShowCertificateTool = true;
+        _manager.Config.FeedbackRating = 0;
+        _manager.Config.AccentColorHex = null;
         _manager.SeedDefaults(_manager.Config.Primary);
         // Through the manager, not a raw Config assignment: RingMetrics holds the geometry the
         // ring actually draws with.
@@ -1185,6 +1791,9 @@ public sealed partial class SettingsWindow : Window
         HotkeyEnabledToggle.IsOn = true;
         HotkeyCapture.Gesture = HotkeyGesture.Default;
         HotCornerEnabledToggle.IsOn = true;
+        ExperienceRating.Value = -1;
+        UpdateRatingThanks();
+        SyncAccentControls();
         SelectHotCorner(HotCorner.TopLeft);
         SelectHotCornerLayout(HotCornerLayout.Ring);
         SyncHotCornerControls();
@@ -1234,6 +1843,54 @@ public sealed partial class SettingsWindow : Window
                 break;
             }
         }
+        UpdateHotCornerIcon(corner);
+    }
+
+    /// <summary>
+    /// Turns the hot-corner triangle to point at <paramref name="corner"/>. The geometry in
+    /// SettingsWindow.xaml is authored with its right angle at the top left, so each quarter turn
+    /// clockwise walks it round to the next corner in the same order the screen does.
+    /// <para>
+    /// Driven from the corner itself rather than the ComboBox's index so the two cannot drift apart
+    /// if the dropdown is ever reordered.
+    /// </para>
+    /// </summary>
+    private void UpdateHotCornerIcon(HotCorner corner) =>
+        HotCornerIconRotation.Angle = CornerTriangleAngle(corner);
+
+    /// <summary>
+    /// Clockwise rotation, in degrees, that turns a triangle authored pointing top-left (right
+    /// angle in that corner, hypotenuse cutting across to it) so it instead points at
+    /// <paramref name="corner"/>. Shared by <see cref="UpdateHotCornerIcon"/> — which turns the
+    /// XAML-declared PathIcon on the Home page's Hot corner row — and
+    /// <see cref="AddHotCornerButton"/>, which builds the same triangle fresh in code for the
+    /// canvas button, so the two can never disagree about which way a given corner turns.
+    /// </summary>
+    private static double CornerTriangleAngle(HotCorner corner) => corner switch
+    {
+        HotCorner.TopLeft => 0,
+        HotCorner.TopRight => 90,
+        HotCorner.BottomRight => 180,
+        HotCorner.BottomLeft => 270,
+        _ => 0,
+    };
+
+    /// <summary>
+    /// The right-angle-triangle path shared by the row icon and the canvas button — see
+    /// <see cref="CornerTriangleAngle"/>. Authored pointing top-left at a nominal 14x14, the same
+    /// coordinates as the XAML-declared PathIcon's <c>Data</c> in SettingsWindow.xaml, so the two
+    /// read as the same mark rather than merely similar ones. Built fresh per call rather than
+    /// cached: Geometry is cheap here and every other themed element on this canvas (brushes,
+    /// borders) is already rebuilt on each RenderPreview pass.
+    /// </summary>
+    private static PathGeometry CornerTriangleGeometry()
+    {
+        var figure = new PathFigure { StartPoint = new Point(0, 0), IsClosed = true };
+        figure.Segments.Add(new LineSegment { Point = new Point(14, 0) });
+        figure.Segments.Add(new LineSegment { Point = new Point(0, 14) });
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+        return geometry;
     }
 
     private void SelectHotCornerLayout(HotCornerLayout layout)
@@ -1263,6 +1920,7 @@ public sealed partial class SettingsWindow : Window
             _manager.Config.HotCorner = corner;
             _manager.Save();
             _manager.ApplyHotCorner();
+            UpdateHotCornerIcon(corner);
             // The canvas draws the corner button, and any quadrant preview, at the chosen corner.
             RenderPreview();
         }
@@ -1297,99 +1955,65 @@ public sealed partial class SettingsWindow : Window
             : "Could not register that hotkey (maybe another app owns it).";
     }
 
+    /// <summary>
+    /// Builds the "Elements" page: every top-level item and every top-level group in one flat
+    /// two-column card grid, all cards the same width — a group's own card immediately followed by
+    /// a card for each of its children, in ring order.
+    /// <para>
+    /// A group used to be skipped entirely here — only its children were listed, folded into the
+    /// flat grid under the group's name — which meant a group with nothing in it yet (exactly what
+    /// "Add item… › Group" produces) appeared nowhere at all and read as a broken add. A later
+    /// design gave each group its own full-width section (a header plus a nested sub-grid of
+    /// children), which fixed that but made a group's own card noticeably wider than every other
+    /// element's. This is the version that keeps the first fix without the second problem: a
+    /// group gets exactly one card — same shape and width as <see cref="BuildItemRow"/>, via
+    /// <see cref="BuildGroupRow"/> — and its children are just more cards in the same shared grid
+    /// right after it, distinguished from a top-level item only by the group's name already
+    /// appearing in their own caption (<c>BuildItemRow</c>'s <c>ring</c> parameter).
+    /// </para>
+    /// </summary>
     private void RebuildItemsList()
     {
         if (ItemsList is null) return;
         ItemsList.Children.Clear();
         ItemsList.RowDefinitions.Clear();
+
         var cards = new List<Border>();
-        void AddRows(IEnumerable<RingItem> items, string ring)
+        foreach (var item in _manager.Config.Primary.Items)
         {
-            foreach (var item in items)
+            // Tools are managed from the Tools tab's own toggles, not listed here too.
+            if (item.IsTool)
+                continue;
+
+            // Nor is the built-in Tools group: it is wholly owned by the dedicated Tools tab, so
+            // showing it here too would duplicate that tab instead of listing something new.
+            if (item.IsGroup && string.Equals(
+                    item.Target, ToolCatalog.ToolsGroupTarget, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (item.IsGroup)
             {
-                // Tools are managed from the Tools tab's own toggles, not listed here too.
-                if (item.IsTool)
-                    continue;
-
-                // Groups (e.g. "Dev tools") are structure, not a flat show/hide/delete target —
-                // this list isn't the source of truth for what's arranged on the ring or how it's
-                // grouped, the Home tab's ring preview is. Recurse into a group's children (in
-                // case it holds a plain item worth listing) without listing the group itself.
-                if (item.IsGroup)
+                cards.Add(new Border
                 {
-                    AddRows(item.Children, item.DisplayName);
-                    continue;
-                }
-
-                var card = new Border { Style = (Style)Root.Resources["Card"] };
-                var row = new Grid();
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                var labels = new StackPanel();
-                labels.Children.Add(new TextBlock
-                {
-                    Text = item.DisplayName,
-                    Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
-                    VerticalAlignment = VerticalAlignment.Center,
+                    Style = (Style)Root.Resources["Card"],
+                    Child = BuildGroupRow(item),
                 });
-                labels.Children.Add(new TextBlock
+                foreach (var child in item.Children.Where(c => !c.IsTool))
+                    cards.Add(new Border
+                    {
+                        Style = (Style)Root.Resources["Card"],
+                        Child = BuildItemRow(child, item.DisplayName),
+                    });
+            }
+            else
+            {
+                cards.Add(new Border
                 {
-                    Text = $"{ring} · {item.Kind}",
-                    Style = SecondaryCaptionStyle,
+                    Style = (Style)Root.Resources["Card"],
+                    Child = BuildItemRow(item, "Home"),
                 });
-
-                var toggle = new ToggleSwitch
-                {
-                    IsOn = !item.Hidden,
-                    OnContent = "",
-                    OffContent = "",
-                    MinWidth = 0,
-                    Margin = new Thickness(12, 0, 0, 0),
-                };
-                var captured = item;
-                toggle.Toggled += (_, _) =>
-                {
-                    captured.Hidden = !toggle.IsOn;
-                    _manager.NotifyItemsChanged();
-                    RenderPreview();
-                };
-                Grid.SetColumn(toggle, 1);
-                row.Children.Add(labels);
-                row.Children.Add(toggle);
-
-                var remove = new Button
-                {
-                    Content = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D), FontSize = 14 },
-                    Width = 40,
-                    Padding = new Thickness(0),
-                    Margin = new Thickness(4, 0, 0, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
-                    BorderThickness = new Thickness(0),
-                };
-                ToolTipService.SetToolTip(remove, "Delete");
-                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(remove, "Delete");
-                remove.Click += (_, _) =>
-                {
-                    _manager.Config.Primary.Items.Remove(captured);
-                    foreach (var group in _manager.Config.Primary.Items.Where(i => i.IsGroup))
-                        group.Children.Remove(captured);
-                    _manager.NotifyItemsChanged();
-                    RebuildItemsList();
-                    RenderPreview();
-                };
-                Grid.SetColumn(remove, 2);
-                row.Children.Add(remove);
-                card.Child = row;
-                cards.Add(card);
-
-                if (item.IsGroup)
-                    AddRows(item.Children, item.DisplayName);
             }
         }
-        AddRows(_manager.Config.Primary.Items, "Home");
 
         int rowCount = (cards.Count + 1) / 2;
         for (int r = 0; r < rowCount; r++)
@@ -1400,6 +2024,250 @@ public sealed partial class SettingsWindow : Window
             Grid.SetColumn(cards[i], i % 2);
             ItemsList.Children.Add(cards[i]);
         }
+    }
+
+    /// <summary>
+    /// A top-level group's own row: the same shape <see cref="BuildItemRow"/> uses — icon, name,
+    /// a caption, a show/hide switch — so a group's card is never wider than an ungrouped item's.
+    /// Two icon buttons stand in for <c>BuildItemRow</c>'s one, an "Add item…" scoped to this
+    /// group's own children alongside the same delete every row carries — icon-only rather than a
+    /// labeled button, since a labeled "Add item…" button is what used to force this row onto its
+    /// own full-width section; a delete-sized icon button fits the same half-width card everything
+    /// else uses.
+    /// </summary>
+    private Grid BuildGroupRow(RingItem group)
+    {
+        var children = group.Children.Where(c => !c.IsTool).ToList();
+
+        var row = new Grid { ColumnSpacing = 12 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var icon = BuildItemIcon(group);
+        Grid.SetColumn(icon, 0);
+        row.Children.Add(icon);
+
+        var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        labels.Children.Add(new TextBlock
+        {
+            Text = group.DisplayName,
+            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+        });
+        labels.Children.Add(new TextBlock
+        {
+            Text = children.Count switch
+            {
+                0 => "No items yet",
+                1 => "Group · 1 item",
+                _ => $"Group · {children.Count} items",
+            },
+            Style = SecondaryCaptionStyle,
+        });
+        Grid.SetColumn(labels, 1);
+        row.Children.Add(labels);
+
+        // Same show/hide switch every other element's row carries — a group is hidden from the
+        // ring the same way a plain item is, so it needs the same control, not just its children's.
+        var toggle = new ToggleSwitch
+        {
+            IsOn = !group.Hidden,
+            OnContent = "",
+            OffContent = "",
+            MinWidth = 0,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        toggle.Toggled += (_, _) =>
+        {
+            group.Hidden = !toggle.IsOn;
+            _manager.NotifyItemsChanged();
+            RenderPreview();
+        };
+        Grid.SetColumn(toggle, 2);
+        row.Children.Add(toggle);
+
+        // Into this group's own children, not the top-level ring — and with the Group tile taken
+        // away, since the ring has no third ring to expand a group inside a group into.
+        var add = BuildRowIconButton(0xE710, "Add item…", "Add item to " + group.DisplayName);
+        add.Click += (_, _) => _manager.OpenAddItem(added =>
+        {
+            group.Children.Add(added);
+            _manager.NotifyItemsChanged();
+            RenderPreview();
+            RebuildItemsList();
+        }, group.Children, isGenericAddItem: true, allowGroups: false);
+        Grid.SetColumn(add, 3);
+        row.Children.Add(add);
+
+        var remove = BuildRowIconButton(0xE74D, "Delete", "Delete " + group.DisplayName);
+        remove.Click += (_, _) =>
+        {
+            // The whole group goes, children and all — they only exist inside it.
+            _manager.Config.Primary.Items.Remove(group);
+            _manager.NotifyItemsChanged();
+            RebuildItemsList();
+            RenderPreview();
+        };
+        Grid.SetColumn(remove, 4);
+        row.Children.Add(remove);
+
+        return row;
+    }
+
+    /// <summary>
+    /// One item's row — icon, name, where it lives and what kind it is, a show/hide switch, and a
+    /// delete. Shared by the top-level cards and by a group section's children, so both look and
+    /// behave the same.
+    /// </summary>
+    private Grid BuildItemRow(RingItem item, string ring)
+    {
+        var row = new Grid { ColumnSpacing = 12 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var icon = BuildItemIcon(item);
+        Grid.SetColumn(icon, 0);
+        row.Children.Add(icon);
+
+        var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        labels.Children.Add(new TextBlock
+        {
+            Text = item.DisplayName,
+            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+        });
+        labels.Children.Add(new TextBlock
+        {
+            Text = $"{ring} · {item.Kind}",
+            Style = SecondaryCaptionStyle,
+        });
+        Grid.SetColumn(labels, 1);
+        row.Children.Add(labels);
+
+        var toggle = new ToggleSwitch
+        {
+            IsOn = !item.Hidden,
+            OnContent = "",
+            OffContent = "",
+            MinWidth = 0,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        toggle.Toggled += (_, _) =>
+        {
+            item.Hidden = !toggle.IsOn;
+            _manager.NotifyItemsChanged();
+            RenderPreview();
+        };
+        Grid.SetColumn(toggle, 2);
+        row.Children.Add(toggle);
+
+        var remove = BuildRowIconButton(0xE74D, "Delete", "Delete " + item.DisplayName);
+        remove.Click += (_, _) =>
+        {
+            // Top level and inside a group both, since the same row builds for either.
+            _manager.Config.Primary.Items.Remove(item);
+            foreach (var group in _manager.Config.Primary.Items.Where(i => i.IsGroup))
+                group.Children.Remove(item);
+            _manager.NotifyItemsChanged();
+            RebuildItemsList();
+            RenderPreview();
+        };
+        Grid.SetColumn(remove, 3);
+        row.Children.Add(remove);
+
+        return row;
+    }
+
+    /// <summary>The borderless icon button an item row and a group row both carry — trash for
+    /// delete, "+" for a group's own scoped add.</summary>
+    private static Button BuildRowIconButton(int glyph, string tooltip, string automationName)
+    {
+        var button = new Button
+        {
+            Content = new FontIcon { Glyph = char.ConvertFromUtf32(glyph), FontSize = 14 },
+            Width = 40,
+            Padding = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+        };
+        ToolTipService.SetToolTip(button, tooltip);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, automationName);
+        return button;
+    }
+
+    /// <summary>
+    /// The small plate at the head of an item row: the item's own glyph to begin with, replaced by
+    /// its real shell / folder / favicon icon if <see cref="IconService"/> resolves one. The same
+    /// image-over-glyph pair the ring itself draws, just built imperatively here rather than bound.
+    /// A group resolves nothing (it has no target), so it simply keeps its group glyph.
+    /// </summary>
+    private FrameworkElement BuildItemIcon(RingItem item)
+    {
+        const double plate = 28;
+
+        var glyph = new FontIcon
+        {
+            Glyph = item.Glyph,
+            FontSize = 15,
+            Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        // Same non-Fluent-glyph handling the ring and the preview do — "B64" and friends are tofu
+        // boxes in the icon font.
+        if (GlyphFonts.IsTextGlyph(item.Glyph))
+            glyph.FontFamily = new FontFamily("Segoe UI");
+
+        var image = new Image
+        {
+            Width = plate - 6,
+            Height = plate - 6,
+            Stretch = Stretch.Uniform,
+            Visibility = Visibility.Collapsed,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var content = new Grid();
+        content.Children.Add(glyph);
+        content.Children.Add(image);
+
+        LoadRowIcon(item, image, glyph);
+
+        // Transparent, not a plate of its own: this row already sits inside a Card (background
+        // SwiftXCardBackgroundBrush), so the card's own fill shows straight through and the glyph
+        // just reads as part of the row. It used to paint RingBubbleBackground here — the ring
+        // dock's own opaque bubble color (solid black in Dark) — which was a copy/paste of the
+        // preview bubble styling and had nothing to do with this list; sitting on top of the
+        // translucent acrylic card it read as a stray solid-black square on every row.
+        return new Border
+        {
+            Width = plate,
+            Height = plate,
+            CornerRadius = new CornerRadius(6),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = content,
+        };
+    }
+
+    /// <summary>
+    /// Fire-and-forget icon resolution for one row. Started on the UI thread, so the continuation
+    /// comes back to it and can touch the two elements directly. A null result means "nothing
+    /// resolved, or the user picked a glyph" — the glyph already on screen is then simply left
+    /// alone.
+    /// </summary>
+    private static async void LoadRowIcon(RingItem item, Image image, FontIcon glyph)
+    {
+        var source = await IconService.LoadIconAsync(item);
+        if (source is null) return;
+        image.Source = source;
+        image.Visibility = Visibility.Visible;
+        glyph.Visibility = Visibility.Collapsed;
     }
 
     private sealed record ToolRow(

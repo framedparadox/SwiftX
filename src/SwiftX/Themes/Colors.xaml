@@ -4,10 +4,26 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!--
-        Phase 1 solid theme — no acrylic / Mica / glass.
-        Dark chrome = #000000, Light chrome = #FFFFFF.
+        Light chrome stays the original solid theme: #FFFFFF, no acrylic/Mica, unchanged — scoped
+        deliberately, see below.
+        Dark chrome sits on a real MicaBackdrop (SettingsWindow's constructor) as of the Windows
+        acrylic theme work: the nav pane, content canvas, cards, and the recessed "tray" areas keep
+        their original raised/recessed layering, just as alpha-carrying (~0xD9) versions of the same
+        opaque colors instead of fully solid, so Mica's own subtle wallpaper tint shows through each
+        plate rather than replacing the layering. Only Dark changed — Light's brushes are still
+        100% opaque, so Light stays pixel-identical to before; MicaBackdrop is attached to the window
+        regardless of theme, it simply never shows through anything under Light. (An earlier,
+        pre-Windows-acrylic-theme iteration tried a similar alpha-over-backdrop approach and was
+        reverted with no reason on record — this pass re-does it deliberately, incrementally, with
+        each plate re-checked for legibility rather than converted in one pass.)
+        Ring bubbles (RingWindow) get their own live per-bubble DesktopAcrylicBackdrop — see
+        RingBubbleGlassTint below and RingWindow.xaml.cs's CreateBubble — independent of Settings'
+        window-level Mica.
         Ring* keys are shared with RingWindow; the ring agent owns geometry/animation and should
         resolve these via ThemeHelper.Brush(Root, …) or {ThemeResource}, never Application.Current.
+        RingWindow.xaml holds no resource references at all (it paints from ThemeHelper.ColorFor,
+        a hard-coded C# switch — see ThemeHelper.ColorFor's own RingBubbleGlassTint case), so
+        nothing here can reach it.
     -->
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Dark">
@@ -17,6 +33,12 @@
             <Color x:Key="SwiftXMutedColor">#888888</Color>
             <Color x:Key="SwiftXAccentColor">#FFFFFF</Color>
             <Color x:Key="RingBubbleBackgroundColor">#000000</Color>
+            <!-- The ring bubbles' live-glass tint (RingWindow's CreateBubble/ApplyBubbleFill) —
+                 sits over a real DesktopAcrylicBackdrop, so this only needs to carry SwiftX's own
+                 dark/light identity; the backdrop's own recipe already handles blur-vs-legibility
+                 contrast. RingBubbleBackgroundColor above stays opaque black/white — it's still
+                 used by hover-invert/close states and by Settings' own (non-glass) ring preview. -->
+            <Color x:Key="RingBubbleGlassTintColor">#66000000</Color>
             <Color x:Key="RingHubBackgroundColor">#000000</Color>
             <Color x:Key="RingWindowBackgroundColor">#00000000</Color>
 
@@ -26,30 +48,97 @@
             <SolidColorBrush x:Key="SwiftXMutedBrush" Color="{StaticResource SwiftXMutedColor}"/>
             <SolidColorBrush x:Key="SwiftXAccentBrush" Color="{StaticResource SwiftXAccentColor}"/>
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
+            <SolidColorBrush x:Key="RingBubbleGlassTint" Color="{StaticResource RingBubbleGlassTintColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
-            <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#0A0A0A"/>
-            <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#333333"/>
-            <!-- NavigationView's own pane defaults to in-app Acrylic and its content area to a
-                 translucent overlay (WinUI generic.xaml: NavigationViewDefaultPaneBackground /
-                 NavigationViewContentBackground) regardless of the window's own backdrop, so an
-                 explicit flat brush is needed to keep it solid instead of picking up a tint. -->
-            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#000000"/>
-            <!-- The pane and the content area used to share this exact same pure-black brush,
-                 which read as one seamless field with no visible seam between the sidebar and the
-                 page beside it. A step lighter/greyer — still unmistakably dark, not a card — is
-                 all it takes to give the pane its own plate. -->
-            <SolidColorBrush x:Key="SwiftXNavPaneBrush" Color="#141414"/>
+            <!-- Settings-only root fill (SettingsWindow.xaml's Root Grid uses this, not
+                 SwiftXSurfaceBrush): docs/logi_options_design_features.md's dark Canvas Background,
+                 whose stated range is #1A1A1A to #222222 — #222222, its light end, so the nav pane
+                 below can take #1A1A1A and still read as a distinct, recessed surface beside it.
+                 (Was #202020, design-colours.md's Surface.Base; the Logi palette supersedes that for
+                 Settings only.) SwiftXSurfaceBrush above stays #000000 because AddItemWindow and the
+                 tool windows share that key and are out of scope here — see the longer comment a few
+                 lines down by the other Settings-exclusive keys. -->
+            <Color x:Key="SettingsSurfaceColor">#222222</Color>
+            <!-- Alpha-carrying so SettingsWindow's MicaBackdrop (see the constructor) shows through
+                 — 0xD9 (~85%) keeps Mica's own wallpaper-derived tint to a subtle hint rather than a
+                 strong blur, matching how understated Mica reads everywhere else in Windows; the
+                 four plates' own distinct hues (below) are what still carries the raised/recessed
+                 hierarchy, the same way they did at full opacity. Kept deliberately when the palette
+                 moved to Logi's: Logi's own hexes are flat, so at 0xD9 these land close to them
+                 rather than exactly on them — the frosted look is worth the few points of drift, and
+                 going opaque here would make Mica a no-op and revert the acrylic-theme work.
+                 Dark only — Light's brushes below stay 100% opaque; Mica is still attached to the
+                 window in Light too, it just never shows through anything. -->
+            <SolidColorBrush x:Key="SettingsSurfaceBrush" Color="#D9222222"/>
+            <!-- Dark Settings palette anchored on docs/logi_options_design_features.md's contrast
+                 matrix: Canvas Background #1A1A1A-#222222, Card & Container BG #2C2C2C. The canvas
+                 takes #222222 — the same value Root's own Background resolves to (see
+                 SettingsWindow.xaml), so the sliver of Root that shows through around the title bar
+                 and NavigationView's own chrome matches the content exactly rather than reading as
+                 a second, darker surface. The nav pane takes #1A1A1A, the other end of Logi's canvas
+                 range, so pane and content read as the two distinct surfaces Logi's "elevated
+                 surface framework" describes. Cards were already at Logi's #2C2C2C and do not move.
+                 Only the Settings-exclusive keys change: SwiftXSurfaceColor/Foreground/Border/Muted
+                 above are shared with AddItemWindow, the tool windows, and the ring (which also
+                 hardcodes them a second time in ThemeHelper.ColorFor), and must stay as they are. -->
+            <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#D92C2C2C"/>
+            <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#3A3A3A"/>
+            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#D9222222"/>
+            <SolidColorBrush x:Key="SwiftXNavPaneBrush" Color="#D91A1A1A"/>
             <!-- Overrides the framework's own key so NavigationView's pane (which reads this key
                  straight from its control template, not from an exposed CLR property) picks up
-                 our flat color instead of the WinUI default of in-app Acrylic. -->
+                 our plate instead of the WinUI default of in-app Acrylic. -->
             <StaticResource x:Key="NavigationViewDefaultPaneBackground" ResourceKey="SwiftXNavPaneBrush"/>
+            <!-- The one the Left-mode pane actually reads. NavigationViewDefaultPaneBackground
+                 above governs other display modes; on its own it left the pane painting the
+                 canvas colour (verified on screen in both themes), which stayed invisible only
+                 while pane and canvas were near-identical greys. -->
+            <StaticResource x:Key="NavigationViewExpandedPaneBackground" ResourceKey="SwiftXNavPaneBrush"/>
+            <!-- The content-area counterpart, pointed at the same opaque canvas color rather than
+                 left Transparent: SettingsWindow paints its own SwiftXCanvasBrush Grid directly
+                 over the entire NavigationView content region, so what shows through here barely
+                 matters once both are opaque — this is just belt-and-suspenders so nothing shows
+                 through at the Grid's own edges (e.g. during a resize) instead of the intended
+                 canvas color. -->
+            <StaticResource x:Key="NavigationViewContentBackground" ResourceKey="SwiftXCanvasBrush"/>
             <!-- SettingsWindow.xaml references this key unconditionally (not theme-gated), so it
                  must exist in every theme dictionary or {ThemeResource} throws XamlParseException
                  the moment this dictionary is the active one — it isn't just a Light-mode nicety.
-                 A shade lighter than SwiftXCardBackgroundBrush so the ring-preview canvas still
-                 reads as its own distinct "tray" rather than another card. -->
-            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#161616"/>
+                 The recessed layer: darker than the canvas and the cards it sits among, so the Home
+                 tab's ring-preview canvas and its group-children strip read as a tray sunk into the
+                 page rather than as another card raised off it. Not the darkest plate in the
+                 dictionary any more — the nav pane is, at Logi's #1A1A1A — but the two are never
+                 adjacent, so what matters is that this stays a step below the #222222 canvas it is
+                 actually sunk into. -->
+            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#D9202020"/>
+
+            <!-- Text and accent, Settings-only, from logi_options_design_features.md's matrix.
+                 Deliberately NOT the shared SwiftXMutedBrush/SwiftXAccentBrush above: those are read
+                 by the ring, AddItemWindow, and the tool windows, and SwiftXAccentBrush in particular
+                 is plain #FFFFFF there. Secondary Label Text is Logi's #AAAAAA (the shared muted key
+                 stays #888888). The accent is Logi's "Radiant Light Teal / Neon Cyan" and is the
+                 first non-monochrome color the app has ever painted — see the Feedback & Support
+                 page's links in SettingsWindow.xaml, its only consumer today. -->
+            <SolidColorBrush x:Key="SettingsSecondaryTextBrush" Color="#AAAAAA"/>
+            <SolidColorBrush x:Key="SettingsAccentBrush" Color="#3DDCD3"/>
+            <SolidColorBrush x:Key="SettingsAccentHoverBrush" Color="#6FE9E1"/>
+            <!-- HyperlinkButton drives its colour from these four framework keys in every visual
+                 state, so a Foreground set on the control (or in a Style) is honoured at rest and
+                 then discarded on hover. Overriding them is the only way to hold the accent through
+                 pointer-over and pressed.
+                 They live here, inside the theme dictionaries, rather than in SettingsWindow's own
+                 Root.Resources: a StaticResource alias in a plain, non-theme-keyed dictionary
+                 resolves once at parse time and then never re-resolves, so a Root-level override
+                 would freeze whichever theme happened to be live when the window was built and stop
+                 tracking theme switches. Inside a ThemeDictionary each theme aliases its own value,
+                 which is exactly how the NavigationView* overrides above already work.
+                 App-level in form, Settings-only in effect: the Feedback & Support page holds the
+                 only HyperlinkButtons in the app. -->
+            <StaticResource x:Key="HyperlinkButtonForeground" ResourceKey="SettingsAccentBrush"/>
+            <StaticResource x:Key="HyperlinkButtonForegroundPointerOver" ResourceKey="SettingsAccentHoverBrush"/>
+            <StaticResource x:Key="HyperlinkButtonForegroundPressed" ResourceKey="SettingsAccentHoverBrush"/>
+            <StaticResource x:Key="HyperlinkButtonForegroundDisabled" ResourceKey="SettingsSecondaryTextBrush"/>
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Light">
@@ -59,6 +148,8 @@
             <Color x:Key="SwiftXMutedColor">#666666</Color>
             <Color x:Key="SwiftXAccentColor">#000000</Color>
             <Color x:Key="RingBubbleBackgroundColor">#FFFFFF</Color>
+            <!-- See the matching comment in the Dark dictionary above. -->
+            <Color x:Key="RingBubbleGlassTintColor">#66FFFFFF</Color>
             <Color x:Key="RingHubBackgroundColor">#FFFFFF</Color>
             <Color x:Key="RingWindowBackgroundColor">#00000000</Color>
 
@@ -68,41 +159,89 @@
             <SolidColorBrush x:Key="SwiftXMutedBrush" Color="{StaticResource SwiftXMutedColor}"/>
             <SolidColorBrush x:Key="SwiftXAccentBrush" Color="{StaticResource SwiftXAccentColor}"/>
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
+            <SolidColorBrush x:Key="RingBubbleGlassTint" Color="{StaticResource RingBubbleGlassTintColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
-            <!-- 100% white: Light Settings has exactly two things that are allowed to read as
-                 grey — the canvas (SwiftXCanvasBrush/SwiftXRingCanvasBrush below) and a
-                 highlighted/selected nav item (SwiftXNavSelected* below). Every other surface,
-                 including this card background, is pure white so those two stay visually
-                 distinct instead of blending into a field of near-whites. -->
-            <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#FFFFFF"/>
-            <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#CCCCCC"/>
-            <!-- Lightest grey in the palette: the NavigationView pane + content area ("section
-                 background"). Bumped from #F3F3F3 so it reads as visibly closer to white than the
-                 generic Card background below it. -->
-            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#FAFAFA"/>
-            <!-- A shade more recessed than both the page background above and the generic Card
-                 background below, dedicated to the Home tab's ring-preview canvas so it reads as
-                 its own distinct "tray" rather than just another settings card. -->
-            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#EEEEEE"/>
-            <!-- Strictly neutral (R=G=B) selected-nav-item greys. WinUI's own tokens here
-                 (SubtleFillColorSecondary/TertiaryBrush, etc.) can be influenced by the user's
-                 Windows accent-color personalization, which read as "a little bit pink" against a
-                 light pane. Going fully explicit removes that whole class of doubt rather than
-                 chasing which token was actually the source. -->
-            <SolidColorBrush x:Key="SwiftXNavSelectedBrush" Color="#E8E8E8"/>
-            <SolidColorBrush x:Key="SwiftXNavSelectedHoverBrush" Color="#E0E0E0"/>
-            <SolidColorBrush x:Key="SwiftXNavSelectedPressedBrush" Color="#D8D8D8"/>
-            <SolidColorBrush x:Key="SwiftXNavSelectedDisabledBrush" Color="#EDEDED"/>
-            <StaticResource x:Key="NavigationViewDefaultPaneBackground" ResourceKey="SwiftXCanvasBrush"/>
+            <!-- Settings-only root fill, same idea as the Dark dictionary's, now on
+                 docs/logi_options_design_features.md's light Canvas Background: "Pure White
+                 (#FFFFFF) to soft, cold off-white". This is the pure-white end. It is also the
+                 inversion of what Light Settings used to be — see the card comment below, which is
+                 where that change actually shows. Matches SwiftXCanvasBrush so Root's own background
+                 (visible around the title bar) agrees with the content area exactly. -->
+            <Color x:Key="SettingsSurfaceColor">#FFFFFF</Color>
+            <SolidColorBrush x:Key="SettingsSurfaceBrush" Color="{StaticResource SettingsSurfaceColor}"/>
+            <!-- Logi's "Very Light Blue / Matte Gray" card background, #F0F4F8. This inverts the
+                 relationship Light Settings had before: it used to be a #F3F3F3 canvas with cards
+                 a step *lighter* at pure #FFFFFF, so cards read as raised white panels on grey.
+                 Logi's light mode is the other way round — a pure white canvas with cards a cool
+                 tint *darker*, so they read as recessed panels inset into the page. That reversal is
+                 the single biggest visual change in this palette and it is intentional; the stroke
+                 below is retinted to match (a cool #DDE4EC rather than the old neutral #CCCCCC) so
+                 the card edge belongs to the same cool family as its fill instead of cutting a grey
+                 line across it. -->
+            <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#F0F4F8"/>
+            <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#DDE4EC"/>
+            <!-- The NavigationView content area — pure white, per the canvas comment above. The
+                 pane no longer shares this brush: it has its own SwiftXNavPaneBrush below, which
+                 Light previously did not define at all. -->
+            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#FFFFFF"/>
+            <!-- New in Light (Dark and Default have always had this key). Logi's light mode gives
+                 the control pane the same cool matte tone as its cards, one step off the white
+                 canvas beside it, so the pane reads as its own surface rather than as more canvas.
+                 With the canvas now pure white there is nothing left for the pane to differ from
+                 unless it gets a value of its own — which is why pointing
+                 NavigationViewDefaultPaneBackground at SwiftXCanvasBrush (what Light used to do)
+                 would now leave the pane and content indistinguishable. -->
+            <SolidColorBrush x:Key="SwiftXNavPaneBrush" Color="#F0F4F8"/>
+            <!-- A shade more recessed than both the canvas and the cards, dedicated to the Home
+                 tab's ring-preview canvas so it reads as its own distinct "tray" rather than just
+                 another settings card. Retinted cool along with the cards. -->
+            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#E7EDF3"/>
+            <!-- Selected-nav-item fills, deliberately explicit rather than WinUI's own tokens here
+                 (SubtleFillColorSecondary/TertiaryBrush, etc.), which can be influenced by the
+                 user's Windows accent-color personalization and read as "a little bit pink" against
+                 a light pane. These used to be strictly neutral (R=G=B) for exactly that reason;
+                 they now carry the same deliberate cool tint as the pane they sit on, which is a
+                 chosen hue rather than an inherited one, so the personalization problem stays
+                 solved. Each is a step down from the #F0F4F8 pane. -->
+            <SolidColorBrush x:Key="SwiftXNavSelectedBrush" Color="#DCE5EE"/>
+            <SolidColorBrush x:Key="SwiftXNavSelectedHoverBrush" Color="#D2DDE8"/>
+            <SolidColorBrush x:Key="SwiftXNavSelectedPressedBrush" Color="#C8D5E2"/>
+            <SolidColorBrush x:Key="SwiftXNavSelectedDisabledBrush" Color="#E9EEF3"/>
+            <StaticResource x:Key="NavigationViewDefaultPaneBackground" ResourceKey="SwiftXNavPaneBrush"/>
+            <!-- The one the Left-mode pane actually reads. NavigationViewDefaultPaneBackground
+                 above governs other display modes; on its own it left the pane painting the
+                 canvas colour (verified on screen in both themes), which stayed invisible only
+                 while pane and canvas were near-identical greys. -->
+            <StaticResource x:Key="NavigationViewExpandedPaneBackground" ResourceKey="SwiftXNavPaneBrush"/>
             <StaticResource x:Key="NavigationViewItemBackgroundSelected" ResourceKey="SwiftXNavSelectedBrush"/>
             <StaticResource x:Key="NavigationViewItemBackgroundSelectedPointerOver" ResourceKey="SwiftXNavSelectedHoverBrush"/>
             <StaticResource x:Key="NavigationViewItemBackgroundSelectedPressed" ResourceKey="SwiftXNavSelectedPressedBrush"/>
             <StaticResource x:Key="NavigationViewItemBackgroundSelectedDisabled" ResourceKey="SwiftXNavSelectedDisabledBrush"/>
-            <!-- CardStrokeColorDefaultBrush (the WinUI default here) is itself neutral, but pinned
-                 to our own already-neutral stroke brush anyway so this line is never a place a
-                 future Fluent token change could reintroduce a tint. -->
+            <!-- Pinned to our own stroke brush so this line is never a place a future Fluent token
+                 change could reintroduce a tint we did not choose. -->
             <StaticResource x:Key="NavigationViewContentGridBorderBrush" ResourceKey="SwiftXCardStrokeBrush"/>
+            <!-- The content-area counterpart of the pane key above, same belt-and-suspenders reason
+                 as Dark's: SettingsWindow paints its own SwiftXCanvasBrush Grid over the whole
+                 content region, so this only governs the Grid's own edges (e.g. mid-resize). Newly
+                 needed in Light — the canvas is pure white now, so WinUI's default grey showing
+                 through there would read as a visible seam rather than blending in the way it did
+                 against the old #F3F3F3. -->
+            <StaticResource x:Key="NavigationViewContentBackground" ResourceKey="SwiftXCanvasBrush"/>
+
+            <!-- See the matching comment in the Dark dictionary above. Secondary Label Text is
+                 Logi's "Mid-tone Slate Gray" #555555 (the shared SwiftXMutedBrush stays #666666).
+                 The accent is a deepened version of Logi's signature teal rather than the bright
+                 one Dark uses: as link text on a white card the bright teal lands near 1.8:1, well
+                 under WCAG AA, while #0B7C7C holds the same hue at ~5:1. -->
+            <SolidColorBrush x:Key="SettingsSecondaryTextBrush" Color="#555555"/>
+            <SolidColorBrush x:Key="SettingsAccentBrush" Color="#0B7C7C"/>
+            <SolidColorBrush x:Key="SettingsAccentHoverBrush" Color="#095E5E"/>
+            <!-- See the matching comment in the Dark dictionary above. -->
+            <StaticResource x:Key="HyperlinkButtonForeground" ResourceKey="SettingsAccentBrush"/>
+            <StaticResource x:Key="HyperlinkButtonForegroundPointerOver" ResourceKey="SettingsAccentHoverBrush"/>
+            <StaticResource x:Key="HyperlinkButtonForegroundPressed" ResourceKey="SettingsAccentHoverBrush"/>
+            <StaticResource x:Key="HyperlinkButtonForegroundDisabled" ResourceKey="SettingsSecondaryTextBrush"/>
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Default">
@@ -112,6 +251,12 @@
             <Color x:Key="SwiftXMutedColor">#888888</Color>
             <Color x:Key="SwiftXAccentColor">#FFFFFF</Color>
             <Color x:Key="RingBubbleBackgroundColor">#000000</Color>
+            <!-- The ring bubbles' live-glass tint (RingWindow's CreateBubble/ApplyBubbleFill) —
+                 sits over a real DesktopAcrylicBackdrop, so this only needs to carry SwiftX's own
+                 dark/light identity; the backdrop's own recipe already handles blur-vs-legibility
+                 contrast. RingBubbleBackgroundColor above stays opaque black/white — it's still
+                 used by hover-invert/close states and by Settings' own (non-glass) ring preview. -->
+            <Color x:Key="RingBubbleGlassTintColor">#66000000</Color>
             <Color x:Key="RingHubBackgroundColor">#000000</Color>
             <Color x:Key="RingWindowBackgroundColor">#00000000</Color>
 
@@ -121,17 +266,42 @@
             <SolidColorBrush x:Key="SwiftXMutedBrush" Color="{StaticResource SwiftXMutedColor}"/>
             <SolidColorBrush x:Key="SwiftXAccentBrush" Color="{StaticResource SwiftXAccentColor}"/>
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
+            <SolidColorBrush x:Key="RingBubbleGlassTint" Color="{StaticResource RingBubbleGlassTintColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
-            <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#0A0A0A"/>
-            <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#333333"/>
-            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#000000"/>
             <!-- See the matching comment in the Dark dictionary above. -->
-            <SolidColorBrush x:Key="SwiftXNavPaneBrush" Color="#141414"/>
+            <Color x:Key="SettingsSurfaceColor">#222222</Color>
+            <SolidColorBrush x:Key="SettingsSurfaceBrush" Color="#D9222222"/>
+            <!-- Every fill below is the Dark dictionary's value verbatim (alpha-carrying, same as
+                 Dark, for the same MicaBackdrop reason) — Default is what is live in the brief
+                 window before ActualTheme resolves, so any drift between the two would show up as a
+                 flash of a different palette as the window comes up. That includes the text and
+                 accent brushes at the end: they are Settings-only additions, and a Default that
+                 omitted them would throw XamlParseException on any {ThemeResource} that reaches
+                 them during that window. -->
+            <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#D92C2C2C"/>
+            <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#3A3A3A"/>
+            <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#D9222222"/>
+            <!-- See the matching comment in the Dark dictionary above. -->
+            <SolidColorBrush x:Key="SwiftXNavPaneBrush" Color="#D91A1A1A"/>
             <StaticResource x:Key="NavigationViewDefaultPaneBackground" ResourceKey="SwiftXNavPaneBrush"/>
+            <!-- The one the Left-mode pane actually reads. NavigationViewDefaultPaneBackground
+                 above governs other display modes; on its own it left the pane painting the
+                 canvas colour (verified on screen in both themes), which stayed invisible only
+                 while pane and canvas were near-identical greys. -->
+            <StaticResource x:Key="NavigationViewExpandedPaneBackground" ResourceKey="SwiftXNavPaneBrush"/>
+            <StaticResource x:Key="NavigationViewContentBackground" ResourceKey="SwiftXCanvasBrush"/>
             <!-- See the matching comment in the Dark dictionary above — this key is referenced
                  unconditionally from SettingsWindow.xaml and must exist here too. -->
-            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#161616"/>
+            <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#D9202020"/>
+            <SolidColorBrush x:Key="SettingsSecondaryTextBrush" Color="#AAAAAA"/>
+            <SolidColorBrush x:Key="SettingsAccentBrush" Color="#3DDCD3"/>
+            <SolidColorBrush x:Key="SettingsAccentHoverBrush" Color="#6FE9E1"/>
+            <!-- See the matching comment in the Dark dictionary above. -->
+            <StaticResource x:Key="HyperlinkButtonForeground" ResourceKey="SettingsAccentBrush"/>
+            <StaticResource x:Key="HyperlinkButtonForegroundPointerOver" ResourceKey="SettingsAccentHoverBrush"/>
+            <StaticResource x:Key="HyperlinkButtonForegroundPressed" ResourceKey="SettingsAccentHoverBrush"/>
+            <StaticResource x:Key="HyperlinkButtonForegroundDisabled" ResourceKey="SettingsSecondaryTextBrush"/>
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>

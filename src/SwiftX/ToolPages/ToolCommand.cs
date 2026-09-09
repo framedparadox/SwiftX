@@ -26,7 +26,7 @@ public sealed class ToolCommand(
     /// A stable, unlocalized handle for this command, surfaced as the command bar button's
     /// <c>AutomationId</c>. <see cref="Label"/> cannot serve: it is a translated string, so a UI
     /// test keyed on it passes in English and fails in German, and breaks outright the first time
-    /// anyone rewords a button. The ids here are the vocabulary <c>tests/dockdev.UITests</c> drives
+    /// anyone rewords a button. The ids here are the vocabulary <c>tests/SwiftX.UITests</c> drives
     /// the app with, so they are part of the contract — rename one and the table row that uses it
     /// stops finding its button.
     /// </summary>
@@ -41,6 +41,15 @@ public sealed class ToolCommand(
     /// handful of actions whose icon is universally understood (see the factories below); a
     /// command whose meaning lives in its wording — Format, Minify, Convert — keeps its text.</summary>
     public bool IconOnly { get; init; }
+
+    /// <summary>
+    /// Whether this command's button belongs in the bar right now — null means always. Checked
+    /// once when the bar is built and again whenever the page calls
+    /// <see cref="EditorToolPage.RefreshCommandVisibility"/>, for a command whose relevance
+    /// depends on page state rather than being fixed for the page's lifetime (Formatter's search,
+    /// hidden until there's something to search).
+    /// </summary>
+    public Func<bool>? IsVisible { get; init; }
 
     public bool CanExecute() => canExecute?.Invoke() ?? true;
 
@@ -58,7 +67,7 @@ public sealed class ToolCommand(
     private const VirtualKeyModifiers CtrlShift = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift;
 
     /// <summary>The <see cref="Id"/> values commands carry. Constants rather than loose literals so
-    /// the app and <c>tests/dockdev.UITests</c> cannot drift apart without the compiler noticing.</summary>
+    /// the app and <c>tests/SwiftX.UITests</c> cannot drift apart without the compiler noticing.</summary>
     public static class Ids
     {
         public const string Copy = "copy";
@@ -72,6 +81,7 @@ public sealed class ToolCommand(
         public const string Convert = "convert";
         public const string Generate = "generate";
         public const string Advanced = "advanced";
+        public const string Search = "search";
     }
 
     /// <summary>Copy the tool's result to the clipboard. Ctrl+Shift+C.</summary>

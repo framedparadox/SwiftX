@@ -16,10 +16,40 @@ public static class CertificateReader
 {
     public sealed record CertEntry(string? Alias, string Source, X509Certificate2 Certificate);
 
+    /// <summary>
+    /// What a file turned out to contain, and the owner of every <see cref="X509Certificate2"/>
+    /// in it.
+    /// <para>
+    /// <b>Disposable, and it matters here more than the usual "certificates are IDisposable"
+    /// tidiness.</b> Each certificate wraps a native <c>CERT_CONTEXT</c>, which is unmanaged
+    /// memory the GC cannot see and so has no pressure to reclaim: a keystore of a few hundred
+    /// certificates, re-read on every wrong-password retry, accumulates those contexts for as
+    /// long as the finalizer queue takes to notice. The stronger reason is what a PKCS#12 holds —
+    /// <see cref="ReadPkcs12"/> loads private keys (ephemerally, so nothing is written to a key
+    /// store, but they are live key material in this process's memory). Dropping the reference
+    /// leaves that material resident until finalization; disposing releases it at the moment the
+    /// user asked for it to go.
+    /// </para>
+    /// <para>
+    /// Disposing twice is safe, and so is disposing an outcome whose certificates a caller is
+    /// still displaying — which is exactly why the caller must not: the owner is whoever holds
+    /// the outcome, and it disposes when it replaces or discards it, never before.
+    /// </para>
+    /// </summary>
     public sealed record ReadOutcome(bool Success, bool NeedsPassword, string? Message, IReadOnlyList<CertEntry> Entries, string ContainerKind)
+        : IDisposable
     {
         public static ReadOutcome Failed(string message, bool needsPassword = false) =>
             new(false, needsPassword, message, [], "");
+
+        public void Dispose()
+        {
+            foreach (var entry in Entries)
+            {
+                try { entry.Certificate.Dispose(); }
+                catch (CryptographicException) { /* already released; nothing left to free */ }
+            }
+        }
     }
 
     public static ReadOutcome Read(byte[] data, string? password)

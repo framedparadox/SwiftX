@@ -310,20 +310,23 @@ public sealed partial class RingWindow : Window
     /// hands that window foreground activation and deactivates this one; treat it the same as
     /// clicking the ring's own dead zone.
     /// <para>
-    /// Suppressed while Settings or Add-new is open: opening either from the ring's own flyout
-    /// already dismisses the ring on selection (see <see cref="OnSelectAsync"/>), but both can also
-    /// be reached from the tray icon while the ring is sitting open, or the ring can be re-summoned
-    /// while one already has focus — either way, every click into that window would otherwise
-    /// deactivate this one and immediately dismiss the ring out from under the user. Once the
-    /// window closes, the matching <c>RingManager</c> flag goes false again and the very next
-    /// deactivation resumes the normal click-anywhere-to-dismiss behavior.
+    /// Suppressed only while Settings or Add-new is the window that just took activation (see
+    /// <see cref="RingManager.IsExemptWindowForeground"/>) — not merely while either is open
+    /// somewhere. Opening either from the ring's own flyout already dismisses the ring on selection
+    /// (see <see cref="OnSelectAsync"/>), but both can also be reached from the tray icon while the
+    /// ring is sitting open, or the ring can be re-summoned while one already has focus — either
+    /// way, every click into that window would otherwise deactivate this one and immediately
+    /// dismiss the ring out from under the user. Checking by foreground rather than "is it open at
+    /// all" is what keeps that exemption to the one moment it's for: a Settings window left open in
+    /// the background for the rest of the session must not permanently disable click-anywhere on
+    /// every later summon.
     /// </para>
     /// </summary>
     private void RingWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
         if (args.WindowActivationState != WindowActivationState.Deactivated)
             return;
-        if (_manager.IsSettingsOpen || _manager.IsAddItemOpen)
+        if (_manager.IsExemptWindowForeground())
             return;
         Dismiss();
     }
@@ -361,9 +364,10 @@ public sealed partial class RingWindow : Window
         if (!pressed)
             return;
 
-        // Same exemption the deactivation path makes: Settings and Add-new are reached from the
-        // ring and stay open in front of it, so clicking into either must not close it.
-        if (_manager.IsSettingsOpen || _manager.IsAddItemOpen)
+        // Same exemption the deactivation path makes, and by the same foreground check: a press
+        // that actually landed on Settings or Add-new must not close the ring, but either window
+        // merely existing elsewhere must not block every other click from closing it either.
+        if (_manager.IsExemptWindowForeground())
             return;
 
         if (!NativeMethods.GetCursorPos(out var cursor) || IsOverRing(cursor))
@@ -449,6 +453,26 @@ public sealed partial class RingWindow : Window
             bubble.Detach?.Invoke();
     }
 
+    /// <summary>
+    /// Keeps the Settings bubble's "Add new" child (see <see cref="SystemRingItems.CreateAddNew"/>)
+    /// in sync with whether there is anywhere left to add into. The full ring never needs this
+    /// fallback — <see cref="CurrentItems"/> already puts an "Add new" placeholder directly on
+    /// every empty user slot, which is reachable without opening Settings at all — so this only
+    /// ever fires for the quadrant, whose four places (Settings among them) have no such per-slot
+    /// placeholder of their own. Recomputed on every render since which shape is showing — ring or
+    /// quadrant — is itself part of what "room to add" means.
+    /// </summary>
+    private void UpdateSettingsAddNew()
+    {
+        _settingsItem.Children.Clear();
+        if (_quadrant is not { } corner)
+            return;
+
+        bool full = HotCornerItems.Resolve(_manager.Config, _settingsItem).Count >= QuadrantLayout.ItemCount;
+        if (!full)
+            _settingsItem.Children.Add(SystemRingItems.CreateAddNew());
+    }
+
     private IReadOnlyList<(RingItem Item, int Slot)> CurrentItems()
     {
         var slots = new List<(RingItem, int)>();
@@ -458,6 +482,12 @@ public sealed partial class RingWindow : Window
             if (slot >= RingMetrics.UserSlotCount) break;
             slots.Add((item, slot++));
         }
+
+        // Fewer than UserSlotCount items leaves the rest of the ring empty — fill each remaining
+        // user slot with its own "Add new" placeholder rather than leaving a bare gap, so the ring
+        // always reads as a full circle and every empty slot is itself an obvious way to fill it.
+        while (slot < RingMetrics.UserSlotCount)
+            slots.Add((SystemRingItems.CreateAddNew(), slot++));
 
         // Always last, always present, always in the same place — see SystemRingItems.
         slots.Add((_settingsItem, RingMetrics.SlotCount - 2));
@@ -502,6 +532,7 @@ public sealed partial class RingWindow : Window
         _flyout.Clear();
         _flyoutParent = null;
         _hovered = null;
+        UpdateSettingsAddNew();
 
         // The hub is the ring's center mark. A quarter circle's center is the screen corner, so
         // three quarters of a full-sized one would be off the screen — AttachHub draws a smaller
@@ -568,16 +599,79 @@ public sealed partial class RingWindow : Window
         WindowChrome.SetEllipticHitRegions(_hwnd, scale, regions);
     }
 
+    /// <summary>
+    /// Gives a bubble an accessible name and hides the decoration inside it from Narrator.
+    /// <para>
+    /// The ring is drawn as bare <see cref="Border"/> elements on a <see cref="Canvas"/> with
+    /// pointer handlers, which is why it needs this: a Border is not a control, so nothing here
+    /// carried a name, and a screen reader saw an unnamed canvas where the whole launcher is.
+    /// Naming each bubble after the item it launches is what lets Narrator's scan and touch modes
+    /// report what is on the ring. It does not make the ring keyboard-operable — that needs real
+    /// invokable peers and arrow navigation, which is a feature rather than a fix, and is recorded
+    /// as such in the review — but a surface that cannot be read at all is the worse of the two
+    /// problems and this is the one that is safe to fix without touching input handling.
+    /// </para>
+    /// <para>
+    /// The children are pushed to the raw view deliberately. The glass, the tint and the group arc
+    /// are decoration, and the icon and glyph restate the name — a <c>FontIcon</c> in particular
+    /// carries a private-use codepoint, which is not something to read out.
+    /// </para>
+    /// </summary>
+    private static void NameForNarrator(Border host, RingItem item)
+    {
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            host, string.IsNullOrWhiteSpace(item.DisplayName) ? item.Kind.ToString() : item.DisplayName);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+            host, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Content);
+
+        if (host.Child is Panel panel)
+        {
+            foreach (var child in panel.Children)
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+                    child, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        }
+    }
+
+    /// <summary>
+    /// Resolves an item's icon, unless the picture it already has was resolved from exactly the
+    /// same inputs.
+    /// <para>
+    /// The skip is what makes a summon cheap. <see cref="RenderCurrent"/> fires one of these per
+    /// item, and it runs on every summon, every theme change and every settings save — while
+    /// resolving is not cheap at all: an app or file goes through the shell's jumbo image list,
+    /// <c>GetDIBits</c>, a PNG encode and a XAML decode, and a web link re-reads and re-decodes
+    /// its cached favicon. That is ten of those on every appearance of a window whose entire
+    /// value is appearing instantly, to arrive back at the picture already on screen.
+    /// <see cref="RingItem"/> instances are the user's own config objects and outlive any render,
+    /// so the previous answer is still there to reuse.
+    /// </para>
+    /// <para>
+    /// A failed resolution is not cached — <see cref="RingItem.IconImage"/> stays null and the
+    /// next render tries again, which is what lets a favicon that missed on the first summon
+    /// (no connectivity yet) appear on a later one.
+    /// </para>
+    /// <para>
+    /// The key doubles as the staleness guard the previous <c>Target</c> comparison provided, and
+    /// covers more than it did: editing <see cref="RingItem.CustomIconPath"/> or
+    /// <see cref="RingItem.CustomGlyph"/> also invalidates, so a slow resolution that lands after
+    /// an edit is discarded rather than painted over the newer one. Assigning a null result on a
+    /// changed key is deliberate — it clears a bitmap the item is no longer entitled to, which is
+    /// what lets a glyph chosen for an item that previously showed a shell icon actually appear.
+    /// </para>
+    /// </summary>
     private static async Task ResolveIconAsync(RingItem ringItem)
     {
-        // Every render fires one of these per item, unconditionally and with no de-dup — if the
-        // item's Target is edited while a slow resolution (e.g. a favicon fetch) for the old
-        // Target is still in flight, that stale result must not overwrite whatever the new
-        // Target already resolved to.
-        string targetAtStart = ringItem.Target;
+        string key = ringItem.IconKey;
+        if (ringItem.IconImage is not null && ringItem.IconSignature == key)
+            return;
+
         var src = await IconService.LoadIconAsync(ringItem);
-        if (src is not null && ringItem.Target == targetAtStart)
-            ringItem.IconImage = src;
+
+        if (ringItem.IconKey != key)
+            return; // edited mid-flight; the resolution for the newer key owns the result
+
+        ringItem.IconSignature = key;
+        ringItem.IconImage = src;
     }
 
     /// <summary>
@@ -746,12 +840,19 @@ public sealed partial class RingWindow : Window
         var geometry = new PathGeometry();
         geometry.Figures.Add(figure);
 
+        // Tint-only, not a live backdrop like CreateBubble's bubbles: SystemBackdropElement only
+        // clips to a rounded rect (CornerRadius), and this wedge is a pie slice with its apex at
+        // the box's center, not its corner — genuine per-pixel blur here would need an arbitrary
+        // path clip, which isn't available without adding Win2D as a dependency for one decorative
+        // shape. Translucent tint over the real desktop (RingWindow has no window-level backdrop —
+        // see TransparentBackdrop) is the honest middle ground: no blur, but no longer flat opaque
+        // black/white either.
         return new Path
         {
             Width = box,
             Height = box,
             Data = geometry,
-            Fill = ThemeBrush("RingBubbleBackground"),
+            Fill = ThemeBrush("RingBubbleGlassTint"),
             Stroke = ThemeBrush("SwiftXBorderBrush"),
             StrokeThickness = 1,
         };
@@ -794,7 +895,33 @@ public sealed partial class RingWindow : Window
         };
         item.PropertyChanged += onItemChanged;
 
+        // Live frosted glass, bottom-most so it samples the real desktop behind the bubble.
+        // Lives inside the same Border every entrance/hover/flyout animation already targets as
+        // one Composition visual (bubble.Host below), so it travels with those animations for
+        // free — nothing in the motion code needs to know it's there.
+        var backdrop = new SystemBackdropElement
+        {
+            Width = diameter,
+            Height = diameter,
+            CornerRadius = new CornerRadius(diameter / 2),
+            SystemBackdrop = new DesktopAcrylicBackdrop(),
+        };
+
+        // The theme tint over the blur — what ApplyBubbleFill actually swaps for hover/close
+        // states, not border.Background below (left unset, or it would paint over the blur and
+        // hide it). Semi-transparent at rest so the glass shows through; hover/close still swap
+        // it to a fully opaque brush for contrast, same as the old solid-fill behavior.
+        var tint = new Border
+        {
+            Width = diameter,
+            Height = diameter,
+            CornerRadius = new CornerRadius(diameter / 2),
+            Background = ThemeBrush("RingBubbleGlassTint"),
+        };
+
         var content = new Grid();
+        content.Children.Add(backdrop);
+        content.Children.Add(tint);
         content.Children.Add(icon);
         content.Children.Add(glyph);
 
@@ -803,8 +930,17 @@ public sealed partial class RingWindow : Window
         // launches. It rides on the circle's own boundary, centered on the direction the item
         // already sits from the hub, so it never needs its own transform and scales with the item
         // because it lives in the same content.
+        //
+        // Only drawn when the group actually has something to expand into — the same
+        // Where(!Hidden) filter ExpandFlyout itself uses, since that is what decides whether
+        // hovering this bubble opens a flyout at all. Settings is the item this matters for: it is
+        // always Kind.Group, but its one child — "Add new" — only exists on the quadrant, where it
+        // drops out once that's full too (see UpdateSettingsAddNew); on the full ring it never has
+        // one at all, since every empty user slot already carries its own "Add new" placeholder.
+        // Either way, a Settings bubble wearing an arc that promises a flyout it can no longer open
+        // would be a lie the moment you hovered it.
         Path? bump = null;
-        if (item.IsGroup && !isFlyout)
+        if (item.IsGroup && !isFlyout && item.Children.Any(c => !c.Hidden))
         {
             bump = BuildGroupArc(diameter, angle, ThemeBrush("SwiftXForegroundBrush"));
             content.Children.Add(bump);
@@ -815,12 +951,13 @@ public sealed partial class RingWindow : Window
             Width = diameter,
             Height = diameter,
             CornerRadius = new CornerRadius(diameter / 2),
-            Background = ThemeBrush("RingBubbleBackground"),
             Child = content,
             Tag = item,
         };
         Canvas.SetLeft(border, _cx + restX - diameter / 2);
         Canvas.SetTop(border, _cy + restY - diameter / 2);
+
+        NameForNarrator(border, item);
 
         var bubble = new BubbleView
         {
@@ -837,6 +974,7 @@ public sealed partial class RingWindow : Window
             StaggerIndex = index,
             Glyph = glyph,
             Bump = bump,
+            TintLayer = tint,
             Detach = () => item.PropertyChanged -= onItemChanged,
         };
 
@@ -927,7 +1065,8 @@ public sealed partial class RingWindow : Window
         bool dark = requested == ElementTheme.Default
             ? ThemeHelper.IsDark(Root)
             : requested == ElementTheme.Dark;
-        return new SolidColorBrush(ThemeHelper.ColorFor(dark, key));
+        bool isBlack = _manager.Config.Theme == AppTheme.Black;
+        return new SolidColorBrush(ThemeHelper.ColorFor(dark, isBlack, key));
     }
 
     // ---- Hover name pill -----------------------------------------------------------------
@@ -1601,13 +1740,13 @@ public sealed partial class RingWindow : Window
 
         Brush background = destructive ? ThemeBrush("RingCloseHoverBackground")
             : invert ? ThemeBrush("SwiftXForegroundBrush")
-            : ThemeBrush("RingBubbleBackground");
+            : ThemeBrush("RingBubbleGlassTint");
 
         Brush foreground = destructive ? ThemeBrush("RingCloseHoverForeground")
             : invert ? ThemeBrush("RingBubbleBackground")
             : ThemeBrush("SwiftXForegroundBrush");
 
-        bubble.Host.Background = background;
+        bubble.TintLayer.Background = background;
         bubble.Glyph.Foreground = foreground;
         if (bubble.Bump is not null)
             bubble.Bump.Stroke = foreground;
@@ -1701,8 +1840,8 @@ public sealed partial class RingWindow : Window
 
         // Every other selection closes the ring on activation — Settings and Add-new are the
         // exceptions: each opens its own window and should stay on screen for as long as that
-        // window is open (see RingWindow_Activated's matching IsSettingsOpen/IsAddItemOpen checks,
-        // which keep the deactivation that follows here from dismissing it too). Selecting either
+        // window is open (see RingWindow_Activated's matching IsExemptWindowForeground check,
+        // which keeps the deactivation that follows here from dismissing it too). Selecting either
         // a second time while its window is already open just re-activates that window (see
         // RingManager.OpenSettings/OpenAddItem) — still no dismiss.
         bool staysOpen = IsSettingsItem(item) ||
@@ -1886,6 +2025,10 @@ public sealed partial class RingWindow : Window
 
         /// <summary>The has-children marker, present only on inner-ring groups.</summary>
         public Path? Bump { get; init; }
+
+        /// <summary>The glass tint layer ApplyBubbleFill swaps for hover/close states — see
+        /// CreateBubble's comment on why this, and not Host.Background, carries the fill.</summary>
+        public required Border TintLayer { get; init; }
 
         /// <summary>Scale to return to when hover ends — not 1 for an expanded group bubble.</summary>
         public float RestScale { get; set; } = 1f;

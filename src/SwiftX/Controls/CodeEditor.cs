@@ -1,10 +1,16 @@
+using System.Globalization;
+using System.Text;
 using SwiftX.Services;
 using SwiftX.Services.Syntax;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Input;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Windows.UI.Core;
+using VirtualKey = Windows.System.VirtualKey;
 
 namespace SwiftX.Controls;
 
@@ -42,7 +48,7 @@ public sealed class CodeEditor : Grid
         AcceptsReturn = true,
         TextWrapping = TextWrapping.NoWrap,
         FontFamily = new FontFamily("Cascadia Mono, Consolas"),
-        FontSize = 13,
+        FontSize = DefaultEditorFontSize,
         BorderThickness = new Thickness(0),
         Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
         IsSpellCheckEnabled = false,
@@ -53,11 +59,26 @@ public sealed class CodeEditor : Grid
     private readonly TextBlock _gutter = new()
     {
         FontFamily = new FontFamily("Cascadia Mono, Consolas"),
-        FontSize = 13,
+        FontSize = DefaultEditorFontSize,
         TextAlignment = TextAlignment.Right,
         Opacity = 0.45,
         Margin = new Thickness(8, 2, 8, 8),
         IsTextSelectionEnabled = false,
+    };
+
+    /// <summary>
+    /// Wraps <see cref="_gutter"/> for hit-testing purposes only. A bare <see cref="TextBlock"/>
+    /// has no <c>Background</c> property, and WinUI only hit-tests the blank space of an element
+    /// that has one (even a fully transparent one) — most of the gutter's own area is exactly
+    /// that blank space (padding, and every marker-less line's leading space), so a press
+    /// anywhere but directly on a glyph would silently miss without this. <see cref="Gutter_PointerPressed"/>
+    /// is wired here, not on <see cref="_gutter"/> itself, but still measures the press position
+    /// against <c>_gutter</c>'s own bounds — <see cref="Microsoft.UI.Xaml.Input.PointerRoutedEventArgs.GetCurrentPoint"/>
+    /// takes any element to measure against, independent of which one the handler is attached to.
+    /// </summary>
+    private readonly Border _gutterHitArea = new()
+    {
+        Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
     };
 
     private readonly DispatcherQueueTimer _highlightTimer;
@@ -90,6 +111,35 @@ public sealed class CodeEditor : Grid
 
     private ITokenizer? _tokenizer;
 
+    /// <summary>A single-character marker shown before a line's number in the gutter, with the
+    /// action a click on that line runs. A plain text character, not an icon-font glyph — the
+    /// gutter renders in <see cref="TextBox"/>'s own code font, not Segoe Fluent Icons.</summary>
+    public readonly record struct GutterMarker(char Symbol, Action OnClick);
+
+    /// <summary>
+    /// Optional per-display-line markers, keyed by 1-based line number. Null or empty leaves the
+    /// gutter as plain right-aligned numbers (the common case, for every tool that never sets
+    /// this); setting it rebuilds the gutter immediately. Every line gets the same fixed-width
+    /// "marker-or-space, then the number" prefix once any marker is present, so numbers stay in
+    /// one column regardless of which lines actually carry a marker.
+    /// <para>
+    /// A caller that owns fold/outline state (see <c>FormatterPage</c>) is the intended user:
+    /// this control only renders the marker and routes the click back to
+    /// <see cref="GutterMarker.OnClick"/> — it has no idea what a marker means.
+    /// </para>
+    /// </summary>
+    public IReadOnlyDictionary<int, GutterMarker>? GutterMarkers
+    {
+        get => _gutterMarkers;
+        set
+        {
+            _gutterMarkers = value;
+            RefreshGutter();
+        }
+    }
+
+    private IReadOnlyDictionary<int, GutterMarker>? _gutterMarkers;
+
     public string PlaceholderText
     {
         get => TextBox.PlaceholderText;
@@ -107,6 +157,87 @@ public sealed class CodeEditor : Grid
         get => Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(TextBox);
         set => Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(TextBox, value);
     }
+
+    // ---- Zoom -----------------------------------------------------------------------------
+    // Ctrl+(+/-) and Ctrl+scroll, the same two triggers every text-heavy editor (browsers, VS
+    // Code, ...) already binds zoom to — so this needs no discovery, no on-screen control.
+
+    private const double DefaultEditorFontSize = 13;
+    private const double MinZoomFontSize = 8;
+    private const double MaxZoomFontSize = 32;
+    private const double ZoomStep = 1;
+
+    /// <summary>Text size for both the document and its line-number gutter — kept as one value
+    /// so the two never drift out of vertical alignment with each other.</summary>
+    public double EditorFontSize
+    {
+        get => TextBox.FontSize;
+        set
+        {
+            double clamped = Math.Clamp(value, MinZoomFontSize, MaxZoomFontSize);
+            TextBox.FontSize = clamped;
+            _gutter.FontSize = clamped;
+        }
+    }
+
+    public void ZoomIn() => EditorFontSize += ZoomStep;
+
+    public void ZoomOut() => EditorFontSize -= ZoomStep;
+
+    /// <summary>
+    /// Ctrl+scroll zooms instead of scrolling — handled here, on the editor's own content, so it
+    /// fires (and marks the wheel event Handled) during the bubble phase before it ever reaches
+    /// the wrapping <see cref="ScrollViewer"/> in the constructor, which is what stops the
+    /// ScrollViewer's own built-in wheel scrolling from running underneath the zoom.
+    /// </summary>
+    private void Content_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
+    {
+        if (!IsCtrlDown())
+            return;
+
+        int delta = e.GetCurrentPoint(this).Properties.MouseWheelDelta;
+        if (delta > 0)
+            ZoomIn();
+        else if (delta < 0)
+            ZoomOut();
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Ctrl+Plus/Minus, on both the number row and the numpad. Wired to <c>PreviewKeyDown</c> in
+    /// the constructor, tunnelling past the RichEditBox's own key handling — the same reason
+    /// <c>EditorToolPage.InitializeChrome</c>'s tunnelling exists: caught on the bubble instead,
+    /// "+"/"-" would already have been typed into the document before this ever saw the key.
+    /// </summary>
+    private void CodeEditor_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (!IsCtrlDown())
+            return;
+
+        // VirtualKey has no OemPlus/OemMinus members — those OEM keys were never added to the
+        // WinRT enum — so the main-row +/- are matched by their raw Win32 virtual-key codes
+        // (VK_OEM_PLUS/VK_OEM_MINUS) alongside the numpad's own named Add/Subtract.
+        const int VkOemPlus = 0xBB;
+        const int VkOemMinus = 0xBD;
+
+        switch ((int)e.Key)
+        {
+            case VkOemPlus:
+            case (int)VirtualKey.Add:
+                ZoomIn();
+                e.Handled = true;
+                break;
+            case VkOemMinus:
+            case (int)VirtualKey.Subtract:
+                ZoomOut();
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private static bool IsCtrlDown() =>
+        InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control)
+            .HasFlag(CoreVirtualKeyStates.Down);
 
     /// <summary>
     /// The document's text, with the rich-edit paragraph mark (<c>\r</c>) normalised to
@@ -155,12 +286,21 @@ public sealed class CodeEditor : Grid
         var row = new Grid();
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        Grid.SetColumn(_gutter, 0);
+        _gutterHitArea.Child = _gutter;
+        Grid.SetColumn(_gutterHitArea, 0);
         Grid.SetColumn(TextBox, 1);
-        row.Children.Add(_gutter);
+        row.Children.Add(_gutterHitArea);
         row.Children.Add(TextBox);
         scroller.Content = row;
         Children.Add(scroller);
+
+        // Wired on the content row, not the ScrollViewer itself: the wheel event bubbles from
+        // whichever of the gutter or the RichEditBox the pointer is actually over, up through
+        // this row, and only then to the ScrollViewer above it — so marking it Handled here (see
+        // Content_PointerWheelChanged) reaches the ScrollViewer's own built-in wheel scrolling
+        // before it runs, regardless of which of the two the pointer was over.
+        row.PointerWheelChanged += Content_PointerWheelChanged;
+        PreviewKeyDown += CodeEditor_PreviewKeyDown;
 
         // Decorative: the line numbers are a visual aid, and Narrator reading "one two three
         // four…" ahead of the document is noise, not information.
@@ -205,16 +345,93 @@ public sealed class CodeEditor : Grid
         TextBox.Paste += (_, _) => DispatcherQueue.TryEnqueue(() => Pasted?.Invoke(this, EventArgs.Empty));
 
         ActualThemeChanged += (_, _) => Highlight();
+        _gutterHitArea.PointerPressed += Gutter_PointerPressed;
         RefreshGutter();
+    }
+
+    /// <summary>
+    /// The number of display lines, counted off the document's own text without building the
+    /// normalised copy <see cref="Text"/> returns.
+    /// <para>
+    /// This runs on <em>every keystroke</em>, from the <c>TextChanged</c> handler, so what it
+    /// allocates is paid per character typed. Going through <see cref="Text"/> cost two full
+    /// copies of the document each time — one from <c>GetText</c> and a second from its
+    /// <c>Replace('\r', '\n')</c> — which on a multi-megabyte document is megabytes of garbage per
+    /// keypress on the UI thread, felt as typing lag. Note that
+    /// <see cref="MaxHighlightLength"/> does not bound this: it gates colouring only, while the
+    /// gutter is rebuilt for documents all the way up to <c>InputLimits.MaxTextBytes</c>.
+    /// </para>
+    /// <para>
+    /// Counting both <c>\r</c> and <c>\n</c> is what makes this exactly equivalent to counting
+    /// <c>\n</c> in <see cref="Text"/>: that property is this same string with every <c>\r</c>
+    /// rewritten to <c>\n</c>, so the two characters together are the line breaks it would have
+    /// produced. The trailing paragraph mark the document always reports is dropped the same way
+    /// <see cref="Text"/> drops it, over a span rather than a substring so nothing is allocated
+    /// for it.
+    /// </para>
+    /// </summary>
+    private int LineCount()
+    {
+        TextBox.Document.GetText(TextGetOptions.None, out var raw);
+
+        var span = raw.AsSpan();
+        if (span.Length > 0 && span[^1] == '\r')
+            span = span[..^1];
+
+        int lines = 1;
+        foreach (char c in span)
+            if (c is '\r' or '\n')
+                lines++;
+        return lines;
     }
 
     private void RefreshGutter()
     {
-        int lines = 1;
-        foreach (char c in Text)
-            if (c == '\n')
-                lines++;
-        _gutter.Text = string.Join('\n', Enumerable.Range(1, lines));
+        int lines = LineCount();
+
+        if (_gutterMarkers is not { Count: > 0 } markers)
+        {
+            _gutter.Text = string.Join('\n', Enumerable.Range(1, lines));
+            return;
+        }
+
+        // Every line gets the same "marker-or-space, space, right-padded number" prefix once any
+        // marker exists, so the number column stays put regardless of which lines have one — the
+        // per-line lengths are then all equal, which is also why TextAlignment.Right above never
+        // needs special-casing this path.
+        int width = lines.ToString(CultureInfo.InvariantCulture).Length;
+        var sb = new StringBuilder();
+        for (int line = 1; line <= lines; line++)
+        {
+            if (line > 1)
+                sb.Append('\n');
+            char marker = markers.TryGetValue(line, out var m) ? m.Symbol : ' ';
+            sb.Append(marker).Append(' ').Append(line.ToString(CultureInfo.InvariantCulture).PadLeft(width));
+        }
+        _gutter.Text = sb.ToString();
+    }
+
+    /// <summary>
+    /// Maps a press on the gutter to the display line under it and, if that line carries a
+    /// marker, runs its click action. The line-height-from-<see cref="FrameworkElement.ActualHeight"/>
+    /// division below is only ever evaluated in response to an actual press — by which point the
+    /// gutter has necessarily already been laid out at least once — so unlike computing it
+    /// eagerly right after a text change, there is no stale-layout race here.
+    /// </summary>
+    private void Gutter_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (_gutterMarkers is not { Count: > 0 } markers || _gutter.ActualHeight <= 0)
+            return;
+
+        int lines = LineCount();
+
+        double y = e.GetCurrentPoint(_gutter).Position.Y;
+        int line = 1 + (int)(y / (_gutter.ActualHeight / lines));
+        if (markers.TryGetValue(line, out var marker))
+        {
+            marker.OnClick();
+            e.Handled = true;
+        }
     }
 
     /// <summary>

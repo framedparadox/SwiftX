@@ -88,7 +88,7 @@ public static class InputLimits
             if (!IsWithin(info.Length, limit))
                 return Failed(Loc.Format("Tool.FileTooLarge", Describe(limit)));
 
-            // Encoding spelled out rather than left to detection: every tool in dockdev works in
+            // Encoding spelled out rather than left to detection: every tool in SwiftX works in
             // UTF-8, and a byte-order mark is consumed rather than becoming a stray leading
             // character in the editor.
             var text = await File.ReadAllTextAsync(path, Encoding.UTF8);
@@ -97,6 +97,37 @@ public static class InputLimits
         catch (Exception ex)
         {
             Diag.Log($"InputLimits.ReadTextAsync failed: {ex.GetType().Name}: {ex.Message}");
+            return Failed(Loc.Get("Tool.FileUnreadable"));
+        }
+    }
+
+    /// <summary>
+    /// The synchronous sibling of <see cref="ReadTextAsync"/>, for the one caller that cannot be
+    /// asynchronous: <see cref="RingStore.ImportFrom"/> runs inside a settings command that must
+    /// hand back a configuration or a null, not a task.
+    /// <para>
+    /// It exists so that path goes through the same metadata-first ceiling as every other
+    /// user-chosen file rather than reimplementing it. <see cref="MaxConfigBytes"/> had been
+    /// declared for exactly this and never wired up, so import called <c>File.ReadAllText</c>
+    /// straight on whatever the picker returned — the same shape of defect §22 exists to prevent,
+    /// and reachable with one mis-click on a disk image.
+    /// </para>
+    /// </summary>
+    public static ReadResult ReadText(string path, long limit = MaxTextBytes)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists)
+                return Failed(Loc.Get("Tool.FileUnreadable"));
+            if (!IsWithin(info.Length, limit))
+                return Failed(Loc.Format("Tool.FileTooLarge", Describe(limit)));
+
+            return new ReadResult(true, File.ReadAllText(path, Encoding.UTF8), [], "");
+        }
+        catch (Exception ex)
+        {
+            Diag.Log($"InputLimits.ReadText failed: {ex.GetType().Name}: {ex.Message}");
             return Failed(Loc.Get("Tool.FileUnreadable"));
         }
     }

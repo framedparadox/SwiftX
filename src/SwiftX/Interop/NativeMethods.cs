@@ -270,7 +270,7 @@ internal static partial class NativeMethods
     // ---- Hidden helper window (tray callbacks + global hotkeys) ------------
     //
     // Both the notification-area icon and RegisterHotKey deliver their events as window messages,
-    // and a WinUI 3 Window exposes no WndProc to receive them. So Anchor owns one tiny hidden
+    // and a WinUI 3 Window exposes no WndProc to receive them. So SwiftX owns one tiny hidden
     // HWND of its own (see Services/MessageWindow.cs) purely as a message sink. It is a real
     // (never-shown) popup rather than an HWND_MESSAGE child, because TrackPopupMenuEx needs an
     // owner that can be made the foreground window or the tray menu won't light-dismiss.

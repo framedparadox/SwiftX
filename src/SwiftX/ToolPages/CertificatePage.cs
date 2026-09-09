@@ -50,6 +50,11 @@ public sealed class CertificatePage : EditorToolPage
         StatusBar.SetUntouched();
         InitializeChrome();
         RenderEmpty();
+
+        // The host cancels this when the window closes (see ToolPage.NotifyClosing), which is the
+        // sanctioned place for a page to let go of what it owns. Certificates and the keystore
+        // bytes behind them should not outlive the window that was showing them.
+        PageClosing.Register(ReleaseLoadedFile);
     }
 
     public override ToolKind Kind => ToolKind.Certificate;
@@ -58,7 +63,7 @@ public sealed class CertificatePage : EditorToolPage
     public override IReadOnlyList<ToolCommand> Commands => _commands ??=
     [
         new ToolCommand(Loc.Get("Certificate.OpenFile"), OpenFileGlyph, () => _ = OpenFileAsync(), id: "cert-open"),
-        ToolCommand.Copy(CopySummary),
+        ToolCommand.Copy(CopyPem),
         ToolCommand.Clear(ClearAll),
     ];
 
@@ -147,13 +152,25 @@ public sealed class CertificatePage : EditorToolPage
         Render(CertificateReader.Read(_lastBytes, password));
     }
 
+    /// <summary>
+    /// Shows an outcome and takes ownership of its certificates, releasing whatever the page was
+    /// holding before. Every path into here replaces <see cref="_lastOutcome"/>, and a
+    /// certificate owns a native <c>CERT_CONTEXT</c> (and, for a PKCS#12, live private-key
+    /// material) — see <see cref="CertificateReader.ReadOutcome"/> for why letting the old one
+    /// fall to the finalizer is not good enough. The retry loop is what makes this reachable
+    /// rather than theoretical: every wrong password on a keystore produces another full set.
+    /// </summary>
     private void Render(CertificateReader.ReadOutcome outcome)
     {
         _content.Children.Clear();
 
+        if (!ReferenceEquals(_lastOutcome, outcome))
+            _lastOutcome?.Dispose();
+
         if (!outcome.Success)
         {
             _lastOutcome = null;
+            outcome.Dispose();
             if (outcome.NeedsPassword)
                 RenderPasswordPrompt(outcome.Message);
             else
@@ -271,24 +288,25 @@ public sealed class CertificatePage : EditorToolPage
     /// "Expires in", "Expired", or "Starts in" depending on <paramref name="state"/>) laid out as
     /// a form: labels on the left, values on the right, on a background a step apart from the
     /// card that hosts it so it reads as its own section rather than a continuation of the title
-    /// row above. The boundary date that's actually the problem (Valid To when expired, Valid
-    /// From when not yet valid) renders in red — the badge says "something's wrong", this says
-    /// which field.
+    /// row above. Valid To carries its own check/cross treatment (see
+    /// <see cref="DetailRowWithValidity"/>) since it's the one field that answers "is this
+    /// certificate still good?" on its own; Valid From only turns red when it's the boundary
+    /// that's actually the problem (not yet valid) — the badge already says "something's wrong",
+    /// this says which field.
     /// </summary>
     private FrameworkElement BuildForm(X509Certificate2 cert, ValidityState state)
     {
         string commonNameLabel = Loc.Get("Certificate.Field.CommonName");
-        string highlightLabel = state switch
-        {
-            ValidityState.Expired => Loc.Get("Certificate.Field.NotAfter"),
-            ValidityState.NotYetValid => Loc.Get("Certificate.Field.NotBefore"),
-            _ => "",
-        };
+        string notAfterLabel = Loc.Get("Certificate.Field.NotAfter");
+        string highlightLabel = state == ValidityState.NotYetValid ? Loc.Get("Certificate.Field.NotBefore") : "";
+        bool currentlyValid = state == ValidityState.Valid;
 
         var rows = DescribeFields(cert)
             .Select(f => f.Label == commonNameLabel
                 ? DetailRowWithCopy(f.Label, f.Value)
-                : DetailRow(f.Label, f.Value, highlightRed: f.Label == highlightLabel))
+                : f.Label == notAfterLabel
+                    ? DetailRowWithValidity(f.Label, f.Value, currentlyValid)
+                    : DetailRow(f.Label, f.Value, highlightRed: f.Label == highlightLabel))
             .ToList();
 
         var now = DateTime.Now;
@@ -402,6 +420,73 @@ public sealed class CertificatePage : EditorToolPage
         Grid.SetColumn(valueBlock, 1);
         grid.Children.Add(labelBlock);
         grid.Children.Add(valueBlock);
+        return grid;
+    }
+
+    /// <summary>Same shape as <see cref="DetailRow"/>, for the Valid To row alone — carries the
+    /// same green-check/red-cross treatment as <see cref="BuildValidityBadge"/>'s title-row badge
+    /// (same glyphs, same theme brushes), just inline with the date itself rather than off in the
+    /// corner, since this is the one field that says on its own whether the certificate still
+    /// works.</summary>
+    /// <summary>Same shape as <see cref="DetailRow"/>, for the Valid To row alone — the date
+    /// reads first, exactly like every other field, with a small pill badge <em>after</em> it
+    /// carrying the check/cross: same glyphs and theme brushes as <see cref="BuildValidityBadge"/>'s
+    /// title-row badge, just an inline pill instead of a circle, since this one sits beside text
+    /// rather than beside the type tag.</summary>
+    private static FrameworkElement DetailRowWithValidity(string label, string value, bool valid)
+    {
+        var grid = new Grid { ColumnSpacing = 12 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var labelBlock = new TextBlock { Text = label, Opacity = 0.65, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
+
+        var valueBlock = new TextBlock
+        {
+            Text = value,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+            FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var badgeForeground = valid
+            ? ThemeBrush("SystemFillColorSuccessBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Green)
+            : ThemeBrush("SystemFillColorCriticalBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Red);
+        var badgeBackground = valid
+            ? ThemeBrush("SystemFillColorSuccessBackgroundBrush")
+            : ThemeBrush("SystemFillColorCriticalBackgroundBrush");
+
+        var icon = new FontIcon
+        {
+            Glyph = valid ? ValidCheckGlyph : InvalidGlyph,
+            FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
+            FontSize = 11,
+            Foreground = badgeForeground,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var badge = new Border
+        {
+            Child = icon,
+            Width = 22,
+            Height = 22,
+            CornerRadius = new CornerRadius(11),
+            Background = badgeBackground,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 0, 0),
+        };
+
+        var valueRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0 };
+        valueRow.Children.Add(valueBlock);
+        valueRow.Children.Add(badge);
+
+        Grid.SetColumn(labelBlock, 0);
+        Grid.SetColumn(valueRow, 1);
+        grid.Children.Add(labelBlock);
+        grid.Children.Add(valueRow);
         return grid;
     }
 
@@ -559,30 +644,47 @@ public sealed class CertificatePage : EditorToolPage
         return Loc.Format("Certificate.ExpiresIn", (int)(cert.NotAfter - now).TotalDays);
     }
 
-    private void CopySummary()
+    /// <summary>Copies every loaded certificate as PEM text (<c>-----BEGIN CERTIFICATE-----</c>
+    /// blocks, one per entry) — the portable form someone reaches for this tool to grab, rather
+    /// than the human-readable field summary the card itself already shows on screen.</summary>
+    private void CopyPem()
     {
         if (_lastOutcome is not { Entries.Count: > 0 } outcome)
             return;
 
-        var blocks = outcome.Entries.Select(entry =>
-        {
-            var lines = new List<string> { entry.Alias ?? entry.Certificate.Subject };
-            lines.AddRange(DescribeFields(entry.Certificate).Select(f => $"{f.Label}: {f.Value}"));
-            return string.Join(Environment.NewLine, lines);
-        });
+        var pem = string.Join(
+            Environment.NewLine,
+            outcome.Entries.Select(entry => entry.Certificate.ExportCertificatePem()));
 
         var package = new DataPackage();
-        package.SetText(string.Join(Environment.NewLine + Environment.NewLine, blocks));
+        package.SetText(pem);
         Clipboard.SetContent(package);
         StatusBar.SetMessage(Loc.Get("Tool.CopyOutput"), isError: false);
     }
 
     private void ClearAll()
     {
-        _lastBytes = null;
-        _lastOutcome = null;
+        ReleaseLoadedFile();
         RenderEmpty();
         StatusBar.SetUntouched();
+    }
+
+    /// <summary>
+    /// Drops everything derived from the file the user opened: the certificates (and, for a
+    /// PKCS#12, the private keys they carry) and the raw bytes the page kept so a password could
+    /// be retried against them. Those bytes are the encrypted keystore itself, so holding them
+    /// for the life of the window after the user has pressed Clear — or closed it — is a
+    /// needlessly long residency for exactly the thing this tool exists to handle carefully.
+    /// Idempotent: safe on a page that never loaded a file, and safe to call twice.
+    /// </summary>
+    private void ReleaseLoadedFile()
+    {
+        _lastOutcome?.Dispose();
+        _lastOutcome = null;
+
+        if (_lastBytes is { Length: > 0 } bytes)
+            Array.Clear(bytes);
+        _lastBytes = null;
     }
 
     private static Brush? ThemeBrush(string key) =>

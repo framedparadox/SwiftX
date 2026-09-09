@@ -19,7 +19,7 @@ public static class IconService
     // reject "no user agent" requests.
     private static readonly HttpClient Http = CreateClient();
 
-    // Alongside ring.json, so an override of Anchor's data directory takes the cache with it
+    // Alongside ring.json, so an override of SwiftX's data directory takes the cache with it
     // rather than leaving downloaded favicons in the real profile (see RingStore.DataDirectory).
     private static readonly string CacheDir = Path.Combine(RingStore.DataDirectory, "IconCache");
 
@@ -28,7 +28,7 @@ public static class IconService
         var c = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         c.DefaultRequestHeaders.TryAddWithoutValidation(
             "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Anchor/1.0");
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) SwiftX/1.0");
         return c;
     }
 
@@ -226,19 +226,27 @@ public static class IconService
             : nint.Zero;
     }
 
-    /// <summary>Decodes an image file the user pointed at (a custom icon can be any path on
-    /// disk). Plain Win32 file I/O — a full-trust process needs no broker capability for it.</summary>
+    /// <summary>
+    /// Decodes an image file the user pointed at (a custom icon can be any path on disk). Plain
+    /// Win32 file I/O — a full-trust process needs no broker capability for it.
+    /// <para>
+    /// Bounded by <see cref="InputLimits.MaxIconBytes"/>, checked from the file's metadata before
+    /// the read. The ceiling had been declared for this caller and never applied, which left the
+    /// one icon path that takes an arbitrary user-chosen file reading it whole with
+    /// <c>File.ReadAllBytesAsync</c> — and doing so once per item on every render, so a 4 GB file
+    /// picked as an icon was an <see cref="OutOfMemoryException"/> every time the ring came up.
+    /// A custom icon is drawn at 44 px; anything past the ceiling is not one.
+    /// </para>
+    /// </summary>
     private static async Task<ImageSource?> FromFileAsync(string path)
     {
-        try
+        var read = await InputLimits.ReadBytesAsync(path, InputLimits.MaxIconBytes);
+        if (!read.Ok)
         {
-            return await DecodeAsync(await File.ReadAllBytesAsync(path));
-        }
-        catch (Exception ex)
-        {
-            Diag.Log($"IconService: direct read failed for '{path}': {ex.GetType().Name}: {ex.Message}");
+            Diag.Log($"IconService: custom icon '{path}' not read: {read.Error}");
             return null;
         }
+        return await DecodeAsync(read.Bytes);
     }
 
     // ---- Favicons ---------------------------------------------------------
@@ -287,21 +295,67 @@ public static class IconService
         return null;
     }
 
+    /// <summary>
+    /// The ceiling on a downloaded favicon. A favicon is a few kilobytes; this is the point past
+    /// which the response is not one and is dropped rather than decoded.
+    /// </summary>
+    internal const int MaxFaviconBytes = 2_000_000;
+
+    /// <summary>
+    /// Fetches a candidate favicon, or null for anything that isn't one — including a body that
+    /// runs past <see cref="MaxFaviconBytes"/>.
+    /// <para>
+    /// The size ceiling is applied <em>while</em> the body is read, not after it. Reading with
+    /// <c>ResponseContentRead</c> and then testing <c>bytes.Length</c> had already committed the
+    /// whole response to memory by the time the test ran, so the limit bounded what was
+    /// <em>used</em> and not what was <em>allocated</em>: a host serving a multi-gigabyte body
+    /// under a favicon's URL was buffered in full and then discarded. This is the one place
+    /// SwiftX reads bytes it did not get from the user's own disk, so it is the one place a
+    /// remote party chooses the length — <c>ResponseHeadersRead</c> plus a bounded copy takes
+    /// that choice back, and a declared <c>Content-Length</c> past the ceiling is refused before
+    /// the stream is opened at all.
+    /// </para>
+    /// </summary>
     private static async Task<byte[]?> TryDownloadAsync(string url)
     {
         try
         {
-            using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseContentRead);
+            using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
             if (!resp.IsSuccessStatusCode)
                 return null;
-            var bytes = await resp.Content.ReadAsByteArrayAsync();
-            return bytes.Length is > 0 and < 2_000_000 ? bytes : null;
+            // An honest server declares the length; refuse before the stream is even opened.
+            // A dishonest or silent one is caught by the bounded copy below instead.
+            long? declaredLength = resp.Content.Headers.ContentLength;
+            if (declaredLength > MaxFaviconBytes)
+                return null;
+
+            using var stream = await resp.Content.ReadAsStreamAsync();
+            return await ReadBoundedAsync(stream, MaxFaviconBytes);
         }
         catch (Exception ex)
         {
             Diag.Log($"IconService: favicon fetch failed for '{url}': {ex.GetType().Name}: {ex.Message}");
-            return null; // no connectivity / DNS / TLS / timeout — glyph fallback
+            return null; // no connectivity / DNS / TLS / timeout / oversized — glyph fallback
         }
+    }
+
+    /// <summary>
+    /// Copies at most <paramref name="limit"/> bytes out of <paramref name="stream"/>, abandoning
+    /// the read (and returning null) the moment the source proves longer. Never allocates more
+    /// than the limit, whatever the sender claims or omits.
+    /// </summary>
+    internal static async Task<byte[]?> ReadBoundedAsync(Stream stream, int limit)
+    {
+        using var buffer = new MemoryStream();
+        var chunk = new byte[8192];
+        int read;
+        while ((read = await stream.ReadAsync(chunk)) > 0)
+        {
+            if (buffer.Length + read > limit)
+                return null;
+            buffer.Write(chunk, 0, read);
+        }
+        return buffer.Length > 0 ? buffer.ToArray() : null;
     }
 
     /// <summary>Decodes raw bytes into a BitmapImage, confirming the decode actually succeeded
