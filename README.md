@@ -74,7 +74,7 @@ cover the screen without getting in the way of it.
 
 | Piece | What it is |
 |-------|------------|
-| **Hub** | The app mark at the center. Not a button for launching — clicking it closes an open group, or dismisses the ring when none is open. Fixed size; no setting scales it. |
+| **Hub** | The app mark at the center, floating on a soft drop shadow rather than sitting flat on the wallpaper. Not a button for launching — clicking it closes an open group, or dismisses the ring when none is open. Fixed size; no setting scales it. It turns a quarter turn as the ring is summoned, its four petals unfurling clockwise a beat apart, and unwinds the same way on dismissal. |
 | **Slots** | Eight positions around the ring, 45° apart, slot 0 straight up and advancing clockwise. |
 | **User slots** | The first six. Filled from your items in order; empty ones are simply not drawn. |
 | **Settings** | Always slot 7. A group: hovering it pops out its **Add new** quick action; clicking it opens the Settings window. |
@@ -260,7 +260,8 @@ open button, and a drag handle. Dragging reorders the tools inside that group.
 
 ### About
 
-The app mark, what the app is, and its version.
+The app mark, what the app is, and its version, with links to the terms and conditions (which open
+in the browser) and to the Privacy page of this same window.
 
 ### Privacy
 
@@ -430,6 +431,7 @@ src/SwiftX/
   Images/                  MSIX tile set
 
 docs/SwiftX.png            Master art every raster asset is generated from
+docs/TERMS.md              Terms and conditions, linked from Settings > About
 tools/                     One-off maintenance scripts (brand asset generation)
 ```
 
@@ -527,6 +529,18 @@ display scale with nothing to resample. It appears in four places: the ring's hu
 on the Settings home page, the Settings About card, and the title bar of SwiftX's own windows
 (Settings, and Add to ring) — those extend content into the caption, so Windows never draws a
 window icon for them and without this they would carry no mark at all.
+
+It comes in two forms. `AppLogo.Create` is the flat mark, for the About card and the title bars,
+where it sits on a solid surface. `AppLogo.CreateFloating` adds a composition drop shadow — one per
+petal, masked by what the petal actually paints, so the shadow is the mark's own pinwheel outline
+rather than a box behind it — and that is what the ring's hub and its preview use, because there the
+mark is painted straight onto the desktop with nothing under it to give it any depth of its own.
+
+Either form can play itself in and out (`AppLogo.Mark.PlayEntrance` / `PlayExit`), which is what the
+hub does on a summon and a dismissal: the whole mark swings a quarter turn while each petal, going
+round clockwise from the top-left a beat apart, untwists and grows into its quadrant; the dismissal
+is that rewound, last petal in first out. Only the petal layer turns — the shadow stays put, the way
+one does when the thing above it spins rather than the light moving.
 
 Its geometry and palette were measured off the master, and the two are kept in step by hand — a
 brand change means re-exporting `docs/SwiftX.png`, re-running the script above, and updating the
