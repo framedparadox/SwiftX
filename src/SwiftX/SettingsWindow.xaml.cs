@@ -564,10 +564,11 @@ public sealed partial class SettingsWindow : Window
         var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
 
-        // Match the ring: the center is the app mark alone, painted on nothing. A filled plate
-        // here read as a big empty hole that does not exist on the real thing.
+        // Match the ring: the center is the app mark alone, painted on nothing — floating form and
+        // all, so the preview shows the same shadow the real hub has. A filled plate here read as a
+        // big empty hole that does not exist on the real thing.
         double logo = RingMetrics.HubLogo * scale;
-        var hub = AppLogo.Create(logo);
+        var hub = AppLogo.CreateFloating(logo);
         Canvas.SetLeft(hub, cx - logo / 2);
         Canvas.SetTop(hub, cy - logo / 2);
         PreviewCanvas.Children.Add(hub);
@@ -1629,16 +1630,37 @@ public sealed partial class SettingsWindow : Window
     private void StarOnGitHub_Click(object sender, RoutedEventArgs e) =>
         Launcher.OpenUrl(GitHubRepoUrl);
 
+    /// <summary>
+    /// The terms the app ships under, as the copy of them that lives with the source rather than a
+    /// string of legal text baked into the binary: the document can then be corrected without a new
+    /// build, and the link keeps pointing at whatever the current one says. Held beside the other
+    /// outbound links rather than in About's own code so every URL this window can open is in one
+    /// place.
+    /// </summary>
+    private const string TermsUrl = GitHubRepoUrl + "/blob/main/docs/TERMS.md";
+
     private void ReportIssue_Click(object sender, RoutedEventArgs e) =>
         Launcher.OpenUrl(StoreListingUrl);
 
+    private void OpenTerms_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(TermsUrl);
+
+    /// <summary>The inline "Read privacy" link at the foot of Feedback &amp; Support.</summary>
+    private void OpenPrivacyFromFeedback_Click(Hyperlink sender, HyperlinkClickEventArgs args) =>
+        GoToPrivacyPage();
+
+    /// <summary>About's own Privacy link, beside Terms and conditions.</summary>
+    private void OpenPrivacyFromAbout_Click(object sender, RoutedEventArgs e) =>
+        GoToPrivacyPage();
+
     /// <summary>
-    /// Moves to the Privacy page instead of opening anything. Selecting the NavigationViewItem
-    /// rather than flipping panel Visibility directly, so Nav_SelectionChanged stays the single
-    /// place that knows which panel belongs to which tag, and the nav pane's own selection follows
-    /// along the way it would if the user had clicked Privacy themselves.
+    /// Moves to the Privacy page instead of opening anything — it is a page of this window, not a
+    /// page on the web. Selecting the NavigationViewItem rather than flipping panel Visibility
+    /// directly, so Nav_SelectionChanged stays the single place that knows which panel belongs to
+    /// which tag, and the nav pane's own selection follows along the way it would if the user had
+    /// clicked Privacy themselves.
     /// </summary>
-    private void OpenPrivacyFromFeedback_Click(Hyperlink sender, HyperlinkClickEventArgs args)
+    private void GoToPrivacyPage()
     {
         foreach (var item in Nav.FooterMenuItems)
         {

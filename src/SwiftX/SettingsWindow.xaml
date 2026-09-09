@@ -873,6 +873,21 @@
                                                Text="A quick-access ring for Windows. Summon it with a shortcut, a screen corner, or the tray icon, and launch the apps, folders, links, and built-in tools you reach for most." />
                                     <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
                                                Text="SwiftX runs entirely on your own device — see Privacy for what that means." />
+                                    <!-- The two documents behind the app, side by side because
+                                         that is the pair people go looking for together. Terms
+                                         opens the published document in the browser; Privacy is
+                                         this window's own page, so it moves there rather than
+                                         opening anything (see OpenPrivacyFromAbout_Click). -->
+                                    <StackPanel Orientation="Horizontal" Spacing="20" Margin="0,4,0,0">
+                                        <HyperlinkButton Content="TERMS AND CONDITIONS"
+                                                         Style="{StaticResource AccentLink}"
+                                                         AutomationProperties.AutomationId="SettingsAboutTerms"
+                                                         Click="OpenTerms_Click" />
+                                        <HyperlinkButton Content="PRIVACY"
+                                                         Style="{StaticResource AccentLink}"
+                                                         AutomationProperties.AutomationId="SettingsAboutPrivacy"
+                                                         Click="OpenPrivacyFromAbout_Click" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Grid>
                         </Border>

@@ -100,6 +100,7 @@ public sealed class SecureValuesPage : EditorToolPage
         var flyout = BuildBubbleFlyout(Loc.Get("SecureValues.Blurb"));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, Loc.Get("SecureValues.InfoLabel"));
         button.Click += (_, _) => flyout.ShowAt(button);
+        ApplyHoverIconColor(button, HoverAccent.Accent);
         return button;
     }
 
@@ -380,11 +381,11 @@ public sealed class SecureValuesPage : EditorToolPage
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(valueBox, Loc.Get("SecureValues.Value"));
 
-        var copyButton = IconButton(CopyGlyph, Loc.Get("SecureValues.Copy"));
+        var copyButton = IconButton(CopyGlyph, Loc.Get("SecureValues.Copy"), HoverAccent.Copy);
         copyButton.IsEnabled = !string.IsNullOrEmpty(entry.Value);
 
         var editButton = IconButton(EditGlyph, Loc.Get("SecureValues.Edit"));
-        var deleteButton = IconButton(DeleteGlyph, Loc.Get("SecureValues.Delete"));
+        var deleteButton = IconButton(DeleteGlyph, Loc.Get("SecureValues.Delete"), HoverAccent.Delete);
 
         bool Commit()
         {
@@ -505,10 +506,11 @@ public sealed class SecureValuesPage : EditorToolPage
         ToolTipService.SetToolTip(button, label);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
         button.Click += (_, _) => action();
+        ApplyHoverIconColor(button, HoverAccent.Accent);
         return button;
     }
 
-    private static Button IconButton(int codepoint, string label)
+    private static Button IconButton(int codepoint, string label, HoverAccent hover = HoverAccent.Accent)
     {
         var button = new Button
         {
@@ -520,6 +522,7 @@ public sealed class SecureValuesPage : EditorToolPage
         };
         ToolTipService.SetToolTip(button, label);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
+        ApplyHoverIconColor(button, hover);
         return button;
     }
 

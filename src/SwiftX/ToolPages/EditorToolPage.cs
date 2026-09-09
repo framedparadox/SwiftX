@@ -161,6 +161,79 @@ public abstract class EditorToolPage : ToolPage
             ? value as Microsoft.UI.Xaml.Media.Brush
             : null;
 
+    /// <summary>
+    /// Which hover tint a button's icon takes on pointer-over/pressed — shared across every tool
+    /// page (design doc: one hover language everywhere the four built-in tools show a Copy or a
+    /// Delete/Clear) so Copy is always blue and Delete/Clear always red wherever either appears,
+    /// and every other action (Format, Validate, Encode/Decode, Open file, Edit, Refresh, Save,
+    /// Unlock…) gets the app's own accent instead of WinUI's default neutral-grey hover. Icon
+    /// colour only — see <see cref="ApplyHoverIconColor(Button, HoverAccent)"/>, which never
+    /// touches Background.
+    /// </summary>
+    protected enum HoverAccent { Accent, Copy, Delete }
+
+    /// <summary>Maps a <see cref="ToolCommand.Id"/> to the hover tint its command-bar button
+    /// should take. <see cref="ToolCommand.Ids.Copy"/> is always blue, <see cref="ToolCommand.Ids.Clear"/>
+    /// always red; every other id — including a page-specific one like Base64's "base64-encode" —
+    /// falls through to the accent default, so a page never has to opt in by hand.</summary>
+    private static HoverAccent HoverAccentFor(string commandId) => commandId switch
+    {
+        ToolCommand.Ids.Copy => HoverAccent.Copy,
+        ToolCommand.Ids.Clear => HoverAccent.Delete,
+        _ => HoverAccent.Accent,
+    };
+
+    /// <summary>
+    /// Shadows the framework key a plain <see cref="Button"/>'s stock style reads its pointer-over
+    /// and pressed icon colour from (<c>ButtonForegroundPointerOver</c>/<c>...Pressed</c>) on this
+    /// one button instance — the same "closer resource wins" override <c>SettingsWindow</c>'s own
+    /// accent-colour and hot-corner buttons already rely on
+    /// (<c>SettingsWindow.xaml.cs</c>'s <c>ApplyAccentColorOverride</c>/<c>AddHotCornerButton</c>),
+    /// rather than replacing the whole control template. Deliberately leaves Background alone —
+    /// the ask is a coloured icon on hover, not a filled hover chip. A <see cref="FontIcon"/>
+    /// content has no <c>Foreground</c> of its own set, so it inherits the Button's, the same way
+    /// it already inherits the icon colour these buttons show at rest.
+    /// </summary>
+    protected static void ApplyHoverIconColor(Button button, HoverAccent accent)
+    {
+        var brush = HoverAccentBrush(accent);
+        if (brush is null)
+            return;
+        button.Resources["ButtonForegroundPointerOver"] = brush;
+        button.Resources["ButtonForegroundPressed"] = brush;
+    }
+
+    /// <summary>Same idea as the <see cref="Button"/> overload, for the <see cref="AppBarButton"/>s
+    /// <see cref="InitializeChrome"/> builds from <see cref="ToolPage.Commands"/> — a different
+    /// control with its own template and its own key names. Its stock template ties the icon and
+    /// any visible label to this same key, so a command whose label happens to be visible (Format,
+    /// Encode/Decode — anything not <see cref="ToolCommand.IconOnly"/>) takes the tint on both,
+    /// which reads as one coherent "this is now highlighted" rather than a mismatch.</summary>
+    private static void ApplyHoverIconColor(AppBarButton button, HoverAccent accent)
+    {
+        var brush = HoverAccentBrush(accent);
+        if (brush is null)
+            return;
+        button.Resources["AppBarButtonForegroundPointerOver"] = brush;
+        button.Resources["AppBarButtonForegroundPressed"] = brush;
+    }
+
+    /// <summary>
+    /// Copy reads from SwiftX's own <c>SwiftXCopyHoverBrush</c> (Themes/Colors.xaml), not WinUI's
+    /// <c>SystemFillColorAttentionBrush</c> — that framework key is itself just a tint of the
+    /// system accent colour, so on a machine whose Windows accent isn't blue, Copy's hover would
+    /// have silently matched every other button's instead of standing apart from Delete's fixed
+    /// red. Critical red and the accent default are both already theme-tracking WinUI system
+    /// colours, independent of personalization (see <c>AccentFillColorDefaultBrush</c>'s existing
+    /// use as this app's "the accent colour" outside Settings, e.g. the drag-over border below).
+    /// </summary>
+    private static Microsoft.UI.Xaml.Media.Brush? HoverAccentBrush(HoverAccent accent) => accent switch
+    {
+        HoverAccent.Delete => ThemeBrush("SystemFillColorCriticalBrush"),
+        HoverAccent.Copy => ThemeBrush("SwiftXCopyHoverBrush"),
+        _ => ThemeBrush("AccentFillColorDefaultBrush"),
+    };
+
     /// <summary>Sets the page's own pane layout. Call once, from the derived constructor.</summary>
     protected void SetBody(FrameworkElement body)
     {
@@ -382,6 +455,7 @@ public abstract class EditorToolPage : ToolPage
                 button.Visibility = isVisible() ? Visibility.Visible : Visibility.Collapsed;
 
             button.Click += (_, _) => command.Invoke();
+            ApplyHoverIconColor(button, HoverAccentFor(command.Id));
             _commandBar.PrimaryCommands.Add(button);
             _commandButtons.Add((command, button));
 
