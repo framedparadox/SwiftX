@@ -66,12 +66,38 @@ public sealed class RingItem : INotifyPropertyChanged
 
     private ImageSource? _iconImage;
 
+    /// <summary>
+    /// Everything <see cref="Services.IconService.LoadIconAsync"/> reads when it resolves this
+    /// item's icon, as one comparable string. Two items with the same key resolve to the same
+    /// picture, and a change to this key is exactly the set of edits that invalidate a resolved
+    /// one.
+    /// <para>
+    /// The separator is U+001F (unit separator) rather than a printable character so no
+    /// combination of a path and a target can spell another item's key.
+    /// </para>
+    /// </summary>
+    [JsonIgnore]
+    public string IconKey => $"{Kind}\u001f{Target}\u001f{CustomIconPath}\u001f{CustomGlyph}";
+
+    /// <summary>
+    /// The <see cref="IconKey"/> that <see cref="IconImage"/> was resolved from, or null when
+    /// nothing has been resolved yet. Lets a render skip an item whose icon is already correct —
+    /// see <c>RingWindow.ResolveIconAsync</c>, which is what reads it.
+    /// </summary>
+    [JsonIgnore]
+    public string? IconSignature { get; set; }
+
     [JsonIgnore]
     public ImageSource? IconImage
     {
         get => _iconImage;
         set
         {
+            // Idempotent, like CustomGlyph above. A render that finds the icon already correct
+            // still assigns the same value back (see RingWindow.ResolveIconAsync), and three
+            // change notifications per item per summon for a picture nobody repainted is noise
+            // every bubble's handler then has to do nothing about.
+            if (ReferenceEquals(_iconImage, value)) return;
             _iconImage = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ImageVisibility));

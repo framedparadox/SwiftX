@@ -116,6 +116,7 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBox x:Name="TargetBox" Grid.Column="0"
+                                 AutomationProperties.LabeledBy="{Binding ElementName=TargetLabel}"
                                  PlaceholderText="Choose a file, folder, URL, or path"
                                  TextChanged="TargetBox_TextChanged" />
                         <Button x:Name="BrowseButton" Grid.Column="1" Content="Browse…"
@@ -129,12 +130,14 @@
 
                 <StackPanel x:Name="NamePanel" Spacing="6">
                     <TextBlock Text="Display name" />
-                    <TextBox x:Name="NameBox" PlaceholderText="Shown on the ring" />
+                    <TextBox x:Name="NameBox" PlaceholderText="Shown on the ring"
+                             AutomationProperties.Name="Display name" />
                 </StackPanel>
 
                 <StackPanel x:Name="ToolPanel" Spacing="6" Visibility="Collapsed">
                     <TextBlock Text="Tool" />
-                    <ComboBox x:Name="ToolBox" Width="280">
+                    <ComboBox x:Name="ToolBox" Width="280"
+                              AutomationProperties.Name="Tool">
                         <ComboBoxItem Content="Data" Tag="Data" IsSelected="True" />
                         <ComboBoxItem Content="Secure values" Tag="SecureValues" />
                         <ComboBoxItem Content="Base64" Tag="Base64" />

@@ -52,6 +52,43 @@ public sealed class CodeView : Grid
     private IReadOnlyList<Token> _tokens = [];
     private bool _showLineNumbers = true;
 
+    /// <summary>
+    /// Token brushes, memoized per kind and theme.
+    /// <para>
+    /// <see cref="Render"/> assigns a foreground to one <see cref="Run"/> per token, and used to
+    /// construct a <see cref="SolidColorBrush"/> for each — thousands of identical brushes per
+    /// repaint over a document approaching <see cref="MaxHighlightLength"/>. There are only ever
+    /// as many distinct brushes as there are <see cref="TokenKind"/> values, so they are built
+    /// once and shared. The theme is part of the key because <see cref="SyntaxPalette"/> answers
+    /// differently in Light and Dark, and both live in the cache across a theme switch: the
+    /// entries are tiny and a switch is not worth invalidating for.
+    /// </para>
+    /// <para>
+    /// Deliberately per instance, not static. A <see cref="SolidColorBrush"/> is a
+    /// <see cref="DependencyObject"/> with thread affinity to the XAML tree that first uses it,
+    /// and SwiftX opens a window per tool; a process-wide cache would hand one window's brush to
+    /// another. A CodeView belongs to exactly one tree, so an instance field cannot.
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<(TokenKind Kind, bool Dark), SolidColorBrush> _foregroundBrushes = new();
+    private readonly Dictionary<(TokenKind Kind, bool Dark), SolidColorBrush> _backgroundBrushes = new();
+
+    private SolidColorBrush? ForegroundBrush(TokenKind kind, bool dark)
+    {
+        if (_foregroundBrushes.TryGetValue((kind, dark), out var cached))
+            return cached;
+        if (SyntaxPalette.ForegroundFor(kind, dark) is not { } color)
+            return null;
+        return _foregroundBrushes[(kind, dark)] = new SolidColorBrush(color);
+    }
+
+    private SolidColorBrush BackgroundBrush(TokenKind kind, bool dark)
+    {
+        if (_backgroundBrushes.TryGetValue((kind, dark), out var cached))
+            return cached;
+        return _backgroundBrushes[(kind, dark)] = new SolidColorBrush(SyntaxPalette.BackgroundFor(kind, dark));
+    }
+
     public CodeView()
     {
         // No column definitions on the view itself: the gutter/content split belongs to the `row`
@@ -127,7 +164,7 @@ public sealed class CodeView : Grid
         foreach (char c in _text)
             if (c == '\n')
                 lineCount++;
-        _gutter.Text = _showLineNumbers ? string.Join('\n', Enumerable.Range(1, lineCount)) : "";
+        _gutter.Text = _showLineNumbers ? BuildGutter(lineCount) : "";
 
         if (_text.Length == 0)
             return;
@@ -164,12 +201,8 @@ public sealed class CodeView : Grid
             else
             {
                 var run = new Run { Text = text };
-                if (!highContrast)
-                {
-                    var color = SyntaxPalette.ForegroundFor(token.Kind, dark);
-                    if (color is { } c)
-                        run.Foreground = new SolidColorBrush(c);
-                }
+                if (!highContrast && ForegroundBrush(token.Kind, dark) is { } brush)
+                    run.Foreground = brush;
                 _content.Inlines.Add(run);
             }
             cursor = end;
@@ -181,7 +214,7 @@ public sealed class CodeView : Grid
         {
             foreach (var (kind, ranges) in highlightRanges)
             {
-                var highlighter = new TextHighlighter { Background = new SolidColorBrush(SyntaxPalette.BackgroundFor(kind, dark)) };
+                var highlighter = new TextHighlighter { Background = BackgroundBrush(kind, dark) };
                 foreach (var r in ranges)
                     highlighter.Ranges.Add(r);
                 _content.TextHighlighters.Add(highlighter);
@@ -189,6 +222,33 @@ public sealed class CodeView : Grid
         }
     }
 
+    /// <summary>
+    /// The line-number column: <c>1\n2\n…\nlineCount</c>.
+    /// <para>
+    /// Written out with a sized <see cref="System.Text.StringBuilder"/> rather than
+    /// <c>string.Join('\n', Enumerable.Range(1, lineCount))</c>, which allocated an enumerator, a
+    /// boxed <c>int</c> and a separate string per line before joining them — a hundred thousand
+    /// throwaway objects on a large document, rebuilt on every repaint, for a column of digits.
+    /// The capacity estimate assumes a worst-case seven digits plus a separator per line, so an
+    /// ordinary document never grows the builder — but it is capped at a megabyte rather than
+    /// taken literally, because the gutter is built for documents all the way up to the 50 MB
+    /// file ceiling and reserving eight bytes per line for one of those would ask for hundreds of
+    /// megabytes up front. Past the cap the builder grows the usual way, which is slower and
+    /// bounded rather than fast and unbounded.
+    /// </para>
+    /// </summary>
+    private static string BuildGutter(int lineCount)
+    {
+        int capacity = (int)Math.Min((long)lineCount * 8, 1L << 20);
+        var sb = new System.Text.StringBuilder(capacity);
+        for (int i = 1; i <= lineCount; i++)
+        {
+            if (i > 1)
+                sb.Append('\n');
+            sb.Append(i);
+        }
+        return sb.ToString();
+    }
 }
 
 /// <summary>The theme-aware colour table for every <see cref="TokenKind"/> (design doc Appendix B).
@@ -210,37 +270,45 @@ public static class SyntaxPalette
     public static Color? ForegroundFor(TokenKind kind, bool dark) => kind switch
     {
         // JSON keys and XML attribute names — Dark+ variable blue / Light+ deep blue.
-        TokenKind.PropertyName or TokenKind.AttributeName => dark ? C("#9CDCFE") : C("#0451A5"),
+        TokenKind.PropertyName or TokenKind.AttributeName => dark ? C(0x9CDCFE) : C(0x0451A5),
         // String values, including XML attribute values.
-        TokenKind.String or TokenKind.AttributeValue => dark ? C("#CE9178") : C("#A31515"),
-        TokenKind.Number => dark ? C("#B5CEA8") : C("#098658"),
+        TokenKind.String or TokenKind.AttributeValue => dark ? C(0xCE9178) : C(0xA31515),
+        TokenKind.Number => dark ? C(0xB5CEA8) : C(0x098658),
         // true / false / null, and any language keyword.
-        TokenKind.Boolean or TokenKind.Null or TokenKind.Keyword => dark ? C("#569CD6") : C("#0000FF"),
-        TokenKind.TagName => dark ? C("#569CD6") : C("#800000"),
-        TokenKind.Comment or TokenKind.CData => dark ? C("#6A9955") : C("#008000"),
+        TokenKind.Boolean or TokenKind.Null or TokenKind.Keyword => dark ? C(0x569CD6) : C(0x0000FF),
+        TokenKind.TagName => dark ? C(0x569CD6) : C(0x800000),
+        TokenKind.Comment or TokenKind.CData => dark ? C(0x6A9955) : C(0x008000),
         // Braces, brackets, commas and colons: dimmed rather than absent, so structure recedes
         // behind content instead of competing with it.
-        TokenKind.Punctuation => dark ? C("#D4D4D4") : C("#3B3B3B"),
-        TokenKind.Error => dark ? C("#F48771") : C("#C42B1C"),
+        TokenKind.Punctuation => dark ? C(0xD4D4D4) : C(0x3B3B3B),
+        TokenKind.Error => dark ? C(0xF48771) : C(0xC42B1C),
         _ => null, // Plain: inherit the ambient text colour
     };
 
     public static Color BackgroundFor(TokenKind kind, bool dark) => kind switch
     {
-        TokenKind.Match => dark ? C("#5A4B00") : C("#FFF3C4"),
-        TokenKind.Finding => dark ? C("#5A2020") : C("#FFE0E0"),
-        TokenKind.Masked => dark ? C("#1F3055") : C("#E0E8FF"),
-        TokenKind.Added => dark ? C("#12341F") : C("#DDF4E4"),
-        TokenKind.Removed => dark ? C("#3F1A1D") : C("#FBE3E4"),
+        TokenKind.Match => dark ? C(0x5A4B00) : C(0xFFF3C4),
+        TokenKind.Finding => dark ? C(0x5A2020) : C(0xFFE0E0),
+        TokenKind.Masked => dark ? C(0x1F3055) : C(0xE0E8FF),
+        TokenKind.Added => dark ? C(0x12341F) : C(0xDDF4E4),
+        TokenKind.Removed => dark ? C(0x3F1A1D) : C(0xFBE3E4),
         _ => Colors.Transparent,
     };
 
-    private static Color C(string hex)
-    {
-        hex = hex.TrimStart('#');
-        byte r = System.Convert.ToByte(hex[..2], 16);
-        byte g = System.Convert.ToByte(hex[2..4], 16);
-        byte b = System.Convert.ToByte(hex[4..6], 16);
-        return Color.FromArgb(255, r, g, b);
-    }
+    /// <summary>
+    /// An opaque colour from a <c>0xRRGGBB</c> literal.
+    /// <para>
+    /// The literal is a number rather than the <c>"#RRGGBB"</c> string it used to be, because
+    /// this is a hot path and the string form was not free: <c>TrimStart</c> plus three
+    /// <c>Convert.ToByte(hex[..2], 16)</c> range slices allocated four strings and parsed six
+    /// characters on <em>every call</em>, and the callers are the two render loops — CodeView
+    /// building one <c>Run</c> per token, and CodeEditor colouring one document range per token
+    /// on its 180 ms debounce, both over documents of up to 100 000 characters. Thousands of
+    /// tokens therefore meant tens of thousands of throwaway strings per repaint, on the UI
+    /// thread, to re-derive constants. As a <c>uint</c> the shift-and-mask is folded at compile
+    /// time and the hex stays exactly as readable in source.
+    /// </para>
+    /// </summary>
+    private static Color C(uint rgb) =>
+        Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
 }

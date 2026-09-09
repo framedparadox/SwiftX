@@ -435,6 +435,10 @@ public sealed class SecureValuesPage : EditorToolPage
                 return;
             var package = new DataPackage();
             package.SetText(entry.Value);
+            // Opted out of clipboard history and cloud roaming — see SecretClipboard for why a
+            // value this app went to the trouble of DPAPI-protecting must not then be handed to
+            // a feature that syncs it to the user's other devices.
+            SecretClipboard.MarkSecret(package.Properties);
             Clipboard.SetContent(package);
             StatusBar.SetMessage(Loc.Get("SecureValues.Copied"), isError: false);
         };
