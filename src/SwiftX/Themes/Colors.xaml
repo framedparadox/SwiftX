@@ -32,6 +32,14 @@
             <Color x:Key="SwiftXBorderColor">#333333</Color>
             <Color x:Key="SwiftXMutedColor">#888888</Color>
             <Color x:Key="SwiftXAccentColor">#FFFFFF</Color>
+            <!-- A fixed "communication blue", deliberately NOT SwiftXAccentColor/AccentFillColorDefaultBrush:
+                 Secure values' Copy button (SecureValuesPage.ApplyHoverColors) has to read as blue
+                 regardless of what the user (or Windows personalization) has the accent colour set
+                 to, the same way SystemFillColorCriticalBrush's red never tracks the accent either.
+                 The lighter tint in Dark mirrors how the framework's own SystemFillColorCritical
+                 goes lighter in Dark than Light (#FF99A4 vs #C42B1C) for the same on-black-vs-on-white
+                 contrast reason. -->
+            <Color x:Key="SwiftXCopyHoverColor">#60CDFF</Color>
             <Color x:Key="RingBubbleBackgroundColor">#000000</Color>
             <!-- The ring bubbles' live-glass tint (RingWindow's CreateBubble/ApplyBubbleFill) —
                  sits over a real DesktopAcrylicBackdrop, so this only needs to carry SwiftX's own
@@ -47,6 +55,7 @@
             <SolidColorBrush x:Key="SwiftXBorderBrush" Color="{StaticResource SwiftXBorderColor}"/>
             <SolidColorBrush x:Key="SwiftXMutedBrush" Color="{StaticResource SwiftXMutedColor}"/>
             <SolidColorBrush x:Key="SwiftXAccentBrush" Color="{StaticResource SwiftXAccentColor}"/>
+            <SolidColorBrush x:Key="SwiftXCopyHoverBrush" Color="{StaticResource SwiftXCopyHoverColor}"/>
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
             <SolidColorBrush x:Key="RingBubbleGlassTint" Color="{StaticResource RingBubbleGlassTintColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
@@ -147,6 +156,9 @@
             <Color x:Key="SwiftXBorderColor">#CCCCCC</Color>
             <Color x:Key="SwiftXMutedColor">#666666</Color>
             <Color x:Key="SwiftXAccentColor">#000000</Color>
+            <!-- See the matching comment in the Dark dictionary above — the darker end of the same
+                 communication-blue pair, for contrast on Light's white surfaces. -->
+            <Color x:Key="SwiftXCopyHoverColor">#0078D4</Color>
             <Color x:Key="RingBubbleBackgroundColor">#FFFFFF</Color>
             <!-- See the matching comment in the Dark dictionary above. -->
             <Color x:Key="RingBubbleGlassTintColor">#66FFFFFF</Color>
@@ -158,6 +170,7 @@
             <SolidColorBrush x:Key="SwiftXBorderBrush" Color="{StaticResource SwiftXBorderColor}"/>
             <SolidColorBrush x:Key="SwiftXMutedBrush" Color="{StaticResource SwiftXMutedColor}"/>
             <SolidColorBrush x:Key="SwiftXAccentBrush" Color="{StaticResource SwiftXAccentColor}"/>
+            <SolidColorBrush x:Key="SwiftXCopyHoverBrush" Color="{StaticResource SwiftXCopyHoverColor}"/>
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
             <SolidColorBrush x:Key="RingBubbleGlassTint" Color="{StaticResource RingBubbleGlassTintColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
@@ -250,6 +263,8 @@
             <Color x:Key="SwiftXBorderColor">#333333</Color>
             <Color x:Key="SwiftXMutedColor">#888888</Color>
             <Color x:Key="SwiftXAccentColor">#FFFFFF</Color>
+            <!-- See the matching comment in the Dark dictionary above. -->
+            <Color x:Key="SwiftXCopyHoverColor">#60CDFF</Color>
             <Color x:Key="RingBubbleBackgroundColor">#000000</Color>
             <!-- The ring bubbles' live-glass tint (RingWindow's CreateBubble/ApplyBubbleFill) —
                  sits over a real DesktopAcrylicBackdrop, so this only needs to carry SwiftX's own
@@ -265,6 +280,7 @@
             <SolidColorBrush x:Key="SwiftXBorderBrush" Color="{StaticResource SwiftXBorderColor}"/>
             <SolidColorBrush x:Key="SwiftXMutedBrush" Color="{StaticResource SwiftXMutedColor}"/>
             <SolidColorBrush x:Key="SwiftXAccentBrush" Color="{StaticResource SwiftXAccentColor}"/>
+            <SolidColorBrush x:Key="SwiftXCopyHoverBrush" Color="{StaticResource SwiftXCopyHoverColor}"/>
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
             <SolidColorBrush x:Key="RingBubbleGlassTint" Color="{StaticResource RingBubbleGlassTintColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
