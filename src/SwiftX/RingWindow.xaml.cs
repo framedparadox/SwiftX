@@ -63,6 +63,11 @@ public sealed partial class RingWindow : Window
     private Border? _hub;
     private double _hubSize;
 
+    /// <summary>The app mark inside <see cref="_hub"/>, when the hub is holding one — the full
+    /// ring does, a quadrant's wedge does not. Kept so the summon and the dismiss can play its
+    /// own petal motion alongside the ring's.</summary>
+    private AppLogo.Mark? _hubMark;
+
     /// <summary>Which corner (or null for the full ring) <see cref="_hub"/> was last built for —
     /// tracked separately from <see cref="_hubSize"/> because two different corners can want the
     /// exact same box size, and the wedge drawn inside it is corner-specific.</summary>
@@ -431,6 +436,7 @@ public sealed partial class RingWindow : Window
         _flyout.Clear();
         _flyoutParent = null;
         _hub = null;
+        _hubMark = null;
         _pill = null;
         _pillText = null;
         _hovered = null;
@@ -703,6 +709,7 @@ public sealed partial class RingWindow : Window
             visual.StopAnimation("Scale");
             visual.Opacity = 1;
             visual.Scale = Vector3.One;
+            _hubMark?.Reset();
         }
         catch
         {
@@ -722,9 +729,10 @@ public sealed partial class RingWindow : Window
 
     /// <summary>
     /// The full ring's hub is the app's own mark and nothing else: no plate, no border, no fill —
-    /// the logo sits directly on the desktop, sized to the fixed
-    /// <see cref="RingMetrics.HubLogo"/>/<see cref="RingMetrics.Hub"/> proportion no item-size
-    /// setting scales. A quadrant's corner has no such center to mark — its "center" is the
+    /// the logo sits directly on the desktop, lifted off it by a drop shadow of its own
+    /// (<see cref="AppLogo.CreateFloating"/>) rather than by anything drawn under it, and sized to
+    /// the fixed <see cref="RingMetrics.HubLogo"/>/<see cref="RingMetrics.Hub"/> proportion no
+    /// item-size setting scales. A quadrant's corner has no such center to mark — its "center" is the
     /// screen corner itself — so it gets a small quarter-disc wedge instead
     /// (<see cref="BuildCornerWedge"/>), spanning the same arc its items fan across and carrying
     /// no mark of its own.
@@ -737,9 +745,17 @@ public sealed partial class RingWindow : Window
     {
         _hubSize = hub;
         _hubQuadrant = _quadrant;
-        UIElement content = _quadrant is { } corner
-            ? BuildCornerWedge(hub, corner)
-            : AppLogo.Create(hub * (RingMetrics.HubLogo / RingMetrics.Hub));
+        UIElement content;
+        if (_quadrant is { } corner)
+        {
+            _hubMark = null;
+            content = BuildCornerWedge(hub, corner);
+        }
+        else
+        {
+            _hubMark = AppLogo.CreateFloating(hub * (RingMetrics.HubLogo / RingMetrics.Hub));
+            content = _hubMark;
+        }
         _hub = new Border
         {
             Width = hub,
@@ -797,6 +813,12 @@ public sealed partial class RingWindow : Window
         {
             // ignore
         }
+
+        // The mark's own motion — a quarter turn in, petals unfurling clockwise behind it — rides
+        // on top of the spring above rather than replacing it, so the centre reads as one thing
+        // arriving. Outside the try above on purpose: it guards its own composition calls, and a
+        // failure there must not cost the hub its entrance.
+        _hubMark?.PlayEntrance();
     }
 
     /// <summary>
@@ -1398,10 +1420,14 @@ public sealed partial class RingWindow : Window
         await Task.Delay(SpringPeriodMs + maxStagger * StaggerMs + 30);
     }
 
-    /// <summary>The exact reverse of <see cref="BuildHub"/>'s entrance spring.</summary>
+    /// <summary>
+    /// The exact reverse of <see cref="BuildHub"/>'s entrance spring — and, with it, of the mark's
+    /// own petal motion.
+    /// </summary>
     private void FadeOutHub()
     {
         if (_hub is null) return;
+        _hubMark?.PlayExit();
         try
         {
             var visual = ElementCompositionPreview.GetElementVisual(_hub);
