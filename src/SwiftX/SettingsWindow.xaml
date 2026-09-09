@@ -855,14 +855,26 @@
                     <StackPanel Spacing="6" MaxWidth="720" HorizontalAlignment="Left">
                         <TextBlock Text="About" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,12" />
                         <Border Style="{StaticResource Card}">
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="SwiftX" FontSize="20" FontWeight="SemiBold" />
-                                <TextBlock x:Name="VersionText" Style="{StaticResource SecondaryCaption}" />
-                                <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
-                                           Text="A quick-access ring for Windows. Summon it with a shortcut, a screen corner, or the tray icon, and launch the apps, folders, links, and built-in tools you reach for most." />
-                                <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
-                                           Text="SwiftX runs entirely on your own device — see Privacy for what that means." />
-                            </StackPanel>
+                            <!-- Grid rather than a horizontal StackPanel: the paragraphs below wrap,
+                                 and a StackPanel would measure them against infinite width so they
+                                 never would. AboutMark is filled in from code-behind because the
+                                 app mark is vector geometry built by AppLogo, not a bitmap. -->
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <ContentControl x:Name="AboutMark" Grid.Column="0"
+                                                VerticalAlignment="Top" IsTabStop="False" />
+                                <StackPanel Grid.Column="1" Spacing="8">
+                                    <TextBlock Text="SwiftX" FontSize="20" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="VersionText" Style="{StaticResource SecondaryCaption}" />
+                                    <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
+                                               Text="A quick-access ring for Windows. Summon it with a shortcut, a screen corner, or the tray icon, and launch the apps, folders, links, and built-in tools you reach for most." />
+                                    <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
+                                               Text="SwiftX runs entirely on your own device — see Privacy for what that means." />
+                                </StackPanel>
+                            </Grid>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>

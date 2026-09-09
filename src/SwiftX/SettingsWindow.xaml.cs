@@ -118,7 +118,7 @@ public sealed partial class SettingsWindow : Window
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
         Title = "SwiftX Settings";
 
-        var titleBar = new AppTitleBar("", "SwiftX Settings");
+        var titleBar = AppTitleBar.WithAppMark("SwiftX Settings");
         Grid.SetRow(titleBar, 0);
         Root.Children.Insert(0, titleBar);
 
@@ -128,6 +128,11 @@ public sealed partial class SettingsWindow : Window
         // ExtendsContentIntoTitleBar clobbers the rim color.
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(titleBar);
+
+        // Built once here rather than in the Loaded handler that fills in the rest of the About
+        // card: Loaded can fire again if the tree is ever re-parented, and the mark has nothing to
+        // wait for — unlike the version string and the toggles, it reads no state.
+        AboutMark.Content = AppLogo.Create(48);
 
         PreviewCanvas.PointerPressed += Preview_PointerPressed;
         PreviewCanvas.PointerMoved += Preview_PointerMoved;
