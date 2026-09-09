@@ -55,6 +55,30 @@ public static class Launcher
     }
 
     /// <summary>
+    /// Hands a URL to the user's default browser. For links the app itself owns (Settings' Feedback
+    /// &amp; Support page), not ring items — those go through <see cref="Launch"/>, which has to
+    /// resolve working directories, arguments, and file associations that a plain URL never has.
+    /// <para>
+    /// <c>Process.Start</c> with ShellExecute rather than <c>Windows.System.Launcher</c>: SwiftX
+    /// builds unpackaged (<c>WindowsPackageType=None</c>), and ShellExecute is the path the rest of
+    /// this file already relies on to reach the default browser. Never throws — a browser that
+    /// won't open is not worth taking a click handler down over.
+    /// </para>
+    /// </summary>
+    public static void OpenUrl(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+            Diag.Log($"OpenUrl: launched '{url}'");
+        }
+        catch (Exception ex)
+        {
+            Diag.Log($"OpenUrl FAILED for '{url}': {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// True if Windows has an app registered to open <paramref name="extension"/> (e.g. ".md"),
     /// checked the same way the shell resolves it: the per-user "UserChoice" override first
     /// (also covers packaged/Store apps), then the classic HKEY_CLASSES_ROOT ProgId. Never

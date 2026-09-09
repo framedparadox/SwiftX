@@ -6,6 +6,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
@@ -23,14 +24,24 @@ namespace SwiftX;
 /// <summary>
 /// Settings shell: left NavigationView with Home (ring customize,
 /// including the hot corner), General (the invoke shortcut and app-wide settings), Elements,
-/// Tools, and — pinned to the footer — Privacy and About.
+/// Tools, and — pinned to the footer — Feedback &amp; Support, About, and Privacy.
 /// <para>
-/// Light stays a flat, opaque white surface, unchanged. Dark sits on a real
-/// <see cref="MicaBackdrop"/> (attached below, regardless of theme — it only ever shows through
-/// Dark's brushes) under the layered, alpha-carrying plates in the Dark dictionary of
+/// This window, and only this window, follows the Logi Options+ palette (see
+/// <c>docs/logi_options_design_features.md</c> and the Settings-exclusive keys in
+/// <c>Themes/Colors.xaml</c>); the ring, AddItemWindow, and the tool windows keep the app's shared
+/// black/white identity, which is why the shared <c>SwiftX*</c> brushes are deliberately left
+/// alone here.
+/// </para>
+/// <para>
+/// Light is flat and fully opaque: a pure white canvas with cards a cool tint <em>darker</em>
+/// (#F0F4F8) inset into it — the reverse of the white-cards-on-grey it used to be. Dark sits on a
+/// real <see cref="MicaBackdrop"/> (attached below, regardless of theme — it only ever shows
+/// through Dark's brushes) under the layered, alpha-carrying plates in the Dark dictionary of
 /// <c>Themes/Colors.xaml</c> (nav pane, content canvas, cards, and the recessed "tray" areas each
 /// a deliberately different shade), so the surfaces stay visually distinct from each other while
-/// still letting Mica's own wallpaper tint read through every one of them.
+/// still letting Mica's own wallpaper tint read through every one of them. That alpha is why Dark
+/// lands near Logi's flat hexes rather than exactly on them — a deliberate trade to keep the
+/// frosted-glass look rather than making Mica a no-op.
 /// </para>
 /// </summary>
 public sealed partial class SettingsWindow : Window
@@ -128,6 +139,10 @@ public sealed partial class SettingsWindow : Window
         GroupChildrenCanvas.PointerReleased += GroupRow_PointerReleased;
         GroupChildrenCanvas.PointerCaptureLost += (_, _) => EndGroupDrag();
 
+        // See OnRatingValueChanged for why this is a DP callback and not the ValueChanged event.
+        ExperienceRating.RegisterPropertyChangedCallback(
+            RatingControl.ValueProperty, (_, _) => OnRatingValueChanged());
+
         ApplyTheme();
         Root.ActualThemeChanged += (_, _) =>
         {
@@ -135,6 +150,9 @@ public sealed partial class SettingsWindow : Window
             // Black — see ThemeHelper.Resolve) — reapplying here is a no-op whenever Black isn't
             // selected, and keeps this in sync with ApplyTheme's own ordering if it ever isn't.
             ApplyBlackOverrides();
+            // System follows Windows, so an OS flip changes which built-in teal is the right one.
+            ApplyAccentColorOverride();
+            SyncAccentControls();
             ApplyChromeTheme();
             RenderPreview();
         };
@@ -174,6 +192,11 @@ public sealed partial class SettingsWindow : Window
             HotkeyCapture.NeedsModifier += () =>
                 HotkeyStatus.Text = "Hold Ctrl, Alt, or Win with that key.";
             RebuildToolsList();
+            ExperienceRating.Value = _manager.Config.FeedbackRating > 0
+                ? _manager.Config.FeedbackRating
+                : -1; // RatingControl's own "unset"; 0 would render as a real zero-star rating.
+            UpdateRatingThanks();
+            SyncAccentControls();
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0");
             _loading = false;
@@ -213,6 +236,7 @@ public sealed partial class SettingsWindow : Window
     public void ApplyTheme()
     {
         ApplyBlackOverrides();
+        ApplyAccentColorOverride();
         ForceThemeResourceRefresh(ThemeHelper.Resolve(_manager.Config.Theme));
         ApplyChromeTheme();
         RenderPreview();
@@ -257,7 +281,8 @@ public sealed partial class SettingsWindow : Window
     {
         "SettingsSurfaceBrush", "SwiftXCanvasBrush", "SwiftXNavPaneBrush",
         "SwiftXCardBackgroundBrush", "SwiftXRingCanvasBrush",
-        "NavigationViewDefaultPaneBackground", "NavigationViewContentBackground",
+        "NavigationViewDefaultPaneBackground", "NavigationViewExpandedPaneBackground",
+        "NavigationViewContentBackground",
     };
 
     private void ApplyBlackOverrides()
@@ -278,6 +303,180 @@ public sealed partial class SettingsWindow : Window
             Root.Resources[key] = surface;
     }
 
+    /// <summary>
+    /// Paints every WinUI brush key, across the controls Settings actually uses, that a real
+    /// "accent colour" has to reach — always, whether the colour is the user's own pick or the
+    /// built-in teal default. Shadows them in <see cref="Root"/>'s own Resources, the same "closer
+    /// resource wins" mechanism <see cref="ApplyBlackOverrides"/> uses.
+    /// <para>
+    /// It applies the default too, rather than removing the shadow and letting the keys fall
+    /// through, because falling through does not reach SwiftX's teal at all: unset, these keys
+    /// resolve to WinUI's own <c>AccentFillColorDefaultBrush</c>, i.e. the Windows system accent
+    /// (measured at #4CC2FF on this machine). Only the hyperlinks were ever teal by default —
+    /// the toggles, radio buttons, Radius slider, rating stars, and nav selection indicator all
+    /// stayed Windows blue, which is exactly what "the default accent colour is not visible" was.
+    /// </para>
+    /// <para>
+    /// Key names verified against this project's pinned WinUI package (2.3.6)'s own generic.xaml:
+    /// each control template reads its key directly via <c>{ThemeResource KeyName}</c>, not through
+    /// the intermediate <c>AccentFillColorDefault/Secondary/TertiaryBrush</c> aliases those keys are
+    /// themselves defined from — overriding those upstream aliases instead would do nothing,
+    /// because a <c>StaticResource</c> alias resolves once, at the point the framework's own
+    /// dictionary is parsed, not on every lookup. Assigned in (default, pointer-over, pressed)
+    /// triples per control; disabled states are deliberately left to the framework.
+    /// </para>
+    /// </summary>
+    private void ApplyAccentColorOverride()
+    {
+        var accent = CurrentAccentColor();
+        var normal = new SolidColorBrush(accent);
+        // A single stored colour still needs three states everywhere it lands (default/pointer-
+        // over/pressed) — lightening for hover and darkening for pressed mirrors how
+        // AccentFillColorSecondary/TertiaryBrush relate to AccentFillColorDefaultBrush for the
+        // system accent, without asking the user to pick three colours themselves.
+        var hover = new SolidColorBrush(Blend(accent, Colors.White, 0.18));
+        var pressed = new SolidColorBrush(Blend(accent, Colors.Black, 0.18));
+
+        Root.Resources["SettingsAccentBrush"] = normal;
+        Root.Resources["SettingsAccentHoverBrush"] = hover;
+        Root.Resources["HyperlinkButtonForeground"] = normal;
+        Root.Resources["HyperlinkButtonForegroundPointerOver"] = hover;
+        Root.Resources["HyperlinkButtonForegroundPressed"] = hover;
+        Root.Resources["ToggleSwitchFillOn"] = normal;
+        Root.Resources["ToggleSwitchFillOnPointerOver"] = hover;
+        Root.Resources["ToggleSwitchFillOnPressed"] = pressed;
+        Root.Resources["ToggleSwitchStrokeOn"] = normal;
+        Root.Resources["ToggleSwitchStrokeOnPointerOver"] = hover;
+        Root.Resources["ToggleSwitchStrokeOnPressed"] = pressed;
+        Root.Resources["RadioButtonOuterEllipseCheckedFill"] = normal;
+        Root.Resources["RadioButtonOuterEllipseCheckedFillPointerOver"] = hover;
+        Root.Resources["RadioButtonOuterEllipseCheckedFillPressed"] = pressed;
+        Root.Resources["RadioButtonOuterEllipseCheckedStroke"] = normal;
+        Root.Resources["RadioButtonOuterEllipseCheckedStrokePointerOver"] = hover;
+        Root.Resources["RadioButtonOuterEllipseCheckedStrokePressed"] = pressed;
+        Root.Resources["SliderTrackValueFill"] = normal;
+        Root.Resources["SliderTrackValueFillPointerOver"] = hover;
+        Root.Resources["SliderTrackValueFillPressed"] = pressed;
+        Root.Resources["SliderThumbBackground"] = normal;
+        Root.Resources["SliderThumbBackgroundPointerOver"] = hover;
+        Root.Resources["SliderThumbBackgroundPressed"] = pressed;
+        Root.Resources["RatingControlSelectedForeground"] = normal;
+        Root.Resources["RatingControlPointerOverSelectedForeground"] = hover;
+        Root.Resources["NavigationViewSelectionIndicatorForeground"] = normal;
+
+        // The one accented thing a resource override cannot reach on its own — see the comment
+        // on ReadPrivacyLink in SettingsWindow.xaml.
+        ReadPrivacyLink.Foreground = normal;
+    }
+
+    /// <summary>The built-in default, per theme — must track SettingsAccentBrush/
+    /// SettingsAccentHoverBrush in Themes/Colors.xaml, the same duplication-for-a-reason
+    /// SettingsRimColorDark/Light already carries a few lines down (see that comment).</summary>
+    private const string DefaultAccentHexDark = "#3DDCD3";
+    private const string DefaultAccentHexLight = "#0B7C7C";
+
+    /// <summary>
+    /// What the accent colour actually resolves to right now: the user's own pick when they have
+    /// made one, otherwise the built-in teal for the theme in play. Drives both the brushes
+    /// <see cref="ApplyAccentColorOverride"/> paints and the swatch/picker that report them.
+    /// </summary>
+    private Color CurrentAccentColor()
+    {
+        var hex = _manager.Config.AccentColorHex;
+        if (!string.IsNullOrEmpty(hex) && TryParseHexColor(hex, out var custom))
+            return custom;
+        TryParseHexColor(ResolveIsDark() ? DefaultAccentHexDark : DefaultAccentHexLight, out var fallback);
+        return fallback;
+    }
+
+    /// <summary>
+    /// Whether the theme now being applied is a dark one, read from the configured
+    /// <see cref="AppTheme"/> rather than from <c>Root.ActualTheme</c>.
+    /// <para>
+    /// The distinction matters for ordering: <see cref="ApplyTheme"/> has to write the accent
+    /// brushes <em>before</em> <see cref="ForceThemeResourceRefresh"/>, since that refresh is what
+    /// makes every <c>{ThemeResource}</c> under Root re-resolve and pick the new brushes up —
+    /// but at that moment Root.RequestedTheme has not been assigned yet, so ActualTheme can still
+    /// be reporting the previous theme. Config is already correct at that point. Only System, which
+    /// has no fixed answer of its own, defers to what the element actually resolved to.
+    /// </para>
+    /// </summary>
+    private bool ResolveIsDark() => ThemeHelper.Resolve(_manager.Config.Theme) switch
+    {
+        ElementTheme.Dark => true,
+        ElementTheme.Light => false,
+        _ => ThemeHelper.IsDark(Root),
+    };
+
+    /// <summary>
+    /// Brings the swatch and the picker in line with <see cref="CurrentAccentColor"/>. Seeding the
+    /// picker re-enters <see cref="AccentColorPicker_ColorChanged"/>, which would otherwise save
+    /// the value it was just handed as though the user had chosen it — hence the loading
+    /// guard, saved and restored rather than cleared, so this stays safe to call from inside the
+    /// window's own load pass where the flag is already up.
+    /// </summary>
+    private void SyncAccentControls()
+    {
+        var accent = CurrentAccentColor();
+        bool wasLoading = _loading;
+        _loading = true;
+        AccentColorPicker.Color = accent;
+        _loading = wasLoading;
+        AccentColorSwatch.Background = new SolidColorBrush(accent);
+    }
+
+    /// <summary>Parses "#RRGGBB" (the only form <see cref="AppConfig.AccentColorHex"/> is ever
+    /// written in). Never throws — an unparsable stored value just falls back like an unset
+    /// one.</summary>
+    private static bool TryParseHexColor(string hex, out Color color)
+    {
+        color = default;
+        var s = hex.TrimStart('#');
+        if (s.Length != 6)
+            return false;
+        try
+        {
+            byte r = Convert.ToByte(s.Substring(0, 2), 16);
+            byte g = Convert.ToByte(s.Substring(2, 2), 16);
+            byte b = Convert.ToByte(s.Substring(4, 2), 16);
+            color = Color.FromArgb(255, r, g, b);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static string ToHexColor(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+
+    /// <summary>Blends <paramref name="c"/> toward <paramref name="target"/> by
+    /// <paramref name="amount"/> (0-1) — the hover/pressed shades <see cref="ApplyAccentColorOverride"/>
+    /// derives from one stored colour.</summary>
+    private static Color Blend(Color c, Color target, double amount)
+    {
+        byte L(byte a, byte b) => (byte)Math.Clamp(a + (b - a) * amount, 0, 255);
+        return Color.FromArgb(255, L(c.R, target.R), L(c.G, target.G), L(c.B, target.B));
+    }
+
+    private void AccentColorPicker_ColorChanged(ColorPicker sender, ColorChangedEventArgs args)
+    {
+        if (_loading) return;
+        _manager.Config.AccentColorHex = ToHexColor(args.NewColor);
+        _manager.Save();
+        ApplyAccentColorOverride();
+        AccentColorSwatch.Background = new SolidColorBrush(args.NewColor);
+    }
+
+    private void ResetAccentColor_Click(object sender, RoutedEventArgs e)
+    {
+        _manager.Config.AccentColorHex = null;
+        _manager.Save();
+        ApplyAccentColorOverride();
+        SyncAccentControls();
+        AccentColorSwatch.Flyout?.Hide();
+    }
+
     private void ApplyChromeTheme()
     {
         bool dark = ThemeHelper.IsDark(Root);
@@ -289,14 +488,16 @@ public sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// Rim colors for Settings, as COLORREFs (0x00BBGGRR) — match <c>SettingsSurfaceColor</c>/
-    /// <c>SwiftXCanvasBrush</c> in <c>Themes/Colors.xaml</c> (sample-data/design-colours.md's
-    /// Surface.Base/Surface.Rim, which are the same value in both themes there), not the shared
-    /// black/white every other window's rim still uses. Neutral greys, so channel order is moot.
-    /// SettingsRimColorBlack matches ApplyBlackOverrides' own flat black rather than Dark's #202020.
+    /// Rim colors for Settings, as COLORREFs (0x00BBGGRR) — these must track
+    /// <c>SettingsSurfaceColor</c>/<c>SwiftXCanvasBrush</c> in <c>Themes/Colors.xaml</c> (now the
+    /// Logi Options+ canvas values, #FFFFFF and #222222), not the shared black/white every other
+    /// window's rim still uses. Leave one stale after a palette change and the window grows a
+    /// visible hairline where the rim stops matching the surface behind it. Both are neutral greys,
+    /// so channel order is moot; the cool-tinted card/pane colors never reach the rim.
+    /// SettingsRimColorBlack matches ApplyBlackOverrides' own flat black rather than Dark's canvas.
     /// </summary>
-    private const int SettingsRimColorDark = 0x00202020;
-    private const int SettingsRimColorLight = 0x00F3F3F3;
+    private const int SettingsRimColorDark = 0x00222222;
+    private const int SettingsRimColorLight = 0x00FFFFFF;
     private const int SettingsRimColorBlack = 0x00000000;
 
     private Style SecondaryCaptionStyle => (Style)Root.Resources["SecondaryCaption"];
@@ -309,6 +510,7 @@ public sealed partial class SettingsWindow : Window
         AppsPanel.Visibility = tag == "apps" ? Visibility.Visible : Visibility.Collapsed;
         ToolsPanel.Visibility = tag == "tools" ? Visibility.Visible : Visibility.Collapsed;
         PrivacyPanel.Visibility = tag == "privacy" ? Visibility.Visible : Visibility.Collapsed;
+        FeedbackPanel.Visibility = tag == "feedback" ? Visibility.Visible : Visibility.Collapsed;
         AboutPanel.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
         if (tag == "home") RenderPreview();
         if (tag == "apps") RebuildItemsList();
@@ -581,6 +783,15 @@ public sealed partial class SettingsWindow : Window
     /// The corner button: present on the canvas whenever the hot corner is on, sitting in the
     /// canvas corner that matches the chosen screen one, and switching the canvas between the
     /// ring and what that corner would actually show.
+    /// <para>
+    /// The icon is the same corner-pointing triangle as the Hot corner row above (see
+    /// <see cref="CornerTriangleGeometry"/>/<see cref="CornerTriangleAngle"/>), always rotated to
+    /// the chosen corner regardless of which of the two states below the button is currently in —
+    /// this button sits physically in that corner of the canvas, so pointing at it is what marks
+    /// the button as "this corner" rather than any other one on the canvas. The two states (ring
+    /// vs. quadrant preview) differ only in tooltip and automation name now; they used to swap in
+    /// a generic resize/back glyph that said nothing about which corner it was.
+    /// </para>
     /// </summary>
     private void AddHotCornerButton(double size)
     {
@@ -597,12 +808,28 @@ public sealed partial class SettingsWindow : Window
             Height = diameter,
             Padding = new Thickness(0),
             CornerRadius = new CornerRadius(diameter / 2),
-            Content = new FontIcon
+            Content = new PathIcon
             {
-                Glyph = _previewQuadrant ? "\uE72C" : "\uE740",
-                FontSize = 14,
+                Data = CornerTriangleGeometry(),
+                Width = 14,
+                Height = 14,
+                RenderTransformOrigin = new Point(0.5, 0.5),
+                RenderTransform = new RotateTransform { Angle = CornerTriangleAngle(corner) },
             },
         };
+        // No resting chrome: the triangle marks the corner on its own, and a filled plate around
+        // it read as one more bubble sitting in the ring rather than as the canvas's own corner.
+        // Shadowing the two keys the Button style resolves at rest (its Style sets Background and
+        // BorderBrush from ButtonBackground/ButtonBorderBrush) rather than assigning
+        // button.Background directly, so the change lands at the same layer the framework sets it
+        // and touches nothing else: the pointer-over and pressed states drive
+        // ContentPresenter.Background from ButtonBackgroundPointerOver/Pressed, which are left
+        // alone here, so the full 34px disc still lights up under the pointer and keeps reading as
+        // a button. Only the resting fill goes away.
+        var transparent = new SolidColorBrush(Colors.Transparent);
+        button.Resources["ButtonBackground"] = transparent;
+        button.Resources["ButtonBorderBrush"] = transparent;
+
         ToolTipService.SetToolTip(button, _previewQuadrant
             ? "Back to the full ring"
             : "Show what this corner opens");
@@ -1357,7 +1584,108 @@ public sealed partial class SettingsWindow : Window
             _manager.Save();
             _manager.ApplyTheme();
             ApplyTheme();
+            // Light and Dark carry different built-in teals; the swatch has to follow.
+            SyncAccentControls();
         }
+    }
+
+    /// <summary>
+    /// PLACEHOLDER. SwiftX has no Microsoft Store listing yet — it builds unpackaged
+    /// (<c>WindowsPackageType=None</c>), so there is no product id to point at. Every Store link on
+    /// the Feedback &amp; Support page is derived from this one constant: put the real twelve-character
+    /// product id here once the app is listed and all three resolve on their own, with nothing else
+    /// to change. Until then they open a Store page that does not exist.
+    /// </summary>
+    private const string StoreProductId = "0000000000000";
+
+    /// <summary>
+    /// The Store links, as <c>https://apps.microsoft.com</c> URLs rather than
+    /// <c>ms-windows-store://</c> protocol ones. Both reach the same listing, but the page's own
+    /// closing note promises that links open in the browser, and the protocol form opens the Store
+    /// app instead — the web form is the one that keeps that promise. (If a deep link into the Store
+    /// app is ever wanted, the equivalents are <c>ms-windows-store://review/?ProductId=</c> and
+    /// <c>ms-windows-store://pdp/?ProductId=</c>.)
+    /// </summary>
+    private const string StoreListingUrl = "https://apps.microsoft.com/detail/" + StoreProductId;
+    private const string StoreReviewUrl = StoreListingUrl + "#reviews";
+
+    /// <summary>
+    /// The repository itself, not an issue or discussion: this is the "star us" link beside the
+    /// rating, so it wants the page with the star button on it.
+    /// </summary>
+    private const string GitHubRepoUrl = "https://github.com/framedparadox/SwiftX";
+
+    private void ShareFeedback_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(StoreReviewUrl);
+
+    private void RateOnStore_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(StoreReviewUrl);
+
+    private void StarOnGitHub_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(GitHubRepoUrl);
+
+    private void ReportIssue_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(StoreListingUrl);
+
+    /// <summary>
+    /// Moves to the Privacy page instead of opening anything. Selecting the NavigationViewItem
+    /// rather than flipping panel Visibility directly, so Nav_SelectionChanged stays the single
+    /// place that knows which panel belongs to which tag, and the nav pane's own selection follows
+    /// along the way it would if the user had clicked Privacy themselves.
+    /// </summary>
+    private void OpenPrivacyFromFeedback_Click(Hyperlink sender, HyperlinkClickEventArgs args)
+    {
+        foreach (var item in Nav.FooterMenuItems)
+        {
+            if (item is NavigationViewItem nvi && (nvi.Tag as string) == "privacy")
+            {
+                Nav.SelectedItem = nvi;
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Persists the star rating and acknowledges it inline. Saved locally and never transmitted —
+    /// see <see cref="AppConfig.FeedbackRating"/> and Settings' own Privacy page.
+    /// <para>
+    /// Driven by a DependencyProperty change callback (registered in the constructor) rather than
+    /// <c>RatingControl.ValueChanged</c>: that event does not fire when Value is set through the
+    /// control's UIA RangeValue provider, so the rating silently failed to save for anyone driving
+    /// Settings with assistive technology — or with an automated UI test, which is how this was
+    /// caught. The DP callback fires for every path that changes the value, pointer and programmatic
+    /// alike.
+    /// </para>
+    /// </summary>
+    private void OnRatingValueChanged()
+    {
+        if (_loading) return;
+        // RatingControl reports -1 for "cleared", which is the same thing as never having rated as
+        // far as the config is concerned; normalise so the stored value is only ever 0-5.
+        var value = ExperienceRating.Value < 0 ? 0 : (int)ExperienceRating.Value;
+        if (value == _manager.Config.FeedbackRating) return;
+        _manager.Config.FeedbackRating = value;
+        _manager.Save();
+        UpdateRatingThanks();
+    }
+
+    /// <summary>
+    /// The line beside the stars. Deliberately does not thank the user for a low rating — "Thanks
+    /// for rating!" next to one star reads as though nobody looked. Hidden entirely until there is
+    /// a rating to acknowledge.
+    /// </summary>
+    private void UpdateRatingThanks()
+    {
+        int rating = _manager.Config.FeedbackRating;
+        if (rating <= 0)
+        {
+            RatingThanks.Visibility = Visibility.Collapsed;
+            return;
+        }
+        RatingThanks.Text = rating >= 4
+            ? "Thanks — glad it's working for you."
+            : "Thanks. If something's wrong, the support link below will reach us.";
+        RatingThanks.Visibility = Visibility.Visible;
     }
 
     private void HoverStyleBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1438,6 +1766,8 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.ShowSecureValuesTool = true;
         _manager.Config.ShowBase64Tool = true;
         _manager.Config.ShowCertificateTool = true;
+        _manager.Config.FeedbackRating = 0;
+        _manager.Config.AccentColorHex = null;
         _manager.SeedDefaults(_manager.Config.Primary);
         // Through the manager, not a raw Config assignment: RingMetrics holds the geometry the
         // ring actually draws with.
@@ -1456,6 +1786,9 @@ public sealed partial class SettingsWindow : Window
         HotkeyEnabledToggle.IsOn = true;
         HotkeyCapture.Gesture = HotkeyGesture.Default;
         HotCornerEnabledToggle.IsOn = true;
+        ExperienceRating.Value = -1;
+        UpdateRatingThanks();
+        SyncAccentControls();
         SelectHotCorner(HotCorner.TopLeft);
         SelectHotCornerLayout(HotCornerLayout.Ring);
         SyncHotCornerControls();
@@ -1505,6 +1838,54 @@ public sealed partial class SettingsWindow : Window
                 break;
             }
         }
+        UpdateHotCornerIcon(corner);
+    }
+
+    /// <summary>
+    /// Turns the hot-corner triangle to point at <paramref name="corner"/>. The geometry in
+    /// SettingsWindow.xaml is authored with its right angle at the top left, so each quarter turn
+    /// clockwise walks it round to the next corner in the same order the screen does.
+    /// <para>
+    /// Driven from the corner itself rather than the ComboBox's index so the two cannot drift apart
+    /// if the dropdown is ever reordered.
+    /// </para>
+    /// </summary>
+    private void UpdateHotCornerIcon(HotCorner corner) =>
+        HotCornerIconRotation.Angle = CornerTriangleAngle(corner);
+
+    /// <summary>
+    /// Clockwise rotation, in degrees, that turns a triangle authored pointing top-left (right
+    /// angle in that corner, hypotenuse cutting across to it) so it instead points at
+    /// <paramref name="corner"/>. Shared by <see cref="UpdateHotCornerIcon"/> — which turns the
+    /// XAML-declared PathIcon on the Home page's Hot corner row — and
+    /// <see cref="AddHotCornerButton"/>, which builds the same triangle fresh in code for the
+    /// canvas button, so the two can never disagree about which way a given corner turns.
+    /// </summary>
+    private static double CornerTriangleAngle(HotCorner corner) => corner switch
+    {
+        HotCorner.TopLeft => 0,
+        HotCorner.TopRight => 90,
+        HotCorner.BottomRight => 180,
+        HotCorner.BottomLeft => 270,
+        _ => 0,
+    };
+
+    /// <summary>
+    /// The right-angle-triangle path shared by the row icon and the canvas button — see
+    /// <see cref="CornerTriangleAngle"/>. Authored pointing top-left at a nominal 14x14, the same
+    /// coordinates as the XAML-declared PathIcon's <c>Data</c> in SettingsWindow.xaml, so the two
+    /// read as the same mark rather than merely similar ones. Built fresh per call rather than
+    /// cached: Geometry is cheap here and every other themed element on this canvas (brushes,
+    /// borders) is already rebuilt on each RenderPreview pass.
+    /// </summary>
+    private static PathGeometry CornerTriangleGeometry()
+    {
+        var figure = new PathFigure { StartPoint = new Point(0, 0), IsClosed = true };
+        figure.Segments.Add(new LineSegment { Point = new Point(14, 0) });
+        figure.Segments.Add(new LineSegment { Point = new Point(0, 14) });
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+        return geometry;
     }
 
     private void SelectHotCornerLayout(HotCornerLayout layout)
@@ -1534,6 +1915,7 @@ public sealed partial class SettingsWindow : Window
             _manager.Config.HotCorner = corner;
             _manager.Save();
             _manager.ApplyHotCorner();
+            UpdateHotCornerIcon(corner);
             // The canvas draws the corner button, and any quadrant preview, at the chosen corner.
             RenderPreview();
         }
