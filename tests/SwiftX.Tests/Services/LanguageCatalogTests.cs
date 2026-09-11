@@ -60,4 +60,44 @@ public class LanguageCatalogTests
         foreach (var language in Enum.GetValues<AppLanguage>())
             Assert.Equal(language, LanguageCatalog.Find(language).Language);
     }
+
+    [Theory]
+    [InlineData(AppLanguage.Arabic)]
+    [InlineData(AppLanguage.Hebrew)]
+    public void Right_to_left_languages_are_flagged(AppLanguage language)
+    {
+        Assert.True(LanguageCatalog.IsRightToLeft(language));
+        Assert.True(LanguageCatalog.Find(language).IsRightToLeft);
+    }
+
+    [Theory]
+    [InlineData(AppLanguage.EnglishUS)]
+    [InlineData(AppLanguage.French)]
+    [InlineData(AppLanguage.Japanese)]
+    [InlineData(AppLanguage.Russian)]
+    [InlineData(AppLanguage.Hindi)]
+    public void Left_to_right_languages_are_not_flagged(AppLanguage language)
+    {
+        Assert.False(LanguageCatalog.IsRightToLeft(language));
+        Assert.False(LanguageCatalog.Find(language).IsRightToLeft);
+    }
+
+    [Fact]
+    public void Every_option_has_a_non_empty_native_name()
+    {
+        foreach (var option in LanguageCatalog.Options)
+            Assert.False(string.IsNullOrWhiteSpace(option.NativeName));
+    }
+
+    [Fact]
+    public void Culture_tags_are_unique_among_concrete_languages()
+    {
+        // A duplicated culture tag would make System resolution ambiguous — the first match in
+        // Options order would silently win. Every shipped language must own a distinct tag.
+        var tags = LanguageCatalog.Options
+            .Where(o => o.Language != AppLanguage.System)
+            .Select(o => o.CultureTag.ToLowerInvariant())
+            .ToList();
+        Assert.Equal(tags.Count, tags.Distinct().Count());
+    }
 }

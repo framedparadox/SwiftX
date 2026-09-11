@@ -9,7 +9,10 @@ namespace SwiftX.Services;
 /// looking for their language actually scans a list, rather than in English.</param>
 /// <param name="CultureTag">BCP-47 tag used to match <see cref="CultureInfo.CurrentUICulture"/>
 /// when <see cref="AppLanguage.System"/> needs to resolve to a real table.</param>
-public sealed record LanguageOption(AppLanguage Language, string NativeName, string CultureTag);
+/// <param name="IsRightToLeft">Whether this language's script runs right-to-left (Arabic, Hebrew),
+/// so the UI needs <c>FlowDirection.RightToLeft</c> — see <see cref="LanguageCatalog.IsRightToLeft"/>.</param>
+public sealed record LanguageOption(
+    AppLanguage Language, string NativeName, string CultureTag, bool IsRightToLeft = false);
 
 /// <summary>
 /// The list of languages SwiftX ships a string table for, plus resolution of
@@ -17,23 +20,38 @@ public sealed record LanguageOption(AppLanguage Language, string NativeName, str
 /// </summary>
 public static class LanguageCatalog
 {
-    /// <summary>Display order for the Settings language picker — System first (it's the default),
-    /// then every concrete language ordered by its own native name: the Latin-script names sort
-    /// alphabetically, followed by Korean, Japanese, and Chinese, whose own scripts don't share a
-    /// single alphabetical order with the Latin ones.</summary>
+    /// <summary>
+    /// Display order for the Settings language picker: System first (it's the default), then the
+    /// Latin-script languages alphabetized by their own native name, then the non-Latin-script
+    /// ones — those don't share a single alphabetical order with the Latin names, so they are
+    /// grouped afterward (Cyrillic, then the right-to-left scripts, then Devanagari, then CJK).
+    /// </summary>
     public static readonly IReadOnlyList<LanguageOption> Options = new[]
     {
         new LanguageOption(AppLanguage.System, "System", ""),
+
+        // Latin script, alphabetical by native name.
         new LanguageOption(AppLanguage.German, "Deutsch", "de-DE"),
-        new LanguageOption(AppLanguage.EnglishUS, "English (US)", "en-US"),
         new LanguageOption(AppLanguage.EnglishUK, "English (UK)", "en-GB"),
+        new LanguageOption(AppLanguage.EnglishUS, "English (US)", "en-US"),
         new LanguageOption(AppLanguage.Spanish, "Español", "es-ES"),
         new LanguageOption(AppLanguage.French, "Français", "fr-FR"),
         new LanguageOption(AppLanguage.Italian, "Italiano", "it-IT"),
+        new LanguageOption(AppLanguage.Dutch, "Nederlands", "nl-NL"),
+        new LanguageOption(AppLanguage.Polish, "Polski", "pl-PL"),
         new LanguageOption(AppLanguage.PortugueseBR, "Português (Brasil)", "pt-BR"),
+        new LanguageOption(AppLanguage.PortuguesePT, "Português (Portugal)", "pt-PT"),
+        new LanguageOption(AppLanguage.Turkish, "Türkçe", "tr-TR"),
+
+        // Other scripts.
+        new LanguageOption(AppLanguage.Russian, "Русский", "ru-RU"),
+        new LanguageOption(AppLanguage.Arabic, "العربية", "ar-SA", IsRightToLeft: true),
+        new LanguageOption(AppLanguage.Hebrew, "עברית", "he-IL", IsRightToLeft: true),
+        new LanguageOption(AppLanguage.Hindi, "हिन्दी", "hi-IN"),
         new LanguageOption(AppLanguage.Korean, "한국어", "ko-KR"),
         new LanguageOption(AppLanguage.Japanese, "日本語", "ja-JP"),
         new LanguageOption(AppLanguage.ChineseSimplified, "中文（简体）", "zh-Hans"),
+        new LanguageOption(AppLanguage.ChineseTraditional, "中文（繁體）", "zh-Hant"),
     };
 
     /// <summary>
@@ -73,9 +91,20 @@ public static class LanguageCatalog
         "es" => AppLanguage.Spanish,
         "fr" => AppLanguage.French,
         "it" => AppLanguage.Italian,
+        "nl" => AppLanguage.Dutch,
+        "pl" => AppLanguage.Polish,
+        // Portuguese with no region: Brazil is the larger variant, so it's the safer default.
         "pt" => AppLanguage.PortugueseBR,
+        "tr" => AppLanguage.Turkish,
+        "ru" => AppLanguage.Russian,
+        "ar" => AppLanguage.Arabic,
+        "he" => AppLanguage.Hebrew,
+        // "iw" is the legacy ISO code for Hebrew that some systems still report.
+        "iw" => AppLanguage.Hebrew,
+        "hi" => AppLanguage.Hindi,
         "ko" => AppLanguage.Korean,
         "ja" => AppLanguage.Japanese,
+        // Chinese with no script: Simplified is the larger variant, so it's the safer default.
         "zh" => AppLanguage.ChineseSimplified,
         _ => AppLanguage.EnglishUS,
     };
@@ -87,4 +116,14 @@ public static class LanguageCatalog
                 return option;
         return Options[0];
     }
+
+    /// <summary>
+    /// Whether <paramref name="language"/>'s script runs right-to-left, resolving
+    /// <see cref="AppLanguage.System"/> first so callers get the effective direction. Drives
+    /// <c>FlowDirection</c> on the windows that render localized content — see the tool windows and
+    /// Settings. A right-to-left flag lives on the concrete language rather than being sniffed from
+    /// the culture at the call site so it stays correct even for the System case.
+    /// </summary>
+    public static bool IsRightToLeft(AppLanguage language) =>
+        Find(ResolveEffective(language)).IsRightToLeft;
 }

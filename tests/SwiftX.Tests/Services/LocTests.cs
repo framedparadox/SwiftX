@@ -67,26 +67,55 @@ public class LocTests
         }
     }
 
-    [Theory]
-    [InlineData(AppLanguage.EnglishUS)]
-    [InlineData(AppLanguage.EnglishUK)]
-    [InlineData(AppLanguage.French)]
-    [InlineData(AppLanguage.German)]
-    [InlineData(AppLanguage.Spanish)]
-    [InlineData(AppLanguage.Italian)]
-    [InlineData(AppLanguage.PortugueseBR)]
-    [InlineData(AppLanguage.Japanese)]
-    [InlineData(AppLanguage.ChineseSimplified)]
-    [InlineData(AppLanguage.Korean)]
-    public void Every_shipped_language_answers_a_well_known_key(AppLanguage language)
+    /// <summary>
+    /// Iterates every concrete language (System is resolution-only, never a table) so a newly
+    /// added <see cref="AppLanguage"/> that forgot to register or populate a table is caught here
+    /// automatically — no per-language InlineData list to keep in sync. Checks a spread of keys
+    /// across the different tool areas rather than just one, so a table that is registered but
+    /// half-empty is caught too: none of these should ever fall through to returning the raw key.
+    /// </summary>
+    [Fact]
+    public void Every_concrete_language_translates_well_known_keys()
+    {
+        string[] sampleKeys =
+        {
+            "Tray.Quit", "Tray.Settings", "Tool.Save", "Common.Cancel",
+            "Base64.Encode", "Certificate.Field.Subject", "SecureValues.Add",
+        };
+
+        try
+        {
+            foreach (var language in Enum.GetValues<AppLanguage>())
+            {
+                if (language == AppLanguage.System) continue;
+                Loc.Initialize(language);
+                Assert.Equal(language, Loc.CurrentLanguage);
+                foreach (var key in sampleKeys)
+                    Assert.NotEqual(key, Loc.Get(key));
+            }
+        }
+        finally
+        {
+            Loc.Initialize(AppLanguage.EnglishUS);
+        }
+    }
+
+    [Fact]
+    public void CurrentIsRightToLeft_tracks_the_active_language()
     {
         try
         {
-            Loc.Initialize(language);
-            // Not equal to the raw key: every language table carries this key (see the parity
-            // check baked into how the per-language dictionaries were authored), so Get must
-            // never fall through to returning "Tray.Quit" itself.
-            Assert.NotEqual("Tray.Quit", Loc.Get("Tray.Quit"));
+            Loc.Initialize(AppLanguage.Arabic);
+            Assert.True(Loc.CurrentIsRightToLeft);
+
+            Loc.Initialize(AppLanguage.Hebrew);
+            Assert.True(Loc.CurrentIsRightToLeft);
+
+            Loc.Initialize(AppLanguage.French);
+            Assert.False(Loc.CurrentIsRightToLeft);
+
+            Loc.Initialize(AppLanguage.EnglishUS);
+            Assert.False(Loc.CurrentIsRightToLeft);
         }
         finally
         {

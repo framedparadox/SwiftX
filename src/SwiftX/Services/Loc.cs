@@ -44,14 +44,28 @@ public static partial class Loc
             [AppLanguage.Spanish] = Spanish,
             [AppLanguage.Italian] = Italian,
             [AppLanguage.PortugueseBR] = PortugueseBR,
+            [AppLanguage.PortuguesePT] = PortuguesePT,
+            [AppLanguage.Dutch] = Dutch,
+            [AppLanguage.Polish] = Polish,
+            [AppLanguage.Turkish] = Turkish,
+            [AppLanguage.Russian] = Russian,
+            [AppLanguage.Arabic] = Arabic,
+            [AppLanguage.Hebrew] = Hebrew,
+            [AppLanguage.Hindi] = Hindi,
             [AppLanguage.Japanese] = Japanese,
             [AppLanguage.ChineseSimplified] = ChineseSimplified,
+            [AppLanguage.ChineseTraditional] = ChineseTraditional,
             [AppLanguage.Korean] = Korean,
         };
 
     /// <summary>The language currently in effect — always a concrete one, never
     /// <see cref="AppLanguage.System"/> (see <see cref="Initialize"/>).</summary>
     public static AppLanguage CurrentLanguage { get; private set; } = AppLanguage.EnglishUS;
+
+    /// <summary>Whether the language currently in effect reads right-to-left (Arabic, Hebrew), so
+    /// windows rendering localized content should flip their <c>FlowDirection</c>. Reads the
+    /// already-resolved <see cref="CurrentLanguage"/>, so it never has to re-resolve System.</summary>
+    public static bool CurrentIsRightToLeft => LanguageCatalog.Find(CurrentLanguage).IsRightToLeft;
 
     /// <summary>
     /// Sets the active table, resolving <see cref="AppLanguage.System"/> to a concrete language via
