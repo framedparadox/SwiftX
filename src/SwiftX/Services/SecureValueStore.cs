@@ -17,7 +17,14 @@ namespace SwiftX.Services;
 /// </summary>
 public static class SecureValueStore
 {
-    private static readonly string FilePath = Path.Combine(RingStore.DataDirectory, "secure-values.json");
+    // Local, not Roaming: unlike ring.json (small, meant to follow the user's Windows profile),
+    // this file carries DPAPI-protected secrets and — see the load/stress tests under
+    // tests/SwiftX.Tests/Load and Services — can grow large under heavy use. Roaming AppData syncs
+    // to every machine on the user's domain profile; secrets and bulk data have no business making
+    // that trip. RingStore.ResolveDataDirectory's SWIFTX_DATA_DIR override still applies here (see
+    // TestEnvironment's module initializer), so tests stay sandboxed exactly as before.
+    private static readonly string FilePath = Path.Combine(
+        RingStore.ResolveDataDirectory(Environment.SpecialFolder.LocalApplicationData), "secure-values.json");
 
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -122,7 +129,7 @@ public static class SecureValueStore
     {
         try
         {
-            Directory.CreateDirectory(RingStore.DataDirectory);
+            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
             var plain = entries.Select(e => new PlainEntry { Id = e.Id, Key = e.Key, Value = e.Value }).ToList();
             var innerJson = JsonSerializer.Serialize(plain, Options);
             var file = new StoredFile { Version = CurrentVersion, Protected = Protect(innerJson) };

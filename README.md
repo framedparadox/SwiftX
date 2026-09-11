@@ -1,9 +1,14 @@
-# SwiftX
+<p align="center">
+  <img src="docs/SwiftX.png" alt="SwiftX logo" width="140" height="140">
+</p>
 
-A quick-access **radial ring** for Windows 11. Summon it with a keyboard shortcut, a screen corner,
-or the tray icon; launch apps, files, folders and links from it; pop groups open into an outer
-ring; and reach a set of built-in developer tools (JSON/XML formatter, local secure values,
-Base64, certificate inspector) without leaving it.
+<h1 align="center">SwiftX</h1>
+
+<p align="center"><b>A quick-access radial ring for Windows 11.</b></p>
+
+Summon it with a keyboard shortcut, a screen corner, or the tray icon; launch apps, files, folders
+and links from it; pop groups open into an outer ring; and reach a set of built-in developer tools
+(JSON/XML formatter, local secure values, Base64, certificate inspector) without leaving it.
 
 Everything runs on your own machine. There is no account, no telemetry, and nothing is uploaded.
 
@@ -33,6 +38,7 @@ Everything runs on your own machine. There is no account, no telemetry, and noth
 - [Tests](#tests)
 - [Theme](#theme)
 - [Language](#language)
+- [Brand and assets](#brand-and-assets)
 - [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
 
@@ -69,7 +75,7 @@ cover the screen without getting in the way of it.
 
 | Piece | What it is |
 |-------|------------|
-| **Hub** | The app mark at the center. Not a button for launching — clicking it closes an open group, or dismisses the ring when none is open. Fixed size; no setting scales it. |
+| **Hub** | The app mark at the center, floating on a soft drop shadow rather than sitting flat on the wallpaper. Not a button for launching — clicking it closes an open group, or dismisses the ring when none is open. Fixed size; no setting scales it. It turns a quarter turn as the ring is summoned, its four petals unfurling clockwise a beat apart, and unwinds the same way on dismissal. |
 | **Slots** | Eight positions around the ring, 45° apart, slot 0 straight up and advancing clockwise. |
 | **User slots** | The first six. Filled from your items in order; empty ones are simply not drawn. |
 | **Settings** | Always slot 7. A group: hovering it pops out its **Add new** quick action; clicking it opens the Settings window. |
@@ -256,7 +262,8 @@ open button, and a drag handle. Dragging reorders the tools inside that group.
 
 ### About
 
-What the app is, and its version.
+The app mark, what the app is, and its version, with links to the terms and conditions (which open
+in the browser) and to the Privacy page of this same window.
 
 ### Privacy
 
@@ -417,9 +424,18 @@ src/SwiftX/
     RingStore.cs           Load/save/import/export
     Launcher.cs            Starting whatever an item points at
     SecureValueStore.cs    DPAPI-protected key/secret storage
+    AppLogo.cs             The SwiftX mark, as vector geometry (see Brand and assets)
     Formats/, Syntax/      JSON/XML parsing, validation, tokenizing
   ToolPages/               The four tool UIs
+  Controls/AppTitleBar.cs  Title bar for the app's own and the tool windows
   Interop/NativeMethods.cs The Win32 surface, grouped by what needs it
+
+  Assets/SwiftX.ico        Executable icon; also the shell and tray icon
+  Images/                  MSIX tile set
+
+docs/SwiftX.png            Master art every raster asset is generated from
+docs/TERMS.md              Terms and conditions, linked from Settings > About
+tools/                     One-off maintenance scripts (brand asset generation)
 ```
 
 Two design notes worth knowing before changing things:
@@ -457,6 +473,21 @@ The suite covers the parts that can be reasoned about without a window on screen
   missing tool, slot placement, and leaving an intentionally tool-free ring alone.
 - `Models/HotkeyGestureTests`, `Models/SystemRingItemsTests`.
 - `Formats/…` — JSON/XML formatting, validation, sanitizing, and XML security.
+- `Services/…` — the round trip through `RingStore`, item construction, icon identity, Base64,
+  the certificate and JKS readers, value masking, the display-bounds cache, and code folding.
+- `Security/…` — general hardening, bounds on every input whose length a remote party or an
+  opened file gets to choose, and the lifetime of a secret in memory and on the clipboard.
+- `Performance/PerformanceBudgetTests` — the tool pipelines staying interactive on heavy payloads,
+  and growing with the size of their input rather than its square.
+- `Resilience/CrashAndHangRegressionTests`, `Load/ConcurrencyAndEnduranceTests` — malformed and
+  hostile input, and sustained concurrent use.
+
+The suite runs against a throwaway data directory, not your real one. `TestEnvironment` points
+`SWIFTX_DATA_DIR` at a unique temp path from a `[ModuleInitializer]`, which has to happen before
+anything reads `RingStore.DataDirectory` — it is a `static readonly` resolved once per process, so
+a fixture or per-test setup would already be too late. This is data-loss prevention rather than
+hygiene: `SecureValueStore` and `RingStore` both save whole-file, so a test writing through them
+without the redirect would replace the running user's real store outright, with no backup.
 
 ---
 
@@ -496,6 +527,67 @@ layout for those languages. `LanguageCatalog` carries the direction flag and the
 to resolve **System** against Windows' own UI language.
 
 ---
+
+## Brand and assets
+
+The SwiftX mark is four gradient petals pinwheeled around a cross-shaped gap. Each petal is a
+square with two opposite corners left sharp and the other two rounded off hard; the sharp pair
+always straddles the middle, so one corner points into the centre and its opposite forms an outer
+corner of the mark.
+
+`docs/SwiftX.png` (1000x1000 RGBA) is the master. Every raster asset is derived from it:
+
+| Asset | Where it shows up |
+|-------|-------------------|
+| `src/SwiftX/Assets/SwiftX.ico` | The executable's icon, and so also Explorer, Alt-Tab, and the notification-area icon. Nine frames, 16px through 256px. |
+| `src/SwiftX/Images/Square*.png`, `Wide310x150Logo.png`, `StoreLogo.png`, `SplashScreen.png` | The MSIX tile set. SwiftX ships unpackaged (`WindowsPackageType=None`), so these are staged for packaging rather than read at runtime. |
+
+Regenerate all of them after changing the master:
+
+```bash
+python tools/generate-brand-assets.py     # needs Pillow
+```
+
+Unplated icons (the `targetsize-*` set, `StoreLogo`) fill their frame the way shell icons do; the
+plated tiles inset the mark inside a transparent margin, per Microsoft's tile guidance, so it reads
+at a consistent weight across the set.
+
+### The in-app mark
+
+The logo drawn *inside* the app is not a bitmap. `Services/AppLogo.cs` composes it as live vector
+geometry over a 48x48 design box, wrapped in a `Viewbox`, so it stays crisp at any hub size and any
+display scale with nothing to resample. It appears in four places: the ring's hub, the ring preview
+on the Settings home page, the Settings About card, and the title bar of SwiftX's own windows
+(Settings, and Add to ring) — those extend content into the caption, so Windows never draws a
+window icon for them and without this they would carry no mark at all.
+
+It comes in two forms. `AppLogo.Create` is the flat mark, for the About card and the title bars,
+where it sits on a solid surface. `AppLogo.CreateFloating` adds a composition drop shadow — one per
+petal, masked by what the petal actually paints, so the shadow is the mark's own pinwheel outline
+rather than a box behind it — and that is what the ring's hub and its preview use, because there the
+mark is painted straight onto the desktop with nothing under it to give it any depth of its own.
+
+Either form can play itself in and out (`AppLogo.Mark.PlayEntrance` / `PlayExit`), which is what the
+hub does on a summon and a dismissal: the whole mark swings a quarter turn while each petal, going
+round clockwise from the top-left a beat apart, untwists and grows into its quadrant; the dismissal
+is that rewound, last petal in first out. Only the petal layer turns — the shadow stays put, the way
+one does when the thing above it spins rather than the light moving.
+
+Its geometry and palette were measured off the master, and the two are kept in step by hand — a
+brand change means re-exporting `docs/SwiftX.png`, re-running the script above, and updating the
+constants in `AppLogo.cs`. The gradients run from each petal's outer corner to the corner facing
+the centre:
+
+| Petal | Outer | Centre |
+|-------|-------|--------|
+| Top-left | `#FF0A76` | `#FFD510` |
+| Top-right | `#2CD098` | `#1D4ADB` |
+| Bottom-left | `#2CD098` | `#1D4ADB` |
+| Bottom-right | `#F1067E` | `#1A65B5` |
+
+These are hard-coded rather than theme resources on purpose. SwiftX themes are hard black and hard
+white, and the mark has to read as *coloured* against both rather than inverting with the theme.
+
 
 ## Troubleshooting
 

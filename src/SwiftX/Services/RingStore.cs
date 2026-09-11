@@ -7,9 +7,17 @@ namespace SwiftX.Services;
 /// <summary>Loads and saves configuration as JSON under %AppData%\SwiftX\ring.json.</summary>
 public static class RingStore
 {
-    public static string DataDirectory { get; } = ResolveDataDirectory();
+    public static string DataDirectory { get; } = ResolveDataDirectory(Environment.SpecialFolder.ApplicationData);
 
-    private static string ResolveDataDirectory()
+    /// <summary>
+    /// Resolves a per-user SwiftX data directory under <paramref name="folder"/>, honoring
+    /// <c>SWIFTX_DATA_DIR</c> first — shared with <see cref="SecureValueStore"/>, which resolves
+    /// under <see cref="Environment.SpecialFolder.LocalApplicationData"/> instead of this class's
+    /// own <see cref="Environment.SpecialFolder.ApplicationData"/>, so both stores still land in
+    /// the same throwaway directory under <c>SWIFTX_DATA_DIR</c> during tests (see
+    /// <c>TestEnvironment</c>'s module initializer) even though they diverge in production.
+    /// </summary>
+    public static string ResolveDataDirectory(Environment.SpecialFolder folder)
     {
         var custom = Environment.GetEnvironmentVariable("SWIFTX_DATA_DIR");
         if (!string.IsNullOrWhiteSpace(custom))
@@ -17,8 +25,7 @@ public static class RingStore
             try { return Path.GetFullPath(custom); }
             catch { /* fall through */ }
         }
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SwiftX");
+        return Path.Combine(Environment.GetFolderPath(folder), "SwiftX");
     }
 
     private static readonly string FilePath = Path.Combine(DataDirectory, "ring.json");
@@ -85,11 +92,30 @@ public static class RingStore
         }
     }
 
+    /// <summary>
+    /// Reads a configuration the user picked from anywhere on disk, or null — "keep what you
+    /// had" — for anything that isn't one.
+    /// <para>
+    /// The read is bounded by <see cref="InputLimits.MaxConfigBytes"/> from the file's metadata
+    /// before a byte is loaded. Import accepts any path a picker returns, so the guard is not
+    /// against a large configuration (a configuration is kilobytes) but against a file that is
+    /// not a configuration at all: <c>File.ReadAllText</c> on a mis-picked disk image is an
+    /// <see cref="OutOfMemoryException"/> thrown out of a settings command, which is precisely
+    /// the failure §22 says must never happen.
+    /// </para>
+    /// </summary>
     public static AppConfig? ImportFrom(string path)
     {
         try
         {
-            var config = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(path), Options);
+            var read = InputLimits.ReadText(path, InputLimits.MaxConfigBytes);
+            if (!read.Ok)
+            {
+                Diag.Log($"RingStore.ImportFrom('{path}') refused: {read.Error}");
+                return null;
+            }
+
+            var config = JsonSerializer.Deserialize<AppConfig>(read.Text, Options);
             if (config is null)
                 return null;
             if (config.Rings.Count == 0)

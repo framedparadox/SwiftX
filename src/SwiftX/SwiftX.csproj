@@ -51,4 +51,12 @@
     <Content Include="Images\**\*.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets the test assembly reach the handful of guards that are worth asserting directly but
+         have no business on the public surface — IconService's bounded response reader chief
+         among them, since it is the only place SwiftX reads bytes whose length a remote party
+         chooses. -->
+    <InternalsVisibleTo Include="SwiftX.Tests" />
+  </ItemGroup>
+
 </Project>

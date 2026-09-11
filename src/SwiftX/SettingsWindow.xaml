@@ -9,9 +9,10 @@
 
     <!-- WinUI Window has no Resources; shared styles live on the root Grid. SettingsSurfaceBrush,
          not the shared SwiftXSurfaceBrush: AddItemWindow and the tool windows also key off
-         SwiftXSurfaceBrush and must keep its #000000 Dark value, so Settings' own lighter,
-         design-colours.md-anchored surface (#202020) lives under a Settings-exclusive name instead
-         of changing that shared one out from under them. -->
+         SwiftXSurfaceBrush and must keep its #000000 Dark value, so Settings' own lighter surface
+         (#222222 Dark / #FFFFFF Light, from the Logi Options+ palette this window now follows —
+         see docs/logi_options_design_features.md and Themes/Colors.xaml) lives under a
+         Settings-exclusive name instead of changing that shared one out from under them. -->
     <Grid x:Name="Root" Background="{ThemeResource SettingsSurfaceBrush}">
         <Grid.Resources>
             <Style x:Key="Card" TargetType="Border">
@@ -22,14 +23,31 @@
                 <Setter Property="Padding" Value="16,14" />
             </Style>
             <!-- ThemeResource inside a Style resolves against the element the style lands on,
-                 so Light Settings never paints Dark secondary text into a white card. -->
+                 so Light Settings never paints Dark secondary text into a white card.
+                 SettingsSecondaryTextBrush, not the shared SwiftXMutedBrush: Settings tracks the
+                 Logi palette's own Secondary Label Text (#555555/#AAAAAA) while the ring, the tool
+                 windows, and AddItemWindow keep the muted grey they share. -->
             <Style x:Key="SecondaryText" TargetType="TextBlock">
-                <Setter Property="Foreground" Value="{ThemeResource SwiftXMutedBrush}" />
+                <Setter Property="Foreground" Value="{ThemeResource SettingsSecondaryTextBrush}" />
             </Style>
             <Style x:Key="SecondaryCaption" TargetType="TextBlock"
                    BasedOn="{StaticResource CaptionTextBlockStyle}">
-                <Setter Property="Foreground" Value="{ThemeResource SwiftXMutedBrush}" />
+                <Setter Property="Foreground" Value="{ThemeResource SettingsSecondaryTextBrush}" />
             </Style>
+
+            <!-- The Logi screenshot's call-to-action: small, semibold, all-caps teal text with no
+                 button chrome around it. Sets no Foreground of its own on purpose — HyperlinkButton's
+                 default template drives its colour from the four HyperlinkButtonForeground* keys
+                 below in every visual state, so a Foreground setter here would be honoured at rest
+                 and then thrown away the moment the pointer touched it. -->
+            <Style x:Key="AccentLink" TargetType="HyperlinkButton">
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="MinHeight" Value="0" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+
         </Grid.Resources>
 
         <Grid.RowDefinitions>
@@ -68,7 +86,7 @@
                         <FontIcon Glyph="&#xE71D;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
-                <muxc:NavigationViewItem Content="Tools" Tag="tools"
+                <muxc:NavigationViewItem Content="Dev Tools" Tag="tools"
                                          AutomationProperties.AutomationId="SettingsNavTools">
                     <muxc:NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE90F;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
@@ -77,10 +95,18 @@
             </muxc:NavigationView.MenuItems>
 
             <!-- Pinned below the scrollable menu, separated by NavigationView's own divider —
-                 both read as the same "learn more" footer slot Windows apps usually give
-                 Settings/About rather than just another row in the working-page list above, About
-                 first as the more general of the two with Privacy right behind it. -->
+                 all three read as the same "learn more" footer slot Windows apps usually give
+                 Settings/About rather than just another row in the working-page list above.
+                 Feedback leads: it is the only one of the three that asks something of the user
+                 rather than just telling them something, so it is the one worth landing on first.
+                 About then Privacy behind it, general before specific, as before. -->
             <muxc:NavigationView.FooterMenuItems>
+                <muxc:NavigationViewItem Content="Feedback" Tag="feedback"
+                                         AutomationProperties.AutomationId="SettingsNavFeedback">
+                    <muxc:NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE939;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
+                    </muxc:NavigationViewItem.Icon>
+                </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem Content="About" Tag="about"
                                          AutomationProperties.AutomationId="SettingsNavAbout">
                     <muxc:NavigationViewItem.Icon>
@@ -90,7 +116,10 @@
                 <muxc:NavigationViewItem Content="Privacy" Tag="privacy"
                                          AutomationProperties.AutomationId="SettingsNavPrivacy">
                     <muxc:NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE72E;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
+                        <!-- Plain shield, the Defender/Windows-Security mark. The lock this used to
+                             be (E72E) still appears inside the page on the encryption card, where it
+                             means something narrower; the section as a whole is about protection. -->
+                        <FontIcon Glyph="&#xEA18;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
             </muxc:NavigationView.FooterMenuItems>
@@ -157,6 +186,7 @@
                                                    VerticalAlignment="Center" />
                                         <ComboBox x:Name="ItemSizeBox" Grid.Column="2" MinWidth="0" Width="110"
                                                   VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                  AutomationProperties.Name="Item size"
                                                   SelectionChanged="ItemSizeBox_SelectionChanged">
                                             <ComboBoxItem Content="Small" Tag="Small" />
                                             <ComboBoxItem Content="Medium" Tag="Medium" />
@@ -179,6 +209,7 @@
                                                    VerticalAlignment="Center" />
                                         <Slider x:Name="RadiusSlider" Grid.Column="2" MinWidth="130" Width="130"
                                                 VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                AutomationProperties.Name="Ring radius"
                                                 Minimum="80" Maximum="220" StepFrequency="5" TickFrequency="20"
                                                 ValueChanged="RadiusSlider_ValueChanged" />
                                     </Grid>
@@ -205,14 +236,29 @@
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
 
-                                        <FontIcon Grid.Row="0" Grid.Column="0" Glyph="&#xE740;"
-                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
-                                                  VerticalAlignment="Center" />
+                                        <!-- A right-angled triangle standing in for the corner
+                                             itself: the right angle is the corner, the hypotenuse
+                                             the diagonal you cut across to reach it. Drawn rather
+                                             than picked from the icon font because no Segoe glyph is
+                                             a bare right triangle, and because a drawn one can be
+                                             turned. The geometry points top-left as authored; the
+                                             RotateTransform below is set from the corner dropdown in
+                                             UpdateHotCornerIcon, so the icon always points at the
+                                             corner actually selected instead of a generic one. -->
+                                        <PathIcon x:Name="HotCornerIcon" Grid.Row="0" Grid.Column="0"
+                                                  Data="M 0,0 L 14,0 L 0,14 Z"
+                                                  VerticalAlignment="Center" HorizontalAlignment="Center"
+                                                  RenderTransformOrigin="0.5,0.5">
+                                            <PathIcon.RenderTransform>
+                                                <RotateTransform x:Name="HotCornerIconRotation" />
+                                            </PathIcon.RenderTransform>
+                                        </PathIcon>
                                         <TextBlock Grid.Row="0" Grid.Column="1" Text="Hot corner"
                                                    Style="{ThemeResource BodyStrongTextBlockStyle}"
                                                    VerticalAlignment="Center" />
                                         <ToggleSwitch x:Name="HotCornerEnabledToggle" Grid.Row="0" Grid.Column="2"
                                                       OnContent="" OffContent="" MinWidth="0"
+                                                      AutomationProperties.Name="Hot corner"
                                                       VerticalAlignment="Center" HorizontalAlignment="Right"
                                                       AutomationProperties.AutomationId="SettingsHotCornerToggle"
                                                       Toggled="HotCornerEnabled_Toggled" />
@@ -222,6 +268,7 @@
                                                     Margin="0,10,0,0">
                                             <ComboBox x:Name="HotCornerBox" MinWidth="0" Width="112"
                                                       VerticalAlignment="Center"
+                                                      AutomationProperties.Name="Hot corner position"
                                                       AutomationProperties.AutomationId="SettingsHotCornerBox"
                                                       SelectionChanged="HotCornerBox_SelectionChanged">
                                                 <ComboBoxItem Content="Top left" Tag="TopLeft" />
@@ -296,6 +343,7 @@
                                 </StackPanel>
                                 <ComboBox x:Name="ThemeBox" Grid.Column="2" MinWidth="170" Width="170"
                                           VerticalAlignment="Center" HorizontalAlignment="Right"
+                                          AutomationProperties.Name="Theme"
                                           SelectionChanged="ThemeBox_SelectionChanged">
                                     <ComboBoxItem Content="Light" Tag="Light" />
                                     <ComboBoxItem Content="Dark" Tag="Dark" />
@@ -306,6 +354,55 @@
                                     <ComboBoxItem Content="Midnight" Tag="Black" />
                                     <ComboBoxItem Content="System" Tag="System" />
                                 </ComboBox>
+                            </Grid>
+                        </Border>
+
+                        <!-- Sits right under Theme: both are how this window looks, not how it
+                             behaves. The default is the teal already on the Feedback page's links
+                             (SettingsAccentBrush in Themes/Colors.xaml) — picking a colour here
+                             overrides that default via SettingsWindow.ApplyAccentColorOverride,
+                             which is what actually makes it show up on every toggle, radio button,
+                             the Radius slider, the rating stars, and the nav selection indicator,
+                             not just the swatch itself. Settings-only: the ring, AddItemWindow, and
+                             the tool windows have no accent concept and never see this. -->
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE790;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Accent colour" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Used for links, toggles, and other highlights across Settings."
+                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Button Grid.Column="2" x:Name="AccentColorSwatch"
+                                        Width="32" Height="32" Padding="0" CornerRadius="16"
+                                        VerticalAlignment="Center" HorizontalAlignment="Right"
+                                        AutomationProperties.Name="Accent colour"
+                                        AutomationProperties.AutomationId="SettingsAccentColorSwatch">
+                                    <!-- Flyout rather than a full ContentDialog: this is a single,
+                                         low-stakes choice with its own live preview (every control
+                                         it touches repaints as the picker moves), so the lighter
+                                         popover fits better than a modal that blocks the page it is
+                                         previewing changes on. -->
+                                    <Button.Flyout>
+                                        <Flyout Placement="Bottom">
+                                            <StackPanel Spacing="10" MinWidth="260">
+                                                <ColorPicker x:Name="AccentColorPicker"
+                                                             IsAlphaEnabled="False"
+                                                             AutomationProperties.Name="Accent colour picker"
+                                                             ColorChanged="AccentColorPicker_ColorChanged" />
+                                                <Button Content="Reset to default" HorizontalAlignment="Stretch"
+                                                        AutomationProperties.AutomationId="SettingsAccentColorReset"
+                                                        Click="ResetAccentColor_Click" />
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
                             </Grid>
                         </Border>
 
@@ -346,6 +443,7 @@
                                 </StackPanel>
                                 <ComboBox x:Name="HoverStyleBox" Grid.Column="2" MinWidth="170" Width="170"
                                           VerticalAlignment="Center" HorizontalAlignment="Right"
+                                          AutomationProperties.Name="Hover style"
                                           SelectionChanged="HoverStyleBox_SelectionChanged">
                                     <ComboBoxItem Content="Invert" Tag="Invert" />
                                     <ComboBoxItem Content="Zoom" Tag="Zoom" />
@@ -376,6 +474,7 @@
                                                                   VerticalAlignment="Center" />
                                     <ToggleSwitch x:Name="HotkeyEnabledToggle"
                                                   OnContent="" OffContent="" MinWidth="0"
+                                                  AutomationProperties.Name="Keyboard shortcut"
                                                   VerticalAlignment="Center"
                                                   Toggled="HotkeyEnabled_Toggled" />
                                 </StackPanel>
@@ -398,6 +497,7 @@
                                 </StackPanel>
                                 <ToggleSwitch x:Name="StartupToggle" Grid.Column="2"
                                               OnContent="" OffContent="" MinWidth="0"
+                                              AutomationProperties.Name="Start with Windows"
                                               HorizontalAlignment="Right"
                                               Toggled="StartupToggle_Toggled" />
                             </Grid>
@@ -436,7 +536,7 @@
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="Reset" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Restore default theme, hover style, item size, radius, hotkey, tools, and ring items."
+                                    <TextBlock Text="Restore default theme, accent colour, hover style, item size, radius, hotkey, tools, and ring items."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <Button Grid.Column="2" Content="Reset" VerticalAlignment="Center"
@@ -472,7 +572,7 @@
                 <!-- ==================== TOOLS ==================== -->
                 <ScrollViewer x:Name="ToolsPanel" Visibility="Collapsed">
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Tools" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,12" />
+                        <TextBlock Text="Dev Tools" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,12" />
                         <TextBlock Text="Every tool lives inside the Tools item on the ring. Turn one off to take it out, or drag it by its handle to change where it sits inside."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" Margin="0,0,0,4" />
 
@@ -614,22 +714,203 @@
                                 </StackPanel>
                             </Grid>
                         </Border>
+
+                        <!-- A star rating is the shape telemetry usually arrives in, so the page
+                             that promises none should be the place that says what this one actually
+                             does. Last of the six: it is the narrowest claim here, and it only
+                             matters once the reader has the general ones above it. -->
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE734;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                          VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="Your rating stays here"
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="The star rating on Feedback &amp; Support is saved to this PC with the rest of your settings. It is not sent anywhere, and the feedback links simply open your browser — nothing you write there passes through SwiftX."
+                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
+
+                <!-- ==================== FEEDBACK & SUPPORT ==================== -->
+                <!-- Three cards, in the Logi Options+ order: say something, rate something, get
+                     help. Every outbound link is a Store or GitHub page opened in the browser; the
+                     stars are the one entirely local control here (see the rating comment below),
+                     which is the thing about this page that differs from every other app's feedback
+                     screen and is worth saying out loud in the copy rather than leaving the user to
+                     assume the usual.
+                     A Grid rather than a bare ScrollViewer so the closing note can sit against the
+                     bottom of the page instead of trailing the last card: the cards scroll in row 0
+                     and the note holds row 1, so it stays put however far the list above it grows. -->
+                <Grid x:Name="FeedbackPanel" Visibility="Collapsed"
+                      AutomationProperties.AutomationId="SettingsFeedbackPanel">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <ScrollViewer Grid.Row="0">
+                        <StackPanel Spacing="6" MaxWidth="720" HorizontalAlignment="Left">
+                            <TextBlock Text="Feedback &amp; Support" Style="{ThemeResource TitleTextBlockStyle}"
+                                       Margin="0,0,0,4" />
+                            <TextBlock Text="Tell us how SwiftX is working for you, or get help when it isn&apos;t."
+                                       Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" Margin="0,0,0,8" />
+
+                            <Border Style="{StaticResource Card}">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE939;"
+                                              FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                              VerticalAlignment="Top" Margin="0,2,0,0" />
+                                    <StackPanel Grid.Column="1" Spacing="2">
+                                        <TextBlock Text="General Feedback"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                        <TextBlock Text="How&apos;s your experience with SwiftX so far? We&apos;d love to hear your thoughts. Your feedback helps make SwiftX better."
+                                                   Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                        <HyperlinkButton Content="SHARE GENERAL FEEDBACK"
+                                                         Style="{StaticResource AccentLink}"
+                                                         Margin="0,8,0,0" HorizontalAlignment="Left"
+                                                         AutomationProperties.AutomationId="SettingsFeedbackShare"
+                                                         Click="ShareFeedback_Click" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <Border Style="{StaticResource Card}">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE734;"
+                                              FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                              VerticalAlignment="Top" Margin="0,2,0,0" />
+                                    <StackPanel Grid.Column="1" Spacing="2">
+                                        <TextBlock Text="Rate your experience"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                        <TextBlock Text="Take a moment to rate your experience with SwiftX. The stars are saved on this device and are never sent anywhere — the links below are where a rating actually reaches us."
+                                                   Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,6,0,0">
+                                            <muxc:RatingControl x:Name="ExperienceRating"
+                                                                VerticalAlignment="Center"
+                                                                IsClearEnabled="True"
+                                                                AutomationProperties.Name="Rate your experience"
+                                                                AutomationProperties.AutomationId="SettingsFeedbackRating" />
+                                            <TextBlock x:Name="RatingThanks" Visibility="Collapsed"
+                                                       Style="{StaticResource SecondaryCaption}"
+                                                       VerticalAlignment="Center" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="20" Margin="0,10,0,0">
+                                            <HyperlinkButton Content="RATE ON MICROSOFT STORE"
+                                                             Style="{StaticResource AccentLink}"
+                                                             AutomationProperties.AutomationId="SettingsFeedbackRateStore"
+                                                             Click="RateOnStore_Click" />
+                                            <HyperlinkButton Content="STAR US ON GITHUB"
+                                                             Style="{StaticResource AccentLink}"
+                                                             AutomationProperties.AutomationId="SettingsFeedbackStarGitHub"
+                                                             Click="StarOnGitHub_Click" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <Border Style="{StaticResource Card}">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE897;"
+                                              FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                              VerticalAlignment="Top" Margin="0,2,0,0" />
+                                    <StackPanel Grid.Column="1" Spacing="2">
+                                        <TextBlock Text="Troubleshooting and Support"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                        <TextBlock Text="Report issues or request support."
+                                                   Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                        <HyperlinkButton Content="REPORT ISSUES / REQUEST SUPPORT"
+                                                         Style="{StaticResource AccentLink}"
+                                                         Margin="0,8,0,0" HorizontalAlignment="Left"
+                                                         AutomationProperties.AutomationId="SettingsFeedbackSupport"
+                                                         Click="ReportIssue_Click" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- An inline Hyperlink rather than another AccentLink button, so "Read privacy"
+                         sits inside the sentence instead of trailing it as a separate control. It
+                         needs its own Foreground: an inline Hyperlink reads HyperlinkForeground, not
+                         the HyperlinkButtonForeground* keys the buttons above ride on. And it is the
+                         one link on this page that opens nothing — it moves to this window&apos;s own
+                         Privacy page, which is where the claim in the sentence is actually backed up. -->
+                    <TextBlock Grid.Row="1" Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
+                               FontStyle="Italic" Margin="0,12,0,0" MaxWidth="720"
+                               HorizontalAlignment="Left">
+                        <Run Text="Links open in your browser, SwiftX sends nothing on its own." />
+                        <!-- Foreground is assigned from code (ApplyAccentColorOverride), not bound
+                             with {ThemeResource} here. Hyperlink is an inline text element, not a
+                             FrameworkElement, so it has no place in the visual tree to walk up from
+                             and never sees the accent override SettingsWindow puts in Root.Resources
+                             — bound that way it stayed on the theme dictionary's teal while every
+                             other accented control had moved to the user's colour. -->
+                        <Hyperlink x:Name="ReadPrivacyLink"
+                                   Click="OpenPrivacyFromFeedback_Click"
+                                   UnderlineStyle="None">Read privacy</Hyperlink>
+                    </TextBlock>
+                </Grid>
 
                 <!-- ==================== ABOUT ==================== -->
                 <ScrollViewer x:Name="AboutPanel" Visibility="Collapsed">
                     <StackPanel Spacing="6" MaxWidth="720" HorizontalAlignment="Left">
                         <TextBlock Text="About" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,12" />
                         <Border Style="{StaticResource Card}">
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="SwiftX" FontSize="20" FontWeight="SemiBold" />
-                                <TextBlock x:Name="VersionText" Style="{StaticResource SecondaryCaption}" />
-                                <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
-                                           Text="A quick-access ring for Windows. Summon it with a shortcut, a screen corner, or the tray icon, and launch the apps, folders, links, and built-in tools you reach for most." />
-                                <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
-                                           Text="SwiftX runs entirely on your own device — see Privacy for what that means." />
-                            </StackPanel>
+                            <!-- Grid rather than a horizontal StackPanel: the paragraphs below wrap,
+                                 and a StackPanel would measure them against infinite width so they
+                                 never would. AboutMark is filled in from code-behind because the
+                                 app mark is vector geometry built by AppLogo, not a bitmap. -->
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <ContentControl x:Name="AboutMark" Grid.Column="0"
+                                                VerticalAlignment="Top" IsTabStop="False" />
+                                <StackPanel Grid.Column="1" Spacing="8">
+                                    <TextBlock Text="SwiftX" FontSize="20" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="VersionText" Style="{StaticResource SecondaryCaption}" />
+                                    <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
+                                               Text="A quick-access ring for Windows. Summon it with a shortcut, a screen corner, or the tray icon, and launch the apps, folders, links, and built-in tools you reach for most." />
+                                    <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
+                                               Text="SwiftX runs entirely on your own device — see Privacy for what that means." />
+                                    <!-- The two documents behind the app, side by side because
+                                         that is the pair people go looking for together. Terms
+                                         opens the published document in the browser; Privacy is
+                                         this window's own page, so it moves there rather than
+                                         opening anything (see OpenPrivacyFromAbout_Click). -->
+                                    <StackPanel Orientation="Horizontal" Spacing="20" Margin="0,4,0,0">
+                                        <HyperlinkButton Content="TERMS AND CONDITIONS"
+                                                         Style="{StaticResource AccentLink}"
+                                                         AutomationProperties.AutomationId="SettingsAboutTerms"
+                                                         Click="OpenTerms_Click" />
+                                        <HyperlinkButton Content="PRIVACY"
+                                                         Style="{StaticResource AccentLink}"
+                                                         AutomationProperties.AutomationId="SettingsAboutPrivacy"
+                                                         Click="OpenPrivacyFromAbout_Click" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>

@@ -50,6 +50,11 @@ public sealed class CertificatePage : EditorToolPage
         StatusBar.SetUntouched();
         InitializeChrome();
         RenderEmpty();
+
+        // The host cancels this when the window closes (see ToolPage.NotifyClosing), which is the
+        // sanctioned place for a page to let go of what it owns. Certificates and the keystore
+        // bytes behind them should not outlive the window that was showing them.
+        PageClosing.Register(ReleaseLoadedFile);
     }
 
     public override ToolKind Kind => ToolKind.Certificate;
@@ -147,13 +152,25 @@ public sealed class CertificatePage : EditorToolPage
         Render(CertificateReader.Read(_lastBytes, password));
     }
 
+    /// <summary>
+    /// Shows an outcome and takes ownership of its certificates, releasing whatever the page was
+    /// holding before. Every path into here replaces <see cref="_lastOutcome"/>, and a
+    /// certificate owns a native <c>CERT_CONTEXT</c> (and, for a PKCS#12, live private-key
+    /// material) — see <see cref="CertificateReader.ReadOutcome"/> for why letting the old one
+    /// fall to the finalizer is not good enough. The retry loop is what makes this reachable
+    /// rather than theoretical: every wrong password on a keystore produces another full set.
+    /// </summary>
     private void Render(CertificateReader.ReadOutcome outcome)
     {
         _content.Children.Clear();
 
+        if (!ReferenceEquals(_lastOutcome, outcome))
+            _lastOutcome?.Dispose();
+
         if (!outcome.Success)
         {
             _lastOutcome = null;
+            outcome.Dispose();
             if (outcome.NeedsPassword)
                 RenderPasswordPrompt(outcome.Message);
             else
@@ -192,6 +209,7 @@ public sealed class CertificatePage : EditorToolPage
         var passwordBox = new PasswordBox { PlaceholderText = Loc.Get("Certificate.PasswordPlaceholder"), Width = 240 };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(passwordBox, Loc.Get("Certificate.PasswordPlaceholder"));
         var unlockButton = new Button { Content = Loc.Get("Certificate.Unlock"), VerticalAlignment = VerticalAlignment.Center };
+        ApplyHoverIconColor(unlockButton, HoverAccent.Accent);
 
         void Submit() => Process(passwordBox.Password);
         unlockButton.Click += (_, _) => Submit();
@@ -509,6 +527,7 @@ public sealed class CertificatePage : EditorToolPage
         };
         ToolTipService.SetToolTip(copyButton, Loc.Get("Tool.CopyOutput"));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(copyButton, Loc.Format("Certificate.CopyField", label));
+        ApplyHoverIconColor(copyButton, HoverAccent.Copy);
         copyButton.Click += (_, _) =>
         {
             var package = new DataPackage();
@@ -647,10 +666,27 @@ public sealed class CertificatePage : EditorToolPage
 
     private void ClearAll()
     {
-        _lastBytes = null;
-        _lastOutcome = null;
+        ReleaseLoadedFile();
         RenderEmpty();
         StatusBar.SetUntouched();
+    }
+
+    /// <summary>
+    /// Drops everything derived from the file the user opened: the certificates (and, for a
+    /// PKCS#12, the private keys they carry) and the raw bytes the page kept so a password could
+    /// be retried against them. Those bytes are the encrypted keystore itself, so holding them
+    /// for the life of the window after the user has pressed Clear — or closed it — is a
+    /// needlessly long residency for exactly the thing this tool exists to handle carefully.
+    /// Idempotent: safe on a page that never loaded a file, and safe to call twice.
+    /// </summary>
+    private void ReleaseLoadedFile()
+    {
+        _lastOutcome?.Dispose();
+        _lastOutcome = null;
+
+        if (_lastBytes is { Length: > 0 } bytes)
+            Array.Clear(bytes);
+        _lastBytes = null;
     }
 
     private static Brush? ThemeBrush(string key) =>

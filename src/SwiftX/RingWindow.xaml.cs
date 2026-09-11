@@ -63,6 +63,11 @@ public sealed partial class RingWindow : Window
     private Border? _hub;
     private double _hubSize;
 
+    /// <summary>The app mark inside <see cref="_hub"/>, when the hub is holding one — the full
+    /// ring does, a quadrant's wedge does not. Kept so the summon and the dismiss can play its
+    /// own petal motion alongside the ring's.</summary>
+    private AppLogo.Mark? _hubMark;
+
     /// <summary>Which corner (or null for the full ring) <see cref="_hub"/> was last built for —
     /// tracked separately from <see cref="_hubSize"/> because two different corners can want the
     /// exact same box size, and the wedge drawn inside it is corner-specific.</summary>
@@ -431,6 +436,7 @@ public sealed partial class RingWindow : Window
         _flyout.Clear();
         _flyoutParent = null;
         _hub = null;
+        _hubMark = null;
         _pill = null;
         _pillText = null;
         _hovered = null;
@@ -599,16 +605,79 @@ public sealed partial class RingWindow : Window
         WindowChrome.SetEllipticHitRegions(_hwnd, scale, regions);
     }
 
+    /// <summary>
+    /// Gives a bubble an accessible name and hides the decoration inside it from Narrator.
+    /// <para>
+    /// The ring is drawn as bare <see cref="Border"/> elements on a <see cref="Canvas"/> with
+    /// pointer handlers, which is why it needs this: a Border is not a control, so nothing here
+    /// carried a name, and a screen reader saw an unnamed canvas where the whole launcher is.
+    /// Naming each bubble after the item it launches is what lets Narrator's scan and touch modes
+    /// report what is on the ring. It does not make the ring keyboard-operable — that needs real
+    /// invokable peers and arrow navigation, which is a feature rather than a fix, and is recorded
+    /// as such in the review — but a surface that cannot be read at all is the worse of the two
+    /// problems and this is the one that is safe to fix without touching input handling.
+    /// </para>
+    /// <para>
+    /// The children are pushed to the raw view deliberately. The glass, the tint and the group arc
+    /// are decoration, and the icon and glyph restate the name — a <c>FontIcon</c> in particular
+    /// carries a private-use codepoint, which is not something to read out.
+    /// </para>
+    /// </summary>
+    private static void NameForNarrator(Border host, RingItem item)
+    {
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            host, string.IsNullOrWhiteSpace(item.DisplayName) ? item.Kind.ToString() : item.DisplayName);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+            host, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Content);
+
+        if (host.Child is Panel panel)
+        {
+            foreach (var child in panel.Children)
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+                    child, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        }
+    }
+
+    /// <summary>
+    /// Resolves an item's icon, unless the picture it already has was resolved from exactly the
+    /// same inputs.
+    /// <para>
+    /// The skip is what makes a summon cheap. <see cref="RenderCurrent"/> fires one of these per
+    /// item, and it runs on every summon, every theme change and every settings save — while
+    /// resolving is not cheap at all: an app or file goes through the shell's jumbo image list,
+    /// <c>GetDIBits</c>, a PNG encode and a XAML decode, and a web link re-reads and re-decodes
+    /// its cached favicon. That is ten of those on every appearance of a window whose entire
+    /// value is appearing instantly, to arrive back at the picture already on screen.
+    /// <see cref="RingItem"/> instances are the user's own config objects and outlive any render,
+    /// so the previous answer is still there to reuse.
+    /// </para>
+    /// <para>
+    /// A failed resolution is not cached — <see cref="RingItem.IconImage"/> stays null and the
+    /// next render tries again, which is what lets a favicon that missed on the first summon
+    /// (no connectivity yet) appear on a later one.
+    /// </para>
+    /// <para>
+    /// The key doubles as the staleness guard the previous <c>Target</c> comparison provided, and
+    /// covers more than it did: editing <see cref="RingItem.CustomIconPath"/> or
+    /// <see cref="RingItem.CustomGlyph"/> also invalidates, so a slow resolution that lands after
+    /// an edit is discarded rather than painted over the newer one. Assigning a null result on a
+    /// changed key is deliberate — it clears a bitmap the item is no longer entitled to, which is
+    /// what lets a glyph chosen for an item that previously showed a shell icon actually appear.
+    /// </para>
+    /// </summary>
     private static async Task ResolveIconAsync(RingItem ringItem)
     {
-        // Every render fires one of these per item, unconditionally and with no de-dup — if the
-        // item's Target is edited while a slow resolution (e.g. a favicon fetch) for the old
-        // Target is still in flight, that stale result must not overwrite whatever the new
-        // Target already resolved to.
-        string targetAtStart = ringItem.Target;
+        string key = ringItem.IconKey;
+        if (ringItem.IconImage is not null && ringItem.IconSignature == key)
+            return;
+
         var src = await IconService.LoadIconAsync(ringItem);
-        if (src is not null && ringItem.Target == targetAtStart)
-            ringItem.IconImage = src;
+
+        if (ringItem.IconKey != key)
+            return; // edited mid-flight; the resolution for the newer key owns the result
+
+        ringItem.IconSignature = key;
+        ringItem.IconImage = src;
     }
 
     /// <summary>
@@ -640,6 +709,7 @@ public sealed partial class RingWindow : Window
             visual.StopAnimation("Scale");
             visual.Opacity = 1;
             visual.Scale = Vector3.One;
+            _hubMark?.Reset();
         }
         catch
         {
@@ -659,9 +729,10 @@ public sealed partial class RingWindow : Window
 
     /// <summary>
     /// The full ring's hub is the app's own mark and nothing else: no plate, no border, no fill —
-    /// the logo sits directly on the desktop, sized to the fixed
-    /// <see cref="RingMetrics.HubLogo"/>/<see cref="RingMetrics.Hub"/> proportion no item-size
-    /// setting scales. A quadrant's corner has no such center to mark — its "center" is the
+    /// the logo sits directly on the desktop, lifted off it by a drop shadow of its own
+    /// (<see cref="AppLogo.CreateFloating"/>) rather than by anything drawn under it, and sized to
+    /// the fixed <see cref="RingMetrics.HubLogo"/>/<see cref="RingMetrics.Hub"/> proportion no
+    /// item-size setting scales. A quadrant's corner has no such center to mark — its "center" is the
     /// screen corner itself — so it gets a small quarter-disc wedge instead
     /// (<see cref="BuildCornerWedge"/>), spanning the same arc its items fan across and carrying
     /// no mark of its own.
@@ -674,9 +745,17 @@ public sealed partial class RingWindow : Window
     {
         _hubSize = hub;
         _hubQuadrant = _quadrant;
-        UIElement content = _quadrant is { } corner
-            ? BuildCornerWedge(hub, corner)
-            : AppLogo.Create(hub * (RingMetrics.HubLogo / RingMetrics.Hub));
+        UIElement content;
+        if (_quadrant is { } corner)
+        {
+            _hubMark = null;
+            content = BuildCornerWedge(hub, corner);
+        }
+        else
+        {
+            _hubMark = AppLogo.CreateFloating(hub * (RingMetrics.HubLogo / RingMetrics.Hub));
+            content = _hubMark;
+        }
         _hub = new Border
         {
             Width = hub,
@@ -734,6 +813,12 @@ public sealed partial class RingWindow : Window
         {
             // ignore
         }
+
+        // The mark's own motion — a quarter turn in, petals unfurling clockwise behind it — rides
+        // on top of the spring above rather than replacing it, so the centre reads as one thing
+        // arriving. Outside the try above on purpose: it guards its own composition calls, and a
+        // failure there must not cost the hub its entrance.
+        _hubMark?.PlayEntrance();
     }
 
     /// <summary>
@@ -893,6 +978,8 @@ public sealed partial class RingWindow : Window
         };
         Canvas.SetLeft(border, _cx + restX - diameter / 2);
         Canvas.SetTop(border, _cy + restY - diameter / 2);
+
+        NameForNarrator(border, item);
 
         var bubble = new BubbleView
         {
@@ -1333,10 +1420,14 @@ public sealed partial class RingWindow : Window
         await Task.Delay(SpringPeriodMs + maxStagger * StaggerMs + 30);
     }
 
-    /// <summary>The exact reverse of <see cref="BuildHub"/>'s entrance spring.</summary>
+    /// <summary>
+    /// The exact reverse of <see cref="BuildHub"/>'s entrance spring — and, with it, of the mark's
+    /// own petal motion.
+    /// </summary>
     private void FadeOutHub()
     {
         if (_hub is null) return;
+        _hubMark?.PlayExit();
         try
         {
             var visual = ElementCompositionPreview.GetElementVisual(_hub);

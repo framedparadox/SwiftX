@@ -197,6 +197,7 @@ public sealed class FormatterPage : EditorToolPage
         ToolTipService.SetToolTip(_saveButton, Loc.Get("Tool.Save"));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_saveButton, Loc.Get("Tool.Save"));
         _saveButton.Click += (_, _) => _ = SaveToFileAsync();
+        ApplyHoverIconColor(_saveButton, HoverAccent.Accent);
 
         _headerActions = new StackPanel
         {
@@ -616,6 +617,7 @@ public sealed class FormatterPage : EditorToolPage
         };
         ToolTipService.SetToolTip(button, tooltip);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, tooltip);
+        ApplyHoverIconColor(button, HoverAccent.Accent);
         return button;
     }
 
@@ -974,7 +976,17 @@ public sealed class FormatterPage : EditorToolPage
                 },
             },
         };
+        // The button's content is a panel, not a string, so it has no accessible name of its own
+        // to fall back on — and what a peer would scrape from that panel starts with the icon,
+        // whose glyph is a private-use codepoint Narrator reads as nothing useful. Name the
+        // button from its label and take the icon out of the accessibility tree, per §7.2: the
+        // glyph repeats what the label already says.
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+            icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+
         button.Click += (_, _) => action();
+        ApplyHoverIconColor(button, HoverAccent.Accent);
         return button;
     }
 
