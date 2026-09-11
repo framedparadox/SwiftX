@@ -40,6 +40,9 @@ public sealed class AppConfig
     public bool LaunchAtStartup { get; set; }
     public AppTheme Theme { get; set; } = AppTheme.Dark;
 
+    /// <summary>The UI language — see <see cref="AppLanguage"/> and <see cref="Services.Loc"/>.</summary>
+    public AppLanguage Language { get; set; } = AppLanguage.System;
+
     /// <summary>How ring items respond to the pointer. See <see cref="RingHoverStyle"/>.</summary>
     public RingHoverStyle HoverStyle { get; set; } = RingHoverStyle.Invert;
 
@@ -104,6 +107,7 @@ public sealed class AppConfig
     {
         LaunchAtStartup = other.LaunchAtStartup;
         Theme = other.Theme;
+        Language = other.Language;
         HoverStyle = other.HoverStyle;
         Hotkey = other.Hotkey;
         HotkeyEnabled = other.HotkeyEnabled;

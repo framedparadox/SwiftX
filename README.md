@@ -32,6 +32,7 @@ Everything runs on your own machine. There is no account, no telemetry, and noth
 - [How it works](#how-it-works)
 - [Tests](#tests)
 - [Theme](#theme)
+- [Language](#language)
 - [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
 
@@ -231,6 +232,7 @@ following it.
 | Setting | What it does |
 |---------|--------------|
 | **Theme** | Light, Dark, or System. Solid surfaces only. |
+| **Language** | English (US), English (UK), French, German, Spanish, Italian, Portuguese (Brazil), Japanese, Chinese (Simplified), Korean, or System (follows Windows). The tool windows (Data Formatter, Secure values, Base64, Certificate) and the tray menu pick it up the next time they open; everything else applies on restart. |
 | **Hover style** | **Invert** (default) swaps an item's fill to the opposite theme color under the pointer, growing it slightly. **Zoom** keeps the item's resting color and just shrinks it slightly instead. Close is unaffected either way — it always goes red. |
 | **Invoke** | The summon shortcut, its capture button, and an on/off switch. Reports whether Windows accepted the combination. |
 | **Start with Windows** | Per-user autostart. Unpackaged builds use the `HKCU\...\Run` key (no elevation); the MSIX build uses a declared startup task, so Windows lists it in Task Manager's Startup tab and honors a user override there. |
@@ -315,6 +317,7 @@ parse falls back to defaults rather than taking the app down with it.
 | `Rings` | array | one profile | Ring profiles. Only the first is used today; it holds your items. |
 | `LaunchAtStartup` | bool | `false` | Mirrors the "Start with Windows" switch. |
 | `Theme` | `Light`/`Dark`/`System` | `Dark` | Window and ring theme. |
+| `Language` | `System`/`EnglishUS`/`EnglishUK`/`French`/`German`/`Spanish`/`Italian`/`PortugueseBR`/`Japanese`/`ChineseSimplified`/`Korean` | `System` | UI language. `System` follows Windows' own UI language, falling back to English (US). |
 | `HoverStyle` | `Invert`/`Zoom` | `Invert` | How a ring item reacts to the pointer — swap to the opposite color, or keep color and shrink slightly. |
 | `Hotkey` | string | `"Ctrl+Shift+S"` | Summon shortcut, in readable form so a hand-edited file stays legible. |
 | `HotkeyEnabled` | bool | `true` | Whether the shortcut is registered at all. |
@@ -463,6 +466,22 @@ Solid **black** (Dark) or solid **white** (Light) surfaces only — no acrylic, 
 System follows Windows and re-themes open windows as it changes. In Settings, the sidebar sits a
 shade lighter/greyer than the content area beside it (Dark: `#141414` pane against `#000000`
 content) so the two read as distinct panels rather than one seamless field.
+
+---
+
+## Language
+
+Settings → General → Language, right below Theme. Ships English (US), English (UK), French,
+German, Spanish, Italian, Portuguese (Brazil), Japanese, Chinese (Simplified), and Korean, plus
+System (follows Windows' own UI language, falling back to English (US) when Windows is set to a
+language SwiftX doesn't carry).
+
+Every string lives in `Services/Loc.cs` and the per-language tables under
+`Services/Localization/`, keyed by short dotted names (`"Tray.Show"`) rather than the English text
+itself. Switching language takes effect immediately for the Data Formatter, Secure values, Base64,
+and Certificate tool windows and the tray menu — they read the string table fresh each time they
+build their UI. Windows built once from literal XAML text (Settings itself, Add item, the ring's
+own tooltips) still need a restart.
 
 ---
 

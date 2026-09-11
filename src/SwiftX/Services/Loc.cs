@@ -1,139 +1,74 @@
+using SwiftX.Models;
+
 namespace SwiftX.Services;
 
-/// <summary>English-only string table for Phase 1.</summary>
-public static class Loc
+/// <summary>
+/// String table lookup, keyed by short dotted keys (e.g. "Tray.Show") rather than the English text
+/// itself, so every call site stays stable while the text behind it changes per language.
+/// <para>
+/// Each language's table lives in its own partial-class file under <c>Services/Localization</c>, as
+/// a full, independent dictionary literal — including <see cref="EnglishUK"/>, even though it
+/// differs from <see cref="EnglishUS"/> (the neutral/base table) in only a couple of entries. See
+/// <see cref="EnglishUS"/>'s own doc comment for why: none of these tables are built as overrides on
+/// top of another at static-init time. <see cref="Get"/> falls back to <see cref="EnglishUS"/> for
+/// any key the current language's table doesn't carry, so a partial translation degrades to English
+/// for the missing rows instead of showing raw keys.
+/// </para>
+/// <para>
+/// Switching language at runtime (<see cref="Initialize"/>) takes effect immediately for anything
+/// that calls <see cref="Get"/>/<see cref="Format"/> when it builds its UI — the tool pages
+/// (Formatter, Base64, Certificate, Secure values) construct fresh each time their window opens, and
+/// the tray menu rebuilds on every click, so both already re-read this table live. Windows built
+/// once from XAML with literal English text (Settings itself, Add item, the ring's own tooltips)
+/// do not — those still need a restart to pick up a language change.
+/// </para>
+/// </summary>
+public static partial class Loc
 {
-    private static readonly Dictionary<string, string> Strings = new(StringComparer.Ordinal)
+    // Lazily built on first use rather than as a field initializer: the per-language dictionaries
+    // (EnglishUS, French, ...) are static readonly fields declared in this same partial class's
+    // *other* files, and the C# spec leaves the relative order of field initializers across a
+    // partial type's files unspecified. A field initializer here could run before theirs and
+    // capture nulls; a lazily-evaluated property instead runs on first call to Get()/Initialize(),
+    // by which point the type's static constructor — which covers every partial file — has always
+    // already finished, regardless of that unspecified order.
+    private static Dictionary<AppLanguage, Dictionary<string, string>>? _tableByLanguage;
+
+    private static Dictionary<AppLanguage, Dictionary<string, string>> TableByLanguage =>
+        _tableByLanguage ??= new()
+        {
+            [AppLanguage.EnglishUS] = EnglishUS,
+            [AppLanguage.EnglishUK] = EnglishUK,
+            [AppLanguage.French] = French,
+            [AppLanguage.German] = German,
+            [AppLanguage.Spanish] = Spanish,
+            [AppLanguage.Italian] = Italian,
+            [AppLanguage.PortugueseBR] = PortugueseBR,
+            [AppLanguage.Japanese] = Japanese,
+            [AppLanguage.ChineseSimplified] = ChineseSimplified,
+            [AppLanguage.Korean] = Korean,
+        };
+
+    /// <summary>The language currently in effect — always a concrete one, never
+    /// <see cref="AppLanguage.System"/> (see <see cref="Initialize"/>).</summary>
+    public static AppLanguage CurrentLanguage { get; private set; } = AppLanguage.EnglishUS;
+
+    /// <summary>
+    /// Sets the active table, resolving <see cref="AppLanguage.System"/> to a concrete language via
+    /// <see cref="LanguageCatalog.ResolveEffective"/> first. Safe to call again later (from
+    /// Settings, after the user changes the language) — there is no per-language setup beyond
+    /// picking which dictionary <see cref="Get"/> reads from.
+    /// </summary>
+    public static void Initialize(AppLanguage language = AppLanguage.System) =>
+        CurrentLanguage = LanguageCatalog.ResolveEffective(language);
+
+    public static string Get(string key)
     {
-        ["Tray.Tooltip"] = "SwiftX",
-        ["Tray.Show"] = "Show ring",
-        ["Tray.HideDock"] = "Hide ring",
-        ["Tray.AddNew"] = "Add item…",
-        ["Tray.Settings"] = "Settings",
-        ["Tray.Quit"] = "Quit",
-        ["Settings.Hotkey"] = "Invoke",
-        ["Hotkey.Press"] = "Press keys…",
-        ["Hotkey.None"] = "None",
-        ["Tool.CopyOutput"] = "Copy",
-        ["Tool.Save"] = "Save",
-        ["Tool.Clear"] = "Clear",
-        ["Tool.Validate"] = "Validate",
-        ["Tool.Run"] = "Run",
-        ["Tool.SwapInOut"] = "Swap",
-        ["Tool.Format"] = "Format",
-        ["Tool.Minify"] = "Minify",
-        ["Tool.DiscardTitle"] = "Discard changes?",
-        ["Tool.DiscardBody"] = "This window has unsaved content. Discard it?",
-        ["Tool.Discard"] = "Discard",
-        ["Common.Cancel"] = "Cancel",
-        ["Common.Input"] = "Input",
-        ["Formatter.InputPlaceholder"] = "Paste JSON or XML here…",
-        ["Formatter.Indent"] = "Indent width",
-        ["Formatter.FormatName"] = "{0}",
-        ["Formatter.SortKeys"] = "Sort keys",
-        ["Formatter.Escape"] = "Escape",
-        ["Formatter.Unescape"] = "Unescape",
-        ["Formatter.Convert"] = "Convert",
-        ["Formatter.ToJson"] = "To JSON",
-        ["Formatter.ToXml"] = "To XML",
-        ["Formatter.Escaped"] = "Escaped as JSON string",
-        ["Formatter.SortKeysJsonOnly"] = "Sort keys works best on JSON objects.",
-        ["Formatter.Search"] = "Find",
-        ["Formatter.SearchPlaceholder"] = "Find in text",
-        ["Formatter.SearchPrevious"] = "Previous match",
-        ["Formatter.SearchNext"] = "Next match",
-        ["Formatter.SearchClose"] = "Close search",
-        ["Formatter.SearchMatchCount"] = "{0} of {1}",
-        ["Formatter.SearchNoMatches"] = "No results",
-        ["Formatter.Outline"] = "Outline",
-        ["Formatter.OutlineActive"] = "Outline mode — click a gutter arrow to expand or collapse. Editing resumes when you exit.",
-        ["Formatter.OutlineNothingToFold"] = "Nothing here spans more than one line.",
-        ["Tool.Advanced"] = "Advanced",
-        ["Tool.PrivacyFooter"] = "All data is processed locally and never leaves this device.",
-        ["Tool.SavedTo"] = "Saved to {0}",
-        ["Tool.SaveFailed"] = "Could not save that file.",
-        ["Tool.FileUnreadable"] = "Could not read that file.",
-        ["Tool.FileTooLarge"] = "File is too large (limit {0}).",
-        ["Status.Counts"] = "{0} chars · {1} bytes",
-        ["Status.Valid"] = "Valid",
-        ["Tool.InvalidAt"] = "Invalid at {0}:{1}",
-        ["Format.Auto"] = "Auto",
-        ["SecureValues.Heading"] = "Your saved values",
-        ["SecureValues.InfoLabel"] = "About secure values",
-        ["SecureValues.Blurb"] = "Every key and value you save here is encrypted at rest with Windows DPAPI, tied to your Windows account, and never leaves this PC. Values stay masked on screen until you copy one — Copy always places the real secret on the clipboard.",
-        ["SecureValues.Add"] = "Add",
-        ["SecureValues.Key"] = "Key",
-        ["SecureValues.Value"] = "Value",
-        ["SecureValues.ValueHeader"] = "Secure value",
-        ["SecureValues.KeyPlaceholder"] = "Key name",
-        ["SecureValues.ValuePlaceholder"] = "Secret value",
-        ["SecureValues.Save"] = "Save",
-        ["SecureValues.Copy"] = "Copy value",
-        ["SecureValues.Edit"] = "Edit value",
-        ["SecureValues.Delete"] = "Delete",
-        ["SecureValues.Refresh"] = "Clear fields",
-        ["SecureValues.KeyRequired"] = "Enter a key before saving.",
-        ["SecureValues.Saved"] = "Saved locally",
-        ["SecureValues.Copied"] = "Copied to clipboard",
-        ["SecureValues.Count"] = "{0} saved",
-        ["Base64.InputPlaceholder"] = "Paste text or Base64 here…",
-        ["Base64.Encode"] = "Encode",
-        ["Base64.Decode"] = "Decode",
-        ["Base64.UrlSafe"] = "URL-safe",
-        ["Base64.DetectedText"] = "Plain text",
-        ["Base64.DetectedBase64"] = "Looks like Base64",
-        ["Base64.InvalidInput"] = "Not valid Base64.",
-        ["Base64.NotUtf8"] = "Decoded bytes aren't valid UTF-8 text.",
-        ["Base64.Encoded"] = "Encoded",
-        ["Base64.Decoded"] = "Decoded",
-        ["Base64.FromFile"] = "Encoded {0} ({1})",
-        ["Common.Yes"] = "Yes",
-        ["Common.No"] = "No",
-        ["Certificate.OpenFile"] = "Open file…",
-        ["Certificate.Empty"] = "Open a .cer, .pem, .der, .p7b, .p12, .pfx, or .jks file to inspect it.",
-        ["Certificate.Unrecognized"] = "Could not recognize this as a certificate, PKCS#12, or Java KeyStore file.",
-        ["Certificate.EmptyKeystore"] = "This keystore doesn't contain any readable certificates.",
-        ["Certificate.KeystoreTruncated"] = "Some entries in this keystore could not be read and were skipped.",
-        ["Certificate.PasswordRequired"] = "This file is password-protected.",
-        ["Certificate.WrongPassword"] = "Incorrect password.",
-        ["Certificate.PasswordPlaceholder"] = "Password",
-        ["Certificate.Unlock"] = "Unlock",
-        ["Certificate.Count"] = "{0} certificate(s)",
-        ["Certificate.NotYetValid"] = "Not yet valid — starts {0}",
-        ["Certificate.Expired"] = "Expired {0} day(s) ago",
-        ["Certificate.ExpiresIn"] = "Valid — expires in {0} day(s)",
-        ["Certificate.ExpiresInValue"] = "{0} day(s)",
-        ["Certificate.ExpiredValue"] = "{0} day(s) ago",
-        ["Certificate.ValidBadge"] = "Currently valid",
-        ["Certificate.Copied"] = "Copied to clipboard",
-        ["Certificate.CopyField"] = "Copy {0}",
-        ["Certificate.Field.Subject"] = "Subject",
-        ["Certificate.Field.CommonName"] = "CN",
-        ["Certificate.Field.Issuer"] = "Issuer",
-        ["Certificate.Field.Serial"] = "Serial number",
-        ["Certificate.Field.Version"] = "Version",
-        ["Certificate.Field.NotBefore"] = "Valid From",
-        ["Certificate.Field.NotAfter"] = "Valid To",
-        ["Certificate.Field.ExpiresIn"] = "Expires In",
-        ["Certificate.Field.Expired"] = "Expired",
-        ["Certificate.Field.StartsIn"] = "Starts In",
-        ["Certificate.Field.SignatureAlgorithm"] = "Signature algorithm",
-        ["Certificate.Field.PublicKey"] = "Public key",
-        ["Certificate.Field.Sha1"] = "SHA-1 thumbprint",
-        ["Certificate.Field.Sha256"] = "SHA-256 fingerprint",
-        ["Certificate.Field.HasPrivateKey"] = "Has private key",
-        ["Certificate.Field.KeyUsage"] = "Key usage",
-        ["Certificate.Field.EnhancedKeyUsage"] = "Enhanced key usage",
-        ["Certificate.Field.BasicConstraints"] = "Basic constraints",
-        ["Certificate.Field.SubjectAltNames"] = "Subject alternative names",
-        ["Certificate.Field.SubjectKeyId"] = "Subject key identifier",
-        ["Certificate.Field.AuthorityKeyId"] = "Authority key identifier",
-    };
-
-    public static void Initialize(string? _ = null) { }
-
-    public static string Get(string key) =>
-        Strings.TryGetValue(key, out var value) ? value : key;
+        if (TableByLanguage.TryGetValue(CurrentLanguage, out var table) &&
+            table.TryGetValue(key, out var value))
+            return value;
+        return EnglishUS.TryGetValue(key, out var fallback) ? fallback : key;
+    }
 
     public static string Format(string key, params object[] args)
     {

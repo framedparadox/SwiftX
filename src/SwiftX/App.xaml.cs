@@ -35,8 +35,8 @@ public partial class App : Application
             return;
         }
 
-        Loc.Initialize();
         var config = RingStore.Load();
+        Loc.Initialize(config.Language);
         Manager = new RingManager(config);
         Manager.Start();
     }

@@ -158,6 +158,7 @@ public sealed partial class SettingsWindow : Window
         {
             _loading = true;
             SelectTheme(_manager.Config.Theme);
+            PopulateLanguageBox();
             SelectHoverStyle(_manager.Config.HoverStyle);
             SelectItemSize(_manager.Config.ItemSize);
             RadiusSlider.Value = _manager.Config.RingRadius ?? RingMetrics.DefaultRadius;
@@ -1324,6 +1325,24 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
+    /// <summary>
+    /// Fills <c>LanguageBox</c> from <see cref="LanguageCatalog.Options"/> and selects whichever
+    /// entry matches <see cref="AppConfig.Language"/>. Built in code-behind rather than as static
+    /// ComboBoxItems in XAML (unlike ThemeBox/HoverStyleBox) because each entry's Content is that
+    /// language's own native name — data, not markup.
+    /// </summary>
+    private void PopulateLanguageBox()
+    {
+        LanguageBox.Items.Clear();
+        foreach (var option in LanguageCatalog.Options)
+        {
+            var item = new ComboBoxItem { Content = option.NativeName, Tag = option.Language.ToString() };
+            LanguageBox.Items.Add(item);
+            if (option.Language == _manager.Config.Language)
+                LanguageBox.SelectedItem = item;
+        }
+    }
+
     private void SelectHoverStyle(RingHoverStyle style)
     {
         foreach (ComboBoxItem item in HoverStyleBox.Items)
@@ -1357,6 +1376,17 @@ public sealed partial class SettingsWindow : Window
             _manager.Save();
             _manager.ApplyTheme();
             ApplyTheme();
+        }
+    }
+
+    private void LanguageBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || LanguageBox.SelectedItem is not ComboBoxItem item) return;
+        if (Enum.TryParse<AppLanguage>(item.Tag as string, out var language))
+        {
+            _manager.Config.Language = language;
+            _manager.Save();
+            _manager.ApplyLanguage();
         }
     }
 
@@ -1408,9 +1438,11 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.EnsurePrimary();
         _manager.NotifyItemsChanged();
         _manager.ApplyTheme();
+        _manager.ApplyLanguage();
         _manager.ApplyHotCorner();
         ApplyTheme();
         _loading = true;
+        PopulateLanguageBox();
         HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
         SelectHotCorner(_manager.Config.HotCorner);
         SelectHotCornerLayout(_manager.Config.HotCornerLayout);

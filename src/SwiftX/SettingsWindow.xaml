@@ -316,6 +316,27 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE774;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Language" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="The language SwiftX's tools and menus use. System follows Windows. Some text updates immediately; the rest applies the next time you start SwiftX."
+                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <ComboBox x:Name="LanguageBox" Grid.Column="2" MinWidth="170" Width="170"
+                                          VerticalAlignment="Center" HorizontalAlignment="Right"
+                                          AutomationProperties.AutomationId="SettingsLanguageBox"
+                                          SelectionChanged="LanguageBox_SelectionChanged" />
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE962;"
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
