@@ -336,6 +336,21 @@ public sealed class RingManager
         _addItemWindow?.ApplyTheme();
     }
 
+    /// <summary>
+    /// Puts <see cref="Config"/>'s language choice into effect. Anything that reads
+    /// <see cref="Services.Loc"/> when it next builds its UI already picks this up — the tool
+    /// pages construct fresh each time their window opens, and the tray menu rebuilds on every
+    /// click — so beyond re-pointing <see cref="Services.Loc"/> itself, the only thing that needs
+    /// an explicit nudge is the tray icon's tooltip, which is set once and left alone otherwise
+    /// (see <see cref="TrayIconService.RefreshTooltip"/>). Windows built once from literal XAML
+    /// text (Settings itself, Add item, the ring's own tooltips) still need a restart.
+    /// </summary>
+    public void ApplyLanguage()
+    {
+        Loc.Initialize(Config.Language);
+        _tray?.RefreshTooltip();
+    }
+
     public void SetItemSize(RingItemSize size)
     {
         Config.ItemSize = size;
