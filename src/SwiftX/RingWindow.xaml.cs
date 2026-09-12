@@ -63,14 +63,14 @@ public sealed partial class RingWindow : Window
     private Border? _hub;
     private double _hubSize;
 
-    /// <summary>The app mark inside <see cref="_hub"/>, when the hub is holding one — the full
-    /// ring does, a quadrant's wedge does not. Kept so the summon and the dismiss can play its
+    /// <summary>The app mark inside <see cref="_hub"/> — both the full ring and a quadrant's
+    /// corner hold one now. Kept so the summon, the dismiss, and a hub hover can each play its
     /// own petal motion alongside the ring's.</summary>
     private AppLogo.Mark? _hubMark;
 
     /// <summary>Which corner (or null for the full ring) <see cref="_hub"/> was last built for —
     /// tracked separately from <see cref="_hubSize"/> because two different corners can want the
-    /// exact same box size, and the wedge drawn inside it is corner-specific.</summary>
+    /// exact same box size but sit at a different <see cref="PositionHub"/> position.</summary>
     private HotCorner? _hubQuadrant;
     private Border? _pill;
     private TextBlock? _pillText;
@@ -695,8 +695,7 @@ public sealed partial class RingWindow : Window
             return;
         }
 
-        Canvas.SetLeft(_hub, _cx - hub / 2);
-        Canvas.SetTop(_hub, _cy - hub / 2);
+        PositionHub(hub);
         RingCanvas.Children.Add(_hub);
 
         // A dismiss that a new summon interrupted leaves FadeOutHub's shrink still applied to
@@ -719,73 +718,56 @@ public sealed partial class RingWindow : Window
 
     /// <summary>
     /// Full-ring hub size — a fixed small mark that no item-size setting scales — or, on a
-    /// quarter circle, the radius of the corner's own wedge mark (see
-    /// <see cref="BuildCornerWedge"/>) doubled back into a box size so <see cref="BuildHub"/> can
-    /// center it the same way regardless of which shape it holds. Scales with
+    /// quarter circle, the size of the corner's own mark. Scales with
     /// <see cref="RingMetrics.Bubble"/> so it grows and shrinks along with the corner dock's own
     /// items rather than sitting at one fixed size regardless of theirs.
     /// </summary>
     private double HubSize => _quadrant is null ? RingMetrics.Hub : RingMetrics.Bubble;
 
     /// <summary>
-    /// The full ring's hub is the app's own mark and nothing else: no plate, no border, no fill —
-    /// the logo sits directly on the desktop, lifted off it by a drop shadow of its own
-    /// (<see cref="AppLogo.CreateFloating"/>) rather than by anything drawn under it, and sized to
-    /// the fixed <see cref="RingMetrics.HubLogo"/>/<see cref="RingMetrics.Hub"/> proportion no
-    /// item-size setting scales. A quadrant's corner has no such center to mark — its "center" is the
-    /// screen corner itself — so it gets a small quarter-disc wedge instead
-    /// (<see cref="BuildCornerWedge"/>), spanning the same arc its items fan across and carrying
-    /// no mark of its own.
+    /// The hub is the app's own mark and nothing else: no plate, no border, no fill — the logo
+    /// sits directly on the desktop, lifted off it by a drop shadow of its own
+    /// (<see cref="AppLogo.CreateFloating"/>) rather than by anything drawn under it. The full
+    /// ring sizes it to the fixed <see cref="RingMetrics.HubLogo"/>/<see cref="RingMetrics.Hub"/>
+    /// proportion no item-size setting scales; a quadrant's corner shows the very same mark at its
+    /// own box size (<see cref="RingMetrics.Bubble"/>) instead of the small quarter-disc wedge
+    /// this used to draw there, positioned by <see cref="PositionHub"/> so the whole logo clears
+    /// the two screen edges the corner is made of rather than being bisected by either one. Either
+    /// form plays the mark's own entrance/exit motion (<see cref="AppLogo.Mark.PlayEntrance"/> /
+    /// <see cref="AppLogo.Mark.PlayExit"/>) and replays the entrance again on hover, once it has
+    /// already settled — see the <c>PointerEntered</c> handler below.
     /// <para>
     /// Item names pop out beside the item they belong to (<see cref="ShowPill"/>), which is what
-    /// freed the center up.
+    /// freed the center up for the mark alone.
     /// </para>
     /// </summary>
     private void BuildHub(double hub)
     {
         _hubSize = hub;
         _hubQuadrant = _quadrant;
-        UIElement content;
-        if (_quadrant is { } corner)
-        {
-            _hubMark = null;
-            content = BuildCornerWedge(hub, corner);
-        }
-        else
-        {
-            _hubMark = AppLogo.CreateFloating(hub * (RingMetrics.HubLogo / RingMetrics.Hub));
-            content = _hubMark;
-        }
+        _hubMark = _quadrant is null
+            ? AppLogo.CreateFloating(hub * (RingMetrics.HubLogo / RingMetrics.Hub))
+            : AppLogo.CreateFloating(hub);
         _hub = new Border
         {
             Width = hub,
             Height = hub,
-            Background = null,
+            // Transparent rather than null: a null Background makes a Border invisible to hit
+            // testing entirely, which is what the hover-replay below needs (the mark itself stays
+            // IsHitTestVisible = false — see its own doc comment — so this outer box is what
+            // actually receives the pointer).
+            Background = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(0),
-            Child = content,
-            IsHitTestVisible = false,
+            Child = _hubMark,
+            IsHitTestVisible = true,
         };
-        Canvas.SetLeft(_hub, _cx - hub / 2);
-        Canvas.SetTop(_hub, _cy - hub / 2);
+        // Hovering the mark after its own entrance has already finished replays that same motion —
+        // safe to retrigger at any point, mid-flight included, since PlayEntrance always resets
+        // every property to its starting value before animating rather than animating from
+        // wherever the previous run left off.
+        _hub.PointerEntered += (_, _) => _hubMark?.PlayEntrance();
+        PositionHub(hub);
         RingCanvas.Children.Add(_hub);
-
-        // The corner's wedge is shown immediately, with no entrance fade. It is the backdrop the
-        // fan sits on rather than one of the things that burst in, and the composition
-        // Opacity/Scale entrance below was measured not to reach it at all — with the animation
-        // applied, the wedge stayed invisible for the life of the summon. The full ring's own hub
-        // is the app's mark rather than a backdrop, so it keeps the spring entrance.
-        if (_quadrant is not null)
-        {
-            try
-            {
-                ElementCompositionPreview.GetElementVisual(_hub).Opacity = 1;
-            }
-            catch
-            {
-                // ignore
-            }
-            return;
-        }
 
         // Same spring family as the bubble burst-in (AnimateBurstIn), not a flat linear fade, so
         // the hub reads as part of one physical motion instead of popping in on its own timeline.
@@ -822,62 +804,32 @@ public sealed partial class RingWindow : Window
     }
 
     /// <summary>
-    /// The corner's own hub: a small quarter-disc wedge spanning the same arc its items fan
-    /// across — background only, with no mark inside it. The app logo used to sit in here, but at
-    /// this size it read as a fifth item crowding the corner rather than as the backdrop the fan
-    /// sits on. Built in a <paramref name="box"/>-sized square centered on <c>(box/2, box/2)</c>
-    /// — the same convention <see cref="BuildHub"/> already centers <em>on the corner point
-    /// itself</em> for — so the caller's positioning needs no special case for which shape it is
-    /// centering.
-    /// <para>
-    /// Real geometry rather than a full-sized mark left for the screen edge to clip down to a
-    /// sliver: drawn entirely inside the box, so it renders identically regardless of how the
-    /// host window happens to clip content past its own edge.
-    /// </para>
+    /// Where the hub box's top-left corner belongs. The full ring centers it on <c>(_cx, _cy)</c>
+    /// — the point the ring was summoned at. A quadrant's <c>(_cx, _cy)</c> is instead the screen
+    /// corner itself (see <see cref="QuadrantLayout.Center"/>), so centering a hub-sized box there
+    /// the same way would leave three quarters of it — and the whole logo inside it — hanging off
+    /// the edge of the screen. Instead the box is pushed diagonally into the screen, clearing each
+    /// of the corner's two edges by <see cref="QuadrantLayout.EdgeMargin"/> — the same clearance
+    /// the fanned-out items themselves keep off these same two edges — so the entire mark lands on
+    /// screen rather than being bisected by either one.
     /// </summary>
-    private UIElement BuildCornerWedge(double box, HotCorner corner)
+    private void PositionHub(double hub)
     {
-        double radius = box / 2;
-        double startAngle = QuadrantLayout.ScreenAngleRad(corner, 0);
-        double endAngle = QuadrantLayout.ScreenAngleRad(corner, Math.PI / 2);
+        if (_hub is null)
+            return;
 
-        Point PointAt(double angle) => new(
-            radius + radius * Math.Cos(angle),
-            radius + radius * Math.Sin(angle));
+        if (_quadrant is not { } corner)
+        {
+            Canvas.SetLeft(_hub, _cx - hub / 2);
+            Canvas.SetTop(_hub, _cy - hub / 2);
+            return;
+        }
 
-        var figure = new PathFigure
-        {
-            StartPoint = new Point(radius, radius),
-            IsClosed = true,
-            IsFilled = true,
-        };
-        figure.Segments.Add(new LineSegment { Point = PointAt(startAngle) });
-        figure.Segments.Add(new ArcSegment
-        {
-            Point = PointAt(endAngle),
-            Size = new Size(radius, radius),
-            SweepDirection = endAngle > startAngle ? SweepDirection.Clockwise : SweepDirection.Counterclockwise,
-            IsLargeArc = false,
-        });
-        var geometry = new PathGeometry();
-        geometry.Figures.Add(figure);
-
-        // Tint-only, not a live backdrop like CreateBubble's bubbles: SystemBackdropElement only
-        // clips to a rounded rect (CornerRadius), and this wedge is a pie slice with its apex at
-        // the box's center, not its corner — genuine per-pixel blur here would need an arbitrary
-        // path clip, which isn't available without adding Win2D as a dependency for one decorative
-        // shape. Translucent tint over the real desktop (RingWindow has no window-level backdrop —
-        // see TransparentBackdrop) is the honest middle ground: no blur, but no longer flat opaque
-        // black/white either.
-        return new Path
-        {
-            Width = box,
-            Height = box,
-            Data = geometry,
-            Fill = ThemeBrush("RingBubbleGlassTint"),
-            Stroke = ThemeBrush("SwiftXBorderBrush"),
-            StrokeThickness = 1,
-        };
+        double margin = QuadrantLayout.EdgeMargin;
+        bool nearLeft = corner is HotCorner.TopLeft or HotCorner.BottomLeft;
+        bool nearTop = corner is HotCorner.TopLeft or HotCorner.TopRight;
+        Canvas.SetLeft(_hub, nearLeft ? _cx + margin : _cx - margin - hub);
+        Canvas.SetTop(_hub, nearTop ? _cy + margin : _cy - margin - hub);
     }
 
     private BubbleView CreateBubble(
