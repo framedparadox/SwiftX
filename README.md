@@ -208,6 +208,10 @@ The live ring customizer — what it shows is what the ring draws, at the curren
   the group.
 - **Drag an item** to another slot to rearrange. A drop lands on the nearest slot, even out past
   the bubbles — the intent is the nearest place, not a pixel-perfect landing.
+- **Right-click an item** for **Replace…** and **Delete**. Replace opens the same form the `+`
+  does and puts what you add into that same slot; a group goes with its children either way. The
+  built-in tools are the Tools page's — right-clicking one offers nothing, since a tool leaves the
+  ring by being switched off there.
 - **Add item… / Reset defaults** sit on the canvas itself, centered under the ring.
 
 **Size** — Small / Medium / Large. Scales the items around the ring; the hub is unaffected.
@@ -227,8 +231,11 @@ view the corner is editable:
 
 - **Drag** one place onto another to reorder.
 - **Click the empty place** (the `+`) to add — the item belongs to the corner, not the ring.
-- **Click the ×** on an item's shoulder to take it off the corner. The ring keeps it. The last item
-  has no × — a corner with nothing on it would summon an empty screen.
+- **Right-click an item** for **Replace…** and **Remove from corner**. The ring keeps whatever you
+  take off. On the last item Remove is greyed out — a corner with nothing on it would summon an
+  empty screen.
+
+Nothing else is drawn: no guide arc through the places, and no remove badge pinned to every item.
 
 "Reset defaults" clears your corner arrangement along with the ring, putting the corner back to
 following it.

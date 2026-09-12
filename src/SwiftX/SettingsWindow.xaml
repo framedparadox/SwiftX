@@ -8,11 +8,13 @@
     Title="SwiftX Settings">
 
     <!-- WinUI Window has no Resources; shared styles live on the root Grid. SettingsSurfaceBrush,
-         not the shared SwiftXSurfaceBrush: AddItemWindow and the tool windows also key off
-         SwiftXSurfaceBrush and must keep its #000000 Dark value, so Settings' own lighter surface
-         (#222222 Dark / #FFFFFF Light, from the Logi Options+ palette this window now follows —
-         see docs/logi_options_design_features.md and Themes/Colors.xaml) lives under a
-         Settings-exclusive name instead of changing that shared one out from under them. -->
+         not the shared SwiftXSurfaceBrush: the tool windows also key off SwiftXSurfaceBrush and
+         must keep its #000000 Dark value, so Settings' own lighter surface (#222222 Dark /
+         #FFFFFF Light, from the Logi Options+ palette this window now follows — see
+         docs/logi_options_design_features.md and Themes/Colors.xaml) lives under a
+         Settings-exclusive name instead of changing that shared one out from under them.
+         AddItemWindow now does the same under its own SwiftXDialogSurfaceBrush, anchored to the
+         same Logi canvas value. -->
     <Grid x:Name="Root" Background="{ThemeResource SettingsSurfaceBrush}">
         <Grid.Resources>
             <Style x:Key="Card" TargetType="Border">
@@ -136,7 +138,7 @@
                 <ScrollViewer x:Name="HomePanel">
                     <StackPanel Spacing="12" MaxWidth="920" HorizontalAlignment="Left">
                         <TextBlock Text="Home" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,4" />
-                        <TextBlock Text="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange. The corner button switches to what the hot corner opens, which is arranged the same way."
+                        <TextBlock Text="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange; right-click an item to replace or delete it. The corner button switches to what the hot corner opens, which is arranged the same way."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                         <!-- An adaptive Grid rather than two fixed-width blocks in a horizontal
                              StackPanel: a horizontal StackPanel never constrains its children to

@@ -2,6 +2,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using SwiftX.Controls;
 using SwiftX.Models;
 using SwiftX.Services;
@@ -38,9 +39,16 @@ public sealed partial class AddItemWindow : Window
     /// tile that would create one is taken away rather than left to add something the ring can
     /// never expand.
     /// </param>
+    /// <param name="heading">
+    /// Overrides the title/heading the two flows above would pick. Settings' "Replace…" reuses
+    /// this same form to swap what is already in a ring slot or a corner place, which is neither
+    /// of them.
+    /// </param>
+    /// <param name="confirmLabel">The commit button's label, for the same reason.</param>
     public AddItemWindow(
         RingManager manager, Action<RingItem>? onAdded, List<RingItem> targetList,
-        bool isGenericAddItem = false, bool allowGroups = true)
+        bool isGenericAddItem = false, bool allowGroups = true,
+        string? heading = null, string? confirmLabel = null)
     {
         _manager = manager;
         _onAdded = onAdded;
@@ -49,9 +57,11 @@ public sealed partial class AddItemWindow : Window
 
         _hwnd = WindowNative.GetWindowHandle(this);
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
-        string heading = isGenericAddItem ? "Add item" : "Add to ring";
+        heading ??= isGenericAddItem ? "Add item" : "Add to ring";
         Title = heading;
         HeadingText.Text = heading;
+        if (!string.IsNullOrEmpty(confirmLabel))
+            ConfirmButton.Content = confirmLabel;
 
         // Adding a plain item (App/File/Folder/Link/Shortcut/Group) is the generic flow's whole
         // job; a built-in tool already has its own home on the Tools page, so that tile only makes
@@ -96,16 +106,67 @@ public sealed partial class AddItemWindow : Window
 
     public void ApplyTheme()
     {
-        Root.RequestedTheme = ThemeHelper.Resolve(_manager.Config.Theme);
+        ApplyBlackOverrides();
+        ForceThemeResourceRefresh(ThemeHelper.Resolve(_manager.Config.Theme));
         ApplyChromeTheme();
+    }
+
+    /// <summary>
+    /// Midnight rides on Dark's own <see cref="ElementTheme"/> (see <see cref="ThemeHelper.Resolve"/>),
+    /// so selecting it never changes <c>RequestedTheme</c>'s value and WinUI never re-walks the
+    /// <c>{ThemeResource}</c> lookups that <see cref="ApplyBlackOverrides"/> has just shadowed.
+    /// Nudging the property to the other theme and straight back is what forces that re-walk —
+    /// without it, switching between Dark and Midnight looked like it did nothing at all. Same
+    /// trick, and the same reason, as SettingsWindow's.
+    /// </summary>
+    private void ForceThemeResourceRefresh(ElementTheme target)
+    {
+        if (Root.RequestedTheme == target)
+            Root.RequestedTheme = target == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
+        Root.RequestedTheme = target;
+    }
+
+    /// <summary>
+    /// Dark's surface is now Dark's own <c>#202020</c> (<c>SwiftXDialogSurfaceBrush</c> in
+    /// <c>Themes/Colors.xaml</c>) rather than the flat black it used to borrow from
+    /// <c>SwiftXSurfaceBrush</c> — which is what made this dialog show Midnight's chrome while
+    /// Dark was selected. Midnight itself is not a XAML theme and cannot be told apart through a
+    /// theme dictionary, so when it is selected the key is shadowed here with a local entry in
+    /// <c>Root.Resources</c>: a nearer resource wins, so every <c>{ThemeResource}</c> under Root
+    /// resolves to this instead. Removed again the moment Midnight is not selected.
+    /// </summary>
+    private void ApplyBlackOverrides()
+    {
+        if (_manager.Config.Theme != AppTheme.Black)
+        {
+            Root.Resources.Remove("SwiftXDialogSurfaceBrush");
+            return;
+        }
+
+        Root.Resources["SwiftXDialogSurfaceBrush"] =
+            new SolidColorBrush(Microsoft.UI.Colors.Black);
     }
 
     private void ApplyChromeTheme()
     {
         bool dark = ThemeHelper.IsDark(Root);
         WindowChrome.SetTitleBarTheme(_appWindow, dark);
-        WindowChrome.HideWindowBorder(_hwnd, dark);
+        // The rim has to match whatever the root actually paints, or it draws a hard edge around
+        // the window instead of disappearing into it — Dark's surface is no longer black.
+        int rim = _manager.Config.Theme == AppTheme.Black
+            ? RimColorBlack
+            : dark ? RimColorDark : RimColorLight;
+        WindowChrome.HideWindowBorder(_hwnd, dark, rim);
     }
+
+    /// <summary>
+    /// Rim colors as COLORREFs (0x00BBGGRR), matching <c>SwiftXDialogSurfaceBrush</c> in
+    /// <c>Themes/Colors.xaml</c> and <see cref="ApplyBlackOverrides"/>' own flat black. Neutral
+    /// greys, so channel order is moot.
+    /// </summary>
+    private const int RimColorDark = 0x00222222;
+    private const int RimColorLight = 0x00FFFFFF;
+    private const int RimColorBlack = 0x00000000;
 
     private void TypeSelected(object sender, RoutedEventArgs e)
     {
