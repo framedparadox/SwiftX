@@ -696,12 +696,29 @@ at). The next launch reseeds the defaults.
 
 Not started; noted here as candidates.
 
+**Application**
+
+- Redesign the application layout as a formal application (beyond the current ring + settings-window
+  shell)
+
 **Ring**
 
 - A second ring when items outgrow the first
+- Multi-orbit support — more than one outer ring, for users who want more items than a single
+  flyout ring holds
 - Rotating the ring
 - Alternative layouts: pyramid, timer scroll
 - Configurable hot-corner dwell, and more than four places in a quadrant
+
+**Drag and drop**
+
+- Auto-add a dropped item to the nearest empty slot
+- Drag a dropped item straight onto the outer ring
+- Drag a dropped item into a shortcuts folder/group
+
+**Developer tools**
+
+- An add-on/extension model for third-party developer tools alongside the built-in four
 
 **Data Formatter** — commonly offered elsewhere, roughly in order of how well each fits the current
 sidebar-button architecture:
