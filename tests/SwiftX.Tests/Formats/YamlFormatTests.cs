@@ -124,4 +124,63 @@ public class YamlFormatTests
     {
         Assert.Equal(0, YamlFormat.Instance.DetectConfidence("{\"a\": 1}"));
     }
+
+    [Fact]
+    public void DetectConfidence_DoesNotClaimPlainProseThatHappensToContainColons()
+    {
+        // Ordinary notes, not data: every "key:" line's value trails off in a full sentence,
+        // which is not how real YAML/config values are written. Auto-detect must not claim this
+        // and silently reformat it (QuickFormatPage applies whatever wins with no confirmation).
+        var text = "Note: see the attached file.\nWarning: check permissions.\n";
+        Assert.Equal(0, YamlFormat.Instance.DetectConfidence(text));
+    }
+
+    [Fact]
+    public void ToCanonical_TreatsLeadingZeroAndPlusSignedDigitsAsStrings()
+    {
+        // "0755" (file-mode syntax) and "+5" are not valid JSON numbers — IsNumberLiteral has to
+        // reject them so they round-trip as strings rather than as raw, unvalidated numeric text
+        // that would leave JsonFormat.FromCanonical producing unparseable JSON.
+        var node = YamlFormat.Instance.ToCanonical("mode: 0755\ncount: +5\n");
+        var json = JsonFormat.Instance.FromCanonical(node, FormatOptions.Default);
+        Assert.Contains("\"mode\": \"0755\"", json);
+        Assert.Contains("\"count\": \"+5\"", json);
+        Assert.True(JsonFormat.Instance.Format(json, FormatOptions.Default).Success);
+    }
+
+    [Fact]
+    public void ToCanonical_StillAcceptsOrdinaryIntegersAndDecimals()
+    {
+        var node = YamlFormat.Instance.ToCanonical("a: 0\nb: 10\nc: -5\nd: 0.5\ne: 1e3\n");
+        var json = JsonFormat.Instance.FromCanonical(node, FormatOptions.Default);
+        Assert.Contains("\"a\": 0", json);
+        Assert.Contains("\"b\": 10", json);
+        Assert.Contains("\"c\": -5", json);
+        Assert.Contains("\"d\": 0.5", json);
+        Assert.Contains("\"e\": 1e3", json);
+    }
+
+    [Fact]
+    public void Format_RejectsAnchorsWithANamedDiagnostic()
+    {
+        var result = YamlFormat.Instance.Format("a: &base value\n", FormatOptions.Default);
+        Assert.False(result.Success);
+        Assert.Contains("anchor", result.Diagnostics[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Format_RejectsAliasesWithANamedDiagnostic()
+    {
+        var result = YamlFormat.Instance.Format("a: *base\n", FormatOptions.Default);
+        Assert.False(result.Success);
+        Assert.Contains("alias", result.Diagnostics[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Format_RejectsAliasesInsideFlowCollections()
+    {
+        var result = YamlFormat.Instance.Format("a: {b: *base}\n", FormatOptions.Default);
+        Assert.False(result.Success);
+        Assert.Contains("alias", result.Diagnostics[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -44,7 +44,7 @@ public static class ToolCatalog
         // YAML or CSV, and shows the result formatted with a Copy and a Save button \u2014 see
         // QuickFormatPage's own doc comment for why this exists as a separate tool rather than a
         // mode of Data Formatter.
-        new ToolDefinition(ToolKind.QuickFormat, "Quick Format", "Auto-format your last copied JSON, XML, YAML or CSV.", "\uE945",
+        new ToolDefinition(ToolKind.QuickFormat, "Quick Format", "Auto-format your last copied JSON, XML, YAML or CSV.", "\uE917",
             () => new QuickFormatPage())
         {
             WindowSize = (560, 460),

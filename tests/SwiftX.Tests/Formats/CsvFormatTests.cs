@@ -82,6 +82,28 @@ public class CsvFormatTests
     }
 
     [Fact]
+    public void ToCanonical_DisambiguatesHeaderThatWouldCollideWithASynthesizedName()
+    {
+        // Column 2's "foo" naively dedups to "foo_2", which collides with the literal "foo_2"
+        // header already at column 1 — has to keep counting to "foo_3" rather than quietly
+        // reusing "foo_2" for both.
+        var node = CsvFormat.Instance.ToCanonical("foo,foo_2,foo\na,b,c\n");
+        var arr = Assert.IsType<ArrayNode>(node);
+        var row = Assert.IsType<ObjectNode>(arr.Items[0]);
+        Assert.Equal("foo", row.Members[0].Key);
+        Assert.Equal("foo_2", row.Members[1].Key);
+        Assert.Equal("foo_3", row.Members[2].Key);
+    }
+
+    [Fact]
+    public void FromCanonical_RoundTripsAllColumns_WhenAHeaderWouldCollideWithASynthesizedName()
+    {
+        var node = CsvFormat.Instance.ToCanonical("foo,foo_2,foo\na,b,c\n");
+        var csv = CsvFormat.Instance.FromCanonical(node, FormatOptions.Default);
+        Assert.Equal("foo,foo_2,foo_3\na,b,c\n", csv);
+    }
+
+    [Fact]
     public void FromCanonical_WritesHeaderRowFromArrayOfObjects()
     {
         var node = new ArrayNode([

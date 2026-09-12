@@ -39,6 +39,7 @@ Everything runs on your own machine. There is no account, no telemetry, and noth
 - [Theme](#theme)
 - [Language](#language)
 - [Brand and assets](#brand-and-assets)
+- [Packaging for the Microsoft Store](#packaging-for-the-microsoft-store)
 - [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
 
@@ -595,6 +596,78 @@ the centre:
 These are hard-coded rather than theme resources on purpose. SwiftX themes are hard black and hard
 white, and the mark has to read as *coloured* against both rather than inverting with the theme.
 
+---
+
+## Packaging for the Microsoft Store
+
+SwiftX ships **unpackaged** for everyday development (`WindowsPackageType=None`), so `dotnet
+build`/`dotnet run` are exactly what [Build, test, run](#build-test-run) describes — nothing here
+changes that loop. [`src/SwiftX/Package.appxmanifest`](src/SwiftX/Package.appxmanifest) adds
+*single-project MSIX* packaging as an opt-in on top of it: no separate packaging project, just that
+manifest plus `-p:WindowsPackageType=MSIX` on the command line.
+
+The manifest's `Identity` is this app's actual Partner Center reservation — `Name` and `Publisher`
+have to match it exactly, character for character, or Store ingestion rejects the upload:
+
+| | |
+|---|---|
+| Package identity name | `44492ajaykontham.SwiftX` |
+| Publisher | `CN=93C75305-77D7-448E-B1C4-591A0E9665E1` |
+| Publisher display name | `ajaykontham` |
+
+The app declares `runFullTrust` — required, not a Store approval blocker, since SwiftX P/Invokes
+Win32 directly for its hit-test regions, global hotkey, hot-corner polling and tray icon (see
+[`Interop/NativeMethods.cs`](src/SwiftX/Interop/NativeMethods.cs)), which no restricted-capability
+package could do.
+
+### Building the package
+
+```bash
+dotnet build src/SwiftX/SwiftX.csproj -c Release -p:Platform=x64 -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=true -p:AppxBundle=Never
+```
+
+Produces `src/SwiftX/AppPackages/SwiftX_<version>_x64_Test/SwiftX_<version>_x64.msix` (repeat with
+`-p:Platform=ARM64` for the other architecture). `AppxBundle=Never` keeps this to one `.msix` per
+build; for a single upload covering both architectures, build both platforms first and then bundle
+them with `MakeAppx bundle` (ships with the Windows SDK), or drive both from Visual Studio's own
+"Create App Packages" wizard, which does the per-architecture build **and** the bundle step in one
+pass.
+
+`SelfContained`/`WindowsAppSDKSelfContained` are already `true` in the project, so the package
+carries its own .NET and Windows App SDK runtimes — nothing extra for a user (or Store ingestion)
+to resolve.
+
+### Local sideload testing
+
+The build above is unsigned. To install and run it on this machine before submitting anywhere,
+either:
+
+- Run the generated `Add-AppDevPackage.ps1` next to the `.msix` — it creates a throwaway
+  self-signed test certificate, trusts it, and installs the package in one step, or
+- Sign it yourself against a certificate whose Subject matches `Identity/Publisher` above exactly
+  (`New-SelfSignedCertificate -Subject "CN=93C75305-77D7-448E-B1C4-591A0E9665E1" -CertStoreLocation
+  Cert:\CurrentUser\My -Type CodeSigningCert`, then `signtool sign /fd SHA256 /a
+  /f <exported .pfx> ...` or `Add-AppxPackage` with a matching trusted cert already installed).
+
+Either way this is throwaway, dev-machine-only trust — it has no bearing on the certificate the
+Store uses for real distribution.
+
+### Submitting to Partner Center
+
+Partner Center **re-signs the package itself on ingestion**, so the certificate used for the
+sideload test above is irrelevant to submission — upload the `.msix` (or a `.msixbundle` covering
+both architectures) as-is. Before submitting:
+
+- **Bump `<Version>` / `<FileVersion>` / `<AssemblyVersion>`** in
+  [`SwiftX.csproj`](src/SwiftX/SwiftX.csproj) and `Identity/Version` in `Package.appxmanifest`
+  together — Store submissions must strictly increase, and the fourth (revision) segment must stay
+  `0` (Store-assigned).
+- **Run the Windows App Certification Kit** (bundled with the Windows SDK, also offered by Visual
+  Studio's packaging wizard) against the built package — it catches manifest/capability/performance
+  issues Partner Center's own automated review also checks for.
+- Partner Center's listing itself (screenshots, description, age rating, privacy policy URL) is
+  filled in on their site, not from anything in this repo; [Privacy](#privacy) and
+  [`docs/TERMS.md`](docs/TERMS.md) are the source material for that copy.
 
 ## Troubleshooting
 

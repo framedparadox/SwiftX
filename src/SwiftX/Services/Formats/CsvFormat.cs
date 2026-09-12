@@ -168,20 +168,21 @@ public sealed class CsvFormat : IDataFormat
 
     private static List<string> MakeUniqueHeaders(List<string> firstRow)
     {
-        var seen = new Dictionary<string, int>(StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         var result = new List<string>(firstRow.Count);
         foreach (var raw in firstRow)
         {
-            string name = string.IsNullOrEmpty(raw) ? "column" : raw;
-            if (seen.TryGetValue(name, out int n))
+            string baseName = string.IsNullOrEmpty(raw) ? "column" : raw;
+            string name = baseName;
+            int n = 1;
+            // Keep counting until the candidate is genuinely unused — a synthesized "name_n" can
+            // collide with a header that already exists verbatim elsewhere in the row (e.g.
+            // "foo,foo_2,foo" naively dedups to "foo,foo_2,foo_2"), not only with another raw
+            // occurrence of "name" itself.
+            while (!seen.Add(name))
             {
                 n++;
-                seen[name] = n;
-                name = $"{name}_{n}";
-            }
-            else
-            {
-                seen[name] = 1;
+                name = $"{baseName}_{n}";
             }
             result.Add(name);
         }

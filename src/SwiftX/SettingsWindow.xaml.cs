@@ -2453,7 +2453,7 @@ public sealed partial class SettingsWindow : Window
     // silently swapped for a different (or invisible) private-use character by a stray
     // copy/paste. See the memory note on this exact failure mode.
     private static readonly string DataGlyph = char.ConvertFromUtf32(0xE943);
-    private static readonly string QuickFormatGlyph = char.ConvertFromUtf32(0xE945);
+    private static readonly string QuickFormatGlyph = char.ConvertFromUtf32(0xE917);
     private static readonly string SecureValuesGlyph = char.ConvertFromUtf32(0xE72E);
     private static readonly string CertificateGlyph = char.ConvertFromUtf32(0xEB95);
 

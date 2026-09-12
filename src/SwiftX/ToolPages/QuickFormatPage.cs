@@ -195,26 +195,29 @@ public sealed class QuickFormatPage : EditorToolPage
         if (string.IsNullOrEmpty(text))
             return;
 
-        var cleaned = InputSanitizer.Clean(text);
-        if (cleaned.Length == 0)
-            return;
-
-        var format = FormatRegistry.DetectBest(cleaned);
-        var result = format.Format(cleaned, FormatOptions.Default);
+        // No InputSanitizer.Clean here (unlike FormatterPage's explicit, user-triggered "Validate
+        // & Clean" action): Clean's Unescape step turns any backslash-letter pair it doesn't
+        // recognize into just the letter, which silently mangles ordinary clipboard text that was
+        // never escaped JSON/XML in the first place — a Windows path such as
+        // C:\Users\name\notes.csv loses its backslashes the instant this tool is opened or pasted
+        // into, with nothing to signal that it happened. Detect and format the clipboard text
+        // exactly as copied.
+        var format = FormatRegistry.DetectBest(text);
+        var result = format.Format(text, FormatOptions.Default);
         if (result.Success)
         {
             SetContent(result.Text, format);
         }
-        else if (LooksIntendedAsStructuredData(cleaned, format))
+        else if (LooksIntendedAsStructuredData(text, format))
         {
             // Recognizably shaped as this format (braces, angle brackets, "key:" lines, comma
             // rows) but failed to parse — this is the "invalid data" case, distinct from plain
             // prose below that was never meant to be structured in the first place.
-            SetInvalid(cleaned, format, result);
+            SetInvalid(text, format, result);
         }
         else
         {
-            SetContent(cleaned, null);
+            SetContent(text, null);
         }
     }
 

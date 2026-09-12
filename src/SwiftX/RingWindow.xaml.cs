@@ -781,6 +781,17 @@ public sealed partial class RingWindow : Window
         // same motion as the real invoke, never a lesser or different-looking substitute (see that
         // method's own doc comment for why both spring layers have to replay together).
         _hub.PointerEntered += (_, _) => PlayHubEntrance();
+        // The hub box is square (RingMetrics.Hub) but the dead zone RingCanvas_PointerPressed
+        // checks is circular, so a press in one of the box's four corners — outside the circle but
+        // still inside the hit-testable square, and routinely the case for a quadrant's larger,
+        // off-center hub box — has e.OriginalSource land on this Border rather than the Canvas and
+        // used to be swallowed with no effect. The hub means one thing wherever it's pressed within
+        // its own bounds: close an open flyout, or dismiss with none open.
+        _hub.PointerPressed += (_, e) =>
+        {
+            e.Handled = true;
+            Dismiss();
+        };
         PositionHub(hub);
         RingCanvas.Children.Add(_hub);
         PlayHubEntrance();
@@ -797,7 +808,13 @@ public sealed partial class RingWindow : Window
     /// </summary>
     private void PlayHubEntrance()
     {
-        if (_hub is null) return;
+        // A hover-triggered replay (see BuildHub's PointerEntered) can land while
+        // DismissAnimatedAsync's fade-out is still running on this very visual — the hub stays
+        // hit-test-visible for that whole span, since ClearRing only nulls it out afterward.
+        // Racing the two would hard-snap the hub to invisible/shrunk and re-spring it while the
+        // rest of the ring is still disappearing, so skip the replay for the dismiss's duration;
+        // _isAnimating is true for exactly that window (see IsClosing) and never otherwise.
+        if (_hub is null || _isAnimating) return;
 
         // Same spring family as the bubble burst-in (AnimateBurstIn), not a flat linear fade, so
         // the hub reads as part of one physical motion instead of popping in on its own timeline.

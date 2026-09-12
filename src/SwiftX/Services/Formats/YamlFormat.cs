@@ -68,12 +68,30 @@ public sealed class YamlFormat : IDataFormat
 
             int colon = line.IndexOf(':');
             if (colon > 0 && (colon == line.Length - 1 || line[colon + 1] == ' '))
-                sawStructure = true;
+            {
+                // "Word: rest of the line" is also how an ordinary sentence like "Note: see the
+                // attached file." reads — a single such line is not a reliable enough signal on
+                // its own, or plain prose auto-detects as YAML and gets silently reformatted (see
+                // QuickFormatPage, which runs this with no confirmation step). A value that trails
+                // off in sentence-terminal punctuation after more than one word is prose's own
+                // tell: real config values are essentially never written that way.
+                var value = colon == line.Length - 1 ? default : line[(colon + 1)..];
+                if (!LooksLikeSentenceValue(value))
+                    sawStructure = true;
+            }
         }
 
         if (nonBlankLines == 0) return 0;
         if (sawDocMarker) return 70;
         return sawStructure ? 55 : 0;
+    }
+
+    private static bool LooksLikeSentenceValue(ReadOnlySpan<char> value)
+    {
+        var trimmed = value.TrimEnd();
+        if (trimmed.Length == 0) return false;
+        char last = trimmed[^1];
+        return (last == '.' || last == '!' || last == '?') && trimmed.Contains(' ');
     }
 
     private static bool HasPrefix(ReadOnlySpan<char> line, string prefix) =>
@@ -438,6 +456,13 @@ public sealed class YamlFormat : IDataFormat
             return new ScalarNode(trimmed[1..^1].Replace("''", "'"), ScalarKind.String);
         }
 
+        // "&name" (anchor) / "*name" (alias) — see the type doc comment: named as unsupported
+        // rather than silently kept as a literal string, which would parse "successfully" while
+        // quietly losing the reference the document actually meant.
+        if (trimmed[0] == '&' || trimmed[0] == '*')
+            throw new YamlParseException(lineNumber, column,
+                $"YAML {(trimmed[0] == '&' ? "anchors" : "aliases")} are not supported.");
+
         return ParsePlainScalar(trimmed);
     }
 
@@ -455,13 +480,25 @@ public sealed class YamlFormat : IDataFormat
         return new ScalarNode(trimmed, ScalarKind.String);
     }
 
+    /// <summary>
+    /// JSON's own number grammar, not a looser "looks numeric" check: no leading <c>+</c>, and no
+    /// leading zero followed by another digit (<c>"0755"</c> is common YAML — Ansible/Kubernetes
+    /// file-mode syntax — but is not a valid JSON number). Matching JSON exactly here matters
+    /// because <see cref="ScalarKind.Number"/> is written out raw and unvalidated by
+    /// <see cref="JsonFormat"/>'s writer on conversion — anything this method accepts has to
+    /// actually be legal JSON, or "Convert to JSON" produces text that fails to re-parse.
+    /// </summary>
     private static bool IsNumberLiteral(string s)
     {
         int i = 0;
-        if (i < s.Length && (s[i] == '-' || s[i] == '+')) i++;
-        int digitsStart = i;
-        while (i < s.Length && char.IsAsciiDigit(s[i])) i++;
-        if (i == digitsStart) return false;
+        if (i < s.Length && s[i] == '-') i++;
+        if (i >= s.Length || !char.IsAsciiDigit(s[i])) return false;
+
+        if (s[i] == '0')
+            i++; // A lone "0" is the whole integer part; JSON forbids a second digit after it.
+        else
+            while (i < s.Length && char.IsAsciiDigit(s[i])) i++;
+
         if (i < s.Length && s[i] == '.')
         {
             i++;
@@ -507,6 +544,8 @@ public sealed class YamlFormat : IDataFormat
             if (c == '[') return ParseArray(depth);
             if (c == '"') return new ScalarNode(InputSanitizer.Unescape(ScanDelimited('"')), ScalarKind.String);
             if (c == '\'') return new ScalarNode(ScanDelimited('\'').Replace("''", "'"), ScalarKind.String);
+            if (c == '&' || c == '*')
+                throw Error($"YAML {(c == '&' ? "anchors" : "aliases")} are not supported.");
             return ParsePlainToken();
         }
 
