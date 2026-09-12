@@ -727,15 +727,14 @@ public sealed partial class RingWindow : Window
     /// <summary>
     /// The hub is the app's own mark and nothing else: no plate, no border, no fill — the logo
     /// sits directly on the desktop, lifted off it by a drop shadow of its own
-    /// (<see cref="AppLogo.CreateFloating"/>) rather than by anything drawn under it. The full
-    /// ring sizes it to the fixed <see cref="RingMetrics.HubLogo"/>/<see cref="RingMetrics.Hub"/>
-    /// proportion no item-size setting scales; a quadrant's corner shows the very same mark at its
-    /// own box size (<see cref="RingMetrics.Bubble"/>) instead of the small quarter-disc wedge
-    /// this used to draw there, positioned by <see cref="PositionHub"/> so the whole logo clears
-    /// the two screen edges the corner is made of rather than being bisected by either one. Either
-    /// form plays the mark's own entrance/exit motion (<see cref="AppLogo.Mark.PlayEntrance"/> /
-    /// <see cref="AppLogo.Mark.PlayExit"/>) and replays the entrance again on hover, once it has
-    /// already settled — see the <c>PointerEntered</c> handler below.
+    /// (<see cref="AppLogo.CreateFloating"/>) rather than by anything drawn under it, and always
+    /// at the same fixed <see cref="RingMetrics.HubLogo"/> size no item-size setting scales — a
+    /// quadrant's corner shows the very same mark, at the very same size, that the full ring's
+    /// center does, rather than the small quarter-disc wedge this used to draw there or a mark
+    /// stretched to fill its own (larger, item-scaled) box. Positioned by <see cref="PositionHub"/>,
+    /// which is what actually clears the two screen edges a quadrant's corner is made of, since the
+    /// box the mark sits in is still <see cref="RingMetrics.Bubble"/>-sized so it doesn't crowd the
+    /// items fanned around it.
     /// <para>
     /// Item names pop out beside the item they belong to (<see cref="ShowPill"/>), which is what
     /// freed the center up for the mark alone.
@@ -745,9 +744,7 @@ public sealed partial class RingWindow : Window
     {
         _hubSize = hub;
         _hubQuadrant = _quadrant;
-        _hubMark = _quadrant is null
-            ? AppLogo.CreateFloating(hub * (RingMetrics.HubLogo / RingMetrics.Hub))
-            : AppLogo.CreateFloating(hub);
+        _hubMark = AppLogo.CreateFloating(RingMetrics.HubLogo);
         _hub = new Border
         {
             Width = hub,
@@ -761,20 +758,36 @@ public sealed partial class RingWindow : Window
             Child = _hubMark,
             IsHitTestVisible = true,
         };
-        // Hovering the mark after its own entrance has already finished replays that same motion —
-        // safe to retrigger at any point, mid-flight included, since PlayEntrance always resets
-        // every property to its starting value before animating rather than animating from
-        // wherever the previous run left off.
-        _hub.PointerEntered += (_, _) => _hubMark?.PlayEntrance();
+        // Hovering the hub after it has already settled plays PlayHubEntrance again — the exact
+        // same motion as the real invoke, never a lesser or different-looking substitute (see that
+        // method's own doc comment for why both spring layers have to replay together).
+        _hub.PointerEntered += (_, _) => PlayHubEntrance();
         PositionHub(hub);
         RingCanvas.Children.Add(_hub);
+        PlayHubEntrance();
+    }
+
+    /// <summary>
+    /// Plays the hub's whole invoke motion: the outer box's own scale/opacity spring together with
+    /// the mark's own petal choreography (<see cref="AppLogo.Mark.PlayEntrance"/>), as the one
+    /// animation they always are together. Called once when the hub is first built for a summon,
+    /// and replayed in full — both layers, not just the mark's — every time the pointer hovers it
+    /// afterward (<see cref="BuildHub"/>'s <c>PointerEntered</c> handler), so a hover is never a
+    /// partial or different-looking version of the real invoke: it always is the real invoke,
+    /// exactly, snap back to the starting frame and all.
+    /// </summary>
+    private void PlayHubEntrance()
+    {
+        if (_hub is null) return;
 
         // Same spring family as the bubble burst-in (AnimateBurstIn), not a flat linear fade, so
         // the hub reads as part of one physical motion instead of popping in on its own timeline.
         try
         {
             var visual = ElementCompositionPreview.GetElementVisual(_hub);
-            visual.CenterPoint = new Vector3((float)(hub / 2), (float)(hub / 2), 0);
+            visual.StopAnimation("Opacity");
+            visual.StopAnimation("Scale");
+            visual.CenterPoint = new Vector3((float)(_hubSize / 2), (float)(_hubSize / 2), 0);
             visual.Opacity = 0;
             visual.Scale = new Vector3(0.7f, 0.7f, 1);
             var compositor = visual.Compositor;

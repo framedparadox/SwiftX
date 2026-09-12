@@ -23,11 +23,11 @@ namespace SwiftX.ToolPages;
 /// shows one payload at a time, so "I copied something else, paste it in" should look exactly like
 /// reopening the tool, not like editing a document with two payloads spliced together.
 /// <para>
-/// Three icon buttons live in the title bar (<see cref="HeaderActions"/>) rather than a command
-/// bar, which is what lets the command bar collapse away entirely (see
+/// Open Data Formatter and Save live in the title bar (<see cref="HeaderActions"/>) rather than a
+/// command bar, which is what lets the command bar collapse away entirely (see
 /// <see cref="EditorToolPage.InitializeChrome"/>, the same trick <see cref="SecureValuesPage"/>
-/// already uses for its own title-bar-only Save). Open Data Formatter and Save sit together on the
-/// left of that group; Copy sits alone at the far right, in its own slot — the same slot a red
+/// already uses for its own title-bar-only Save). Copy lives one row down instead, at the right of
+/// the row above the editor that otherwise just names the detected format — the same slot a red
 /// warning glyph takes over instead whenever the current content looks like a recognized format
 /// (JSON, XML, YAML or CSV) but failed to parse, per <see cref="SetInvalid"/>. There is nothing to
 /// copy out of broken data, so the two are mutually exclusive in that one slot rather than a
@@ -58,6 +58,8 @@ public sealed class QuickFormatPage : EditorToolPage
         Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
         Opacity = 0.75,
         Margin = new Thickness(12, 8, 12, 6),
+        HorizontalAlignment = HorizontalAlignment.Left,
+        VerticalAlignment = VerticalAlignment.Center,
     };
 
     private IDataFormat? _activeFormat;
@@ -87,35 +89,37 @@ public sealed class QuickFormatPage : EditorToolPage
         var saveButton = IconButton(SaveGlyph, Loc.Get("Tool.Save"), HoverAccent.Accent);
         saveButton.Click += (_, _) => _ = SaveToFileAsync();
 
-        _copyButton = IconButton(CopyGlyph, Loc.Get("Tool.CopyOutput"), HoverAccent.Copy);
-        _copyButton.Click += (_, _) => CopyOutput();
-
-        _invalidIndicator = BuildInvalidIndicator();
-
-        // Open Data Formatter and Save are grouped on the left; Copy (or, in its place, the
-        // invalid-data warning) sits alone at the far right of the row — see the type doc comment.
-        var leftGroup = new StackPanel
+        _headerActions = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 4,
             Children = { openFormatterButton, saveButton },
         };
-        var rightSlot = new Grid { Children = { _copyButton, _invalidIndicator } };
 
-        _headerActions = new StackPanel
+        _copyButton = IconButton(CopyGlyph, Loc.Get("Tool.CopyOutput"), HoverAccent.Copy);
+        _copyButton.Click += (_, _) => CopyOutput();
+
+        _invalidIndicator = BuildInvalidIndicator();
+
+        // Copy (or, in its place, the invalid-data warning) sits at the right of the row above the
+        // editor; the detected-format label sits at the left of that same row — see the type doc
+        // comment for why Copy lives here rather than beside Open Data Formatter/Save.
+        var rightSlot = new Grid
         {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Children = { leftGroup, rightSlot },
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 4, 12, 4),
+            Children = { _copyButton, _invalidIndicator },
         };
+        var topRow = new Grid { Children = { _detectedLabel, rightSlot } };
 
         var body = new Grid();
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(_detectedLabel, 0);
+        Grid.SetRow(topRow, 0);
         var pane = Pane(_editor);
         Grid.SetRow(pane, 1);
-        body.Children.Add(_detectedLabel);
+        body.Children.Add(topRow);
         body.Children.Add(pane);
 
         SetBody(body);
@@ -137,7 +141,7 @@ public sealed class QuickFormatPage : EditorToolPage
     public override bool CanSave => true;
     public override FrameworkElement? HeaderActions => _headerActions;
 
-    /// <summary>No command-bar commands — Open Data Formatter, Save and Copy live in the title bar
+    /// <summary>No command-bar commands — Open Data Formatter and Save live in the title bar
     /// instead (see <see cref="HeaderActions"/>), which also lets the (now empty) command bar
     /// collapse.</summary>
     public override IReadOnlyList<ToolCommand> Commands => [];
@@ -246,7 +250,8 @@ public sealed class QuickFormatPage : EditorToolPage
     }
 
     /// <summary>Toggles which of Copy / the invalid-data warning occupies their one shared slot in
-    /// the title bar — see the type doc comment for why they are mutually exclusive there.</summary>
+    /// the row above the editor — see the type doc comment for why they are mutually exclusive
+    /// there.</summary>
     private void SetValidity(bool valid)
     {
         _copyButton.Visibility = valid ? Visibility.Visible : Visibility.Collapsed;
