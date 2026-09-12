@@ -33,6 +33,7 @@ public sealed class ToolWindowBase : Window
         var windowId = Win32Interop.GetWindowIdFromWindow(_hwnd);
         _appWindow = AppWindow.GetFromWindowId(windowId);
         page.HostHwnd = _hwnd;
+        page.HostManager = manager;
 
         Title = definition.DisplayName;
         ExtendsContentIntoTitleBar = true;

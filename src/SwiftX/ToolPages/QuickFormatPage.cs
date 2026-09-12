@@ -13,20 +13,22 @@ using WinRT.Interop;
 namespace SwiftX.ToolPages;
 
 /// <summary>
-/// The lightweight sibling of <see cref="FormatterPage"/> ("Data Formatter"): no editing surface,
-/// no command bar, no Advanced sidebar. Opening it reads whatever text is already on the
-/// clipboard, auto-detects JSON, XML, YAML or CSV via <see cref="FormatRegistry"/>, formats it
-/// with the industry-standard 2-space indent (<see cref="FormatOptions.Default"/>), and shows the
-/// result read-only. Copy and Save are the only two actions — icon buttons living in the title bar
-/// (<see cref="HeaderActions"/>) rather than a command bar; an empty <see cref="Commands"/> list is
-/// what lets that bar collapse away entirely (see <see cref="EditorToolPage.InitializeChrome"/>,
-/// the same trick <see cref="SecureValuesPage"/> already uses for its own title-bar-only Save).
+/// The lightweight sibling of <see cref="FormatterPage"/> ("Data Formatter"): no command bar, no
+/// Advanced sidebar, no Format/Validate/Search/Convert. Opening it reads whatever text is already
+/// on the clipboard, auto-detects JSON, XML, YAML or CSV via <see cref="FormatRegistry"/>, and
+/// formats it with the industry-standard 2-space indent (<see cref="FormatOptions.Default"/>) —
+/// an empty clipboard just leaves the editor's placeholder inviting a paste, the same "nothing
+/// copied yet" state <see cref="FormatterPage"/> shows. A paste always replaces the document with
+/// the clipboard's current text and reformats it, rather than inserting at the caret: this tool
+/// shows one payload at a time, so "I copied something else, paste it in" should look exactly like
+/// reopening the tool, not like editing a document with two payloads spliced together.
 /// <para>
-/// This exists alongside Data Formatter rather than as a mode of it: Data Formatter is the editing
-/// workspace (Format/Validate/Search/Minify/Sort/Convert, a resizable 900x640 window) for working
-/// on a document; this is the "glance at what I just copied" tool — auto-run, no editing, a small
-/// fixed-purpose window (see its <see cref="ToolDefinition.WindowSize"/> in
-/// <see cref="ToolCatalog"/>) that a user opens, reads, copies or saves, and closes.
+/// Three icon buttons live in the title bar (<see cref="HeaderActions"/>) rather than a command
+/// bar — Open Data Formatter, Save, Copy, in that order — which is what lets the command bar
+/// collapse away entirely (see <see cref="EditorToolPage.InitializeChrome"/>, the same trick
+/// <see cref="SecureValuesPage"/> already uses for its own title-bar-only Save). Open Data
+/// Formatter hands off to the full editing tool (<see cref="ToolKind.Data"/>) via
+/// <see cref="ToolPage.HostManager"/> for anything beyond a quick glance.
 /// </para>
 /// </summary>
 public sealed class QuickFormatPage : EditorToolPage
@@ -34,13 +36,15 @@ public sealed class QuickFormatPage : EditorToolPage
     // Built from the codepoint, not a literal character in source, so the glyph can't be silently
     // swapped for a different (or invisible) private-use character by a stray copy/paste — see
     // the memory note on this exact failure mode. Same codepoints as SecureValuesPage/
-    // CertificatePage's Copy and FormatterPage's Save, for one consistent icon vocabulary.
-    private static readonly string CopyGlyph = char.ConvertFromUtf32(0xE8C8);
+    // CertificatePage's Copy, FormatterPage's Save, and the Data Formatter catalog entry's own
+    // glyph, for one consistent icon vocabulary.
+    private static readonly string OpenFormatterGlyph = char.ConvertFromUtf32(0xE943);
     private static readonly string SaveGlyph = char.ConvertFromUtf32(0xE74E);
+    private static readonly string CopyGlyph = char.ConvertFromUtf32(0xE8C8);
 
-    private readonly CodeView _view = new();
+    private readonly CodeEditor _editor = new();
     private readonly FrameworkElement _headerActions;
-    private readonly TextBlock _statusLabel = new()
+    private readonly TextBlock _detectedLabel = new()
     {
         Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
         Opacity = 0.75,
@@ -51,44 +55,67 @@ public sealed class QuickFormatPage : EditorToolPage
 
     public QuickFormatPage()
     {
-        _view.AccessibleName = Loc.Get("QuickFormat.Output");
+        _editor.PlaceholderText = Loc.Get("QuickFormat.InputPlaceholder");
+        _editor.AccessibleName = Loc.Get("Common.Input");
 
-        var copyButton = IconButton(CopyGlyph, Loc.Get("Tool.CopyOutput"), HoverAccent.Copy);
-        copyButton.Click += (_, _) => CopyOutput();
+        // A paste is a deliberate "here's a document" moment: reload straight from the clipboard
+        // (the same call the initial open uses) rather than trusting whatever RichEditBox merged
+        // at the caret, so the result is always exactly the pasted payload, formatted — see the
+        // type doc comment.
+        _editor.Pasted += (_, _) => _ = LoadFromClipboardAsync();
+        _editor.TextChanged += (_, _) =>
+        {
+            if (_editor.Text.Length == 0)
+                _detectedLabel.Text = "";
+        };
+
+        var openFormatterButton = IconButton(OpenFormatterGlyph, Loc.Get("QuickFormat.OpenDataFormatter"), HoverAccent.Accent);
+        openFormatterButton.Click += (_, _) => HostManager?.OpenTool(ToolKind.Data);
 
         var saveButton = IconButton(SaveGlyph, Loc.Get("Tool.Save"), HoverAccent.Accent);
         saveButton.Click += (_, _) => _ = SaveToFileAsync();
+
+        var copyButton = IconButton(CopyGlyph, Loc.Get("Tool.CopyOutput"), HoverAccent.Copy);
+        copyButton.Click += (_, _) => CopyOutput();
 
         _headerActions = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 4,
-            Children = { copyButton, saveButton },
+            Children = { openFormatterButton, saveButton, copyButton },
         };
 
         var body = new Grid();
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(_statusLabel, 0);
-        var pane = Pane(_view);
+        Grid.SetRow(_detectedLabel, 0);
+        var pane = Pane(_editor);
         Grid.SetRow(pane, 1);
-        body.Children.Add(_statusLabel);
+        body.Children.Add(_detectedLabel);
         body.Children.Add(pane);
 
         SetBody(body);
         InitializeChrome();
 
-        ShowStatus(Loc.Get("QuickFormat.Loading"));
         _ = LoadFromClipboardAsync();
     }
 
     public override ToolKind Kind => ToolKind.QuickFormat;
+
+    /// <summary>
+    /// Always false, even though the editor is now writable: this tool shows one glanced-at
+    /// payload rather than a document the user is composing, its source content is still sitting
+    /// wherever it was originally copied from, and forcing a save/discard prompt on every close
+    /// would be exactly the friction a "quick" tool shouldn't have.
+    /// </summary>
     public override bool IsDirty => false;
+
     public override bool CanSave => true;
     public override FrameworkElement? HeaderActions => _headerActions;
 
-    /// <summary>No command-bar commands — Copy and Save live in the title bar instead (see
-    /// <see cref="HeaderActions"/>), which also lets the (now empty) command bar collapse.</summary>
+    /// <summary>No command-bar commands — Open Data Formatter, Save and Copy live in the title bar
+    /// instead (see <see cref="HeaderActions"/>), which also lets the (now empty) command bar
+    /// collapse.</summary>
     public override IReadOnlyList<ToolCommand> Commands => [];
 
     public override Task<bool> SaveAsync() => SaveToFileAsync();
@@ -102,18 +129,18 @@ public sealed class QuickFormatPage : EditorToolPage
         var read = await InputLimits.ReadTextAsync(path);
         if (!read.Ok)
         {
-            ShowStatus(read.Error);
+            _detectedLabel.Text = read.Error;
             return;
         }
         ApplyText(read.Text);
     }
 
     /// <summary>
-    /// The auto-run entry point: reads the clipboard the instant the window opens (rather than
-    /// waiting for a paste), so "quickly format the data I already copied" needs no action beyond
-    /// opening the tool. Falls back to a friendly status message rather than an error state for
-    /// every non-fatal case (no text on the clipboard, clipboard access denied) — there is nothing
-    /// wrong here for the user to fix, just nothing to show yet.
+    /// Reads the clipboard and, if there is text on it, formats it into the editor — used both for
+    /// the auto-run on open and for every paste (see the type doc comment on why a paste re-reads
+    /// the clipboard rather than trusting the caret-inserted text). Leaves the editor exactly as it
+    /// was for every non-fatal case (nothing on the clipboard, clipboard access denied): the
+    /// placeholder already invites a paste, so there is nothing to show for those beyond that.
     /// </summary>
     private async Task LoadFromClipboardAsync()
     {
@@ -122,16 +149,12 @@ public sealed class QuickFormatPage : EditorToolPage
         {
             var content = Clipboard.GetContent();
             if (!content.Contains(StandardDataFormats.Text))
-            {
-                if (!PageClosing.IsCancellationRequested) ShowStatus(Loc.Get("QuickFormat.ClipboardEmpty"));
                 return;
-            }
             text = await content.GetTextAsync();
         }
         catch (Exception ex)
         {
             Diag.Log("QuickFormatPage.LoadFromClipboardAsync failed: " + ex);
-            if (!PageClosing.IsCancellationRequested) ShowStatus(Loc.Get("QuickFormat.ClipboardUnavailable"));
             return;
         }
 
@@ -142,17 +165,11 @@ public sealed class QuickFormatPage : EditorToolPage
     private void ApplyText(string text)
     {
         if (string.IsNullOrEmpty(text))
-        {
-            ShowStatus(Loc.Get("QuickFormat.ClipboardEmpty"));
             return;
-        }
 
         var cleaned = InputSanitizer.Clean(text);
         if (cleaned.Length == 0)
-        {
-            ShowStatus(Loc.Get("QuickFormat.ClipboardEmpty"));
             return;
-        }
 
         var format = FormatRegistry.DetectBest(cleaned);
         var result = format.Format(cleaned, FormatOptions.Default);
@@ -165,32 +182,25 @@ public sealed class QuickFormatPage : EditorToolPage
     private void SetContent(string text, IDataFormat? format)
     {
         _activeFormat = format;
-        var tokenizer = format?.Tokenizer ?? PlainTokenizer.Instance;
-        _view.SetContent(text, tokenizer.Tokenize(text));
-        _statusLabel.Text = format is null
+        _editor.Text = text;
+        _editor.Tokenizer = format?.Tokenizer ?? PlainTokenizer.Instance;
+        _detectedLabel.Text = format is null
             ? Loc.Get("QuickFormat.PlainText")
             : Loc.Format("Formatter.FormatName", format.Id.ToUpperInvariant());
     }
 
-    private void ShowStatus(string message)
-    {
-        _activeFormat = null;
-        _view.Clear();
-        _statusLabel.Text = message;
-    }
-
     private void CopyOutput()
     {
-        if (_view.Text.Length == 0)
+        if (_editor.Text.Length == 0)
             return;
         var package = new DataPackage();
-        package.SetText(_view.Text);
+        package.SetText(_editor.Text);
         Clipboard.SetContent(package);
     }
 
     private async Task<bool> SaveToFileAsync()
     {
-        if (_view.Text.Length == 0)
+        if (_editor.Text.Length == 0)
             return false;
 
         try
@@ -212,7 +222,7 @@ public sealed class QuickFormatPage : EditorToolPage
             if (file is null)
                 return false;
 
-            File.WriteAllText(file.Path, _view.Text);
+            File.WriteAllText(file.Path, _editor.Text);
             return true;
         }
         catch (Exception ex)
