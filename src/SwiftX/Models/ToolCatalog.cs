@@ -9,6 +9,7 @@ public enum ToolKind
     SecureValues,
     Base64,
     Certificate,
+    QuickFormat,
 }
 
 public sealed record ToolDefinition(
@@ -18,6 +19,13 @@ public sealed record ToolDefinition(
     string Glyph,
     Func<ToolPage> Factory)
 {
+    /// <summary>
+    /// The client-area size <see cref="ToolWindows.ToolWindowBase"/> opens this tool at, or null
+    /// for its 900x640 default. Quick Format opts into a smaller size — it has no editing surface
+    /// or Advanced sidebar to fill the default footprint with, and a smaller window is what makes
+    /// it read as the lightweight "quick glance" tool it is next to Data Formatter's full window.
+    /// </summary>
+    public (double Width, double Height)? WindowSize { get; init; }
 }
 
 /// <summary>Built-in developer tools: formatters and local secure values.</summary>
@@ -31,6 +39,16 @@ public static class ToolCatalog
         // the detection step", so they were merged into this one entry.
         new ToolDefinition(ToolKind.Data, "Data Formatter", "Auto-detect and format JSON or XML.", "\uE943",
             () => new FormatterPage()),
+        // The lightweight sibling of Data Formatter above: no editing, no command bar, no
+        // Advanced sidebar. It reads the clipboard the moment it opens, auto-detects JSON, XML,
+        // YAML or CSV, and shows the result formatted with a Copy and a Save button \u2014 see
+        // QuickFormatPage's own doc comment for why this exists as a separate tool rather than a
+        // mode of Data Formatter.
+        new ToolDefinition(ToolKind.QuickFormat, "Quick Format", "Auto-format your last copied JSON, XML, YAML or CSV.", "\uE945",
+            () => new QuickFormatPage())
+        {
+            WindowSize = (560, 460),
+        },
         new ToolDefinition(ToolKind.SecureValues, "Secure values", "Store keys and secrets locally (masked).", "\uE72E",
             () => new SecureValuesPage()),
         new ToolDefinition(ToolKind.Base64, "Base64", "Encode and decode Base64 text.", "B64",

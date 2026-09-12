@@ -139,6 +139,7 @@
                     <ComboBox x:Name="ToolBox" Width="280"
                               AutomationProperties.Name="Tool">
                         <ComboBoxItem Content="Data" Tag="Data" IsSelected="True" />
+                        <ComboBoxItem Content="Quick Format" Tag="QuickFormat" />
                         <ComboBoxItem Content="Secure values" Tag="SecureValues" />
                         <ComboBoxItem Content="Base64" Tag="Base64" />
                         <ComboBoxItem Content="Certificate" Tag="Certificate" />

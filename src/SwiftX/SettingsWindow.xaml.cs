@@ -2333,6 +2333,7 @@ public sealed partial class SettingsWindow : Window
     // silently swapped for a different (or invisible) private-use character by a stray
     // copy/paste. See the memory note on this exact failure mode.
     private static readonly string DataGlyph = char.ConvertFromUtf32(0xE943);
+    private static readonly string QuickFormatGlyph = char.ConvertFromUtf32(0xE945);
     private static readonly string SecureValuesGlyph = char.ConvertFromUtf32(0xE72E);
     private static readonly string CertificateGlyph = char.ConvertFromUtf32(0xEB95);
 
@@ -2340,6 +2341,8 @@ public sealed partial class SettingsWindow : Window
     [
         new("Data", ToolKind.Data, "Data formatter", "Auto-detect JSON or XML and format it.", DataGlyph, false,
             c => c.ShowDataTool, (c, v) => c.ShowDataTool = v),
+        new("QuickFormat", ToolKind.QuickFormat, "Quick Format", "Auto-format your last copied JSON, XML, YAML or CSV.", QuickFormatGlyph, false,
+            c => c.ShowQuickFormatTool, (c, v) => c.ShowQuickFormatTool = v),
         new("SecureValues", ToolKind.SecureValues, "Secure values", "Local key/secret store with masked values.", SecureValuesGlyph, false,
             c => c.ShowSecureValuesTool, (c, v) => c.ShowSecureValuesTool = v),
         new("Base64", ToolKind.Base64, "Base64", "Encode and decode Base64 text.", "B64", true,
