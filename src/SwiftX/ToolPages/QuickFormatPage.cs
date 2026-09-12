@@ -205,7 +205,7 @@ public sealed class QuickFormatPage : EditorToolPage
         {
             SetContent(result.Text, format);
         }
-        else if (format.DetectConfidence(cleaned) > 0)
+        else if (LooksIntendedAsStructuredData(cleaned, format))
         {
             // Recognizably shaped as this format (braces, angle brackets, "key:" lines, comma
             // rows) but failed to parse — this is the "invalid data" case, distinct from plain
@@ -216,6 +216,35 @@ public sealed class QuickFormatPage : EditorToolPage
         {
             SetContent(cleaned, null);
         }
+    }
+
+    /// <summary>
+    /// Whether text that failed to parse as <paramref name="format"/> still looks like it was
+    /// meant to be one, rather than being plain prose that was never structured data in the first
+    /// place. <see cref="IDataFormat.DetectConfidence"/> alone isn't a reliable signal for this:
+    /// <see cref="JsonFormat"/>'s in particular requires the outer braces/brackets to actually
+    /// match before it scores above zero — which is exactly the property most broken JSON lacks (a
+    /// missing closing brace, a paste truncated mid-document), so relying on it here silently
+    /// downgraded the single most common "obviously broken JSON" shape to plain text instead of
+    /// flagging it. A leading structural character — <c>{</c>/<c>[</c> for JSON, <c>&lt;</c> for
+    /// XML — is a weaker but far more robust signal of intent, since it doesn't depend on the rest
+    /// of the document being well-formed at all.
+    /// </summary>
+    private static bool LooksIntendedAsStructuredData(string text, IDataFormat format)
+    {
+        if (format.DetectConfidence(text) > 0)
+            return true;
+
+        var trimmed = text.AsSpan().TrimStart();
+        if (trimmed.Length == 0)
+            return false;
+
+        return format.Id switch
+        {
+            "json" => trimmed[0] is '{' or '[',
+            "xml" => trimmed[0] == '<',
+            _ => false,
+        };
     }
 
     private void SetContent(string text, IDataFormat? format)
