@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="806" viewBox="0 0 1040 806" font-family="'Segoe UI',Inter,system-ui,sans-serif" role="img" aria-label="SwiftX Elements screen">
+<title>SwiftX Elements screen</title>
+<defs><filter id="sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.35"/></filter></defs>
+<rect width="1040" height="806" fill="#141414"/>
+<rect x="0" y="0" width="1040" height="40" rx="0" fill="#0F0F0F"/>
+<text x="16" y="25" font-size="12" font-weight="600" fill="#FFFFFF">◉  SwiftX</text>
+<text x="1024" y="25" font-size="12" font-weight="400" fill="#888888" text-anchor="end">—  ☐  ✕</text>
+<circle cx="48" cy="88" r="18" fill="none" stroke="#2E2E2E" stroke-width="1"/>
+<text x="48" y="94" font-size="15" font-weight="400" fill="#FFFFFF" text-anchor="middle">←</text>
+<text x="78" y="94" font-size="20" font-weight="700" fill="#FFFFFF">Elements</text>
+<text x="78" y="116" font-size="12" font-weight="400" fill="#888888">Apps, files, folders, links and groups on the ring.</text>
+<rect x="103.0" y="150" width="258" height="268" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1" filter="url(#sh)"/>
+<circle cx="143.0" cy="194" r="22" fill="#0F0F0F" stroke="#2E2E2E" stroke-width="1"/>
+<text x="143.0" y="199" font-size="11" font-weight="700" fill="#3DDCD3" text-anchor="middle">APP</text>
+<rect x="301.0" y="184" width="40" height="20" rx="10.0" fill="#3DDCD3"/>
+<circle cx="335.0" cy="194" r="7.5" fill="#141414"/>
+<text x="121.0" y="254" font-size="18" font-weight="700" fill="#FFFFFF">Chrome</text>
+<text x="121.0" y="308" font-size="11.5" font-weight="400" fill="#888888">Application</text>
+<text x="121.0" y="325" font-size="11.5" font-weight="400" fill="#888888">C:\Program Files\…</text>
+<rect x="121.0" y="342" width="46" height="22" rx="11" fill="#242424"/>
+<text x="144.0" y="357" font-size="10.5" font-weight="500" fill="#C8C8C8" text-anchor="middle">App</text>
+<rect x="103.0" y="376" width="258" height="1" rx="0" fill="#2E2E2E"/>
+<text x="232.0" y="403" font-size="12" font-weight="700" fill="#3DDCD3" text-anchor="middle" letter-spacing="1.2">EDIT</text>
+<rect x="391.0" y="150" width="258" height="268" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1" filter="url(#sh)"/>
+<circle cx="431.0" cy="194" r="22" fill="#0F0F0F" stroke="#2E2E2E" stroke-width="1"/>
+<text x="431.0" y="199" font-size="11" font-weight="700" fill="#3DDCD3" text-anchor="middle">DIR</text>
+<rect x="589.0" y="184" width="40" height="20" rx="10.0" fill="#3DDCD3"/>
+<circle cx="623.0" cy="194" r="7.5" fill="#141414"/>
+<text x="409.0" y="254" font-size="18" font-weight="700" fill="#FFFFFF">Projects</text>
+<text x="409.0" y="308" font-size="11.5" font-weight="400" fill="#888888">Folder</text>
+<text x="409.0" y="325" font-size="11.5" font-weight="400" fill="#888888">D:\work\projects</text>
+<rect x="409.0" y="342" width="70" height="22" rx="11" fill="#242424"/>
+<text x="444.0" y="357" font-size="10.5" font-weight="500" fill="#C8C8C8" text-anchor="middle">Folder</text>
+<rect x="391.0" y="376" width="258" height="1" rx="0" fill="#2E2E2E"/>
+<text x="520.0" y="403" font-size="12" font-weight="700" fill="#3DDCD3" text-anchor="middle" letter-spacing="1.2">EDIT</text>
+<rect x="679.0" y="150" width="258" height="268" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1" filter="url(#sh)"/>
+<circle cx="719.0" cy="194" r="22" fill="#0F0F0F" stroke="#2E2E2E" stroke-width="1"/>
+<text x="719.0" y="199" font-size="11" font-weight="700" fill="#3DDCD3" text-anchor="middle">DOC</text>
+<rect x="877.0" y="184" width="40" height="20" rx="10.0" fill="#3DDCD3"/>
+<circle cx="911.0" cy="194" r="7.5" fill="#141414"/>
+<text x="697.0" y="254" font-size="18" font-weight="700" fill="#FFFFFF">Design brief</text>
+<text x="697.0" y="308" font-size="11.5" font-weight="400" fill="#888888">File</text>
+<text x="697.0" y="325" font-size="11.5" font-weight="400" fill="#888888">brief.pdf</text>
+<rect x="697.0" y="342" width="54" height="22" rx="11" fill="#242424"/>
+<text x="724.0" y="357" font-size="10.5" font-weight="500" fill="#C8C8C8" text-anchor="middle">File</text>
+<rect x="679.0" y="376" width="258" height="1" rx="0" fill="#2E2E2E"/>
+<text x="808.0" y="403" font-size="12" font-weight="700" fill="#3DDCD3" text-anchor="middle" letter-spacing="1.2">EDIT</text>
+<rect x="103.0" y="450" width="258" height="268" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1" filter="url(#sh)"/>
+<circle cx="143.0" cy="494" r="22" fill="#0F0F0F" stroke="#2E2E2E" stroke-width="1"/>
+<text x="143.0" y="499" font-size="11" font-weight="700" fill="#3DDCD3" text-anchor="middle">WEB</text>
+<rect x="301.0" y="484" width="40" height="20" rx="10.0" fill="#3DDCD3"/>
+<circle cx="335.0" cy="494" r="7.5" fill="#141414"/>
+<text x="121.0" y="554" font-size="18" font-weight="700" fill="#FFFFFF">GitHub</text>
+<text x="121.0" y="608" font-size="11.5" font-weight="400" fill="#888888">Web link</text>
+<text x="121.0" y="625" font-size="11.5" font-weight="400" fill="#888888">github.com/framedparadox</text>
+<rect x="121.0" y="642" width="54" height="22" rx="11" fill="#242424"/>
+<text x="148.0" y="657" font-size="10.5" font-weight="500" fill="#C8C8C8" text-anchor="middle">Link</text>
+<rect x="103.0" y="676" width="258" height="1" rx="0" fill="#2E2E2E"/>
+<text x="232.0" y="703" font-size="12" font-weight="700" fill="#3DDCD3" text-anchor="middle" letter-spacing="1.2">EDIT</text>
+<rect x="391.0" y="450" width="258" height="268" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1" filter="url(#sh)"/>
+<circle cx="431.0" cy="494" r="22" fill="#0F0F0F" stroke="#2E2E2E" stroke-width="1"/>
+<text x="431.0" y="499" font-size="11" font-weight="700" fill="#3DDCD3" text-anchor="middle">GRP</text>
+<rect x="589.0" y="484" width="40" height="20" rx="10.0" fill="#3DDCD3"/>
+<circle cx="623.0" cy="494" r="7.5" fill="#141414"/>
+<text x="409.0" y="554" font-size="18" font-weight="700" fill="#FFFFFF">Dev tools</text>
+<text x="409.0" y="608" font-size="11.5" font-weight="400" fill="#888888">Group · 4 items</text>
+<text x="409.0" y="625" font-size="11.5" font-weight="400" fill="#888888">opens a nested ring</text>
+<rect x="409.0" y="642" width="62" height="22" rx="11" fill="#242424"/>
+<text x="440.0" y="657" font-size="10.5" font-weight="500" fill="#C8C8C8" text-anchor="middle">Group</text>
+<rect x="391.0" y="676" width="258" height="1" rx="0" fill="#2E2E2E"/>
+<text x="520.0" y="703" font-size="12" font-weight="700" fill="#3DDCD3" text-anchor="middle" letter-spacing="1.2">EDIT</text>
+<rect x="679.0" y="450" width="258" height="268" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1" filter="url(#sh)"/>
+<circle cx="719.0" cy="494" r="22" fill="#0F0F0F" stroke="#2E2E2E" stroke-width="1"/>
+<text x="719.0" y="499" font-size="11" font-weight="700" fill="#3DDCD3" text-anchor="middle">LNK</text>
+<rect x="877.0" y="484" width="40" height="20" rx="10.0" fill="#2E2E2E"/>
+<circle cx="887.0" cy="494" r="7.5" fill="#888888"/>
+<text x="697.0" y="554" font-size="18" font-weight="700" fill="#FFFFFF">Notes</text>
+<text x="697.0" y="608" font-size="11.5" font-weight="400" fill="#888888">Shortcut</text>
+<text x="697.0" y="625" font-size="11.5" font-weight="400" fill="#888888">notes.lnk</text>
+<rect x="697.0" y="642" width="86" height="22" rx="11" fill="#242424"/>
+<text x="740.0" y="657" font-size="10.5" font-weight="500" fill="#C8C8C8" text-anchor="middle">Shortcut</text>
+<rect x="679.0" y="676" width="258" height="1" rx="0" fill="#2E2E2E"/>
+<text x="808.0" y="703" font-size="12" font-weight="700" fill="#3DDCD3" text-anchor="middle" letter-spacing="1.2">EDIT</text>
+<text x="103.0" y="768" font-size="10" font-weight="600" fill="#3DDCD3" letter-spacing="0.6">CARD 258×268 · r=8 · shadow · gutter 30/32 · 3 cols · toggle = show on ring</text>
+<text x="32" y="782" font-size="10" font-weight="400" fill="#5A5A5A">Target: Elements screen. Settings and Close are system items and are not listed.</text>
+</svg>

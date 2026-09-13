@@ -58,8 +58,9 @@ public static class ThemeHelper
     /// Every key but the orbit bubbles' own glass tint behaves exactly like
     /// <see cref="ColorFor(bool, string)"/> regardless of <paramref name="isBlack"/> — Black only
     /// ever changes SwiftX's own surface fills (this key, and Settings' resource overrides in
-    /// SettingsWindow.ApplyBlackOverrides), never foreground/border/muted/accent, which read the
-    /// same on any dark surface.
+    /// ShellWindow.ApplyBlackOverrides), never foreground/border/muted/accent, which read the
+    /// same on any dark surface — with one exception since the app shell landed,
+    /// <c>ShellCardBorderBrush</c>, whose Midnight value is a step off Dark's.
     /// </summary>
     public static Color ColorFor(bool dark, bool isBlack, string key) => key switch
     {
@@ -68,6 +69,13 @@ public static class ThemeHelper
         // so a higher alpha is what actually tells the two apart on the orbit itself.
         "OrbitBubbleGlassTint" or "OrbitBubbleGlassTintColor" when isBlack =>
             Color.FromArgb(0xCC, 0, 0, 0),
+
+        // Midnight's card edge, matching ShellWindow.BlackOverrides' own value for the same key.
+        // The shell asks for this one in code (the theme cards' unselected border, written
+        // directly onto the element and so unreachable by a dictionary), which is why it needs a
+        // Black-aware answer here rather than falling through to Dark's #444444.
+        "ShellCardBorderBrush" when isBlack =>
+            Color.FromArgb(255, 0x2A, 0x2A, 0x2A),
 
         _ => ColorFor(dark, key),
     };
@@ -105,6 +113,17 @@ public static class ThemeHelper
 
         "OrbitCloseHoverForeground" =>
             Color.FromArgb(255, 0xFF, 0xFF, 0xFF),
+
+        // Two of the shell's own tokens, duplicated here for the same reason every key above is:
+        // a caller that has to write a brush directly onto an element (ShellWindow's theme cards
+        // and its Settings rail, whose selected/unselected state is an assignment, not a
+        // {ThemeResource} binding a dictionary swap could reach) has no element-scoped way to read
+        // Themes/Colors.xaml back. Keep these two in step with that file's Dark/Light values.
+        "ShellCardBorderBrush" =>
+            dark ? Color.FromArgb(255, 0x44, 0x44, 0x44) : Color.FromArgb(255, 0xE0, 0xE0, 0xE0),
+
+        "SettingsMutedBrush" =>
+            dark ? Color.FromArgb(255, 0x80, 0x80, 0x80) : Color.FromArgb(255, 0x77, 0x77, 0x77),
 
         _ => dark ? Color.FromArgb(255, 0, 0, 0) : Color.FromArgb(255, 255, 255, 255),
     };

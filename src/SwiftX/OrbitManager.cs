@@ -15,7 +15,8 @@ public sealed class OrbitManager
     private TrayIconService? _tray;
     private HotkeyService? _hotkeys;
     private HotCornerWatcher? _hotCorner;
-    private SettingsWindow? _settingsWindow;
+    private ShellWindow? _shellWindow;
+    private OnboardingWindow? _onboardingWindow;
     private AddItemWindow? _addItemWindow;
     private OrbitWindow? _orbitWindow;
     private bool _hiddenByUser;
@@ -33,16 +34,17 @@ public sealed class OrbitManager
     public ToolWindowLauncher Tools { get; }
 
     /// <summary>Whether Settings is currently open — <see cref="OrbitWindow"/> checks this so it can
-    /// stay on screen instead of dismissing itself the instant Settings takes foreground
+    /// stay on screen instead of dismissing itself the instant the app window takes foreground
     /// activation away from it.</summary>
-    public bool IsSettingsOpen => _settingsWindow is not null;
+    public bool IsSettingsOpen => _shellWindow is not null;
 
     /// <summary>Same idea as <see cref="IsSettingsOpen"/>, for the "Add new" quick action's own
     /// window (a Settings orbit item flyout child — see SystemOrbitItems.CreateAddNew).</summary>
     public bool IsAddItemOpen => _addItemWindow is not null;
 
     /// <summary>
-    /// Whether Settings or Add-new currently holds foreground focus — checked by hwnd against the
+    /// Whether the app window, the set-up guide or Add-new currently holds foreground focus —
+    /// checked by hwnd against the
     /// live foreground window, not by <see cref="IsSettingsOpen"/>/<see cref="IsAddItemOpen"/>
     /// merely being true. <see cref="OrbitWindow"/>'s outside-click dismiss uses this rather than
     /// those, because a window being <em>open</em> (however briefly, or minimized, or sitting
@@ -54,7 +56,9 @@ public sealed class OrbitManager
     public bool IsExemptWindowForeground()
     {
         nint fg = NativeMethods.GetForegroundWindow();
-        if (_settingsWindow is not null && WinRT.Interop.WindowNative.GetWindowHandle(_settingsWindow) == fg)
+        if (_shellWindow is not null && WinRT.Interop.WindowNative.GetWindowHandle(_shellWindow) == fg)
+            return true;
+        if (_onboardingWindow is not null && WinRT.Interop.WindowNative.GetWindowHandle(_onboardingWindow) == fg)
             return true;
         if (_addItemWindow is not null && WinRT.Interop.WindowNative.GetWindowHandle(_addItemWindow) == fg)
             return true;
@@ -116,18 +120,30 @@ public sealed class OrbitManager
         // repairs itself here, once, the first time a build that knows about it runs.
         StartupService.RepairRegistration();
 
-        if (openSettings)
+        if (!openSettings)
+            return;
+
+        if (firstRun)
         {
-            // The offer to put a shortcut on the desktop rides along with the first run's Settings
-            // window rather than arriving as a dialog of its own. A modal on the very first launch,
-            // before the user has seen anything the app does, is the definition of obnoxious; an
-            // InfoBar at the top of the page they were going to be shown anyway asks the question
-            // once, takes one click to answer either way, and leaves the same switch sitting a few
-            // centimetres below it for anyone who dismisses it and changes their mind. It is also
-            // skipped outright when a SwiftX shortcut is already on the desktop, so a reinstall
-            // over an existing one asks nothing.
-            OpenSettings(offerDesktopShortcut: firstRun && !DesktopShortcutService.Exists());
+            // A first run gets the set-up guide, not the app window: SwiftX puts nothing on the
+            // taskbar and summons itself with a keyboard shortcut nobody has been told about, so
+            // the two questions it asks — what goes on the orbit, and which keys bring it up — are
+            // the difference between an app that works and one that appears to do nothing at all.
+            //
+            // Note the ordering with SeedDefaults above: the orbit is already seeded by the time
+            // the guide opens, and the guide only ever replaces those items if the user presses
+            // Finish. Dismissing it therefore lands exactly where SwiftX landed before the guide
+            // existed — a working default orbit — rather than an empty one. It also means the
+            // guide's own tick-boxes and the old default are the same six items (see
+            // OnboardingCatalog), so "Finish" without touching anything is a no-op by design.
+            OpenOnboarding(openShellAfter: true);
+            return;
         }
+
+        // Every later launch just opens the app window. The desktop-shortcut prompt is not offered
+        // from here: it is a first-run question, and on a first run the guide above asks it outright
+        // (or, if the guide was dismissed, hands it to the app window itself — see OpenOnboarding).
+        OpenSettings();
     }
 
     public void Save() => OrbitStore.Save(Config);
@@ -293,30 +309,40 @@ public sealed class OrbitManager
             _orbitWindow?.Dismiss();
     }
 
+    /// <summary>
+    /// Opens the SwiftX app window (<see cref="ShellWindow"/>) on its Home screen.
+    /// <para>
+    /// Still called <c>OpenSettings</c> because that is what every caller is asking for — the tray
+    /// menu's Settings entry, the orbit's own Settings bubble, and a second launch of the app
+    /// handed here by <see cref="SingleInstanceSignal"/>. Settings is now one screen inside that
+    /// window rather than the window itself, and the gear on Home is one click away.
+    /// </para>
+    /// </summary>
     public void OpenSettings() => OpenSettings(offerDesktopShortcut: false);
 
     /// <param name="offerDesktopShortcut">
-    /// Shows the first-run prompt offering to put a SwiftX shortcut on the desktop. Only ever true
-    /// for the first launch on a machine — see <see cref="Start"/>.
+    /// Opens on Settings › General with the prompt offering to put a SwiftX shortcut on the
+    /// desktop. Only ever true for a first launch whose set-up guide did not run or was dismissed
+    /// — the guide asks the same question itself, so it is not asked twice. See <see cref="Start"/>.
     /// </param>
     public void OpenSettings(bool offerDesktopShortcut)
     {
-        if (_settingsWindow is null)
+        if (_shellWindow is null)
         {
-            _settingsWindow = new SettingsWindow(this, offerDesktopShortcut);
-            _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+            _shellWindow = new ShellWindow(this, offerDesktopShortcut);
+            _shellWindow.Closed += (_, _) => _shellWindow = null;
         }
-        else if (_settingsWindow.AppWindow.Presenter is OverlappedPresenter presenter &&
+        else if (_shellWindow.AppWindow.Presenter is OverlappedPresenter presenter &&
                  presenter.State == OverlappedPresenterState.Minimized)
         {
-            // Activate() on a minimized window shows it but leaves it minimized, so a Settings
-            // window the user had put away would answer a fresh launch of the app with a taskbar
-            // flash and nothing else.
+            // Activate() on a minimized window shows it but leaves it minimized, so an app window
+            // the user had put away would answer a fresh launch of the app with a taskbar flash and
+            // nothing else.
             presenter.Restore();
         }
 
-        _settingsWindow.Activate();
-        WindowChrome.CenterOnCursor(_settingsWindow.AppWindow, _settingsWindow.AppWindow.Id);
+        _shellWindow.Activate();
+        WindowChrome.CenterOnCursor(_shellWindow.AppWindow, _shellWindow.AppWindow.Id);
 
         // Activate() alone is not enough to raise a window that is already open behind others: it
         // asks for activation, and Windows' foreground lock is free to turn that into a flashing
@@ -324,7 +350,46 @@ public sealed class OrbitManager
         // That is exactly SwiftX's situation when the request arrived as a broadcast from a second
         // process (see SingleInstanceSignal, which hands this process the foreground right first).
         // ForceForeground is the same borrowed-input-state dance the orbit's own summon uses.
-        WindowChrome.ForceForeground(WinRT.Interop.WindowNative.GetWindowHandle(_settingsWindow));
+        WindowChrome.ForceForeground(WinRT.Interop.WindowNative.GetWindowHandle(_shellWindow));
+    }
+
+    /// <summary>
+    /// Opens the first-run set-up guide — what goes on the orbit, and which keys summon it.
+    /// <para>
+    /// Opened automatically by <see cref="Start"/> on a first run, and on demand from Settings ›
+    /// General ("Set-up guide") afterwards, which is why it is not gated on the first run here:
+    /// re-running it against an orbit that already exists is a supported thing to do, and the guide
+    /// writes nothing unless the user presses Finish.
+    /// </para>
+    /// </summary>
+    /// <param name="openShellAfter">
+    /// Whether to bring the app window up once the guide closes, finished or dismissed. True for
+    /// the first run, where the guide <em>is</em> the launch and closing it would otherwise leave a
+    /// brand-new user looking at an empty desktop; false when the guide was opened from inside the
+    /// app window, which is already behind it.
+    /// </param>
+    public void OpenOnboarding(bool openShellAfter = false)
+    {
+        if (_onboardingWindow is not null)
+        {
+            _onboardingWindow.Activate();
+            return;
+        }
+
+        var window = new OnboardingWindow(this);
+        _onboardingWindow = window;
+        window.Completed += finished =>
+        {
+            _onboardingWindow = null;
+            if (!openShellAfter)
+                return;
+            // A guide the user finished has already asked about the desktop shortcut; one they
+            // dismissed has not, so the app window still owes them that question.
+            OpenSettings(offerDesktopShortcut: !finished && !DesktopShortcutService.Exists());
+        };
+        window.Closed += (_, _) => _onboardingWindow = null;
+        window.Activate();
+        WindowChrome.ForceForeground(WinRT.Interop.WindowNative.GetWindowHandle(window));
     }
 
     /// <param name="allowGroups">
@@ -396,7 +461,8 @@ public sealed class OrbitManager
         // ThemeHelper (see the doc comment on OrbitWindow.ThemeBrush).
         ToolWindows.ApplyThemeToAll();
         _orbitWindow?.ApplyTheme();
-        _settingsWindow?.ApplyTheme();
+        _shellWindow?.ApplyTheme();
+        _onboardingWindow?.ApplyTheme();
         _addItemWindow?.ApplyTheme();
     }
 

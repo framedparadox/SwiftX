@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
@@ -22,26 +23,37 @@ using WinRT.Interop;
 namespace SwiftX;
 
 /// <summary>
-/// Settings shell: left NavigationView with Home (orbit customize,
-/// including the hot corner), General (the invoke shortcut and app-wide settings), Elements,
-/// Tools, and — pinned to the footer — Feedback &amp; Support, About, and Privacy.
+/// The SwiftX app window: Home, Orbit Settings, Tools, Elements and Settings as five sibling
+/// screens in one Grid, switched by <see cref="ShowScreen"/>.
 /// <para>
-/// This window, and only this window, follows its own Settings-exclusive palette in
+/// Built on windows-app-mx's LogiApp (branch <c>logiApp/dotnet</c>) — Home is its <c>MainPage</c>
+/// header, Settings is its <c>SettingsPage</c> measured value for value (270px sidebar, two-line
+/// 30/34 editorial title, 44px rows with a 4px accent indicator, 48,28,64,48 content padding
+/// capped at 780), and the palette is its own <c>Settings*</c> token family carried into
+/// <c>Themes/Colors.xaml</c> as <c>Shell*</c>. See <c>docs/full-app-mockups-logi-base.md</c> for
+/// the mockups and <c>docs/swiftx-app-shell-plan.md</c> for the plan.
+/// </para>
+/// <para>
+/// This is the window <c>SettingsWindow</c> became. Promoting it rather than adding a sixth window
+/// class beside it is what keeps the orbit preview's slot geometry, its drag-reorder and reflow
+/// animation, group expansion, the hot-corner quadrant, the theme/accent engine and every setting
+/// handler exactly as they were — the redesign is a re-homing of those panels into Logi's frame,
+/// not a rewrite of what they do.
+/// </para>
+/// <para>
+/// This window, and only this window, follows the Shell/Settings-exclusive palette in
 /// <c>Themes/Colors.xaml</c>; the orbit, AddItemWindow, and the tool windows keep the app's shared
 /// black/white identity, which is why the shared <c>SwiftX*</c> brushes are deliberately left
 /// alone here.
 /// </para>
 /// <para>
-/// Light is flat and fully opaque: a pure white canvas with cards a cool tint <em>darker</em>
-/// (#F0F4F8) inset into it — the reverse of the white-cards-on-grey it used to be. Dark sits on a
-/// real <see cref="MicaBackdrop"/> (attached below, regardless of theme — it only ever shows
-/// through Dark's brushes) under the layered, alpha-carrying plates in the Dark dictionary of
-/// <c>Themes/Colors.xaml</c> (nav pane, content canvas, cards, and the recessed "tray" areas each
-/// a deliberately different shade), so the surfaces stay visually distinct from each other while
-/// still letting Mica's own wallpaper tint read through every one of them.
+/// Light is flat and fully opaque (Logi's own #F2F2F2 page and #FFFFFF cards). Dark sits on a real
+/// <see cref="MicaBackdrop"/> (attached below, regardless of theme — it only ever shows through
+/// Dark's brushes) under the layered, alpha-carrying plates in the Dark dictionary of
+/// <c>Themes/Colors.xaml</c>, so Logi's hues keep SwiftX's Mica.
 /// </para>
 /// </summary>
-public sealed partial class SettingsWindow : Window
+public sealed partial class ShellWindow : Window
 {
     private readonly OrbitManager _manager;
     // Latched in the constructor and acted on once the tree is loaded, since the InfoBar it opens
@@ -104,11 +116,12 @@ public sealed partial class SettingsWindow : Window
     private int _groupDragIndex = -1;
 
     /// <param name="offerDesktopShortcut">
-    /// Opens this window on General with the desktop-shortcut prompt showing. Set only by the
-    /// first run (see <see cref="OrbitManager.Start"/>), because a Store-packaged SwiftX cannot
-    /// create that shortcut at install time and so has to ask for it once, from inside the app.
+    /// Opens this window on Settings › General with the desktop-shortcut prompt showing. Set only
+    /// by the first run (see <see cref="OrbitManager.Start"/>), because a Store-packaged SwiftX
+    /// cannot create that shortcut at install time and so has to ask for it once, from inside the
+    /// app.
     /// </param>
-    public SettingsWindow(OrbitManager manager, bool offerDesktopShortcut = false)
+    public ShellWindow(OrbitManager manager, bool offerDesktopShortcut = false)
     {
         _manager = manager;
         _offerDesktopShortcut = offerDesktopShortcut;
@@ -122,9 +135,9 @@ public sealed partial class SettingsWindow : Window
 
         _hwnd = WindowNative.GetWindowHandle(this);
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
-        Title = "SwiftX Settings";
+        Title = "SwiftX app";
 
-        var titleBar = AppTitleBar.WithAppMark("SwiftX Settings");
+        var titleBar = AppTitleBar.WithAppMark("SwiftX app");
         Grid.SetRow(titleBar, 0);
         Root.Children.Insert(0, titleBar);
 
@@ -138,7 +151,7 @@ public sealed partial class SettingsWindow : Window
         // Built once here rather than in the Loaded handler that fills in the rest of the About
         // card: Loaded can fire again if the tree is ever re-parented, and the mark has nothing to
         // wait for — unlike the version string and the toggles, it reads no state.
-        AboutMark.Content = AppLogo.Create(48);
+        AboutMark.Content = AppLogo.Create(72);
 
         PreviewCanvas.PointerPressed += Preview_PointerPressed;
         PreviewCanvas.PointerMoved += Preview_PointerMoved;
@@ -162,11 +175,17 @@ public sealed partial class SettingsWindow : Window
             // Black — see ThemeHelper.Resolve) — reapplying here is a no-op whenever Black isn't
             // selected, and keeps this in sync with ApplyTheme's own ordering if it ever isn't.
             ApplyBlackOverrides();
-            // System follows Windows, so an OS flip changes which built-in teal is the right one.
+            // System follows Windows, so an OS flip changes which built-in accent is the right one.
             ApplyAccentColorOverride();
             SyncAccentControls();
             ApplyChromeTheme();
             RenderPreview();
+            // ApplyAccentColorOverride already re-runs both of these, but only ever with the accent
+            // it just computed. The inactive rail label and the unselected card border are theme
+            // colours rather than accent ones, and this is the one event that changes those without
+            // changing the accent.
+            SelectSection(_currentSection);
+            UpdateThemeCardSelection(_manager.Config.Theme);
         };
         Activated += (_, _) => ApplyChromeTheme();
 
@@ -174,12 +193,13 @@ public sealed partial class SettingsWindow : Window
             p.IsMaximizable = false;
         _appWindow.IsShownInSwitchers = true;
 
-        // 1000 used to leave only a couple of px of margin for the Home tab's orbit-preview card +
-        // sidebar row (~998px of fixed content against a 1000px client width) — razor-thin enough
-        // that ordinary font-metric/DPI variance could tip it into visible clipping. 1040 restores
-        // a real margin; the Home tab's sidebar column is also now Grid-adaptive (see
-        // SettingsWindow.xaml) rather than a fixed width, so it degrades gracefully even if the
-        // window is later resized narrower still.
+        // 1040 x 700 is what the layout is measured for: the three Home nav boxes come to
+        // 3x268 + 2x34 = 872 with room to breathe either side, and the Orbit screen's 360px canvas
+        // plus its 336px-capped sidebar fits the same width with a real margin (1000 used to leave
+        // a couple of px, razor-thin enough that ordinary font-metric/DPI variance could tip it
+        // into visible clipping). The Orbit screen's sidebar column is Grid-adaptive rather than a
+        // fixed width (see ShellWindow.xaml), so it degrades gracefully if the window is later
+        // resized narrower still.
         WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 1040, 700);
         WindowChrome.SetRoundedCorners(_hwnd);
         WindowChrome.CenterOnCursor(_appWindow, _appWindow.Id);
@@ -187,7 +207,13 @@ public sealed partial class SettingsWindow : Window
         Root.Loaded += async (_, _) =>
         {
             _loading = true;
+            // Logi's own header line, hour-for-hour — see Services/Greeting.cs. Set once at load
+            // rather than on a timer: this window is opened, used and closed, and a greeting that
+            // rewrites itself at noon while someone is reading Settings is a distraction, not a
+            // feature.
+            GreetingText.Text = Greeting.Current();
             SelectTheme(_manager.Config.Theme);
+            UpdateThemeToggleIcon();
             PopulateLanguageBox();
             SelectHoverStyle(_manager.Config.HoverStyle);
             SelectItemSize(_manager.Config.ItemSize);
@@ -213,16 +239,34 @@ public sealed partial class SettingsWindow : Window
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             SyncDesktopShortcutToggle();
             VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0");
+            FillSpecCard();
+            // Wired here rather than in XAML because ThemeShadow.Receivers is a collection with no
+            // XAML syntax of its own on a shared resource. Without a receiver the three nav boxes
+            // cast no shadow at all (outside a popup a ThemeShadow draws only onto its receivers),
+            // which is the whole point of lifting them with Translation. Guarded on the resource
+            // lookup rather than assumed: an element that is not yet in the visual tree cannot be a
+            // receiver, and Loaded is the first moment HomeShadowPlate is.
+            if (Root.Resources["BoxShadow"] is ThemeShadow boxShadow &&
+                !boxShadow.Receivers.Contains(HomeShadowPlate))
+            {
+                boxShadow.Receivers.Add(HomeShadowPlate);
+            }
+
             _loading = false;
             RenderPreview();
             RebuildItemsList();
+            UpdateHomeMeta();
             UpdateHotkeyStatus();
+            // Home first, with Settings parked on its own default section so the rail is already
+            // consistent the moment the gear is pressed.
+            SelectSection(SectionGeneral);
+            ShowScreen(ScreenHome);
 
             if (_offerDesktopShortcut)
             {
-                // Land on General rather than Home so the offer and the switch it corresponds to
-                // are both on screen at once — an InfoBar on a page the user has to be told to go
-                // to is just a notification with extra steps.
+                // Land on Settings › General rather than Home so the offer and the switch it
+                // corresponds to are both on screen at once — an InfoBar on a page the user has to
+                // be told to go to is just a notification with extra steps.
                 GoToGeneralPage();
                 DesktopShortcutOffer.IsOpen = true;
             }
@@ -232,8 +276,8 @@ public sealed partial class SettingsWindow : Window
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                // An edit from elsewhere (e.g. a delete on the "Elements" tab) can remove the
-                // item this tab currently has selected or expanded — drop stale state rather than
+                // An edit from elsewhere (e.g. a delete on the Elements screen) can remove the
+                // item the Orbit screen currently has selected or expanded — drop stale state rather than
                 // leave the inspector or children row pointing at something that no longer exists.
                 if (_expandedGroup is not null && !ItemExists(_manager.Config.Primary.Items, _expandedGroup))
                     CollapseGroup();
@@ -242,6 +286,7 @@ public sealed partial class SettingsWindow : Window
                 RenderPreview();
                 if (_expandedGroup is not null) RenderGroupRow();
                 RebuildItemsList();
+                if (_currentScreen == ScreenHome) UpdateHomeMeta();
             });
         };
     }
@@ -295,35 +340,52 @@ public sealed partial class SettingsWindow : Window
     /// the same keys' resolved brush with a plain, element-local entry in Root.Resources: XAML's
     /// {ThemeResource} lookup walks up the tree checking each level's own Resources before falling
     /// back to the app-level ThemeDictionaries, so a same-keyed entry here shadows the Dark
-    /// dictionary's for every Card, NavigationView pane, and canvas Grid under Root — exactly the
+    /// dictionary's for every Card, screen and canvas Grid under Root — exactly the
     /// same "closer resource wins" behavior SecondaryCaptionStyle's own {ThemeResource} already
     /// relies on (see its comment). Removed again the moment Black is no longer selected, so
     /// switching back to Dark/Light falls straight through to the normal dictionary.
     /// </summary>
-    private static readonly string[] BlackOverrideKeys =
+    /// <summary>
+    /// What each overridden key becomes under Midnight, as (key, ARGB) pairs.
+    /// <para>
+    /// This used to be a bare key list painted with one flat black, on the reasoning that once the
+    /// anchor colour is pure black there is no lighter tone left to graduate through. That held
+    /// while every surface in the window was a plate of the same family. It stops holding on Logi's
+    /// layout, where a Home nav box is a card with an inset icon medallion and a pill inside it:
+    /// flattening card, medallion and pill to the identical black leaves the medallion and the pill
+    /// invisible, and the box reads as a bare outline with floating text. So the shell's four
+    /// surfaces keep a (very narrow) hierarchy of their own — 0A/12/1A over a 00 page — while the
+    /// older Settings-canvas keys keep exactly the flat black they always had.
+    /// </para>
+    /// </summary>
+    private static readonly (string Key, byte A, byte R, byte G, byte B)[] BlackOverrides =
     {
-        "SettingsSurfaceBrush", "SwiftXCanvasBrush", "SwiftXNavPaneBrush",
-        "SwiftXCardBackgroundBrush", "SwiftXOrbitCanvasBrush",
-        "NavigationViewDefaultPaneBackground", "NavigationViewExpandedPaneBackground",
-        "NavigationViewContentBackground",
+        ("SettingsSurfaceBrush", 0xE6, 0x00, 0x00, 0x00),
+        ("SwiftXCanvasBrush", 0xE6, 0x00, 0x00, 0x00),
+        ("SwiftXNavPaneBrush", 0xE6, 0x00, 0x00, 0x00),
+        ("SwiftXCardBackgroundBrush", 0xE6, 0x00, 0x00, 0x00),
+        ("SwiftXOrbitCanvasBrush", 0xE6, 0x00, 0x00, 0x00),
+
+        // The shell's own four, per the remarks above.
+        ("ShellBackgroundBrush", 0xE6, 0x00, 0x00, 0x00),
+        ("ShellCardBackgroundBrush", 0xE6, 0x12, 0x12, 0x12),
+        ("ShellMedallionBrush", 0xE6, 0x0A, 0x0A, 0x0A),
+        ("ShellPillBrush", 0xE6, 0x1A, 0x1A, 0x1A),
+        ("ShellCardBorderBrush", 0xFF, 0x2A, 0x2A, 0x2A),
+        ("ShellDividerBrush", 0xFF, 0x2A, 0x2A, 0x2A),
     };
 
     private void ApplyBlackOverrides()
     {
         if (_manager.Config.Theme != AppTheme.Black)
         {
-            foreach (var key in BlackOverrideKeys)
+            foreach (var (key, _, _, _, _) in BlackOverrides)
                 Root.Resources.Remove(key);
             return;
         }
 
-        // One flat, higher-opacity black shared by every surface — no graduated raised/recessed
-        // steps the way Dark has them, since there is no lighter tone left to graduate through
-        // once the anchor color is already pure black. Card edges (SwiftXCardStrokeBrush, left
-        // untouched) carry the structure instead.
-        var surface = new SolidColorBrush(Color.FromArgb(0xE6, 0, 0, 0));
-        foreach (var key in BlackOverrideKeys)
-            Root.Resources[key] = surface;
+        foreach (var (key, a, r, g, b) in BlackOverrides)
+            Root.Resources[key] = new SolidColorBrush(Color.FromArgb(a, r, g, b));
     }
 
     /// <summary>
@@ -336,7 +398,7 @@ public sealed partial class SettingsWindow : Window
     /// through, because falling through does not reach SwiftX's teal at all: unset, these keys
     /// resolve to WinUI's own <c>AccentFillColorDefaultBrush</c>, i.e. the Windows system accent
     /// (measured at #4CC2FF on this machine). Only the hyperlinks were ever teal by default —
-    /// the toggles, radio buttons, Radius slider, rating stars, and nav selection indicator all
+    /// the toggles, radio buttons, Radius slider, rating stars, and Settings rail all
     /// stayed Windows blue, which is exactly what "the default accent colour is not visible" was.
     /// </para>
     /// <para>
@@ -385,11 +447,24 @@ public sealed partial class SettingsWindow : Window
         Root.Resources["SliderThumbBackgroundPressed"] = pressed;
         Root.Resources["RatingControlSelectedForeground"] = normal;
         Root.Resources["RatingControlPointerOverSelectedForeground"] = hover;
-        Root.Resources["NavigationViewSelectionIndicatorForeground"] = normal;
 
-        // The one accented thing a resource override cannot reach on its own — see the comment
-        // on ReadPrivacyLink in SettingsWindow.xaml.
+        // Logi's three accent-derived Settings tokens. They are StaticResource aliases inside each
+        // theme dictionary (Themes/Colors.xaml), and a StaticResource alias resolves once, at the
+        // point that dictionary is parsed — so shadowing SettingsAccentBrush above does not reach
+        // them and they would have stayed on the built-in violet while every other accented control
+        // moved to the user's colour. Shadowing them here is the other half.
+        Root.Resources["SettingsNavActiveBrush"] = normal;
+        Root.Resources["SettingsNavIndicatorBrush"] = normal;
+        Root.Resources["SettingsCardSelectedBorderBrush"] = normal;
+
+        // Two things a resource override cannot reach on its own. ReadPrivacyLink is an inline
+        // Hyperlink — not a FrameworkElement, so it has no place in the tree to walk up from (see
+        // its comment in ShellWindow.xaml). The rail and the theme cards carry brush assignments
+        // written directly onto the element by SelectSection / UpdateThemeCardSelection, which a
+        // dictionary change can never reach either, so both are re-run.
         ReadPrivacyLink.Foreground = normal;
+        SelectSection(_currentSection);
+        UpdateThemeCardSelection(_manager.Config.Theme);
     }
 
     /// <summary>
@@ -463,39 +538,192 @@ public sealed partial class SettingsWindow : Window
         bool dark = ThemeHelper.IsDark(Root);
         WindowChrome.SetTitleBarTheme(_appWindow, dark);
         int rim = _manager.Config.Theme == AppTheme.Black
-            ? SettingsRimColorBlack
-            : dark ? SettingsRimColorDark : SettingsRimColorLight;
+            ? ShellRimColorBlack
+            : dark ? ShellRimColorDark : ShellRimColorLight;
         WindowChrome.HideWindowBorder(_hwnd, dark, rim);
     }
 
     /// <summary>
-    /// Rim colors for Settings, as COLORREFs (0x00BBGGRR) — these must track
-    /// <c>SettingsSurfaceColor</c>/<c>SwiftXCanvasBrush</c> in <c>Themes/Colors.xaml</c> (now the
-    /// Settings canvas values, #FFFFFF and #222222), not the shared black/white every other
-    /// window's rim still uses. Leave one stale after a palette change and the window grows a
-    /// visible hairline where the rim stops matching the surface behind it. Both are neutral greys,
-    /// so channel order is moot; the cool-tinted card/pane colors never reach the rim.
-    /// SettingsRimColorBlack matches ApplyBlackOverrides' own flat black rather than Dark's canvas.
+    /// Rim colors for the shell, as COLORREFs (0x00BBGGRR) — these must track
+    /// <c>ShellBackgroundBrush</c> in <c>Themes/Colors.xaml</c> (Logi's own #2B2B2B and #F2F2F2),
+    /// not the shared black/white every other window's rim still uses. Leave one stale after a
+    /// palette change and the window grows a visible hairline where the rim stops matching the
+    /// surface behind it. All three are neutral greys, so channel order is moot.
+    /// <see cref="ShellRimColorBlack"/> matches <see cref="BlackOverrides"/>' own page value rather
+    /// than Dark's.
     /// </summary>
-    private const int SettingsRimColorDark = 0x00222222;
-    private const int SettingsRimColorLight = 0x00FFFFFF;
-    private const int SettingsRimColorBlack = 0x00000000;
+    private const int ShellRimColorDark = 0x002B2B2B;
+    private const int ShellRimColorLight = 0x00F2F2F2;
+    private const int ShellRimColorBlack = 0x00000000;
 
     private Style SecondaryCaptionStyle => (Style)Root.Resources["SecondaryCaption"];
 
-    private void Nav_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    // ================= Screen router =================
+    // Logi navigates a Frame between MainPage / ActionRingPage / SettingsPage. The five screens are
+    // siblings in one Grid here and switch by Visibility instead — Logi's own ActionRingPage does
+    // exactly this to swap its Layout view for its Explore AI view, and it is what lets the orbit
+    // screen keep its live slot geometry, drag state and group expansion across a navigation
+    // instead of rebuilding them every time.
+
+    private const string ScreenHome = "home";
+    private const string ScreenOrbit = "orbit";
+    private const string ScreenTools = "tools";
+    private const string ScreenElements = "elements";
+    private const string ScreenSettings = "settings";
+
+    private const string SectionGeneral = "general";
+    private const string SectionFeedback = "feedback";
+    private const string SectionPrivacy = "privacy";
+    private const string SectionAbout = "about";
+
+    private string _currentScreen = ScreenHome;
+    private string _currentSection = SectionGeneral;
+
+    /// <summary>
+    /// Shows one of the five screens and hides the other four, re-running whatever that screen
+    /// builds from live config. The per-screen side effects are the ones the old NavigationView's
+    /// SelectionChanged used to carry, unchanged: the orbit canvas, the elements grid and the tool
+    /// list are all built imperatively and would otherwise show whatever they last drew.
+    /// </summary>
+    private void ShowScreen(string screen)
     {
-        var tag = (args.SelectedItem as NavigationViewItem)?.Tag as string ?? "home";
-        HomePanel.Visibility = tag == "home" ? Visibility.Visible : Visibility.Collapsed;
-        GeneralPanel.Visibility = tag == "general" ? Visibility.Visible : Visibility.Collapsed;
-        AppsPanel.Visibility = tag == "apps" ? Visibility.Visible : Visibility.Collapsed;
-        ToolsPanel.Visibility = tag == "tools" ? Visibility.Visible : Visibility.Collapsed;
-        PrivacyPanel.Visibility = tag == "privacy" ? Visibility.Visible : Visibility.Collapsed;
-        FeedbackPanel.Visibility = tag == "feedback" ? Visibility.Visible : Visibility.Collapsed;
-        AboutPanel.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
-        if (tag == "home") RenderPreview();
-        if (tag == "apps") RebuildItemsList();
-        if (tag == "tools") RebuildToolsList();
+        _currentScreen = screen;
+        HomeScreen.Visibility = screen == ScreenHome ? Visibility.Visible : Visibility.Collapsed;
+        OrbitScreen.Visibility = screen == ScreenOrbit ? Visibility.Visible : Visibility.Collapsed;
+        ToolsScreen.Visibility = screen == ScreenTools ? Visibility.Visible : Visibility.Collapsed;
+        ElementsScreen.Visibility = screen == ScreenElements ? Visibility.Visible : Visibility.Collapsed;
+        SettingsScreen.Visibility = screen == ScreenSettings ? Visibility.Visible : Visibility.Collapsed;
+
+        if (screen == ScreenHome) UpdateHomeMeta();
+        if (screen == ScreenOrbit) RenderPreview();
+        if (screen == ScreenElements) RebuildItemsList();
+        if (screen == ScreenTools) RebuildToolsList();
+    }
+
+    /// <summary>
+    /// Shows one of Settings' four sections. Logi's own <c>SelectSection</c> writes twelve
+    /// properties per call — section visibility, indicator visibility and label colour for each of
+    /// the four — and so does this, for the same reason: selection is expressed by the 4px rail
+    /// indicator <em>and</em> the label colour together, never by a background fill.
+    /// <para>
+    /// The active brush is <see cref="CurrentAccentColor"/>, so the rail follows a user's own
+    /// accent pick rather than the built-in one; the inactive brush is Logi's
+    /// <c>SettingsNavInactiveBrush</c> pair, written out here because a window that can be Light
+    /// while Windows is Dark has no element-scoped way to read a theme dictionary back (the same
+    /// reason <see cref="ThemeHelper"/> carries a second copy of the palette). Writing them onto
+    /// the TextBlock is also why <see cref="ApplyAccentColorOverride"/> and the
+    /// <c>ActualThemeChanged</c> handler both re-run this: a local brush is invisible to a later
+    /// dictionary change.
+    /// </para>
+    /// </summary>
+    private void SelectSection(string section)
+    {
+        _currentSection = section;
+
+        GeneralSection.Visibility = section == SectionGeneral ? Visibility.Visible : Visibility.Collapsed;
+        FeedbackSection.Visibility = section == SectionFeedback ? Visibility.Visible : Visibility.Collapsed;
+        PrivacySection.Visibility = section == SectionPrivacy ? Visibility.Visible : Visibility.Collapsed;
+        AboutSection.Visibility = section == SectionAbout ? Visibility.Visible : Visibility.Collapsed;
+
+        NavGeneralIndicator.Visibility = section == SectionGeneral ? Visibility.Visible : Visibility.Collapsed;
+        NavFeedbackIndicator.Visibility = section == SectionFeedback ? Visibility.Visible : Visibility.Collapsed;
+        NavPrivacyIndicator.Visibility = section == SectionPrivacy ? Visibility.Visible : Visibility.Collapsed;
+        NavAboutIndicator.Visibility = section == SectionAbout ? Visibility.Visible : Visibility.Collapsed;
+
+        var active = new SolidColorBrush(CurrentAccentColor());
+        var inactive = new SolidColorBrush(ThemeHelper.IsDark(Root)
+            ? Color.FromArgb(255, 0xA0, 0xA0, 0xA0)
+            : Color.FromArgb(255, 0x44, 0x44, 0x44));
+
+        NavGeneralText.Foreground = section == SectionGeneral ? active : inactive;
+        NavFeedbackText.Foreground = section == SectionFeedback ? active : inactive;
+        NavPrivacyText.Foreground = section == SectionPrivacy ? active : inactive;
+        NavAboutText.Foreground = section == SectionAbout ? active : inactive;
+
+        // Each section is its own StackPanel in one Grid, so the ScrollViewer's offset is shared
+        // between them — land on the top of the section that was just picked rather than partway
+        // down it because the previous one happened to be scrolled.
+        SettingsScroll.ChangeView(null, 0, null, disableAnimation: true);
+    }
+
+    /// <summary>
+    /// The counts on the Home nav boxes' meta pills, read from live state rather than written into
+    /// the XAML — a hard-coded "4 tools" is exactly the kind of label that goes quietly stale the
+    /// next time the catalog changes (the old Tools panel carried a "six fixed built-in tools"
+    /// comment against a catalog of five).
+    /// </summary>
+    private void UpdateHomeMeta()
+    {
+        int used = _manager.Config.Primary.Items.Count(i => !i.Hidden);
+        OrbitBoxMeta.Text = $"{OrbitMetrics.SlotCount} slots · {Math.Min(used, OrbitMetrics.UserSlotCount)} used";
+
+        int tools = ToolCatalog.All.Count;
+        ToolsBoxMeta.Text = tools == 1 ? "1 tool" : $"{tools} tools";
+    }
+
+    private void OrbitBox_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenOrbit);
+
+    private void ToolsBox_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenTools);
+
+    private void ElementsBox_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenElements);
+
+    private void SettingsButton_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenSettings);
+
+    /// <summary>Every sub-screen's back arrow. There is one place to go back to — Home.</summary>
+    private void Back_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenHome);
+
+    private void NavGeneral_Click(object sender, RoutedEventArgs e) => SelectSection(SectionGeneral);
+
+    private void NavFeedback_Click(object sender, RoutedEventArgs e) => SelectSection(SectionFeedback);
+
+    private void NavPrivacy_Click(object sender, RoutedEventArgs e) => SelectSection(SectionPrivacy);
+
+    private void NavAbout_Click(object sender, RoutedEventArgs e) => SelectSection(SectionAbout);
+
+    /// <summary>
+    /// Re-runs the first-run guide from Settings › General. Not gated on anything: running it again
+    /// against an orbit that already exists is a supported way to start over, and the guide writes
+    /// nothing unless the user presses Finish — so opening it is never destructive on its own.
+    /// <para>
+    /// <c>openShellAfter</c> stays false: this window is the thing the guide was opened from and is
+    /// still sitting behind it. Whatever the guide commits arrives here through
+    /// <see cref="OrbitManager.ItemsChanged"/> like any other edit.
+    /// </para>
+    /// </summary>
+    private void RunOnboarding_Click(object sender, RoutedEventArgs e) => _manager.OpenOnboarding();
+
+    /// <summary>
+    /// Logi's header theme button cycles the app's themes in place rather than opening a picker.
+    /// SwiftX has four where Logi has three, and the fourth — System — is the one that has to come
+    /// last in the cycle: landing on it mid-cycle would make the next press's starting point depend
+    /// on what Windows is set to.
+    /// </summary>
+    private void ThemeToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        var next = _manager.Config.Theme switch
+        {
+            AppTheme.Light => AppTheme.Dark,
+            AppTheme.Dark => AppTheme.Black,
+            AppTheme.Black => AppTheme.System,
+            _ => AppTheme.Light,
+        };
+        ApplyThemeChoice(next);
+    }
+
+    /// <summary>
+    /// The glyph on the header's theme button, which has to say which theme is <em>in effect</em>,
+    /// not which one the next press picks. Logi's own three (sun / moon / glass) plus a settings-
+    /// brightness mark for System, which is the one choice that has no fixed appearance of its own.
+    /// </summary>
+    private void UpdateThemeToggleIcon()
+    {
+        ThemeToggleIcon.Glyph = _manager.Config.Theme switch
+        {
+            AppTheme.Light => "\uE706",
+            AppTheme.Dark => "\uE793",
+            AppTheme.Black => "\uE708",
+            _ => "\uE7E8",
+        };
     }
 
     private void RenderPreview()
@@ -1023,7 +1251,7 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// The dock's own edit menu: right-clicking an item on either view offers to swap what is in
     /// that place or take it out of it, so the two things you can do to an item you can already
-    /// see are done where you see it, rather than only on the Elements tab (the orbit) or through a
+    /// see are done where you see it, rather than only on the Elements screen (the orbit) or through a
     /// badge pinned to every bubble (the corner, which no longer has one).
     /// </summary>
     private void Preview_RightTapped(object sender, RightTappedRoutedEventArgs e)
@@ -1053,7 +1281,7 @@ public sealed partial class SettingsWindow : Window
         if (_slotBorders[slot]?.Tag is not OrbitItem item)
             return null;
 
-        // The built-in tools are the Tools tab's, exactly as on the Elements tab, which leaves
+        // The built-in tools are the Tools screen's, exactly as on the Elements screen, which leaves
         // them out of its own list for the same reason: deleting the Tools group here would only
         // have it rebuilt on the next start (ToolCatalog.EnsureToolsGroup), and a tool is taken off
         // the orbit by switching it off there, not by deleting it.
@@ -1118,7 +1346,7 @@ public sealed partial class SettingsWindow : Window
         return menu;
     }
 
-    /// <summary>Whether an item on the orbit belongs to the Tools tab rather than to the user —
+    /// <summary>Whether an item on the orbit belongs to the Tools screen rather than to the user —
     /// the same two cases <see cref="RebuildItemsList"/> leaves out of the Elements list.</summary>
     private static bool IsToolsOwned(OrbitItem item) =>
         item.IsTool ||
@@ -1132,7 +1360,7 @@ public sealed partial class SettingsWindow : Window
     /// is modeless: the list can have moved on by the time it comes back.
     /// <para>
     /// Replacing a group takes its children with it, the same way deleting one does on the
-    /// Elements tab — they exist only inside it.
+    /// Elements screen — they exist only inside it.
     /// </para>
     /// </summary>
     private void ReplaceOrbitItem(OrbitItem item)
@@ -1158,7 +1386,7 @@ public sealed partial class SettingsWindow : Window
             confirmLabel: "Replace");
     }
 
-    /// <summary>Takes one item off the orbit — the same delete the Elements tab's own rows do.</summary>
+    /// <summary>Takes one item off the orbit — the same delete the Elements screen's own rows do.</summary>
     private void RemoveOrbitItem(OrbitItem item)
     {
         if (!_manager.Config.Primary.Items.Remove(item))
@@ -1371,7 +1599,7 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// Shows <paramref name="item"/>'s name/target in the read-only <c>InfoBox</c>. Re-clicking the
     /// item already shown hides it again — the simplest "close" affordance that doesn't need a
-    /// dedicated button. This is display-only: real edits happen on the "Elements" tab.
+    /// dedicated button. This is display-only: real edits happen on the Elements screen.
     /// <para>
     /// A click on a plain main-orbit item is unrelated to whatever group row is currently expanded
     /// (if any), so that row is collapsed first — otherwise it kept sitting there showing a group
@@ -1640,22 +1868,54 @@ public sealed partial class SettingsWindow : Window
         RebuildItemsList();
     }
 
-    private void SelectTheme(AppTheme theme)
+    /// <summary>
+    /// Brings the theme cards in line with <paramref name="theme"/> without applying anything —
+    /// the load pass's counterpart to <see cref="ThemeCard_Click"/>.
+    /// </summary>
+    private void SelectTheme(AppTheme theme) => UpdateThemeCardSelection(theme);
+
+    /// <summary>
+    /// Repaints all four theme cards for <paramref name="theme"/>: a 1.5px accent border and the
+    /// filled radio glyph (<c>E73E</c>) on the selected one, the card border and the hollow glyph
+    /// (<c>E73A</c>) in muted on the other three. Logi's own <c>UpdateThemeCardSelection</c>, with
+    /// a fourth card for Midnight.
+    /// <para>
+    /// The brushes are built here rather than bound with <c>{ThemeResource}</c> because selection
+    /// is a per-element assignment — which is also why <see cref="ApplyAccentColorOverride"/> and
+    /// the <c>ActualThemeChanged</c> handler both re-run this: neither a user's accent pick nor an
+    /// OS theme flip can reach a brush already written onto the element.
+    /// <see cref="ThemeHelper.ColorFor(bool, bool, string)"/> is what supplies the unselected
+    /// colours, since a window whose theme disagrees with Windows' cannot read them back out of the
+    /// app's own resources (see that class's own warning).
+    /// </para>
+    /// </summary>
+    private void UpdateThemeCardSelection(AppTheme theme)
     {
-        foreach (ComboBoxItem item in ThemeBox.Items)
+        bool dark = ThemeHelper.IsDark(Root);
+        bool isBlack = _manager.Config.Theme == AppTheme.Black;
+        var selectedBrush = new SolidColorBrush(CurrentAccentColor());
+        var restingBrush = new SolidColorBrush(
+            ThemeHelper.ColorFor(dark, isBlack, "ShellCardBorderBrush"));
+        var mutedBrush = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SettingsMutedBrush"));
+
+        void Paint(Border card, FontIcon check, AppTheme cardTheme)
         {
-            if ((item.Tag as string) == theme.ToString())
-            {
-                ThemeBox.SelectedItem = item;
-                break;
-            }
+            bool on = cardTheme == theme;
+            card.BorderBrush = on ? selectedBrush : restingBrush;
+            check.Glyph = on ? "\uE73E" : "\uE73A";
+            check.Foreground = on ? selectedBrush : mutedBrush;
         }
+
+        Paint(ThemeCardSystem, ThemeCheckSystem, AppTheme.System);
+        Paint(ThemeCardLight, ThemeCheckLight, AppTheme.Light);
+        Paint(ThemeCardDark, ThemeCheckDark, AppTheme.Dark);
+        Paint(ThemeCardBlack, ThemeCheckBlack, AppTheme.Black);
     }
 
     /// <summary>
     /// Fills <c>LanguageBox</c> from <see cref="LanguageCatalog.Options"/> and selects whichever
     /// entry matches <see cref="AppConfig.Language"/>. Built in code-behind rather than as static
-    /// ComboBoxItems in XAML (unlike ThemeBox/HoverStyleBox) because each entry's Content is that
+    /// ComboBoxItems in XAML (unlike HoverStyleBox/ItemSizeBox) because each entry's Content is that
     /// language's own native name — data, not markup.
     /// </summary>
     private void PopulateLanguageBox()
@@ -1694,18 +1954,30 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
-    private void ThemeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ThemeCard_Click(object sender, RoutedEventArgs e)
     {
-        if (_loading || ThemeBox.SelectedItem is not ComboBoxItem item) return;
-        if (Enum.TryParse<AppTheme>(item.Tag as string, out var theme))
-        {
-            _manager.Config.Theme = theme;
-            _manager.Save();
-            _manager.ApplyTheme();
-            ApplyTheme();
-            // Light and Dark carry different built-in teals; the swatch has to follow.
-            SyncAccentControls();
-        }
+        if (_loading || sender is not FrameworkElement card) return;
+        // Tag is the AppTheme member name verbatim — "Black" for the card labelled Midnight. See
+        // the picker's comment in ShellWindow.xaml for why that name cannot be changed.
+        if (Enum.TryParse<AppTheme>(card.Tag as string, out var theme))
+            ApplyThemeChoice(theme);
+    }
+
+    /// <summary>
+    /// Persists a theme choice and repaints everything that follows from it — the orbit and the
+    /// other windows through the manager, this window through its own pass. Shared by the theme
+    /// cards and the header's cycle button so the two can never diverge.
+    /// </summary>
+    private void ApplyThemeChoice(AppTheme theme)
+    {
+        _manager.Config.Theme = theme;
+        _manager.Save();
+        _manager.ApplyTheme();
+        ApplyTheme();
+        // Light and Dark carry different built-in accents; the swatch and the cards both follow.
+        SyncAccentControls();
+        UpdateThemeCardSelection(theme);
+        UpdateThemeToggleIcon();
     }
 
     private void LanguageBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1778,22 +2050,16 @@ public sealed partial class SettingsWindow : Window
         GoToPrivacyPage();
 
     /// <summary>
-    /// Moves to the Privacy page instead of opening anything — it is a page of this window, not a
-    /// page on the web. Selecting the NavigationViewItem rather than flipping panel Visibility
-    /// directly, so Nav_SelectionChanged stays the single place that knows which panel belongs to
-    /// which tag, and the nav pane's own selection follows along the way it would if the user had
-    /// clicked Privacy themselves.
+    /// Moves to Settings › Privacy &amp; Data instead of opening anything — it is a section of this
+    /// window, not a page on the web. Goes through <see cref="ShowScreen"/> and
+    /// <see cref="SelectSection"/> rather than flipping Visibility directly, so those two stay the
+    /// only places that know which panel and which rail row belong together, and the rail lights up
+    /// the way it would have if the user had clicked the row themselves.
     /// </summary>
     private void GoToPrivacyPage()
     {
-        foreach (var item in Nav.FooterMenuItems)
-        {
-            if (item is NavigationViewItem nvi && (nvi.Tag as string) == "privacy")
-            {
-                Nav.SelectedItem = nvi;
-                return;
-            }
-        }
+        ShowScreen(ScreenSettings);
+        SelectSection(SectionPrivacy);
     }
 
     /// <summary>
@@ -1917,20 +2183,34 @@ public sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// Moves to the General page, by selecting its NavigationViewItem for the same reason
-    /// <see cref="GoToPrivacyPage"/> does: Nav_SelectionChanged stays the one place that knows
-    /// which panel belongs to which tag.
+    /// Moves to Settings › General, for the same reason <see cref="GoToPrivacyPage"/> does:
+    /// <see cref="ShowScreen"/> and <see cref="SelectSection"/> stay the one place that knows which
+    /// panel belongs to which rail row.
     /// </summary>
     private void GoToGeneralPage()
     {
-        foreach (var item in Nav.MenuItems)
-        {
-            if (item is NavigationViewItem nvi && (nvi.Tag as string) == "general")
-            {
-                Nav.SelectedItem = nvi;
-                return;
-            }
-        }
+        ShowScreen(ScreenSettings);
+        SelectSection(SectionGeneral);
+    }
+
+    /// <summary>
+    /// About's spec card — Logi's own "System &amp; Runtime Specifications" block, with SwiftX's
+    /// four honest rows.
+    /// <para>
+    /// Every value here is read at runtime rather than written into the XAML. Logi hard-codes its
+    /// version string in two places and its spec rows in one; a hard-coded "Windows 11" or
+    /// ".NET 10" is a line that silently stops being true the next time the csproj moves, and an
+    /// About page that lies about the runtime is worse than one that omits it.
+    /// </para>
+    /// </summary>
+    private void FillSpecCard()
+    {
+        SpecOs.Text = RuntimeInformation.OSDescription;
+        SpecRuntime.Text = RuntimeInformation.FrameworkDescription;
+        SpecDistribution.Text = (PackagedRuntime.IsPackaged
+            ? "MSIX (Microsoft Store)"
+            : "Portable (unpackaged)")
+            + " · " + RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
     }
 
     private async void Export_Click(object sender, RoutedEventArgs e)
@@ -2011,6 +2291,7 @@ public sealed partial class SettingsWindow : Window
         ApplyTheme();
         _loading = true;
         SelectTheme(AppTheme.Dark);
+        UpdateThemeToggleIcon();
         SelectHoverStyle(OrbitHoverStyle.Invert);
         SelectItemSize(OrbitItemSize.Medium);
         RadiusSlider.Value = OrbitMetrics.DefaultRadius;
@@ -2074,7 +2355,7 @@ public sealed partial class SettingsWindow : Window
 
     /// <summary>
     /// Turns the hot-corner triangle to point at <paramref name="corner"/>. The geometry in
-    /// SettingsWindow.xaml is authored with its right angle at the top left, so each quarter turn
+    /// ShellWindow.xaml is authored with its right angle at the top left, so each quarter turn
     /// clockwise walks it round to the next corner in the same order the screen does.
     /// <para>
     /// Driven from the corner itself rather than the ComboBox's index so the two cannot drift apart
@@ -2088,7 +2369,7 @@ public sealed partial class SettingsWindow : Window
     /// Clockwise rotation, in degrees, that turns a triangle authored pointing top-left (right
     /// angle in that corner, hypotenuse cutting across to it) so it instead points at
     /// <paramref name="corner"/>. Shared by <see cref="UpdateHotCornerIcon"/> — which turns the
-    /// XAML-declared PathIcon on the Home page's Hot corner row — and
+    /// XAML-declared PathIcon on the Orbit screen's Hot corner row — and
     /// <see cref="AddHotCornerButton"/>, which builds the same triangle fresh in code for the
     /// canvas button, so the two can never disagree about which way a given corner turns.
     /// </summary>
@@ -2104,7 +2385,7 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// The right-angle-triangle path shared by the row icon and the canvas button — see
     /// <see cref="CornerTriangleAngle"/>. Authored pointing top-left at a nominal 14x14, the same
-    /// coordinates as the XAML-declared PathIcon's <c>Data</c> in SettingsWindow.xaml, so the two
+    /// coordinates as the XAML-declared PathIcon's <c>Data</c> in ShellWindow.xaml, so the two
     /// read as the same mark rather than merely similar ones. Built fresh per call rather than
     /// cached: Geometry is cheap here and every other themed element on this canvas (brushes,
     /// borders) is already rebuilt on each RenderPreview pass.
@@ -2182,7 +2463,7 @@ public sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// Builds the "Elements" page: every top-level item and every top-level group in one flat
+    /// Builds the Elements screen: every top-level item and every top-level group in one flat
     /// two-column card grid, all cards the same width — a group's own card immediately followed by
     /// a card for each of its children, in orbit order.
     /// <para>
@@ -2207,12 +2488,12 @@ public sealed partial class SettingsWindow : Window
         var cards = new List<Border>();
         foreach (var item in _manager.Config.Primary.Items)
         {
-            // Tools are managed from the Tools tab's own toggles, not listed here too.
+            // Tools are managed from the Tools screen's own toggles, not listed here too.
             if (item.IsTool)
                 continue;
 
-            // Nor is the built-in Tools group: it is wholly owned by the dedicated Tools tab, so
-            // showing it here too would duplicate that tab instead of listing something new.
+            // Nor is the built-in Tools group: it is wholly owned by the dedicated Tools screen, so
+            // showing it here too would duplicate that screen instead of listing something new.
             if (item.IsGroup && string.Equals(
                     item.Target, ToolCatalog.ToolsGroupTarget, StringComparison.OrdinalIgnoreCase))
                 continue;

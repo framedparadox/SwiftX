@@ -17,7 +17,7 @@ public sealed class ToolStatusBar : Grid
     /// <summary>The status bar reports secondary, glance-only information — counts, validity, the
     /// structural path — so it takes the Fluent caption size rather than body text's, the same
     /// step down every other secondary caption in the app already takes (see
-    /// <c>FormToolPage.SectionHeader</c>'s label, <c>SettingsWindow</c>'s "SecondaryCaption").</summary>
+    /// <c>FormToolPage.SectionHeader</c>'s label, <c>ShellWindow</c>'s "SecondaryCaption").</summary>
     private static Style CaptionStyle => (Style)Application.Current.Resources["CaptionTextBlockStyle"];
 
     private readonly TextBlock _counts = new() { Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Style = CaptionStyle };

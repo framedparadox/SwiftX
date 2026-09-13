@@ -22,11 +22,11 @@ namespace SwiftX.Services;
 /// and has nothing to do with the colour the user chose.
 /// </para>
 /// <para>
-/// <b>SettingsWindow still carries its own private copy of all of this</b> — its
-/// <c>CurrentAccentColor</c>, <c>ResolveIsDark</c>, <c>TryParseHexColor</c> and <c>Blend</c>, and
-/// its own <c>DefaultAccentHexDark</c>/<c>DefaultAccentHexLight</c> constants. That file was left
-/// untouched deliberately, so it should be migrated onto this class; until it is, the two default
-/// hex values exist in two places and have to be changed together.
+/// <c>ShellWindow</c> resolves through this class rather than keeping its own copy — see its
+/// <c>CurrentAccentColor</c>. The only other place these two hex values appear is
+/// <c>SettingsAccentBrush</c>/<c>SettingsAccentHoverBrush</c> in <c>Themes/Colors.xaml</c>, which
+/// is what an element resolves before <c>ApplyAccentColorOverride</c> has run; the two have to be
+/// changed together.
 /// </para>
 /// </summary>
 public static class AccentPalette
@@ -34,15 +34,23 @@ public static class AccentPalette
     /// <summary>
     /// The built-in accent, per theme, used whenever <see cref="AppConfig.AccentColorHex"/> is
     /// unset or unparsable. Must track <c>SettingsAccentBrush</c>/<c>SettingsAccentHoverBrush</c>
-    /// in <c>Themes/Colors.xaml</c> — and, for now, SettingsWindow's own copies of these two
-    /// constants (see the class remarks). Two values rather than one because the same teal cannot
-    /// carry a dark surface and a light one: the bright mint reads as a highlight on black and as
-    /// a smear on white, so light gets the deeper, more saturated variant.
+    /// in <c>Themes/Colors.xaml</c>. Two values rather than one because the same violet cannot
+    /// carry a dark surface and a light one: the bright one reads as a highlight on black and as a
+    /// smear on white, so light gets the deeper, more saturated variant.
+    /// <para>
+    /// These are Logi's own <c>SettingsAccentBrush</c> values, taken verbatim from
+    /// windows-app-mx's <c>LogiApp/Themes/AppThemeResources.xaml</c> (branch <c>logiApp/dotnet</c>)
+    /// when the app shell was rebuilt on Logi's design — see <c>docs/full-app-mockups-logi-base.md</c>.
+    /// They replaced SwiftX's own teal (<c>#3DDCD3</c> Dark / <c>#0B7C7C</c> Light), which is
+    /// still one click away for anyone who wants it: the accent has always been the user's to
+    /// pick, and a colour already stored in <see cref="AppConfig.AccentColorHex"/> is untouched
+    /// by this change, since these are only the fallback for an unset value.
+    /// </para>
     /// </summary>
-    public const string DefaultHexDark = "#3DDCD3";
+    public const string DefaultHexDark = "#8A67FF";
 
     /// <inheritdoc cref="DefaultHexDark"/>
-    public const string DefaultHexLight = "#0B7C7C";
+    public const string DefaultHexLight = "#6C47FF";
 
     /// <summary>
     /// How far <see cref="PointerOver"/> and <see cref="Pressed"/> move off the base accent,

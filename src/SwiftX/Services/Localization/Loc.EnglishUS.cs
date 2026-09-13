@@ -23,6 +23,11 @@ public static partial class Loc
         ["Tray.Settings"] = "Settings",
         ["Tray.Quit"] = "Quit",
         ["Settings.Hotkey"] = "Invoke",
+        // The Home screen's time-of-day line — see Services/Greeting.cs, which owns the
+        // hour boundaries these three belong to.
+        ["Greeting.Morning"] = "Good Morning",
+        ["Greeting.Afternoon"] = "Good Afternoon",
+        ["Greeting.Evening"] = "Good Evening",
         ["Hotkey.Press"] = "Press keys…",
         ["Hotkey.None"] = "None",
         ["Tool.CopyOutput"] = "Copy",

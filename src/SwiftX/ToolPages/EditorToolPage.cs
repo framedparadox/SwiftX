@@ -186,9 +186,9 @@ public abstract class EditorToolPage : ToolPage
     /// <summary>
     /// Shadows the framework key a plain <see cref="Button"/>'s stock style reads its pointer-over
     /// and pressed icon colour from (<c>ButtonForegroundPointerOver</c>/<c>...Pressed</c>) on this
-    /// one button instance — the same "closer resource wins" override <c>SettingsWindow</c>'s own
+    /// one button instance — the same "closer resource wins" override <c>ShellWindow</c>'s own
     /// accent-colour and hot-corner buttons already rely on
-    /// (<c>SettingsWindow.xaml.cs</c>'s <c>ApplyAccentColorOverride</c>/<c>AddHotCornerButton</c>),
+    /// (<c>ShellWindow.xaml.cs</c>'s <c>ApplyAccentColorOverride</c>/<c>AddHotCornerButton</c>),
     /// rather than replacing the whole control template. Deliberately leaves Background alone —
     /// the ask is a coloured icon on hover, not a filled hover chip. A <see cref="FontIcon"/>
     /// content has no <c>Foreground</c> of its own set, so it inherits the Button's, the same way
