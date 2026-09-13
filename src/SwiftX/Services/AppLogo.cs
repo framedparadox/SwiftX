@@ -22,7 +22,7 @@ namespace SwiftX.Services;
 /// the desktop. Either can be played in and out — see <see cref="Mark"/> for the motion.
 /// </para>
 /// <para>
-/// This is the same mark as the master art in <c>docs/SwiftX.png</c>, which is where the shipped
+/// This is the same mark as the master art in <c>img/SwiftX.png</c>, which is where the shipped
 /// <c>.ico</c> and the MSIX tiles come from (see <c>tools/generate-brand-assets.py</c>). The
 /// geometry and palette below were measured off that master, so a change to the brand means
 /// re-exporting the master, re-running that script, and updating the constants here to match.

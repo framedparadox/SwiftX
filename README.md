@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/SwiftX.png" alt="SwiftX logo" width="140" height="140">
+  <img src="img/SwiftX.png" alt="SwiftX logo" width="140" height="140">
 </p>
 
 <h1 align="center">SwiftX</h1>
@@ -11,6 +11,15 @@ and links from it; pop groups open into an outer ring; and reach a set of built-
 (JSON/XML formatter, local secure values, Base64, certificate inspector) without leaving it.
 
 Everything runs on your own machine. There is no account, no telemetry, and nothing is uploaded.
+
+<p align="center">
+  <img src="img/SxiftX_Full.png" alt="The ring open on the desktop" width="49%">
+  <img src="img/SwiftX_HotCorner.png" alt="The hot corner quadrant" width="49%">
+</p>
+<p align="center">
+  <img src="img/SwiftX_Settings_Home.png" alt="Settings — Home, the live ring customizer" width="49%">
+  <img src="img/SwiftX_Settings_General.png" alt="Settings — General" width="49%">
+</p>
 
 ---
 
@@ -441,8 +450,9 @@ src/SwiftX/
   Assets/SwiftX.ico        Executable icon; also the shell and tray icon
   Images/                  MSIX tile set
 
-docs/SwiftX.png            Master art every raster asset is generated from
-docs/TERMS.md              Terms and conditions, linked from Settings > About
+img/SwiftX.png             Master art every raster asset is generated from
+TERMS.md                   Terms and conditions, linked from Settings > About
+notes/                     Internal design/review notes (not shipped, not linked from the app)
 tools/                     One-off maintenance scripts (brand asset generation)
 ```
 
@@ -543,7 +553,7 @@ square with two opposite corners left sharp and the other two rounded off hard; 
 always straddles the middle, so one corner points into the centre and its opposite forms an outer
 corner of the mark.
 
-`docs/SwiftX.png` (1000x1000 RGBA) is the master. Every raster asset is derived from it:
+`img/SwiftX.png` (1000x1000 RGBA) is the master. Every raster asset is derived from it:
 
 | Asset | Where it shows up |
 |-------|-------------------|
@@ -582,7 +592,7 @@ is that rewound, last petal in first out. Only the petal layer turns — the sha
 one does when the thing above it spins rather than the light moving.
 
 Its geometry and palette were measured off the master, and the two are kept in step by hand — a
-brand change means re-exporting `docs/SwiftX.png`, re-running the script above, and updating the
+brand change means re-exporting `img/SwiftX.png`, re-running the script above, and updating the
 constants in `AppLogo.cs`. The gradients run from each petal's outer corner to the corner facing
 the centre:
 
@@ -667,7 +677,7 @@ both architectures) as-is. Before submitting:
   issues Partner Center's own automated review also checks for.
 - Partner Center's listing itself (screenshots, description, age rating, privacy policy URL) is
   filled in on their site, not from anything in this repo; [Privacy](#privacy) and
-  [`docs/TERMS.md`](docs/TERMS.md) are the source material for that copy.
+  [`TERMS.md`](TERMS.md) are the source material for that copy.
 
 ## Troubleshooting
 

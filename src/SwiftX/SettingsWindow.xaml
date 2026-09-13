@@ -10,11 +10,9 @@
     <!-- WinUI Window has no Resources; shared styles live on the root Grid. SettingsSurfaceBrush,
          not the shared SwiftXSurfaceBrush: the tool windows also key off SwiftXSurfaceBrush and
          must keep its #000000 Dark value, so Settings' own lighter surface (#222222 Dark /
-         #FFFFFF Light, from the Logi Options+ palette this window now follows — see
-         docs/logi_options_design_features.md and Themes/Colors.xaml) lives under a
-         Settings-exclusive name instead of changing that shared one out from under them.
-         AddItemWindow now does the same under its own SwiftXDialogSurfaceBrush, anchored to the
-         same Logi canvas value. -->
+         #FFFFFF Light) lives under a Settings-exclusive name instead of changing that shared
+         one out from under them. AddItemWindow now does the same under its own
+         SwiftXDialogSurfaceBrush, anchored to the same canvas value. -->
     <Grid x:Name="Root" Background="{ThemeResource SettingsSurfaceBrush}">
         <Grid.Resources>
             <Style x:Key="Card" TargetType="Border">
@@ -26,9 +24,9 @@
             </Style>
             <!-- ThemeResource inside a Style resolves against the element the style lands on,
                  so Light Settings never paints Dark secondary text into a white card.
-                 SettingsSecondaryTextBrush, not the shared SwiftXMutedBrush: Settings tracks the
-                 Logi palette's own Secondary Label Text (#555555/#AAAAAA) while the ring, the tool
-                 windows, and AddItemWindow keep the muted grey they share. -->
+                 SettingsSecondaryTextBrush, not the shared SwiftXMutedBrush: Settings uses its own
+                 secondary text color while the ring, the tool windows, and AddItemWindow keep the
+                 muted grey they share. -->
             <Style x:Key="SecondaryText" TargetType="TextBlock">
                 <Setter Property="Foreground" Value="{ThemeResource SettingsSecondaryTextBrush}" />
             </Style>
@@ -37,11 +35,11 @@
                 <Setter Property="Foreground" Value="{ThemeResource SettingsSecondaryTextBrush}" />
             </Style>
 
-            <!-- The Logi screenshot's call-to-action: small, semibold, all-caps teal text with no
-                 button chrome around it. Sets no Foreground of its own on purpose — HyperlinkButton's
-                 default template drives its colour from the four HyperlinkButtonForeground* keys
-                 below in every visual state, so a Foreground setter here would be honoured at rest
-                 and then thrown away the moment the pointer touched it. -->
+            <!-- Settings call-to-action: small, semibold, all-caps teal text with no button chrome
+                 around it. Sets no Foreground of its own on purpose — HyperlinkButton's default
+                 template drives its colour from the four HyperlinkButtonForeground* keys below in
+                 every visual state, so a Foreground setter here would be honoured at rest and then
+                 thrown away the moment the pointer touched it. -->
             <Style x:Key="AccentLink" TargetType="HyperlinkButton">
                 <Setter Property="Padding" Value="0" />
                 <Setter Property="MinWidth" Value="0" />
@@ -742,12 +740,11 @@
                 </ScrollViewer>
 
                 <!-- ==================== FEEDBACK & SUPPORT ==================== -->
-                <!-- Three cards, in the Logi Options+ order: say something, rate something, get
-                     help. Every outbound link is a Store or GitHub page opened in the browser; the
-                     stars are the one entirely local control here (see the rating comment below),
-                     which is the thing about this page that differs from every other app's feedback
-                     screen and is worth saying out loud in the copy rather than leaving the user to
-                     assume the usual.
+                <!-- Three cards in order: say something, rate something, get help. Every outbound
+                     link is a Store or GitHub page opened in the browser; the stars are the one
+                     entirely local control here (see the rating comment below), which is the thing
+                     about this page that differs from every other app's feedback screen and is worth
+                     saying out loud in the copy rather than leaving the user to assume the usual.
                      A Grid rather than a bare ScrollViewer so the closing note can sit against the
                      bottom of the page instead of trailing the last card: the cards scroll in row 0
                      and the note holds row 1, so it stays put however far the list above it grows. -->

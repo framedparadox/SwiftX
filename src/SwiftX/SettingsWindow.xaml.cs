@@ -26,9 +26,8 @@ namespace SwiftX;
 /// including the hot corner), General (the invoke shortcut and app-wide settings), Elements,
 /// Tools, and — pinned to the footer — Feedback &amp; Support, About, and Privacy.
 /// <para>
-/// This window, and only this window, follows the Logi Options+ palette (see
-/// <c>docs/logi_options_design_features.md</c> and the Settings-exclusive keys in
-/// <c>Themes/Colors.xaml</c>); the ring, AddItemWindow, and the tool windows keep the app's shared
+/// This window, and only this window, follows its own Settings-exclusive palette in
+/// <c>Themes/Colors.xaml</c>; the ring, AddItemWindow, and the tool windows keep the app's shared
 /// black/white identity, which is why the shared <c>SwiftX*</c> brushes are deliberately left
 /// alone here.
 /// </para>
@@ -39,9 +38,7 @@ namespace SwiftX;
 /// through Dark's brushes) under the layered, alpha-carrying plates in the Dark dictionary of
 /// <c>Themes/Colors.xaml</c> (nav pane, content canvas, cards, and the recessed "tray" areas each
 /// a deliberately different shade), so the surfaces stay visually distinct from each other while
-/// still letting Mica's own wallpaper tint read through every one of them. That alpha is why Dark
-/// lands near Logi's flat hexes rather than exactly on them — a deliberate trade to keep the
-/// frosted-glass look rather than making Mica a no-op.
+/// still letting Mica's own wallpaper tint read through every one of them.
 /// </para>
 /// </summary>
 public sealed partial class SettingsWindow : Window
@@ -497,7 +494,7 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// Rim colors for Settings, as COLORREFs (0x00BBGGRR) — these must track
     /// <c>SettingsSurfaceColor</c>/<c>SwiftXCanvasBrush</c> in <c>Themes/Colors.xaml</c> (now the
-    /// Logi Options+ canvas values, #FFFFFF and #222222), not the shared black/white every other
+    /// Settings canvas values, #FFFFFF and #222222), not the shared black/white every other
     /// window's rim still uses. Leave one stale after a palette change and the window grows a
     /// visible hairline where the rim stops matching the surface behind it. Both are neutral greys,
     /// so channel order is moot; the cool-tinted card/pane colors never reach the rim.
@@ -1787,7 +1784,7 @@ public sealed partial class SettingsWindow : Window
     /// outbound links rather than in About's own code so every URL this window can open is in one
     /// place.
     /// </summary>
-    private const string TermsUrl = GitHubRepoUrl + "/blob/main/docs/TERMS.md";
+    private const string TermsUrl = GitHubRepoUrl + "/blob/main/TERMS.md";
 
     private void ReportIssue_Click(object sender, RoutedEventArgs e) =>
         Launcher.OpenUrl(StoreListingUrl);
