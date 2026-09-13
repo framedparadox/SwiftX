@@ -209,7 +209,7 @@
                                 ToolTipService.ToolTip="Settings">
                             <FontIcon Glyph="&#xE713;" FontSize="18"
                                       FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                      Foreground="{ThemeResource SettingsIconBrush}" />
+                                      Foreground="{ThemeResource ShellToolbarIconBrush}" />
                         </Button>
                     </StackPanel>
                 </Grid>
