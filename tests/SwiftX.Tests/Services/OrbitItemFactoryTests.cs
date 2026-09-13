@@ -4,32 +4,32 @@ using Xunit;
 
 namespace SwiftX.Tests.Services;
 
-public class RingItemFactoryTests
+public class OrbitItemFactoryTests
 {
     [Theory]
-    [InlineData(@"C:\Windows\System32\notepad.exe", RingItemKind.Application)]
-    [InlineData(@"C:\Windows", RingItemKind.Folder)]
-    [InlineData("https://example.com", RingItemKind.WebLink)]
-    [InlineData(@"C:\Temp\notes.txt", RingItemKind.File)]
-    public void Classify_infers_kind(string target, RingItemKind expected)
+    [InlineData(@"C:\Windows\System32\notepad.exe", OrbitItemKind.Application)]
+    [InlineData(@"C:\Windows", OrbitItemKind.Folder)]
+    [InlineData("https://example.com", OrbitItemKind.WebLink)]
+    [InlineData(@"C:\Temp\notes.txt", OrbitItemKind.File)]
+    public void Classify_infers_kind(string target, OrbitItemKind expected)
     {
-        Assert.Equal(expected, RingItemFactory.Classify(target));
+        Assert.Equal(expected, OrbitItemFactory.Classify(target));
     }
 
     [Fact]
     public void SuggestName_uses_host_for_urls()
     {
-        Assert.Equal("example.com", RingItemFactory.SuggestName("https://example.com/path"));
+        Assert.Equal("example.com", OrbitItemFactory.SuggestName("https://example.com/path"));
     }
 }
 
 /// <summary>
-/// Covers the pure angle math behind the ring's radial hover (RingWindow.RingCanvas_PointerMoved
-/// delegates to RingMetrics.NearestSlotIndex, which cannot be exercised directly since RingWindow
+/// Covers the pure angle math behind the orbit's radial hover (OrbitWindow.OrbitCanvas_PointerMoved
+/// delegates to OrbitMetrics.NearestSlotIndex, which cannot be exercised directly since OrbitWindow
 /// is a live WinUI Window). Slot 0 is straight up; slots advance clockwise 45° apart, matching
-/// RingWindow.CreateBubble's placement formula.
+/// OrbitWindow.CreateBubble's placement formula.
 /// </summary>
-public class RingMetricsNearestSlotIndexTests
+public class OrbitMetricsNearestSlotIndexTests
 {
     [Theory]
     [InlineData(0, -1, 0)]     // straight up
@@ -43,7 +43,7 @@ public class RingMetricsNearestSlotIndexTests
     public void NearestSlotIndex_matches_bubble_placement_at_the_eight_cardinal_directions(
         double dx, double dy, int expected)
     {
-        Assert.Equal(expected, RingMetrics.NearestSlotIndex(dx, dy));
+        Assert.Equal(expected, OrbitMetrics.NearestSlotIndex(dx, dy));
     }
 
     [Theory]
@@ -55,7 +55,7 @@ public class RingMetricsNearestSlotIndexTests
         // is angularly nearer) rather than landing between slots or out of range — this is what
         // makes hover feel continuous across the annulus instead of only over each bubble's own
         // small circle.
-        Assert.Equal(expected, RingMetrics.NearestSlotIndex(dx, dy));
+        Assert.Equal(expected, OrbitMetrics.NearestSlotIndex(dx, dy));
     }
 
     [Fact]
@@ -70,9 +70,9 @@ public class RingMetricsNearestSlotIndexTests
             // slots 0..7 in order.
             double dx = Math.Sin(rad);
             double dy = -Math.Cos(rad);
-            int index = RingMetrics.NearestSlotIndex(dx, dy);
+            int index = OrbitMetrics.NearestSlotIndex(dx, dy);
             Assert.True(seen.Add(index), $"slot {index} was hit more than once");
         }
-        Assert.Equal(RingMetrics.SlotCount, seen.Count);
+        Assert.Equal(OrbitMetrics.SlotCount, seen.Count);
     }
 }

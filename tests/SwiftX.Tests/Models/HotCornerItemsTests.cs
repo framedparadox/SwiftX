@@ -4,36 +4,36 @@ using Xunit;
 namespace SwiftX.Tests.Models;
 
 /// <summary>
-/// Covers what the hot corner's quadrant shows: the ring's own picks until the corner is arranged
+/// Covers what the hot corner's quadrant shows: the orbit's own picks until the corner is arranged
 /// by hand, the stored arrangement after that, and the mapping from a stored entry back to the
 /// live thing it names.
 /// </summary>
 public class HotCornerItemsTests
 {
-    private static RingItem App(string name) => new()
+    private static OrbitItem App(string name) => new()
     {
-        Kind = RingItemKind.Application,
+        Kind = OrbitItemKind.Application,
         DisplayName = name,
         Target = name,
     };
 
-    private static RingItem Link(string name) => new()
+    private static OrbitItem Link(string name) => new()
     {
-        Kind = RingItemKind.WebLink,
+        Kind = OrbitItemKind.WebLink,
         DisplayName = name,
         Target = "https://" + name,
     };
 
     /// <summary>An Application item that <see cref="QuadrantLayout.FindOrDefaultNotepad"/> will
     /// actually recognize — matched by the target's file name, not its display name.</summary>
-    private static RingItem Notepad(string name = "Notepad") => new()
+    private static OrbitItem Notepad(string name = "Notepad") => new()
     {
-        Kind = RingItemKind.Application,
+        Kind = OrbitItemKind.Application,
         DisplayName = name,
         Target = @"C:\Windows\System32\notepad.exe",
     };
 
-    private static AppConfig ConfigWith(params RingItem[] items)
+    private static AppConfig ConfigWith(params OrbitItem[] items)
     {
         var config = new AppConfig().EnsurePrimary();
         config.Primary.Items.AddRange(items);
@@ -41,19 +41,19 @@ public class HotCornerItemsTests
     }
 
     [Fact]
-    public void An_untouched_corner_follows_the_ring()
+    public void An_untouched_corner_follows_the_orbit()
     {
         var config = ConfigWith(Link("github"), Notepad());
 
         Assert.True(HotCornerItems.IsDefault(config));
         Assert.Equal(
             new[] { "QuickAccess", "Notepad", "Settings" },
-            HotCornerItems.Resolve(config, SystemRingItems.CreateSettings()).Select(i => i.DisplayName));
+            HotCornerItems.Resolve(config, SystemOrbitItems.CreateSettings()).Select(i => i.DisplayName));
 
-        // Following the ring means keeping up with it, not snapshotting it — a new link joins
+        // Following the orbit means keeping up with it, not snapshotting it — a new link joins
         // QuickAccess rather than needing its own place.
         config.Primary.Items.Add(Link("docs"));
-        var quickAccess = HotCornerItems.Resolve(config, SystemRingItems.CreateSettings())
+        var quickAccess = HotCornerItems.Resolve(config, SystemOrbitItems.CreateSettings())
             .First(i => i.DisplayName == "QuickAccess");
         Assert.Equal(new[] { "github", "docs" }, quickAccess.Children.Select(c => c.DisplayName));
     }
@@ -63,7 +63,7 @@ public class HotCornerItemsTests
     {
         var config = ConfigWith(Link("github"), Notepad());
 
-        var list = HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
+        var list = HotCornerItems.Edit(config, SystemOrbitItems.CreateSettings());
 
         Assert.False(HotCornerItems.IsDefault(config));
         Assert.Equal(
@@ -72,10 +72,10 @@ public class HotCornerItemsTests
     }
 
     [Fact]
-    public void An_arrangement_is_kept_as_the_ring_moves_on()
+    public void An_arrangement_is_kept_as_the_orbit_moves_on()
     {
         var config = ConfigWith(Link("github"), Notepad());
-        var list = HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
+        var list = HotCornerItems.Edit(config, SystemOrbitItems.CreateSettings());
         // Seeded as [QuickAccess, Notepad, Settings].
 
         // Rearrange, and take one off.
@@ -85,37 +85,37 @@ public class HotCornerItemsTests
         list.RemoveAt(0);
         // Now [Settings, QuickAccess].
 
-        // A ring change does not push its way onto a corner the user has arranged.
+        // An orbit change does not push its way onto a corner the user has arranged.
         config.Primary.Items.Add(Link("docs"));
 
         Assert.Equal(
             new[] { "Settings", "QuickAccess" },
-            HotCornerItems.Resolve(config, SystemRingItems.CreateSettings()).Select(i => i.DisplayName));
+            HotCornerItems.Resolve(config, SystemOrbitItems.CreateSettings()).Select(i => i.DisplayName));
     }
 
     [Fact]
     public void QuickAccess_keeps_gathering_new_links_once_locked_into_an_arrangement()
     {
         var config = ConfigWith(Link("github"));
-        HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
+        HotCornerItems.Edit(config, SystemOrbitItems.CreateSettings());
 
         config.Primary.Items.Add(Link("docs"));
 
-        var quickAccess = HotCornerItems.Resolve(config, SystemRingItems.CreateSettings())
+        var quickAccess = HotCornerItems.Resolve(config, SystemOrbitItems.CreateSettings())
             .First(i => i.DisplayName == "QuickAccess");
         Assert.Equal(new[] { "github", "docs" }, quickAccess.Children.Select(c => c.DisplayName));
     }
 
     [Fact]
-    public void Tools_stays_the_live_ring_group_once_locked_into_an_arrangement()
+    public void Tools_stays_the_live_orbit_group_once_locked_into_an_arrangement()
     {
         var tools = ToolCatalog.CreateToolsGroup();
         var config = ConfigWith(tools);
-        HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
+        HotCornerItems.Edit(config, SystemOrbitItems.CreateSettings());
 
-        var resolved = HotCornerItems.Resolve(config, SystemRingItems.CreateSettings())
+        var resolved = HotCornerItems.Resolve(config, SystemOrbitItems.CreateSettings())
             .First(i => i.Target == ToolCatalog.ToolsGroupTarget);
-        // The live ring object, not a frozen copy — so the Tools page's own switches (which hide
+        // The live orbit object, not a frozen copy — so the Tools page's own switches (which hide
         // children directly on this object) keep applying wherever the corner shows it.
         Assert.Same(tools, resolved);
     }
@@ -125,47 +125,47 @@ public class HotCornerItemsTests
     {
         var notepad = Notepad("My editor");
         var config = ConfigWith(notepad);
-        HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
+        HotCornerItems.Edit(config, SystemOrbitItems.CreateSettings());
 
-        // Stored entries are copies in the file, so renaming the ring item has to show through.
+        // Stored entries are copies in the file, so renaming the orbit item has to show through.
         notepad.DisplayName = "Renamed";
 
-        var resolved = HotCornerItems.Resolve(config, SystemRingItems.CreateSettings());
+        var resolved = HotCornerItems.Resolve(config, SystemOrbitItems.CreateSettings());
         var slot = Assert.Single(resolved, i => i.Id == notepad.Id);
         Assert.Same(notepad, slot);
         Assert.Equal("Renamed", slot.DisplayName);
     }
 
     [Fact]
-    public void The_settings_entry_resolves_to_the_rings_own_settings_item()
+    public void The_settings_entry_resolves_to_the_orbits_own_settings_item()
     {
         var config = ConfigWith(App("one"));
-        HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
+        HotCornerItems.Edit(config, SystemOrbitItems.CreateSettings());
 
-        var settings = SystemRingItems.CreateSettings();
+        var settings = SystemOrbitItems.CreateSettings();
         var resolved = HotCornerItems.Resolve(config, settings);
 
         Assert.Same(settings, resolved.Last());
     }
 
     [Fact]
-    public void An_entry_whose_item_left_the_ring_keeps_working_from_its_own_copy()
+    public void An_entry_whose_item_left_the_orbit_keeps_working_from_its_own_copy()
     {
         var notepad = Notepad();
         var config = ConfigWith(notepad);
-        HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
+        HotCornerItems.Edit(config, SystemOrbitItems.CreateSettings());
 
         config.Primary.Items.Remove(notepad);
 
-        var resolved = HotCornerItems.Resolve(config, SystemRingItems.CreateSettings());
+        var resolved = HotCornerItems.Resolve(config, SystemOrbitItems.CreateSettings());
         Assert.Contains(resolved, i => i.DisplayName == "Notepad");
     }
 
     [Fact]
-    public void Reset_puts_the_corner_back_on_the_rings_picks()
+    public void Reset_puts_the_corner_back_on_the_orbits_picks()
     {
         var config = ConfigWith(Link("github"), Notepad());
-        var list = HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
+        var list = HotCornerItems.Edit(config, SystemOrbitItems.CreateSettings());
         list.RemoveAt(0);
         Assert.False(HotCornerItems.IsDefault(config));
 
@@ -174,20 +174,20 @@ public class HotCornerItemsTests
         Assert.True(HotCornerItems.IsDefault(config));
         Assert.Equal(
             new[] { "QuickAccess", "Notepad", "Settings" },
-            HotCornerItems.Resolve(config, SystemRingItems.CreateSettings()).Select(i => i.DisplayName));
+            HotCornerItems.Resolve(config, SystemOrbitItems.CreateSettings()).Select(i => i.DisplayName));
     }
 
     [Fact]
     public void A_corner_never_shows_more_than_its_four_places()
     {
         var config = ConfigWith(App("one"), App("two"));
-        var list = HotCornerItems.Edit(config, SystemRingItems.CreateSettings());
+        var list = HotCornerItems.Edit(config, SystemOrbitItems.CreateSettings());
         list.Add(App("extra one"));
         list.Add(App("extra two"));
         list.Add(App("extra three"));
 
         Assert.Equal(
             QuadrantLayout.ItemCount,
-            HotCornerItems.Resolve(config, SystemRingItems.CreateSettings()).Count);
+            HotCornerItems.Resolve(config, SystemOrbitItems.CreateSettings()).Count);
     }
 }

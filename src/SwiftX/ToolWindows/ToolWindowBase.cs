@@ -15,7 +15,7 @@ public sealed class ToolWindowBase : Window
 {
     private readonly nint _hwnd;
     private readonly AppWindow _appWindow;
-    private readonly RingManager _manager;
+    private readonly OrbitManager _manager;
     private readonly Grid _root = new();
     private bool _forceClose;
     private bool _askingToDiscard;
@@ -23,7 +23,7 @@ public sealed class ToolWindowBase : Window
     public ToolPage Page { get; }
     public ToolKind Kind { get; }
 
-    public ToolWindowBase(RingManager manager, ToolPage page, ToolDefinition definition)
+    public ToolWindowBase(OrbitManager manager, ToolPage page, ToolDefinition definition)
     {
         _manager = manager;
         Page = page;
@@ -185,7 +185,7 @@ public sealed class ToolWindowBase : Window
     }
 
     // Built from the codepoint, not a literal character in source — see the memory note on PUA
-    // glyph corruption from a stray copy/paste. The same "X" glyph the ring's own Close item and
+    // glyph corruption from a stray copy/paste. The same "X" glyph the orbit's own Close item and
     // Certificate's invalid badge already use elsewhere in this app.
     private static readonly string CloseGlyph = char.ConvertFromUtf32(0xE711);
 

@@ -25,7 +25,7 @@
             <!-- ThemeResource inside a Style resolves against the element the style lands on,
                  so Light Settings never paints Dark secondary text into a white card.
                  SettingsSecondaryTextBrush, not the shared SwiftXMutedBrush: Settings uses its own
-                 secondary text color while the ring, the tool windows, and AddItemWindow keep the
+                 secondary text color while the orbit, the tool windows, and AddItemWindow keep the
                  muted grey they share. -->
             <Style x:Key="SecondaryText" TargetType="TextBlock">
                 <Setter Property="Foreground" Value="{ThemeResource SettingsSecondaryTextBrush}" />
@@ -132,7 +132,7 @@
                  it has always been. Colors.xaml points NavigationViewContentBackground at the same
                  opaque brush so nothing shows through the edges of this Grid either. -->
             <Grid Padding="32,24,32,24" Background="{ThemeResource SwiftXCanvasBrush}">
-                <!-- ==================== HOME (ring customization) ==================== -->
+                <!-- ==================== HOME (orbit customization) ==================== -->
                 <ScrollViewer x:Name="HomePanel">
                     <StackPanel Spacing="12" MaxWidth="920" HorizontalAlignment="Left">
                         <TextBlock Text="Home" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,4" />
@@ -140,11 +140,11 @@
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                         <!-- An adaptive Grid rather than two fixed-width blocks in a horizontal
                              StackPanel: a horizontal StackPanel never constrains its children to
-                             the space actually available, so if the ring-preview card plus a fixed
+                             the space actually available, so if the orbit-preview card plus a fixed
                              336px sidebar plus the nav pane and content padding ever add up to more
                              than the window's client width — a near-miss under some font metrics/
                              DPI combinations — the sidebar simply got clipped at the window edge.
-                             Auto for the ring-preview card (it has a fixed pixel footprint) and a
+                             Auto for the orbit-preview card (it has a fixed pixel footprint) and a
                              capped Star for the sidebar means the sidebar instead shrinks to
                              whatever room is actually left, so the row can never exceed the space
                              it's given. -->
@@ -154,11 +154,11 @@
                                 <ColumnDefinition Width="*" MaxWidth="336" />
                             </Grid.ColumnDefinitions>
 
-                            <!-- The two ring-wide actions sit on the canvas itself, in the space
-                                 below the ring: they act on what is drawn there, and the ring's own
+                            <!-- The two orbit-wide actions sit on the canvas itself, in the space
+                                 below the orbit: they act on what is drawn there, and the orbit's own
                                  footprint never reaches the bottom of the canvas (it is scaled to
                                  fit well inside), so nothing is covered. -->
-                            <Border Grid.Column="0" Style="{StaticResource Card}" Background="{ThemeResource SwiftXRingCanvasBrush}"
+                            <Border Grid.Column="0" Style="{StaticResource Card}" Background="{ThemeResource SwiftXOrbitCanvasBrush}"
                                     HorizontalAlignment="Left" VerticalAlignment="Top" Padding="8">
                                 <Grid>
                                     <Canvas x:Name="PreviewCanvas" Width="360" Height="360" />
@@ -209,16 +209,16 @@
                                                    VerticalAlignment="Center" />
                                         <Slider x:Name="RadiusSlider" Grid.Column="2" MinWidth="130" Width="130"
                                                 VerticalAlignment="Center" HorizontalAlignment="Right"
-                                                AutomationProperties.Name="Ring radius"
+                                                AutomationProperties.Name="Orbit radius"
                                                 Minimum="80" Maximum="220" StepFrequency="5" TickFrequency="20"
                                                 ValueChanged="RadiusSlider_ValueChanged" />
                                     </Grid>
                                 </Border>
 
-                                <!-- The pointer half of "Invoke", and a ring setting rather than an
+                                <!-- The pointer half of "Invoke", and an orbit setting rather than an
                                      app-wide one, so it lives here beside size and radius. Two rows:
                                      the switch, then — as part of the same section rather than a
-                                     card of its own — which corner and how much of the ring it
+                                     card of its own — which corner and how much of the orbit it
                                      opens. The second row means nothing while the corner is off, so
                                      it is collapsed rather than merely disabled — no dead controls
                                      left sitting in the card. Margin carries the gap between the two
@@ -276,10 +276,10 @@
                                                 <ComboBoxItem Content="Bottom left" Tag="BottomLeft" />
                                                 <ComboBoxItem Content="Bottom right" Tag="BottomRight" />
                                             </ComboBox>
-                                            <RadioButton x:Name="HotCornerLayoutRing" Content="Ring"
+                                            <RadioButton x:Name="HotCornerLayoutOrbit" Content="Orbit"
                                                          GroupName="HotCornerLayout" MinWidth="0"
                                                          VerticalAlignment="Center"
-                                                         AutomationProperties.AutomationId="SettingsHotCornerLayoutRing"
+                                                         AutomationProperties.AutomationId="SettingsHotCornerLayoutOrbit"
                                                          Checked="HotCornerLayout_Checked" />
                                             <RadioButton x:Name="HotCornerLayoutQuadrant" Content="Quadrant"
                                                          GroupName="HotCornerLayout" MinWidth="0"
@@ -291,7 +291,7 @@
                                 </Border>
 
                                 <!-- Read-only inspector for whatever item was last clicked, on the
-                                     main ring or inside an expanded group's children row below.
+                                     main orbit or inside an expanded group's children row below.
                                      No edit/save controls here — real edits happen on the "Elements"
                                      tab. Hidden until something is selected. -->
                                 <Border x:Name="InfoBox" Style="{StaticResource Card}" Visibility="Collapsed">
@@ -307,10 +307,10 @@
                         </Grid>
 
                         <!-- Revealed in place of a group bubble's own slot when it's clicked, instead
-                             of replacing the whole ring view. Uses the ring-canvas grey (not the
+                             of replacing the whole orbit view. Uses the orbit-canvas grey (not the
                              white Card look) so it reads as the canvas extended, not another box. -->
                         <Border x:Name="GroupRow" Visibility="Collapsed" CornerRadius="8" BorderThickness="1"
-                                Background="{ThemeResource SwiftXRingCanvasBrush}"
+                                Background="{ThemeResource SwiftXOrbitCanvasBrush}"
                                 BorderBrush="{ThemeResource SwiftXCardStrokeBrush}" Padding="16,14">
                             <StackPanel Spacing="8">
                                 <TextBlock x:Name="GroupRowTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" />
@@ -326,6 +326,23 @@
                 <ScrollViewer x:Name="GeneralPanel" Visibility="Collapsed">
                     <StackPanel Spacing="6">
                         <TextBlock Text="General" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,12" />
+
+                        <!-- Shown on the very first run only, and only when there isn't already a
+                             SwiftX shortcut on the desktop (see OrbitManager.Start). An InfoBar
+                             rather than a dialog on purpose: a packaged app can't create the
+                             shortcut at install time, so the offer has to come from inside the
+                             app, and the first thing a new user sees should not be a modal asking
+                             permission for a file. Closable, and the "Desktop shortcut" switch
+                             below says the same thing permanently for anyone who dismisses it. -->
+                        <InfoBar x:Name="DesktopShortcutOffer"
+                                 IsOpen="False" Severity="Informational"
+                                 Title="Add SwiftX to your desktop?"
+                                 Message="SwiftX lives in the notification area, so it has no taskbar button of its own. A desktop shortcut gives you somewhere to click."
+                                 Margin="0,0,0,10">
+                            <InfoBar.ActionButton>
+                                <Button Content="Create shortcut" Click="CreateDesktopShortcut_Click" />
+                            </InfoBar.ActionButton>
+                        </InfoBar>
 
                         <Border Style="{StaticResource Card}">
                             <Grid ColumnSpacing="12">
@@ -348,7 +365,7 @@
                                     <ComboBoxItem Content="Light" Tag="Light" />
                                     <ComboBoxItem Content="Dark" Tag="Dark" />
                                     <!-- Displayed as "Midnight" — Tag stays "Black" to match the AppTheme.Black
-                                         enum member, which JsonStringEnumConverter persists by name in ring.json;
+                                         enum member, which JsonStringEnumConverter persists by name in orbit.json;
                                          renaming the enum itself would strand every saved config that already
                                          has "Black" written into it. -->
                                     <ComboBoxItem Content="Midnight" Tag="Black" />
@@ -363,7 +380,7 @@
                              overrides that default via SettingsWindow.ApplyAccentColorOverride,
                              which is what actually makes it show up on every toggle, radio button,
                              the Radius slider, the rating stars, and the nav selection indicator,
-                             not just the swatch itself. Settings-only: the ring, AddItemWindow, and
+                             not just the swatch itself. Settings-only: the orbit, AddItemWindow, and
                              the tool windows have no accent concept and never see this. -->
                         <Border Style="{StaticResource Card}">
                             <Grid ColumnSpacing="12">
@@ -463,7 +480,7 @@
                                           VerticalAlignment="Center" />
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                     <TextBlock Text="Invoke" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Show or hide the ring from the keyboard."
+                                    <TextBlock Text="Show or hide the orbit from the keyboard."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                     <TextBlock x:Name="HotkeyStatus" Style="{StaticResource SecondaryCaption}"
                                                TextWrapping="Wrap" />
@@ -503,6 +520,30 @@
                             </Grid>
                         </Border>
 
+                        <!-- Sits next to "Start with Windows" because it answers the same
+                             question from the other side: how SwiftX gets started. -->
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE8FC;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Desktop shortcut" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Keep a SwiftX icon on the desktop."
+                                               Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="DesktopShortcutToggle" Grid.Column="2"
+                                              OnContent="" OffContent="" MinWidth="0"
+                                              AutomationProperties.Name="Desktop shortcut"
+                                              HorizontalAlignment="Right"
+                                              Toggled="DesktopShortcutToggle_Toggled" />
+                            </Grid>
+                        </Border>
+
                         <Border Style="{StaticResource Card}">
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>
@@ -514,7 +555,7 @@
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="Backup &amp; restore" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Export or import your ring configuration as JSON."
+                                    <TextBlock Text="Export or import your orbit configuration as JSON."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
@@ -536,7 +577,7 @@
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="Reset" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Restore default theme, accent colour, hover style, item size, radius, hotkey, tools, and ring items."
+                                    <TextBlock Text="Restore default theme, accent colour, hover style, item size, radius, hotkey, tools, and orbit items."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <Button Grid.Column="2" Content="Reset" VerticalAlignment="Center"
@@ -558,7 +599,7 @@
                             <TextBlock Grid.Column="0" Text="Elements" Style="{ThemeResource TitleTextBlockStyle}" />
                             <Button Grid.Column="1" Content="Add item…" VerticalAlignment="Center" Click="AddAppItem_Click" />
                         </Grid>
-                        <TextBlock Text="Elements are the apps, files, folders, links, and groups you've added to the ring. Show, hide, or remove items on the ring. Settings and Close are always on the ring, so they are not listed here."
+                        <TextBlock Text="Elements are the apps, files, folders, links, and groups you've added to the orbit. Show, hide, or remove items on the orbit. Settings and Close are always on the orbit, so they are not listed here."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" Margin="0,0,0,8" />
                         <Grid x:Name="ItemsList" ColumnSpacing="12" RowSpacing="6">
                             <Grid.ColumnDefinitions>
@@ -573,11 +614,11 @@
                 <ScrollViewer x:Name="ToolsPanel" Visibility="Collapsed">
                     <StackPanel Spacing="6">
                         <TextBlock Text="Dev Tools" Style="{ThemeResource TitleTextBlockStyle}" Margin="0,0,0,12" />
-                        <TextBlock Text="Every tool lives inside the Tools item on the ring. Turn one off to take it out, or drag it by its handle to change where it sits inside."
+                        <TextBlock Text="Every tool lives inside the Tools item on the orbit. Turn one off to take it out, or drag it by its handle to change where it sits inside."
                                    Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" Margin="0,0,0,4" />
 
                         <!-- Rows are built in code-behind (RebuildToolsList) — six fixed built-in
-                             tools, each shown once here regardless of how many ring instances they
+                             tools, each shown once here regardless of how many orbit instances they
                              have. CanReorderItems + AllowDrop is WinUI's own drag-to-reorder; it
                              drives ToolCards directly (see ToolCards_CollectionChanged). -->
                         <ListView x:Name="ToolsList" SelectionMode="None"
@@ -619,7 +660,7 @@
                                 <StackPanel Grid.Column="1" Spacing="2">
                                     <TextBlock Text="Everything stays on this device"
                                                Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="Your ring items and settings are saved to this PC only. There is no SwiftX account and no server to sync to."
+                                    <TextBlock Text="Your orbit items and settings are saved to this PC only. There is no SwiftX account and no server to sync to."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Grid>
@@ -691,7 +732,7 @@
                                 <StackPanel Grid.Column="1" Spacing="2">
                                     <TextBlock Text="The one thing that touches the network"
                                                Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="A web link on the ring may ask that site for its icon so the item can show it. That request carries nothing about you, and it is the only network call SwiftX makes on its own."
+                                    <TextBlock Text="A web link on the orbit may ask that site for its icon so the item can show it. That request carries nothing about you, and it is the only network call SwiftX makes on its own."
                                                Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Grid>
@@ -890,7 +931,7 @@
                                     <TextBlock Text="SwiftX" FontSize="20" FontWeight="SemiBold" />
                                     <TextBlock x:Name="VersionText" Style="{StaticResource SecondaryCaption}" />
                                     <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
-                                               Text="A quick-access ring for Windows. Summon it with a shortcut, a screen corner, or the tray icon, and launch the apps, folders, links, and built-in tools you reach for most." />
+                                               Text="A quick-access orbit for Windows. Summon it with a shortcut, a screen corner, or the tray icon, and launch the apps, folders, links, and built-in tools you reach for most." />
                                     <TextBlock Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap"
                                                Text="SwiftX runs entirely on your own device — see Privacy for what that means." />
                                     <!-- The two documents behind the app, side by side because

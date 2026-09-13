@@ -4,24 +4,24 @@ using Xunit;
 namespace SwiftX.Tests.Models;
 
 /// <summary>
-/// Covers the two built-in ring entries. They are synthesized onto the ring at render time rather
+/// Covers the two built-in orbit entries. They are synthesized onto the orbit at render time rather
 /// than stored in a profile, so the persistence-facing behaviour that remains is
-/// <see cref="SystemRingItems.Strip"/> — RingManager.Start runs it on every load and re-saves when
+/// <see cref="SystemOrbitItems.Strip"/> — OrbitManager.Start runs it on every load and re-saves when
 /// it reports a change, migrating configs written while Settings/Close still lived in
-/// RingProfile.Items.
+/// OrbitProfile.Items.
 /// </summary>
-public class SystemRingItemsTests
+public class SystemOrbitItemsTests
 {
-    private static RingItem User(string name, string target) => new()
+    private static OrbitItem User(string name, string target) => new()
     {
-        Kind = RingItemKind.Application,
+        Kind = OrbitItemKind.Application,
         DisplayName = name,
         Target = target,
     };
 
-    private static RingItem Group(string name, params RingItem[] children)
+    private static OrbitItem Group(string name, params OrbitItem[] children)
     {
-        var group = new RingItem { Kind = RingItemKind.Group, DisplayName = name };
+        var group = new OrbitItem { Kind = OrbitItemKind.Group, DisplayName = name };
         group.Children.AddRange(children);
         return group;
     }
@@ -29,17 +29,17 @@ public class SystemRingItemsTests
     [Fact]
     public void Strip_removes_stored_settings_and_close_entries_and_reports_the_change()
     {
-        var items = new List<RingItem>
+        var items = new List<OrbitItem>
         {
             User("Notepad", @"C:\Windows\System32\notepad.exe"),
-            SystemRingItems.CreateSettings(),
+            SystemOrbitItems.CreateSettings(),
             User("Docs", @"C:\Docs"),
-            SystemRingItems.CreateClose(),
+            SystemOrbitItems.CreateClose(),
         };
 
-        Assert.True(SystemRingItems.Strip(items));
+        Assert.True(SystemOrbitItems.Strip(items));
 
-        // Only the user's own entries survive, in their original order — the ring adds Settings
+        // Only the user's own entries survive, in their original order — the orbit adds Settings
         // and Close back itself, so leaving a stored copy would draw each of them twice.
         Assert.Equal(new[] { "Notepad", "Docs" }, items.Select(i => i.DisplayName));
     }
@@ -47,10 +47,10 @@ public class SystemRingItemsTests
     [Fact]
     public void Strip_reaches_system_entries_nested_inside_a_group()
     {
-        var group = Group("Tools", User("JSON", "Json"), SystemRingItems.CreateClose());
-        var items = new List<RingItem> { User("Notepad", "notepad.exe"), group };
+        var group = Group("Tools", User("JSON", "Json"), SystemOrbitItems.CreateClose());
+        var items = new List<OrbitItem> { User("Notepad", "notepad.exe"), group };
 
-        Assert.True(SystemRingItems.Strip(items));
+        Assert.True(SystemOrbitItems.Strip(items));
 
         Assert.Equal(2, items.Count);
         Assert.Equal("JSON", Assert.Single(group.Children).DisplayName);
@@ -59,11 +59,11 @@ public class SystemRingItemsTests
     [Fact]
     public void Strip_recurses_through_more_than_one_level_of_grouping()
     {
-        var inner = Group("Inner", SystemRingItems.CreateSettings(), User("JSON", "Json"));
+        var inner = Group("Inner", SystemOrbitItems.CreateSettings(), User("JSON", "Json"));
         var outer = Group("Outer", inner);
-        var items = new List<RingItem> { outer };
+        var items = new List<OrbitItem> { outer };
 
-        Assert.True(SystemRingItems.Strip(items));
+        Assert.True(SystemOrbitItems.Strip(items));
 
         Assert.Equal("JSON", Assert.Single(inner.Children).DisplayName);
     }
@@ -72,16 +72,16 @@ public class SystemRingItemsTests
     public void Strip_leaves_a_config_without_system_entries_untouched()
     {
         var group = Group("Tools", User("JSON", "Json"), User("XML", "Xml"));
-        var items = new List<RingItem>
+        var items = new List<OrbitItem>
         {
             User("Notepad", @"C:\Windows\System32\notepad.exe"),
             User("Site", "https://example.com"),
             group,
         };
 
-        // False is load-bearing: RingManager.Start persists the config whenever Strip reports a
-        // change, so a spurious true would rewrite ring.json on every single launch.
-        Assert.False(SystemRingItems.Strip(items));
+        // False is load-bearing: OrbitManager.Start persists the config whenever Strip reports a
+        // change, so a spurious true would rewrite orbit.json on every single launch.
+        Assert.False(SystemOrbitItems.Strip(items));
 
         Assert.Equal(new[] { "Notepad", "Site", "Tools" }, items.Select(i => i.DisplayName));
         Assert.Equal(new[] { "JSON", "XML" }, group.Children.Select(i => i.DisplayName));
@@ -95,9 +95,9 @@ public class SystemRingItemsTests
     {
         // A hand-edited config can carry either casing; a case-sensitive match would leave the
         // stored copy sitting next to the synthesized one.
-        var items = new List<RingItem> { User("Notepad", "notepad.exe"), User("Legacy", target) };
+        var items = new List<OrbitItem> { User("Notepad", "notepad.exe"), User("Legacy", target) };
 
-        Assert.True(SystemRingItems.Strip(items));
+        Assert.True(SystemOrbitItems.Strip(items));
 
         Assert.Equal("Notepad", Assert.Single(items).DisplayName);
     }
@@ -111,7 +111,7 @@ public class SystemRingItemsTests
     [InlineData("SWIFTX:CLOSE")]
     public void IsSystemTarget_recognises_both_built_in_targets_in_any_casing(string target)
     {
-        Assert.True(SystemRingItems.IsSystemTarget(target));
+        Assert.True(SystemOrbitItems.IsSystemTarget(target));
     }
 
     [Theory]
@@ -127,28 +127,28 @@ public class SystemRingItemsTests
     public void IsSystemTarget_rejects_anything_that_is_not_one_of_the_two_built_ins(string? target)
     {
         // "swiftx:back" in particular: it is a retired target, and treating it as a built-in
-        // would make Strip silently delete an entry the ring no longer knows how to re-add.
-        Assert.False(SystemRingItems.IsSystemTarget(target));
+        // would make Strip silently delete an entry the orbit no longer knows how to re-add.
+        Assert.False(SystemOrbitItems.IsSystemTarget(target));
     }
 
     [Fact]
-    public void CreateSettings_builds_an_entry_the_ring_can_recognise_and_label()
+    public void CreateSettings_builds_an_entry_the_orbit_can_recognise_and_label()
     {
-        var item = SystemRingItems.CreateSettings();
+        var item = SystemOrbitItems.CreateSettings();
 
-        Assert.Equal(SystemRingItems.SettingsTarget, item.Target);
-        Assert.True(SystemRingItems.IsSystemTarget(item.Target));
+        Assert.Equal(SystemOrbitItems.SettingsTarget, item.Target);
+        Assert.True(SystemOrbitItems.IsSystemTarget(item.Target));
         Assert.True(item.IsSystem);
         Assert.False(string.IsNullOrWhiteSpace(item.DisplayName));
     }
 
     [Fact]
-    public void CreateClose_builds_an_entry_the_ring_can_recognise_and_label()
+    public void CreateClose_builds_an_entry_the_orbit_can_recognise_and_label()
     {
-        var item = SystemRingItems.CreateClose();
+        var item = SystemOrbitItems.CreateClose();
 
-        Assert.Equal(SystemRingItems.CloseTarget, item.Target);
-        Assert.True(SystemRingItems.IsSystemTarget(item.Target));
+        Assert.Equal(SystemOrbitItems.CloseTarget, item.Target);
+        Assert.True(SystemOrbitItems.IsSystemTarget(item.Target));
         Assert.True(item.IsSystem);
         Assert.False(string.IsNullOrWhiteSpace(item.DisplayName));
     }
@@ -157,21 +157,21 @@ public class SystemRingItemsTests
     public void The_two_built_in_entries_are_told_apart_by_their_targets()
     {
         Assert.NotEqual(
-            SystemRingItems.CreateSettings().Target,
-            SystemRingItems.CreateClose().Target);
+            SystemOrbitItems.CreateSettings().Target,
+            SystemOrbitItems.CreateClose().Target);
     }
 
     [Fact]
     public void Each_call_hands_back_a_fresh_instance_rather_than_a_shared_singleton()
     {
-        // The ring window keeps and mutates the items it renders (resolved icon, hover state), so
+        // The orbit window keeps and mutates the items it renders (resolved icon, hover state), so
         // a shared instance would let one window's state bleed into the next one opened.
         Assert.False(ReferenceEquals(
-            SystemRingItems.CreateSettings(), SystemRingItems.CreateSettings()));
+            SystemOrbitItems.CreateSettings(), SystemOrbitItems.CreateSettings()));
         Assert.False(ReferenceEquals(
-            SystemRingItems.CreateClose(), SystemRingItems.CreateClose()));
+            SystemOrbitItems.CreateClose(), SystemOrbitItems.CreateClose()));
         Assert.NotEqual(
-            SystemRingItems.CreateSettings().Id, SystemRingItems.CreateSettings().Id);
+            SystemOrbitItems.CreateSettings().Id, SystemOrbitItems.CreateSettings().Id);
     }
 
     [Fact]
@@ -179,13 +179,13 @@ public class SystemRingItemsTests
     {
         // Ties the two halves together: whatever CreateSettings/CreateClose produce must be
         // exactly what the migration recognises, so a target rename can never split them.
-        var items = new List<RingItem>
+        var items = new List<OrbitItem>
         {
-            SystemRingItems.CreateSettings(),
-            SystemRingItems.CreateClose(),
+            SystemOrbitItems.CreateSettings(),
+            SystemOrbitItems.CreateClose(),
         };
 
-        Assert.True(SystemRingItems.Strip(items));
+        Assert.True(SystemOrbitItems.Strip(items));
         Assert.Empty(items);
     }
 }

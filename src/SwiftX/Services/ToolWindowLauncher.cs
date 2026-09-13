@@ -3,7 +3,7 @@ using SwiftX.ToolWindows;
 
 namespace SwiftX.Services;
 
-public sealed class ToolWindowLauncher(RingManager manager)
+public sealed class ToolWindowLauncher(OrbitManager manager)
 {
     public ToolWindowBase? Open(ToolDefinition definition, string? seedFilePath = null, bool forceNewInstance = false)
     {

@@ -7,7 +7,7 @@ namespace SwiftX.Services;
 
 /// <summary>
 /// A macOS-style hot corner: raises <see cref="Triggered"/> once the pointer has rested for a
-/// moment in the configured corner of the screen it is on, giving the ring a mouse-only summon
+/// moment in the configured corner of the screen it is on, giving the orbit a mouse-only summon
 /// alongside the keyboard shortcut and the tray icon.
 /// <para>
 /// The pointer is polled rather than hooked. A <c>WH_MOUSE_LL</c> hook would see every movement
@@ -21,12 +21,12 @@ namespace SwiftX.Services;
 /// Two guards keep it from firing when the corner was not the point: the pointer has to stay in
 /// the patch for <see cref="DwellMilliseconds"/> (a corner clipped in passing does not count), and
 /// having fired it will not fire again until the pointer has left the patch, so parking the mouse
-/// in the corner summons the ring once rather than every tick.
+/// in the corner summons the orbit once rather than every tick.
 /// </para>
 /// </summary>
 public sealed class HotCornerWatcher : IDisposable
 {
-    /// <summary>How long the pointer has to sit in the corner before the ring is summoned.</summary>
+    /// <summary>How long the pointer has to sit in the corner before the orbit is summoned.</summary>
     public const int DwellMilliseconds = 250;
 
     /// <summary>How often the pointer is sampled. Well below the dwell, so the delay the user

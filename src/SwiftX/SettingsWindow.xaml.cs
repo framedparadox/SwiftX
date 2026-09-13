@@ -22,12 +22,12 @@ using WinRT.Interop;
 namespace SwiftX;
 
 /// <summary>
-/// Settings shell: left NavigationView with Home (ring customize,
+/// Settings shell: left NavigationView with Home (orbit customize,
 /// including the hot corner), General (the invoke shortcut and app-wide settings), Elements,
 /// Tools, and — pinned to the footer — Feedback &amp; Support, About, and Privacy.
 /// <para>
 /// This window, and only this window, follows its own Settings-exclusive palette in
-/// <c>Themes/Colors.xaml</c>; the ring, AddItemWindow, and the tool windows keep the app's shared
+/// <c>Themes/Colors.xaml</c>; the orbit, AddItemWindow, and the tool windows keep the app's shared
 /// black/white identity, which is why the shared <c>SwiftX*</c> brushes are deliberately left
 /// alone here.
 /// </para>
@@ -43,12 +43,15 @@ namespace SwiftX;
 /// </summary>
 public sealed partial class SettingsWindow : Window
 {
-    private readonly RingManager _manager;
+    private readonly OrbitManager _manager;
+    // Latched in the constructor and acted on once the tree is loaded, since the InfoBar it opens
+    // and the nav item it selects don't exist yet when the constructor runs.
+    private readonly bool _offerDesktopShortcut;
     private readonly nint _hwnd;
     private readonly AppWindow _appWindow;
     private bool _loading = true;
     private Border? _dragBorder;
-    private RingItem? _dragItem;
+    private OrbitItem? _dragItem;
     private Point _dragStart;
     private bool _dragMoved;
     private int _dragSlot = -1;
@@ -62,7 +65,7 @@ public sealed partial class SettingsWindow : Window
 
     // Preview geometry and slot occupancy, recorded by RenderPreview so the canvas-level pointer
     // handlers can work out which slot an event landed in without walking the visual tree.
-    private readonly Border?[] _slotBorders = new Border?[RingMetrics.SlotCount];
+    private readonly Border?[] _slotBorders = new Border?[OrbitMetrics.SlotCount];
     private Point _previewCenter;
     private double _previewRadius;
     private double _previewBubble;
@@ -77,32 +80,38 @@ public sealed partial class SettingsWindow : Window
     private double _quadrantRadius;
     private double _quadrantBubble;
 
-    // Whether the canvas is currently showing the hot corner's quadrant instead of the ring.
+    // Whether the canvas is currently showing the hot corner's quadrant instead of the orbit.
     // Purely a preview: toggled by the corner button RenderPreview draws, and never persisted —
     // what the corner actually summons is Config.HotCornerLayout.
     private bool _previewQuadrant;
 
     // Selection state for the read-only inspector (InfoBox) and the group children row (GroupRow).
-    // Neither swaps out which list the ring renders anymore — a click just picks what, if anything,
-    // is shown below the ring — so plain "currently selected / currently expanded" fields replace
+    // Neither swaps out which list the orbit renders anymore — a click just picks what, if anything,
+    // is shown below the orbit — so plain "currently selected / currently expanded" fields replace
     // the old _editing/_editList-swapping model entirely.
-    private RingItem? _selectedItem;
-    private RingItem? _expandedGroup;
+    private OrbitItem? _selectedItem;
+    private OrbitItem? _expandedGroup;
 
     // Geometry + drag state for GroupRow's horizontal children strip, mirroring _slotBorders /
-    // _dragBorder etc. above but for a 1-D layout instead of the ring's circular one.
+    // _dragBorder etc. above but for a 1-D layout instead of the orbit's circular one.
     private const double GroupChildBubble = 44;
     private const double GroupChildGap = 14;
     private readonly List<Border> _groupSlotBorders = new();
     private Border? _groupDragBorder;
-    private RingItem? _groupDragItem;
+    private OrbitItem? _groupDragItem;
     private Point _groupDragStart;
     private bool _groupDragMoved;
     private int _groupDragIndex = -1;
 
-    public SettingsWindow(RingManager manager)
+    /// <param name="offerDesktopShortcut">
+    /// Opens this window on General with the desktop-shortcut prompt showing. Set only by the
+    /// first run (see <see cref="OrbitManager.Start"/>), because a Store-packaged SwiftX cannot
+    /// create that shortcut at install time and so has to ask for it once, from inside the app.
+    /// </param>
+    public SettingsWindow(OrbitManager manager, bool offerDesktopShortcut = false)
     {
         _manager = manager;
+        _offerDesktopShortcut = offerDesktopShortcut;
         InitializeComponent();
 
         // Attached regardless of theme — see the class doc above for why that's fine: Light's own
@@ -165,7 +174,7 @@ public sealed partial class SettingsWindow : Window
             p.IsMaximizable = false;
         _appWindow.IsShownInSwitchers = true;
 
-        // 1000 used to leave only a couple of px of margin for the Home tab's ring-preview card +
+        // 1000 used to leave only a couple of px of margin for the Home tab's orbit-preview card +
         // sidebar row (~998px of fixed content against a 1000px client width) — razor-thin enough
         // that ordinary font-metric/DPI variance could tip it into visible clipping. 1040 restores
         // a real margin; the Home tab's sidebar column is also now Grid-adaptive (see
@@ -182,7 +191,7 @@ public sealed partial class SettingsWindow : Window
             PopulateLanguageBox();
             SelectHoverStyle(_manager.Config.HoverStyle);
             SelectItemSize(_manager.Config.ItemSize);
-            RadiusSlider.Value = _manager.Config.RingRadius ?? RingMetrics.DefaultRadius;
+            RadiusSlider.Value = _manager.Config.OrbitRadius ?? OrbitMetrics.DefaultRadius;
             HotkeyEnabledToggle.IsOn = _manager.Config.HotkeyEnabled;
             HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
             SelectHotCorner(_manager.Config.HotCorner);
@@ -202,11 +211,21 @@ public sealed partial class SettingsWindow : Window
             UpdateRatingThanks();
             SyncAccentControls();
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
+            SyncDesktopShortcutToggle();
             VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0");
             _loading = false;
             RenderPreview();
             RebuildItemsList();
             UpdateHotkeyStatus();
+
+            if (_offerDesktopShortcut)
+            {
+                // Land on General rather than Home so the offer and the switch it corresponds to
+                // are both on screen at once — an InfoBar on a page the user has to be told to go
+                // to is just a notification with extra steps.
+                GoToGeneralPage();
+                DesktopShortcutOffer.IsOpen = true;
+            }
         };
 
         _manager.ItemsChanged += () =>
@@ -227,7 +246,7 @@ public sealed partial class SettingsWindow : Window
         };
     }
 
-    private static bool ItemExists(List<RingItem> items, RingItem target)
+    private static bool ItemExists(List<OrbitItem> items, OrbitItem target)
     {
         foreach (var item in items)
         {
@@ -284,7 +303,7 @@ public sealed partial class SettingsWindow : Window
     private static readonly string[] BlackOverrideKeys =
     {
         "SettingsSurfaceBrush", "SwiftXCanvasBrush", "SwiftXNavPaneBrush",
-        "SwiftXCardBackgroundBrush", "SwiftXRingCanvasBrush",
+        "SwiftXCardBackgroundBrush", "SwiftXOrbitCanvasBrush",
         "NavigationViewDefaultPaneBackground", "NavigationViewExpandedPaneBackground",
         "NavigationViewContentBackground",
     };
@@ -338,8 +357,8 @@ public sealed partial class SettingsWindow : Window
         // over/pressed) — lightening for hover and darkening for pressed mirrors how
         // AccentFillColorSecondary/TertiaryBrush relate to AccentFillColorDefaultBrush for the
         // system accent, without asking the user to pick three colours themselves.
-        var hover = new SolidColorBrush(Blend(accent, Colors.White, 0.18));
-        var pressed = new SolidColorBrush(Blend(accent, Colors.Black, 0.18));
+        var hover = new SolidColorBrush(AccentPalette.PointerOver(accent));
+        var pressed = new SolidColorBrush(AccentPalette.Pressed(accent));
 
         Root.Resources["SettingsAccentBrush"] = normal;
         Root.Resources["SettingsAccentHoverBrush"] = hover;
@@ -373,44 +392,29 @@ public sealed partial class SettingsWindow : Window
         ReadPrivacyLink.Foreground = normal;
     }
 
-    /// <summary>The built-in default, per theme — must track SettingsAccentBrush/
-    /// SettingsAccentHoverBrush in Themes/Colors.xaml, the same duplication-for-a-reason
-    /// SettingsRimColorDark/Light already carries a few lines down (see that comment).</summary>
-    private const string DefaultAccentHexDark = "#3DDCD3";
-    private const string DefaultAccentHexLight = "#0B7C7C";
-
     /// <summary>
     /// What the accent colour actually resolves to right now: the user's own pick when they have
     /// made one, otherwise the built-in teal for the theme in play. Drives both the brushes
     /// <see cref="ApplyAccentColorOverride"/> paints and the swatch/picker that report them.
-    /// </summary>
-    private Color CurrentAccentColor()
-    {
-        var hex = _manager.Config.AccentColorHex;
-        if (!string.IsNullOrEmpty(hex) && TryParseHexColor(hex, out var custom))
-            return custom;
-        TryParseHexColor(ResolveIsDark() ? DefaultAccentHexDark : DefaultAccentHexLight, out var fallback);
-        return fallback;
-    }
-
-    /// <summary>
-    /// Whether the theme now being applied is a dark one, read from the configured
-    /// <see cref="AppTheme"/> rather than from <c>Root.ActualTheme</c>.
     /// <para>
-    /// The distinction matters for ordering: <see cref="ApplyTheme"/> has to write the accent
-    /// brushes <em>before</em> <see cref="ForceThemeResourceRefresh"/>, since that refresh is what
-    /// makes every <c>{ThemeResource}</c> under Root re-resolve and pick the new brushes up —
-    /// but at that moment Root.RequestedTheme has not been assigned yet, so ActualTheme can still
-    /// be reporting the previous theme. Config is already correct at that point. Only System, which
-    /// has no fixed answer of its own, defers to what the element actually resolved to.
+    /// The per-theme defaults, the parsing and the hover/pressed derivation all live in
+    /// <see cref="AccentPalette"/> now, shared with <see cref="AddItemWindow"/> — this window is no
+    /// longer the only one that honours the accent, and two private copies of the default teal
+    /// would have been two places to forget when it changes.
+    /// </para>
+    /// <para>
+    /// Note which "is it dark" this passes: the one read from the configured <see cref="AppTheme"/>
+    /// rather than from <c>Root.ActualTheme</c>, because <see cref="ApplyTheme"/> has to write the
+    /// accent brushes <em>before</em> <see cref="ForceThemeResourceRefresh"/> — that refresh is what
+    /// makes every <c>{ThemeResource}</c> under Root re-resolve and pick the new brushes up, but at
+    /// that moment Root.RequestedTheme has not been assigned yet, so ActualTheme can still be
+    /// reporting the previous theme. Config is already correct at that point; only System, which has
+    /// no fixed answer of its own, falls back to what the element actually resolved to. See
+    /// <see cref="AccentPalette.IsDark"/>, which carries exactly that rule.
     /// </para>
     /// </summary>
-    private bool ResolveIsDark() => ThemeHelper.Resolve(_manager.Config.Theme) switch
-    {
-        ElementTheme.Dark => true,
-        ElementTheme.Light => false,
-        _ => ThemeHelper.IsDark(Root),
-    };
+    private Color CurrentAccentColor() => AccentPalette.Resolve(
+        _manager.Config, AccentPalette.IsDark(_manager.Config, Root));
 
     /// <summary>
     /// Brings the swatch and the picker in line with <see cref="CurrentAccentColor"/>. Seeding the
@@ -429,46 +433,18 @@ public sealed partial class SettingsWindow : Window
         AccentColorSwatch.Background = new SolidColorBrush(accent);
     }
 
-    /// <summary>Parses "#RRGGBB" (the only form <see cref="AppConfig.AccentColorHex"/> is ever
-    /// written in). Never throws — an unparsable stored value just falls back like an unset
-    /// one.</summary>
-    private static bool TryParseHexColor(string hex, out Color color)
-    {
-        color = default;
-        var s = hex.TrimStart('#');
-        if (s.Length != 6)
-            return false;
-        try
-        {
-            byte r = Convert.ToByte(s.Substring(0, 2), 16);
-            byte g = Convert.ToByte(s.Substring(2, 2), 16);
-            byte b = Convert.ToByte(s.Substring(4, 2), 16);
-            color = Color.FromArgb(255, r, g, b);
-            return true;
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
-    }
-
-    private static string ToHexColor(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
-
-    /// <summary>Blends <paramref name="c"/> toward <paramref name="target"/> by
-    /// <paramref name="amount"/> (0-1) — the hover/pressed shades <see cref="ApplyAccentColorOverride"/>
-    /// derives from one stored colour.</summary>
-    private static Color Blend(Color c, Color target, double amount)
-    {
-        byte L(byte a, byte b) => (byte)Math.Clamp(a + (b - a) * amount, 0, 255);
-        return Color.FromArgb(255, L(c.R, target.R), L(c.G, target.G), L(c.B, target.B));
-    }
+    // TryParseHexColor / ToHexColor / Blend used to live here. They are AccentPalette.TryParseHex,
+    // AccentPalette.ToHex and AccentPalette.Blend now — see CurrentAccentColor's own remarks for
+    // why they moved.
 
     private void AccentColorPicker_ColorChanged(ColorPicker sender, ColorChangedEventArgs args)
     {
         if (_loading) return;
-        _manager.Config.AccentColorHex = ToHexColor(args.NewColor);
+        _manager.Config.AccentColorHex = AccentPalette.ToHex(args.NewColor);
         _manager.Save();
         ApplyAccentColorOverride();
+        // The Add-item dialog honours the accent too and can be open beside this picker.
+        _manager.ApplyAccentColour();
         AccentColorSwatch.Background = new SolidColorBrush(args.NewColor);
     }
 
@@ -477,6 +453,7 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.AccentColorHex = null;
         _manager.Save();
         ApplyAccentColorOverride();
+        _manager.ApplyAccentColour();
         SyncAccentControls();
         AccentColorSwatch.Flyout?.Hide();
     }
@@ -527,16 +504,16 @@ public sealed partial class SettingsWindow : Window
         PreviewCanvas.Children.Clear();
         const double size = 360;
         // Nudged up from dead center: the canvas now carries the Add item / Reset defaults row
-        // along its own bottom edge, so the ring sits a little high of true center to keep clear
+        // along its own bottom edge, so the orbit sits a little high of true center to keep clear
         // breathing room under it instead of crowding those buttons.
         const double verticalNudge = 24;
         double cx = size / 2, cy = size / 2 - verticalNudge;
 
         if (_previewQuadrant && _manager.Config.HotCornerEnabled)
         {
-            // The ring's own slots are not on screen, so drop them: a press must not reach a
-            // bubble that is no longer drawn. The two ring-wide buttons go with them — they act on
-            // the ring, and a bottom corner's fan would run straight through where they sit.
+            // The orbit's own slots are not on screen, so drop them: a press must not reach a
+            // bubble that is no longer drawn. The two orbit-wide buttons go with them — they act on
+            // the orbit, and a bottom corner's fan would run straight through where they sit.
             Array.Clear(_slotBorders);
             CanvasActions.Visibility = Visibility.Collapsed;
             RenderQuadrantPreview(size);
@@ -546,12 +523,12 @@ public sealed partial class SettingsWindow : Window
 
         CanvasActions.Visibility = Visibility.Visible;
 
-        // Scale the live ring geometry into the preview canvas rather than drawing one fixed
-        // picture of it, so Ring size / Item size / Ring radius visibly change what this shows.
-        double scale = size * 0.74 / (2 * (RingMetrics.Radius + RingMetrics.Bubble / 2));
-        double radius = RingMetrics.Radius * scale;
-        double bubble = RingMetrics.Bubble * scale;
-        double glyphSize = Math.Max(10, RingMetrics.Glyph * scale);
+        // Scale the live orbit geometry into the preview canvas rather than drawing one fixed
+        // picture of it, so Orbit size / Item size / Orbit radius visibly change what this shows.
+        double scale = size * 0.74 / (2 * (OrbitMetrics.Radius + OrbitMetrics.Bubble / 2));
+        double radius = OrbitMetrics.Radius * scale;
+        double bubble = OrbitMetrics.Bubble * scale;
+        double glyphSize = Math.Max(10, OrbitMetrics.Glyph * scale);
 
         _previewCenter = new Point(cx, cy);
         _previewRadius = radius;
@@ -563,35 +540,35 @@ public sealed partial class SettingsWindow : Window
         var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
 
-        // Match the ring: the center is the app mark alone, painted on nothing — floating form and
+        // Match the orbit: the center is the app mark alone, painted on nothing — floating form and
         // all, so the preview shows the same shadow the real hub has. A filled plate here read as a
         // big empty hole that does not exist on the real thing.
-        double logo = RingMetrics.HubLogo * scale;
+        double logo = OrbitMetrics.HubLogo * scale;
         var hub = AppLogo.CreateFloating(logo);
         Canvas.SetLeft(hub, cx - logo / 2);
         Canvas.SetTop(hub, cy - logo / 2);
         PreviewCanvas.Children.Add(hub);
 
-        var items = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(RingMetrics.UserSlotCount).ToList();
+        var items = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(OrbitMetrics.UserSlotCount).ToList();
 
-        // A full ring has no empty slot left to add into, so the button that would open the add
-        // dialog goes away rather than sitting there offering something the ring cannot take.
-        // Reset defaults stays: it is still meaningful on a full ring.
-        AddItemButton.Visibility = items.Count >= RingMetrics.UserSlotCount
+        // A full orbit has no empty slot left to add into, so the button that would open the add
+        // dialog goes away rather than sitting there offering something the orbit cannot take.
+        // Reset defaults stays: it is still meaningful on a full orbit.
+        AddItemButton.Visibility = items.Count >= OrbitMetrics.UserSlotCount
             ? Visibility.Collapsed
             : Visibility.Visible;
 
-        for (int i = 0; i < RingMetrics.SlotCount; i++)
+        for (int i = 0; i < OrbitMetrics.SlotCount; i++)
         {
             double angle = (-90 + i * 45) * Math.PI / 180.0;
             double x = cx + radius * Math.Cos(angle) - bubble / 2;
             double y = cy + radius * Math.Sin(angle) - bubble / 2;
 
-            // The ring synthesizes Settings and Close into the last two slots, so the preview does
+            // The orbit synthesizes Settings and Close into the last two slots, so the preview does
             // the same rather than reading them out of the profile — they are not in it.
-            bool pinned = i >= RingMetrics.UserSlotCount;
-            RingItem? item = pinned
-                ? (i == RingMetrics.UserSlotCount ? SystemRingItems.CreateSettings() : SystemRingItems.CreateClose())
+            bool pinned = i >= OrbitMetrics.UserSlotCount;
+            OrbitItem? item = pinned
+                ? (i == OrbitMetrics.UserSlotCount ? SystemOrbitItems.CreateSettings() : SystemOrbitItems.CreateClose())
                 : i < items.Count ? items[i] : null;
 
             var border = new Border
@@ -599,7 +576,7 @@ public sealed partial class SettingsWindow : Window
                 Width = bubble,
                 Height = bubble,
                 CornerRadius = new CornerRadius(bubble / 2),
-                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "RingBubbleGlassTint"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "OrbitBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = item,
@@ -608,7 +585,7 @@ public sealed partial class SettingsWindow : Window
             if (pinned)
             {
                 border.Child = PreviewGlyph(item!.Glyph, glyphSize, muted);
-                ToolTipService.SetToolTip(border, $"{item.DisplayName} — always on the ring");
+                ToolTipService.SetToolTip(border, $"{item.DisplayName} — always on the orbit");
             }
             else if (item is null)
             {
@@ -635,7 +612,7 @@ public sealed partial class SettingsWindow : Window
     /// the canvas — centered on the canvas corner that matches the chosen screen corner, so the
     /// picture says which corner as much as what.
     /// <para>
-    /// Editable, like the ring view beside it: one more place than the corner holds is drawn (up
+    /// Editable, like the orbit view beside it: one more place than the corner holds is drawn (up
     /// to the four it can hold) and offers a +, any place can be dragged onto another to reorder,
     /// and right-clicking a filled one replaces or removes what is in it
     /// (<see cref="BuildQuadrantItemMenu"/>). The first such edit turns the corner's default pick
@@ -652,26 +629,26 @@ public sealed partial class SettingsWindow : Window
     private void RenderQuadrantPreview(double size)
     {
         var corner = _manager.Config.HotCorner;
-        var items = HotCornerItems.Resolve(_manager.Config, SystemRingItems.CreateSettings());
+        var items = HotCornerItems.Resolve(_manager.Config, SystemOrbitItems.CreateSettings());
 
-        double bubble = RingMetrics.Bubble;
+        double bubble = OrbitMetrics.Bubble;
         // The places the corner will actually use, plus one empty place to add into while there is
         // room for it. Laying out for what is really there is what keeps this a picture of the
         // corner rather than an approximation of it — a corner holding all four is drawn exactly
         // as the corner draws it.
         int slots = Math.Min(QuadrantLayout.ItemCount, items.Count + 1);
-        double hoverBubble = bubble * RingMetrics.HoverScale;
-        double radius = QuadrantLayout.Radius(slots, hoverBubble, RingMetrics.Radius);
+        double hoverBubble = bubble * OrbitMetrics.HoverScale;
+        double radius = QuadrantLayout.Radius(slots, hoverBubble, OrbitMetrics.Radius);
 
-        // Same scale the ring preview uses, so switching between the two views changes the shape
-        // and not the size of everything in it — only clamped smaller if a large ring radius
+        // Same scale the orbit preview uses, so switching between the two views changes the shape
+        // and not the size of everything in it — only clamped smaller if a large orbit radius
         // would push the fan off the canvas.
         double scale = Math.Min(
-            size * 0.74 / (2 * (RingMetrics.Radius + bubble / 2)),
+            size * 0.74 / (2 * (OrbitMetrics.Radius + bubble / 2)),
             size * 0.96 / (radius + bubble / 2));
         double previewRadius = radius * scale;
         double previewBubble = bubble * scale;
-        double glyphSize = Math.Max(10, RingMetrics.Glyph * scale);
+        double glyphSize = Math.Max(10, OrbitMetrics.Glyph * scale);
 
         var (cx, cy) = QuadrantLayout.Center(corner, size, size);
         _quadrantCenter = new Point(cx, cy);
@@ -699,7 +676,7 @@ public sealed partial class SettingsWindow : Window
                 Width = previewBubble,
                 Height = previewBubble,
                 CornerRadius = new CornerRadius(previewBubble / 2),
-                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "RingBubbleGlassTint"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "OrbitBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = item,
@@ -719,13 +696,13 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// The corner button: present on the canvas whenever the hot corner is on, sitting in the
     /// canvas corner that matches the chosen screen one, and switching the canvas between the
-    /// ring and what that corner would actually show.
+    /// orbit and what that corner would actually show.
     /// <para>
     /// The icon is the same corner-pointing triangle as the Hot corner row above (see
     /// <see cref="CornerTriangleGeometry"/>/<see cref="CornerTriangleAngle"/>), always rotated to
     /// the chosen corner regardless of which of the two states below the button is currently in —
     /// this button sits physically in that corner of the canvas, so pointing at it is what marks
-    /// the button as "this corner" rather than any other one on the canvas. The two states (ring
+    /// the button as "this corner" rather than any other one on the canvas. The two states (orbit
     /// vs. quadrant preview) differ only in tooltip and automation name now; they used to swap in
     /// a generic resize/back glyph that said nothing about which corner it was.
     /// </para>
@@ -755,7 +732,7 @@ public sealed partial class SettingsWindow : Window
             },
         };
         // No resting chrome: the triangle marks the corner on its own, and a filled plate around
-        // it read as one more bubble sitting in the ring rather than as the canvas's own corner.
+        // it read as one more bubble sitting in the orbit rather than as the canvas's own corner.
         // Shadowing the two keys the Button style resolves at rest (its Style sets Background and
         // BorderBrush from ButtonBackground/ButtonBorderBrush) rather than assigning
         // button.Background directly, so the change lands at the same layer the framework sets it
@@ -768,7 +745,7 @@ public sealed partial class SettingsWindow : Window
         button.Resources["ButtonBorderBrush"] = transparent;
 
         ToolTipService.SetToolTip(button, _previewQuadrant
-            ? "Back to the full ring"
+            ? "Back to the full orbit"
             : "Show what this corner opens");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, "Hot corner preview");
         button.Click += (_, _) =>
@@ -811,7 +788,7 @@ public sealed partial class SettingsWindow : Window
         _dragBorder = _dragSlot >= 0
             ? (_previewQuadrant ? _quadrantSlotBorders[_dragSlot] : _slotBorders[_dragSlot])
             : null;
-        _dragItem = _dragBorder?.Tag as RingItem;
+        _dragItem = _dragBorder?.Tag as OrbitItem;
         _dragStart = point;
         _dragMoved = false;
         // Starts equal to the origin slot, not -1: until the pointer actually crosses into a
@@ -849,7 +826,7 @@ public sealed partial class SettingsWindow : Window
     /// perform, but against a throwaway copy of the order (<c>_manager.Config.Primary.Items</c>
     /// filtered/copied the same way <see cref="ReorderItem"/> does, or a fresh
     /// <see cref="HotCornerItems.Resolve"/> list for the quadrant — never <see cref="HotCornerItems.Edit"/>,
-    /// which has the side effect of turning a corner that was still following the ring into a
+    /// which has the side effect of turning a corner that was still following the orbit into a
     /// stored arrangement the moment it's called) — nothing is persisted until the actual drop.
     /// </para>
     /// <para>
@@ -870,7 +847,7 @@ public sealed partial class SettingsWindow : Window
             _dragTentativeQuadrantSlot = target;
             if (target < 0) return;
 
-            var list = HotCornerItems.Resolve(_manager.Config, SystemRingItems.CreateSettings());
+            var list = HotCornerItems.Resolve(_manager.Config, SystemOrbitItems.CreateSettings());
             int from = list.IndexOf(_dragItem);
             if (from < 0) return;
             int to = Math.Min(target, list.Count - 1);
@@ -886,9 +863,9 @@ public sealed partial class SettingsWindow : Window
         int targetSlot = PreviewSlotAt(point, requireHit: false);
         if (targetSlot == _dragTentativeSlot) return;
         _dragTentativeSlot = targetSlot;
-        if (targetSlot < 0 || targetSlot >= RingMetrics.UserSlotCount) return;
+        if (targetSlot < 0 || targetSlot >= OrbitMetrics.UserSlotCount) return;
 
-        var visible = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(RingMetrics.UserSlotCount).ToList();
+        var visible = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(OrbitMetrics.UserSlotCount).ToList();
         int vFrom = visible.IndexOf(_dragItem);
         if (vFrom < 0) return;
         int vTo = Math.Min(targetSlot, visible.Count - 1);
@@ -897,17 +874,17 @@ public sealed partial class SettingsWindow : Window
             visible.RemoveAt(vFrom);
             visible.Insert(vTo, _dragItem);
         }
-        ReflowRingBorders(visible);
+        ReflowOrbitBorders(visible);
     }
 
     /// <summary>
     /// Glides every bubble in <paramref name="tentativeOrder"/> other than the one actually being
-    /// dragged (that one follows the pointer via <c>RenderTransform</c> instead) to the ring
+    /// dragged (that one follows the pointer via <c>RenderTransform</c> instead) to the orbit
     /// position its index in that order implies. Pinned slots (Settings/Close) are never part of
     /// <paramref name="tentativeOrder"/> to begin with — it is built the same way
     /// <see cref="ReorderItem"/>'s own <c>visible</c> list is — so they can never be moved here.
     /// </summary>
-    private void ReflowRingBorders(List<RingItem> tentativeOrder)
+    private void ReflowOrbitBorders(List<OrbitItem> tentativeOrder)
     {
         for (int i = 0; i < tentativeOrder.Count; i++)
         {
@@ -915,15 +892,15 @@ public sealed partial class SettingsWindow : Window
             if (ReferenceEquals(item, _dragItem)) continue;
             var border = FindSlotBorder(_slotBorders, item);
             if (border is null) continue;
-            double angle = RingMetrics.SlotAngleRad(i);
+            double angle = OrbitMetrics.SlotAngleRad(i);
             double x = _previewCenter.X + _previewRadius * Math.Cos(angle) - _previewBubble / 2;
             double y = _previewCenter.Y + _previewRadius * Math.Sin(angle) - _previewBubble / 2;
             AnimateBubbleTo(border, x, y);
         }
     }
 
-    /// <summary>Quadrant counterpart of <see cref="ReflowRingBorders"/>.</summary>
-    private void ReflowQuadrantBorders(List<RingItem> tentativeOrder)
+    /// <summary>Quadrant counterpart of <see cref="ReflowOrbitBorders"/>.</summary>
+    private void ReflowQuadrantBorders(List<OrbitItem> tentativeOrder)
     {
         for (int i = 0; i < tentativeOrder.Count && i < _quadrantSlotBorders.Length; i++)
         {
@@ -938,11 +915,11 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
-    private static Border? FindSlotBorder(Border?[] borders, RingItem item)
+    private static Border? FindSlotBorder(Border?[] borders, OrbitItem item)
     {
         foreach (var border in borders)
         {
-            if (border?.Tag is RingItem tagged && ReferenceEquals(tagged, item))
+            if (border?.Tag is OrbitItem tagged && ReferenceEquals(tagged, item))
                 return border;
         }
         return null;
@@ -1032,7 +1009,7 @@ public sealed partial class SettingsWindow : Window
             else
                 ShowItemInfo(item);
         }
-        else if (slot < RingMetrics.UserSlotCount)
+        else if (slot < OrbitMetrics.UserSlotCount)
         {
             _manager.OpenAddItem(added =>
             {
@@ -1046,13 +1023,13 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// The dock's own edit menu: right-clicking an item on either view offers to swap what is in
     /// that place or take it out of it, so the two things you can do to an item you can already
-    /// see are done where you see it, rather than only on the Elements tab (the ring) or through a
+    /// see are done where you see it, rather than only on the Elements tab (the orbit) or through a
     /// badge pinned to every bubble (the corner, which no longer has one).
     /// </summary>
     private void Preview_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
         var point = e.GetPosition(PreviewCanvas);
-        var menu = _previewQuadrant ? BuildQuadrantItemMenu(point) : BuildRingItemMenu(point);
+        var menu = _previewQuadrant ? BuildQuadrantItemMenu(point) : BuildOrbitItemMenu(point);
         if (menu is null)
             return;
 
@@ -1061,50 +1038,50 @@ public sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// The menu for a ring slot, or null when the point is not on an item the user owns — an
-    /// empty slot is filled by clicking it, and Settings/Close are the ring's own and cannot be
+    /// The menu for an orbit slot, or null when the point is not on an item the user owns — an
+    /// empty slot is filled by clicking it, and Settings/Close are the orbit's own and cannot be
     /// replaced or removed at all.
     /// </summary>
-    private MenuFlyout? BuildRingItemMenu(Point point)
+    private MenuFlyout? BuildOrbitItemMenu(Point point)
     {
         int slot = PreviewSlotAt(point);
-        if (slot < 0 || slot >= RingMetrics.UserSlotCount)
+        if (slot < 0 || slot >= OrbitMetrics.UserSlotCount)
             return null;
 
         // Only a filled user slot has a border recorded here — RenderPreview leaves the pinned and
         // empty ones out — so this doubles as the "is this actually editable" check.
-        if (_slotBorders[slot]?.Tag is not RingItem item)
+        if (_slotBorders[slot]?.Tag is not OrbitItem item)
             return null;
 
         // The built-in tools are the Tools tab's, exactly as on the Elements tab, which leaves
         // them out of its own list for the same reason: deleting the Tools group here would only
         // have it rebuilt on the next start (ToolCatalog.EnsureToolsGroup), and a tool is taken off
-        // the ring by switching it off there, not by deleting it.
+        // the orbit by switching it off there, not by deleting it.
         if (IsToolsOwned(item))
             return null;
 
         return BuildItemMenu(
             item.DisplayName,
-            replace: () => ReplaceRingItem(item),
-            remove: () => RemoveRingItem(item),
+            replace: () => ReplaceOrbitItem(item),
+            remove: () => RemoveOrbitItem(item),
             removeLabel: "Delete",
             canRemove: true);
     }
 
     /// <summary>
-    /// Quadrant counterpart of <see cref="BuildRingItemMenu"/>. The Tools group is editable here
-    /// where it is not on the ring: taking it off the corner is a change to the corner's own
-    /// arrangement, and leaves the ring's copy exactly where it was.
+    /// Quadrant counterpart of <see cref="BuildOrbitItemMenu"/>. The Tools group is editable here
+    /// where it is not on the orbit: taking it off the corner is a change to the corner's own
+    /// arrangement, and leaves the orbit's copy exactly where it was.
     /// </summary>
     private MenuFlyout? BuildQuadrantItemMenu(Point point)
     {
         int slot = QuadrantSlotAt(point);
-        if (slot < 0 || _quadrantSlotBorders[slot]?.Tag is not RingItem item)
+        if (slot < 0 || _quadrantSlotBorders[slot]?.Tag is not OrbitItem item)
             return null;
 
         // The last item stays: a corner with nothing on it would summon an empty screen. Shown
         // greyed rather than left out, so the menu is the same shape whichever item it opens on.
-        int count = HotCornerItems.Resolve(_manager.Config, SystemRingItems.CreateSettings()).Count;
+        int count = HotCornerItems.Resolve(_manager.Config, SystemOrbitItems.CreateSettings()).Count;
 
         return BuildItemMenu(
             item.DisplayName,
@@ -1141,24 +1118,24 @@ public sealed partial class SettingsWindow : Window
         return menu;
     }
 
-    /// <summary>Whether an item on the ring belongs to the Tools tab rather than to the user —
+    /// <summary>Whether an item on the orbit belongs to the Tools tab rather than to the user —
     /// the same two cases <see cref="RebuildItemsList"/> leaves out of the Elements list.</summary>
-    private static bool IsToolsOwned(RingItem item) =>
+    private static bool IsToolsOwned(OrbitItem item) =>
         item.IsTool ||
         (item.IsGroup && string.Equals(
             item.Target, ToolCatalog.ToolsGroupTarget, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// Swaps one ring item for a newly added one in the same place, rather than dropping the old
+    /// Swaps one orbit item for a newly added one in the same place, rather than dropping the old
     /// one and appending the new one at the end — replacing is a change of what is in a slot, not
-    /// a rearrangement of the ring. The position is re-read inside the callback because the dialog
+    /// a rearrangement of the orbit. The position is re-read inside the callback because the dialog
     /// is modeless: the list can have moved on by the time it comes back.
     /// <para>
     /// Replacing a group takes its children with it, the same way deleting one does on the
     /// Elements tab — they exist only inside it.
     /// </para>
     /// </summary>
-    private void ReplaceRingItem(RingItem item)
+    private void ReplaceOrbitItem(OrbitItem item)
     {
         var items = _manager.Config.Primary.Items;
         _manager.OpenAddItem(
@@ -1181,8 +1158,8 @@ public sealed partial class SettingsWindow : Window
             confirmLabel: "Replace");
     }
 
-    /// <summary>Takes one item off the ring — the same delete the Elements tab's own rows do.</summary>
-    private void RemoveRingItem(RingItem item)
+    /// <summary>Takes one item off the orbit — the same delete the Elements tab's own rows do.</summary>
+    private void RemoveOrbitItem(OrbitItem item)
     {
         if (!_manager.Config.Primary.Items.Remove(item))
             return;
@@ -1195,8 +1172,8 @@ public sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// Quadrant counterpart of <see cref="ReplaceRingItem"/>. Writes into the corner's own stored
-    /// arrangement and nowhere else — the ring keeps whatever it had, exactly as
+    /// Quadrant counterpart of <see cref="ReplaceOrbitItem"/>. Writes into the corner's own stored
+    /// arrangement and nowhere else — the orbit keeps whatever it had, exactly as
     /// <see cref="RemoveQuadrantItem"/> and <see cref="AddQuadrantItem"/> already do.
     /// </summary>
     private void ReplaceQuadrantItem(int slot)
@@ -1204,7 +1181,7 @@ public sealed partial class SettingsWindow : Window
         _manager.OpenAddItem(
             added =>
             {
-                var list = HotCornerItems.Edit(_manager.Config, SystemRingItems.CreateSettings());
+                var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
                 if (slot < 0 || slot >= list.Count)
                     return;
 
@@ -1213,7 +1190,7 @@ public sealed partial class SettingsWindow : Window
                 HideInfo();
                 RenderPreview();
             },
-            _manager.Config.HotCornerRing,
+            _manager.Config.HotCornerOrbit,
             heading: "Replace on this corner",
             confirmLabel: "Replace");
     }
@@ -1233,7 +1210,7 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// Which preview slot a canvas point is in, or -1. With <paramref name="requireHit"/> the
     /// point must actually be on that slot's bubble, so a press in the empty middle or out past
-    /// the ring doesn't pick one up.
+    /// the orbit doesn't pick one up.
     /// </summary>
     /// <summary>
     /// Which of the corner's four places <paramref name="point"/> is in — by proximity to the
@@ -1265,7 +1242,7 @@ public sealed partial class SettingsWindow : Window
     /// <summary>Drags one of the corner's items into another of its places.</summary>
     private void MoveQuadrantItem(int from, int to)
     {
-        var list = HotCornerItems.Edit(_manager.Config, SystemRingItems.CreateSettings());
+        var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
         if (from < 0 || from >= list.Count || to < 0)
             return;
 
@@ -1284,10 +1261,10 @@ public sealed partial class SettingsWindow : Window
         RenderPreview();
     }
 
-    /// <summary>Takes one item off the corner. The ring itself keeps it.</summary>
+    /// <summary>Takes one item off the corner. The orbit itself keeps it.</summary>
     private void RemoveQuadrantItem(int slot)
     {
-        var list = HotCornerItems.Edit(_manager.Config, SystemRingItems.CreateSettings());
+        var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
         if (slot < 0 || slot >= list.Count || list.Count <= 1)
             return;
 
@@ -1298,35 +1275,35 @@ public sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// Fills an empty place on the corner. The item belongs to the corner rather than to the ring
+    /// Fills an empty place on the corner. The item belongs to the corner rather than to the orbit
     /// — this is the corner's own arrangement — so it goes into that list and nowhere else.
     /// </summary>
     private void AddQuadrantItem()
     {
-        var settings = SystemRingItems.CreateSettings();
+        var settings = SystemOrbitItems.CreateSettings();
         if (HotCornerItems.Resolve(_manager.Config, settings).Count >= QuadrantLayout.ItemCount)
             return;
 
         _manager.OpenAddItem(added =>
         {
-            var list = HotCornerItems.Edit(_manager.Config, SystemRingItems.CreateSettings());
+            var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
             if (list.Count >= QuadrantLayout.ItemCount)
                 return;
             list.Add(added);
             _manager.Save();
             RenderPreview();
-        }, _manager.Config.HotCornerRing);
+        }, _manager.Config.HotCornerOrbit);
     }
 
     private int PreviewSlotAt(Point point, bool requireHit = true)
     {
         double dx = point.X - _previewCenter.X;
         double dy = point.Y - _previewCenter.Y;
-        int slot = RingMetrics.NearestSlotIndex(dx, dy);
+        int slot = OrbitMetrics.NearestSlotIndex(dx, dy);
         if (!requireHit)
             return slot;
 
-        double angle = RingMetrics.SlotAngleRad(slot);
+        double angle = OrbitMetrics.SlotAngleRad(slot);
         double sx = _previewRadius * Math.Cos(angle);
         double sy = _previewRadius * Math.Sin(angle);
         double gap = Math.Sqrt((dx - sx) * (dx - sx) + (dy - sy) * (dy - sy));
@@ -1334,7 +1311,7 @@ public sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// A preview slot's glyph. Mirrors the ring's own handling of non-Fluent glyphs such as
+    /// A preview slot's glyph. Mirrors the orbit's own handling of non-Fluent glyphs such as
     /// "&lt;/&gt;", which render as tofu boxes in the icon font and need a text family instead.
     /// </summary>
     private static FontIcon PreviewGlyph(string glyph, double fontSize, Brush foreground)
@@ -1352,17 +1329,17 @@ public sealed partial class SettingsWindow : Window
         return icon;
     }
 
-    private void ReorderItem(RingItem dragged, int targetSlot)
+    private void ReorderItem(OrbitItem dragged, int targetSlot)
     {
         // Slots past the user range hold the pinned Settings/Close bubbles; a drop there is
         // ignored rather than clamped, so the item stays where the user last put it.
-        if (targetSlot < 0 || targetSlot >= RingMetrics.UserSlotCount) return;
+        if (targetSlot < 0 || targetSlot >= OrbitMetrics.UserSlotCount) return;
 
-        var visible = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(RingMetrics.UserSlotCount).ToList();
+        var visible = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(OrbitMetrics.UserSlotCount).ToList();
         int from = visible.IndexOf(dragged);
         if (from < 0) return;
 
-        // Clamp onto the last occupied slot: dropping past the end of a part-filled ring means
+        // Clamp onto the last occupied slot: dropping past the end of a part-filled orbit means
         // "put it last", not "leave a hole".
         int to = Math.Min(targetSlot, visible.Count - 1);
         if (to == from) return;
@@ -1396,14 +1373,14 @@ public sealed partial class SettingsWindow : Window
     /// item already shown hides it again — the simplest "close" affordance that doesn't need a
     /// dedicated button. This is display-only: real edits happen on the "Elements" tab.
     /// <para>
-    /// A click on a plain main-ring item is unrelated to whatever group row is currently expanded
+    /// A click on a plain main-orbit item is unrelated to whatever group row is currently expanded
     /// (if any), so that row is collapsed first — otherwise it kept sitting there showing a group
     /// that has nothing to do with the newly-selected item. A click on a child <em>inside</em> the
     /// expanded group's own row is the one case that should leave the row open alongside the info
     /// box, since the row is exactly what the user clicked into.
     /// </para>
     /// </summary>
-    private void ShowItemInfo(RingItem item)
+    private void ShowItemInfo(OrbitItem item)
     {
         if (ReferenceEquals(_selectedItem, item) && InfoBox.Visibility == Visibility.Visible)
         {
@@ -1424,12 +1401,12 @@ public sealed partial class SettingsWindow : Window
         InfoBox.Visibility = Visibility.Collapsed;
     }
 
-    private bool IsChildOfExpandedGroup(RingItem item) =>
+    private bool IsChildOfExpandedGroup(OrbitItem item) =>
         _expandedGroup is not null && _expandedGroup.Children.Any(c => ReferenceEquals(c, item));
 
     /// <summary>
     /// Expands (or, on a second click of the same group, collapses) <c>GroupRow</c> — the
-    /// horizontal children strip that replaces the old full-ring drill-down.
+    /// horizontal children strip that replaces the old full-orbit drill-down.
     /// <para>
     /// Switching to a different group closes whatever was open first (via <see cref="CollapseGroup"/>)
     /// rather than just overwriting <c>_expandedGroup</c> in place, and any info box left showing
@@ -1437,7 +1414,7 @@ public sealed partial class SettingsWindow : Window
     /// group the newly-opened row has nothing to do with.
     /// </para>
     /// </summary>
-    private void ToggleGroup(RingItem group)
+    private void ToggleGroup(OrbitItem group)
     {
         if (ReferenceEquals(_expandedGroup, group))
         {
@@ -1468,7 +1445,7 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// Draws <see cref="_expandedGroup"/>'s children as a left-to-right strip of small bubbles,
     /// mirroring <see cref="RenderPreview"/>'s bubble styling (same brushes, same <see cref="PreviewGlyph"/>
-    /// helper) at a smaller size. Hidden children are skipped, same as the main ring.
+    /// helper) at a smaller size. Hidden children are skipped, same as the main orbit.
     /// </summary>
     private void RenderGroupRow()
     {
@@ -1496,7 +1473,7 @@ public sealed partial class SettingsWindow : Window
                 Width = GroupChildBubble,
                 Height = GroupChildBubble,
                 CornerRadius = new CornerRadius(GroupChildBubble / 2),
-                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "RingBubbleGlassTint"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "OrbitBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = child,
@@ -1515,14 +1492,14 @@ public sealed partial class SettingsWindow : Window
     /// Press/drag/release for the group children row, the same one-capture-on-the-canvas pattern
     /// as <see cref="Preview_PointerPressed"/>/<see cref="Preview_PointerMoved"/>/
     /// <see cref="Preview_PointerReleased"/>, just projected onto a single horizontal axis instead
-    /// of the ring's circular one.
+    /// of the orbit's circular one.
     /// </summary>
     private void GroupRow_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         var point = e.GetCurrentPoint(GroupChildrenCanvas).Position;
         _groupDragIndex = GroupChildIndexAt(point);
         _groupDragBorder = _groupDragIndex >= 0 ? _groupSlotBorders[_groupDragIndex] : null;
-        _groupDragItem = _groupDragBorder?.Tag as RingItem;
+        _groupDragItem = _groupDragBorder?.Tag as OrbitItem;
         _groupDragStart = point;
         _groupDragMoved = false;
         if (_groupDragIndex >= 0)
@@ -1598,10 +1575,10 @@ public sealed partial class SettingsWindow : Window
 
     /// <summary>
     /// Reorders <see cref="_expandedGroup"/>'s children after a drag in the row, the same
-    /// position-preserving move <see cref="ReorderItem"/> does for the main ring so hidden
+    /// position-preserving move <see cref="ReorderItem"/> does for the main orbit so hidden
     /// siblings keep their place instead of being shuffled by an index from a filtered view.
     /// </summary>
-    private void ReorderGroupChild(RingItem dragged, int targetIndex)
+    private void ReorderGroupChild(OrbitItem dragged, int targetIndex)
     {
         if (_expandedGroup is null || targetIndex < 0) return;
 
@@ -1655,7 +1632,7 @@ public sealed partial class SettingsWindow : Window
         HideInfo();
         CollapseGroup();
         // The corner's own arrangement was built out of the items being replaced, so it goes back
-        // to following the ring rather than holding four copies of the old one.
+        // to following the orbit rather than holding four copies of the old one.
         HotCornerItems.Reset(_manager.Config);
         _manager.SeedDefaults(_manager.Config.Primary);
         _manager.NotifyItemsChanged();
@@ -1693,7 +1670,7 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
-    private void SelectHoverStyle(RingHoverStyle style)
+    private void SelectHoverStyle(OrbitHoverStyle style)
     {
         foreach (ComboBoxItem item in HoverStyleBox.Items)
         {
@@ -1705,7 +1682,7 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
-    private void SelectItemSize(RingItemSize size)
+    private void SelectItemSize(OrbitItemSize size)
     {
         foreach (ComboBoxItem item in ItemSizeBox.Items)
         {
@@ -1866,7 +1843,7 @@ public sealed partial class SettingsWindow : Window
     private void HoverStyleBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || HoverStyleBox.SelectedItem is not ComboBoxItem item) return;
-        if (Enum.TryParse<RingHoverStyle>(item.Tag as string, out var style))
+        if (Enum.TryParse<OrbitHoverStyle>(item.Tag as string, out var style))
         {
             _manager.Config.HoverStyle = style;
             _manager.Save();
@@ -1881,15 +1858,90 @@ public sealed partial class SettingsWindow : Window
         _manager.Save();
     }
 
+    /// <summary>
+    /// Points the Desktop shortcut switch at what is actually on the desktop, not at what the
+    /// config remembers being asked for. The shortcut is an ordinary file the user can delete from
+    /// Explorer at any moment, and a switch still reading "on" over a shortcut that is gone would
+    /// simply be wrong — worse, turning it off and on again would then be the only way to get the
+    /// shortcut back. Where the two disagree the stored preference is corrected to match reality,
+    /// so an exported config carries the truth too.
+    /// </summary>
+    private void SyncDesktopShortcutToggle()
+    {
+        bool present = DesktopShortcutService.Exists();
+        DesktopShortcutToggle.IsOn = present;
+        if (_manager.Config.DesktopShortcut == present)
+            return;
+        _manager.Config.DesktopShortcut = present;
+        _manager.Save();
+    }
+
+    /// <summary>
+    /// Creates or deletes the desktop shortcut, then shows whatever actually happened.
+    /// <para>
+    /// The switch is snapped back when the request could not be honored — a desktop the app cannot
+    /// write to, or a <c>SwiftX.lnk</c> that SwiftX did not create and therefore will not delete
+    /// (see <see cref="DesktopShortcutService"/>). Leaving the switch sitting in the position the
+    /// user just dragged it to would claim something untrue about their desktop.
+    /// </para>
+    /// </summary>
+    private void DesktopShortcutToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+
+        bool actual = DesktopShortcutService.Apply(DesktopShortcutToggle.IsOn);
+        if (actual != DesktopShortcutToggle.IsOn)
+        {
+            // Guarded, or putting the switch back fires this handler again and undoes the work.
+            _loading = true;
+            DesktopShortcutToggle.IsOn = actual;
+            _loading = false;
+        }
+
+        _manager.Config.DesktopShortcut = actual;
+        _manager.Save();
+
+        if (actual)
+            DesktopShortcutOffer.IsOpen = false;
+    }
+
+    /// <summary>
+    /// The first-run prompt's own button. It drives the switch rather than the service directly,
+    /// so there is exactly one code path that creates the shortcut and persists the choice.
+    /// </summary>
+    private void CreateDesktopShortcut_Click(object sender, RoutedEventArgs e)
+    {
+        DesktopShortcutOffer.IsOpen = false;
+        if (!DesktopShortcutToggle.IsOn)
+            DesktopShortcutToggle.IsOn = true;
+    }
+
+    /// <summary>
+    /// Moves to the General page, by selecting its NavigationViewItem for the same reason
+    /// <see cref="GoToPrivacyPage"/> does: Nav_SelectionChanged stays the one place that knows
+    /// which panel belongs to which tag.
+    /// </summary>
+    private void GoToGeneralPage()
+    {
+        foreach (var item in Nav.MenuItems)
+        {
+            if (item is NavigationViewItem nvi && (nvi.Tag as string) == "general")
+            {
+                Nav.SelectedItem = nvi;
+                return;
+            }
+        }
+    }
+
     private async void Export_Click(object sender, RoutedEventArgs e)
     {
         var picker = new FileSavePicker();
         InitializeWithWindow.Initialize(picker, _hwnd);
-        picker.SuggestedFileName = "ring";
+        picker.SuggestedFileName = "orbit";
         picker.FileTypeChoices.Add("JSON", [".json"]);
         var file = await picker.PickSaveFileAsync();
         if (file is not null)
-            RingStore.ExportTo(_manager.Config, file.Path);
+            OrbitStore.ExportTo(_manager.Config, file.Path);
     }
 
     private async void Import_Click(object sender, RoutedEventArgs e)
@@ -1899,15 +1951,15 @@ public sealed partial class SettingsWindow : Window
         picker.FileTypeFilter.Add(".json");
         var file = await picker.PickSingleFileAsync();
         if (file is null) return;
-        var imported = RingStore.ImportFrom(file.Path);
+        var imported = OrbitStore.ImportFrom(file.Path);
         if (imported is null) return;
-        // The whole Rings collection is being replaced, so nothing the selection/expansion state
+        // The whole Orbits collection is being replaced, so nothing the selection/expansion state
         // could be pointing at survives.
         HideInfo();
         CollapseGroup();
         _manager.Config.CopyAppSettingsFrom(imported);
-        _manager.Config.Rings.Clear();
-        _manager.Config.Rings.AddRange(imported.Rings);
+        _manager.Config.Orbits.Clear();
+        _manager.Config.Orbits.AddRange(imported.Orbits);
         _manager.Config.EnsurePrimary();
         _manager.NotifyItemsChanged();
         _manager.ApplyTheme();
@@ -1927,28 +1979,30 @@ public sealed partial class SettingsWindow : Window
 
     private void ResetAll_Click(object sender, RoutedEventArgs e)
     {
-        // SeedDefaults below replaces every ring item, so drop anything the selection/expansion
+        // SeedDefaults below replaces every orbit item, so drop anything the selection/expansion
         // state was pointing at first.
         HideInfo();
         CollapseGroup();
         _manager.Config.Theme = AppTheme.Dark;
-        _manager.Config.HoverStyle = RingHoverStyle.Invert;
+        _manager.Config.HoverStyle = OrbitHoverStyle.Invert;
         _manager.Config.Hotkey = HotkeyGesture.Default.ToString();
         _manager.Config.HotkeyEnabled = true;
         _manager.Config.HotCornerEnabled = true;
         _manager.Config.HotCorner = HotCorner.TopLeft;
-        _manager.Config.HotCornerLayout = HotCornerLayout.Ring;
+        _manager.Config.HotCornerLayout = HotCornerLayout.Orbit;
         HotCornerItems.Reset(_manager.Config);
-        _manager.Config.ShowDataTool = true;
-        _manager.Config.ShowSecureValuesTool = true;
-        _manager.Config.ShowBase64Tool = true;
-        _manager.Config.ShowCertificateTool = true;
+        // Driven off the catalog rather than a hand-written list of flags. The hand-written list
+        // had already gone stale — it set four of the five, silently leaving Quick Format hidden
+        // for anyone who had hidden it, which no amount of pressing Reset would undo. Every tool
+        // ships visible (see AppConfig's initialisers), so "reset" is "show them all".
+        foreach (var tool in ToolCatalog.All)
+            _manager.Config.SetToolShown(tool.Kind, true);
         _manager.Config.FeedbackRating = 0;
         _manager.Config.AccentColorHex = null;
         _manager.SeedDefaults(_manager.Config.Primary);
-        // Through the manager, not a raw Config assignment: RingMetrics holds the geometry the
-        // ring actually draws with.
-        _manager.SetItemSize(RingItemSize.Medium);
+        // Through the manager, not a raw Config assignment: OrbitMetrics holds the geometry the
+        // orbit actually draws with.
+        _manager.SetItemSize(OrbitItemSize.Medium);
         _manager.SetRadius(null);
         _manager.NotifyItemsChanged();
         _manager.ApplyTheme();
@@ -1957,9 +2011,9 @@ public sealed partial class SettingsWindow : Window
         ApplyTheme();
         _loading = true;
         SelectTheme(AppTheme.Dark);
-        SelectHoverStyle(RingHoverStyle.Invert);
-        SelectItemSize(RingItemSize.Medium);
-        RadiusSlider.Value = RingMetrics.DefaultRadius;
+        SelectHoverStyle(OrbitHoverStyle.Invert);
+        SelectItemSize(OrbitItemSize.Medium);
+        RadiusSlider.Value = OrbitMetrics.DefaultRadius;
         HotkeyEnabledToggle.IsOn = true;
         HotkeyCapture.Gesture = HotkeyGesture.Default;
         HotCornerEnabledToggle.IsOn = true;
@@ -1967,7 +2021,7 @@ public sealed partial class SettingsWindow : Window
         UpdateRatingThanks();
         SyncAccentControls();
         SelectHotCorner(HotCorner.TopLeft);
-        SelectHotCornerLayout(HotCornerLayout.Ring);
+        SelectHotCornerLayout(HotCornerLayout.Orbit);
         SyncHotCornerControls();
         RebuildToolsList();
         _loading = false;
@@ -1979,7 +2033,7 @@ public sealed partial class SettingsWindow : Window
     private void ItemSizeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || ItemSizeBox.SelectedItem is not ComboBoxItem item) return;
-        if (Enum.TryParse<RingItemSize>(item.Tag as string, out var size))
+        if (Enum.TryParse<OrbitItemSize>(item.Tag as string, out var size))
             _manager.SetItemSize(size);
     }
 
@@ -2067,13 +2121,13 @@ public sealed partial class SettingsWindow : Window
 
     private void SelectHotCornerLayout(HotCornerLayout layout)
     {
-        HotCornerLayoutRing.IsChecked = layout == HotCornerLayout.Ring;
+        HotCornerLayoutOrbit.IsChecked = layout == HotCornerLayout.Orbit;
         HotCornerLayoutQuadrant.IsChecked = layout == HotCornerLayout.Quadrant;
     }
 
     /// <summary>
     /// Brings the hot corner's second row in line with the switch above it — which corner, and how
-    /// much of the ring it opens, mean nothing while the corner is off — and drops any quadrant
+    /// much of the orbit it opens, mean nothing while the corner is off — and drops any quadrant
     /// preview the canvas was showing once there is no corner left to preview.
     /// </summary>
     private void SyncHotCornerControls()
@@ -2113,7 +2167,7 @@ public sealed partial class SettingsWindow : Window
         if (_loading) return;
         _manager.Config.HotCornerLayout = ReferenceEquals(sender, HotCornerLayoutQuadrant)
             ? HotCornerLayout.Quadrant
-            : HotCornerLayout.Ring;
+            : HotCornerLayout.Orbit;
         _manager.Save();
         SyncHotCornerControls();
         RenderPreview();
@@ -2130,7 +2184,7 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// Builds the "Elements" page: every top-level item and every top-level group in one flat
     /// two-column card grid, all cards the same width — a group's own card immediately followed by
-    /// a card for each of its children, in ring order.
+    /// a card for each of its children, in orbit order.
     /// <para>
     /// A group used to be skipped entirely here — only its children were listed, folded into the
     /// flat grid under the group's name — which meant a group with nothing in it yet (exactly what
@@ -2141,7 +2195,7 @@ public sealed partial class SettingsWindow : Window
     /// group gets exactly one card — same shape and width as <see cref="BuildItemRow"/>, via
     /// <see cref="BuildGroupRow"/> — and its children are just more cards in the same shared grid
     /// right after it, distinguished from a top-level item only by the group's name already
-    /// appearing in their own caption (<c>BuildItemRow</c>'s <c>ring</c> parameter).
+    /// appearing in their own caption (<c>BuildItemRow</c>'s <c>orbit</c> parameter).
     /// </para>
     /// </summary>
     private void RebuildItemsList()
@@ -2207,7 +2261,7 @@ public sealed partial class SettingsWindow : Window
     /// own full-width section; a delete-sized icon button fits the same half-width card everything
     /// else uses.
     /// </summary>
-    private Grid BuildGroupRow(RingItem group)
+    private Grid BuildGroupRow(OrbitItem group)
     {
         var children = group.Children.Where(c => !c.IsTool).ToList();
 
@@ -2242,7 +2296,7 @@ public sealed partial class SettingsWindow : Window
         row.Children.Add(labels);
 
         // Same show/hide switch every other element's row carries — a group is hidden from the
-        // ring the same way a plain item is, so it needs the same control, not just its children's.
+        // orbit the same way a plain item is, so it needs the same control, not just its children's.
         var toggle = new ToggleSwitch
         {
             IsOn = !group.Hidden,
@@ -2260,8 +2314,8 @@ public sealed partial class SettingsWindow : Window
         Grid.SetColumn(toggle, 2);
         row.Children.Add(toggle);
 
-        // Into this group's own children, not the top-level ring — and with the Group tile taken
-        // away, since the ring has no third ring to expand a group inside a group into.
+        // Into this group's own children, not the top-level orbit — and with the Group tile taken
+        // away, since the orbit has no third orbit to expand a group inside a group into.
         var add = BuildRowIconButton(0xE710, "Add item…", "Add item to " + group.DisplayName);
         add.Click += (_, _) => _manager.OpenAddItem(added =>
         {
@@ -2293,7 +2347,7 @@ public sealed partial class SettingsWindow : Window
     /// delete. Shared by the top-level cards and by a group section's children, so both look and
     /// behave the same.
     /// </summary>
-    private Grid BuildItemRow(RingItem item, string ring)
+    private Grid BuildItemRow(OrbitItem item, string orbit)
     {
         var row = new Grid { ColumnSpacing = 12 };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -2313,7 +2367,7 @@ public sealed partial class SettingsWindow : Window
         });
         labels.Children.Add(new TextBlock
         {
-            Text = $"{ring} · {item.Kind}",
+            Text = $"{orbit} · {item.Kind}",
             Style = SecondaryCaptionStyle,
         });
         Grid.SetColumn(labels, 1);
@@ -2374,10 +2428,10 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// The small plate at the head of an item row: the item's own glyph to begin with, replaced by
     /// its real shell / folder / favicon icon if <see cref="IconService"/> resolves one. The same
-    /// image-over-glyph pair the ring itself draws, just built imperatively here rather than bound.
+    /// image-over-glyph pair the orbit itself draws, just built imperatively here rather than bound.
     /// A group resolves nothing (it has no target), so it simply keeps its group glyph.
     /// </summary>
-    private FrameworkElement BuildItemIcon(RingItem item)
+    private FrameworkElement BuildItemIcon(OrbitItem item)
     {
         const double plate = 28;
 
@@ -2389,7 +2443,7 @@ public sealed partial class SettingsWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        // Same non-Fluent-glyph handling the ring and the preview do — "B64" and friends are tofu
+        // Same non-Fluent-glyph handling the orbit and the preview do — "B64" and friends are tofu
         // boxes in the icon font.
         if (GlyphFonts.IsTextGlyph(item.Glyph))
             glyph.FontFamily = new FontFamily("Segoe UI");
@@ -2412,7 +2466,7 @@ public sealed partial class SettingsWindow : Window
 
         // Transparent, not a plate of its own: this row already sits inside a Card (background
         // SwiftXCardBackgroundBrush), so the card's own fill shows straight through and the glyph
-        // just reads as part of the row. It used to paint RingBubbleBackground here — the ring
+        // just reads as part of the row. It used to paint OrbitBubbleBackground here — the orbit
         // dock's own opaque bubble color (solid black in Dark) — which was a copy/paste of the
         // preview bubble styling and had nothing to do with this list; sitting on top of the
         // translucent acrylic card it read as a stray solid-black square on every row.
@@ -2433,7 +2487,7 @@ public sealed partial class SettingsWindow : Window
     /// resolved, or the user picked a glyph" — the glyph already on screen is then simply left
     /// alone.
     /// </summary>
-    private static async void LoadRowIcon(RingItem item, Image image, FontIcon glyph)
+    private static async void LoadRowIcon(OrbitItem item, Image image, FontIcon glyph)
     {
         var source = await IconService.LoadIconAsync(item);
         if (source is null) return;
@@ -2470,7 +2524,7 @@ public sealed partial class SettingsWindow : Window
 
     // Bound as ToolsList's ItemsSource: WinUI's CanReorderItems drag pipeline mutates whichever
     // IList backs the list, so this is what actually moves when the user drags a card — observing
-    // it (see ToolCards_CollectionChanged, wired in the constructor) is how a drag becomes a ring
+    // it (see ToolCards_CollectionChanged, wired in the constructor) is how a drag becomes an orbit
     // reorder.
     private readonly ObservableCollection<Border> _toolCards = new();
 
@@ -2671,13 +2725,13 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// Wherever two or more tool-kind items share a list (the top level, or inside a group like
     /// "Dev tools"), re-sorts just those items to match <paramref name="orderedTargets"/> — every
-    /// other item in the list keeps its position. A tool kind can have more than one ring instance
+    /// other item in the list keeps its position. A tool kind can have more than one orbit instance
     /// at once (the default seed puts Data both inside "Dev tools" and at the top level, see
     /// <see cref="SeedDefaults"/>), so this walks the whole tree rather than assuming one.
     /// </summary>
     private void ApplyToolOrder(List<string> orderedTargets)
     {
-        void Walk(List<RingItem> list)
+        void Walk(List<OrbitItem> list)
         {
             var toolPositions = new List<int>();
             for (int i = 0; i < list.Count; i++)

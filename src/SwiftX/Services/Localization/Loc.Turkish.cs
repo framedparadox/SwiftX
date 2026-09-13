@@ -5,8 +5,8 @@ public static partial class Loc
     private static readonly Dictionary<string, string> Turkish = new(StringComparer.Ordinal)
     {
         ["Tray.Tooltip"] = "SwiftX",
-        ["Tray.Show"] = "Halkayı göster",
-        ["Tray.HideDock"] = "Halkayı gizle",
+        ["Tray.Show"] = "Yörüngeyi göster",
+        ["Tray.HideDock"] = "Yörüngeyi gizle",
         ["Tray.AddNew"] = "Öğe ekle…",
         ["Tray.Settings"] = "Ayarlar",
         ["Tray.Quit"] = "Çıkış",

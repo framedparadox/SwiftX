@@ -5,8 +5,8 @@ public static partial class Loc
     private static readonly Dictionary<string, string> Korean = new(StringComparer.Ordinal)
     {
         ["Tray.Tooltip"] = "SwiftX",
-        ["Tray.Show"] = "링 표시",
-        ["Tray.HideDock"] = "링 숨기기",
+        ["Tray.Show"] = "궤도 표시",
+        ["Tray.HideDock"] = "궤도 숨기기",
         ["Tray.AddNew"] = "항목 추가…",
         ["Tray.Settings"] = "설정",
         ["Tray.Quit"] = "종료",

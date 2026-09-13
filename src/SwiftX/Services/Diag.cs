@@ -8,7 +8,7 @@ namespace SwiftX.Services;
 /// The file is truncated at startup and again whenever it passes <see cref="MaxBytes"/>, so a
 /// SwiftX left running for weeks in the tray cannot grow one. Unbounded was survivable while the
 /// log only recorded startup and failures, but the app logs every launch and every failed icon
-/// resolution, and the two feeders that never stop — the hot corner's 20 Hz poll and the ring's
+/// resolution, and the two feeders that never stop — the hot corner's 20 Hz poll and the orbit's
 /// outside-click timer — each log on fault. A repeating fault therefore wrote until the disk
 /// said no, on the user's system drive, for a diagnostic nobody had asked for.
 /// </para>

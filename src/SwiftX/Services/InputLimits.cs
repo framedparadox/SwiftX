@@ -103,7 +103,7 @@ public static class InputLimits
 
     /// <summary>
     /// The synchronous sibling of <see cref="ReadTextAsync"/>, for the one caller that cannot be
-    /// asynchronous: <see cref="RingStore.ImportFrom"/> runs inside a settings command that must
+    /// asynchronous: <see cref="OrbitStore.ImportFrom"/> runs inside a settings command that must
     /// hand back a configuration or a null, not a task.
     /// <para>
     /// It exists so that path goes through the same metadata-first ceiling as every other

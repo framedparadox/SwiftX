@@ -175,7 +175,7 @@ When a user activates a Windows Contrast Theme (Aquatic, Desert, Dusk, Night Sky
 - Decorative visual elements (e.g. line number gutters) must be excluded from screen readers via `AutomationProperties.SetAccessibilityView(element, AccessibilityView.Raw)`.
 
 ### 7.3 Keyboard Navigation & Focus
-- **Visual Focus Rings**: Retain standard platform focus visuals (`UseSystemFocusVisuals="True"`).
+- **Visual Focus Orbits**: Retain standard platform focus visuals (`UseSystemFocusVisuals="True"`).
 - **Key Navigation**: Full Tab/Shift+Tab navigation order across interactive surfaces.
 - **Keyboard Accelerators**: Standard Windows keyboard shortcuts (`Ctrl+F` Find, `Ctrl+Enter` Format, `Ctrl+S` Save, `Ctrl++`/`Ctrl+-` Zoom, `Esc` Dismiss).
 
@@ -203,8 +203,8 @@ A comprehensive verification of the SwiftX application against the Windows App D
 
 | Component / Subsystem | Evaluation Criteria | SwiftX Implementation | Compliance Score | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **Radial Ring Overlay** (`RingWindow.xaml`) | Non-blocking input passthrough | Uses native Win32 `SetEllipticHitRegions` clipping to pass non-item clicks directly to background desktop. | $100\%$ | **Compliant** |
-| **Radial Geometry** (`RingMetrics.cs`) | Proportional layout & scale | Single derived radius model calculating item centers, hover pill radial projections, and concentric outer flyout bands. | $100\%$ | **Compliant** |
+| **Radial Orbit Overlay** (`OrbitWindow.xaml`) | Non-blocking input passthrough | Uses native Win32 `SetEllipticHitRegions` clipping to pass non-item clicks directly to background desktop. | $100\%$ | **Compliant** |
+| **Radial Geometry** (`OrbitMetrics.cs`) | Proportional layout & scale | Single derived radius model calculating item centers, hover pill radial projections, and concentric outer flyout bands. | $100\%$ | **Compliant** |
 | **Hot Corner Watcher** (`HotCornerWatcher.cs`) | Precision & suppression | $6\text{ px}$ corner patch, $250\text{ ms}$ dwell, drag-guard suppression on mouse-down, $50\text{ ms}$ timer polling. | $100\%$ | **Compliant** |
 | **Corner Quadrant** (`QuadrantLayout.cs`) | Corner-adapted layout | Dynamic arc expansion ensuring $8\text{ px}$ item separation and $12\text{ px}$ screen edge clearance on all 4 corners. | $100\%$ | **Compliant** |
 | **Settings Shell** (`SettingsWindow.xaml`) | Visual hierarchy & cards | `#141414` sidebar vs `#000000` canvas; WinUI cards with `CardBackgroundFillColorDefaultBrush` and $8\text{ px}$ radii. | $100\%$ | **Compliant** |

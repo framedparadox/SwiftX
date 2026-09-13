@@ -12,7 +12,7 @@ using ShapePath = Microsoft.UI.Xaml.Shapes.Path;
 namespace SwiftX.Services;
 
 /// <summary>
-/// Builds the SwiftX mark that sits in the hub at the dead centre of the radial ring: four
+/// Builds the SwiftX mark that sits in the hub at the dead centre of the radial orbit: four
 /// gradient petals pinwheeled around a cross-shaped gap. Pure vector, composed in code — a
 /// <see cref="Viewbox"/> over a fixed 48x48 canvas of shapes — so it stays crisp at any hub size
 /// and any display scale, with no bitmap asset to resample.
@@ -71,7 +71,7 @@ public static class AppLogo
     /// piece of branding sitting on a solid surface.
     /// <para>
     /// Fresh on every call by design — a XAML element can only have one parent, so a cached
-    /// shared instance would silently vanish from the first ring the moment a second one asked
+    /// shared instance would silently vanish from the first orbit the moment a second one asked
     /// for it.
     /// </para>
     /// </summary>
@@ -249,8 +249,13 @@ public static class AppLogo
     /// quadrant, so the four of them assemble rather than appearing at once. Going out is that
     /// same motion rewound: the last petal to arrive is the first to leave, each twists back the
     /// way it came, and the mark unwinds its quarter turn as it fades. The dock's hub drives both
-    /// (<c>RingWindow.BuildHub</c> / <c>RingWindow.FadeOutHub</c>) so the mark's motion and the
-    /// ring's own entrance are one gesture.
+    /// (<c>OrbitWindow.BuildHub</c> / <c>OrbitWindow.FadeOutHub</c>) so the mark's motion and the
+    /// orbit's own entrance are one gesture.
+    /// </para>
+    /// <para>
+    /// The hub replays that same entrance whenever the pointer arrives over it, so the entrance is
+    /// a motion the user sees many times rather than once — which is why <see cref="PlayEntrance"/>
+    /// goes to the trouble of guaranteeing that every run of it is identical.
     /// </para>
     /// <para>
     /// Only the petal layer turns — the shadow underneath stays put, the way a shadow does when
@@ -259,17 +264,17 @@ public static class AppLogo
     /// </summary>
     public sealed class Mark : Grid
     {
-        // Entrance motion. The same spring family and period the ring's own bubbles come in on
-        // (RingWindow.SpringDamping / SpringPeriodMs), so the hub is visibly part of one motion
+        // Entrance motion. The same spring family and period the orbit's own bubbles come in on
+        // (OrbitWindow.SpringDamping / SpringPeriodMs), so the hub is visibly part of one motion
         // rather than running its own timeline; the stagger is per petal rather than per bubble.
         private const float SpringDamping = 0.62f;
         private const int SpringPeriodMs = 220;
         private const int PetalStaggerMs = 34;
 
-        // Exit motion. Shorter than the entrance and on an ease rather than a spring: the ring is
+        // Exit motion. Shorter than the entrance and on an ease rather than a spring: the orbit is
         // on its way out, and a spring's overshoot at that point reads as a bounce nobody asked
-        // for. The whole thing has to finish inside the dismiss RingWindow waits out before it
-        // hides the window, so exit + three staggers stays under the inner ring's own budget.
+        // for. The whole thing has to finish inside the dismiss OrbitWindow waits out before it
+        // hides the window, so exit + three staggers stays under the inner orbit's own budget.
         private const int ExitMs = 180;
         private const int PetalExitStaggerMs = 24;
 
@@ -304,6 +309,24 @@ public static class AppLogo
             (0, 1, TealOuter, BlueInner),
         };
 
+        /// <summary>
+        /// Roughly how long one entrance stays in flight, measured from the moment
+        /// <see cref="PlayEntrance"/> is called: the last petal's beat, plus a couple of spring
+        /// periods for it to travel out and settle. A spring has no fixed duration — it ends when
+        /// it stops moving — so this is deliberately an estimate of when the motion stops
+        /// <em>reading</em> as motion rather than an exact end time, and the one thing that depends
+        /// on it treats it as exactly that: <c>OrbitWindow.ReplayHubEntranceOnHover</c> uses it
+        /// only to tell a fresh hover from a re-trigger landing on top of a replay already playing,
+        /// where being a frame out either way costs nothing.
+        /// <para>
+        /// It sits down here rather than up with the constants it is built from because it also
+        /// reads <see cref="Quadrants"/>, and static field initializers run in textual order: put
+        /// above the array it would see an empty one and quietly lose the stagger.
+        /// </para>
+        /// </summary>
+        public static readonly int EntranceSpanMs =
+            PetalStaggerMs * (Quadrants.Length - 1) + SpringPeriodMs * 2;
+
         private readonly double _edge;
         private readonly Viewbox _art;
         private readonly ShapePath[] _petals;
@@ -313,12 +336,12 @@ public static class AppLogo
         internal Mark(double size, bool floating)
         {
             // A non-positive size would throw when assigned to Width/Height; fall back to the design
-            // box so a miscalculated hub radius shows an odd-looking logo instead of taking the ring
+            // box so a miscalculated hub radius shows an odd-looking logo instead of taking the orbit
             // down.
             _edge = size > 0 ? size : NominalSize;
             Width = _edge;
             Height = _edge;
-            // The ring hub underneath owns pointer input; the mark must never intercept a click.
+            // The orbit hub underneath owns pointer input; the mark must never intercept a click.
             IsHitTestVisible = false;
 
             if (floating)
@@ -349,7 +372,7 @@ public static class AppLogo
             Children.Add(_art);
 
             // The shadow is masked by what the petals actually render, so it can only be built once
-            // they have. Loaded fires again every time the hub is re-attached to the ring canvas,
+            // they have. Loaded fires again every time the hub is re-attached to the orbit canvas,
             // hence the one-shot guard inside.
             if (floating)
                 Loaded += (_, _) => AttachShadow();
@@ -358,11 +381,37 @@ public static class AppLogo
         /// <summary>
         /// Plays the mark in. Safe to call before the element is loaded — composition animations
         /// run off the element's visual, which exists from the moment it does.
+        /// <para>
+        /// Every run starts from the same frame no matter what state the mark was left in, because
+        /// the first thing it does is <see cref="Reset"/> — which stops every animation this method
+        /// is about to start, before a single start value is seeded. That order is the whole point,
+        /// not tidiness. Composition hands a running animation ownership of the property it drives,
+        /// and an assignment to an owned property is silently dropped: seeding
+        /// <c>RotationAngleInDegrees</c>, a petal's <c>Scale</c> or its <c>Opacity</c> while an
+        /// earlier run is still playing did nothing at all, and the spring started an instant later
+        /// then picked up from whatever intermediate value that earlier run happened to be passing
+        /// through. A replay therefore began on an arbitrary frame and looked different every time
+        /// — worst of all under exactly the input that provokes it, a pointer crossing the hub
+        /// repeatedly. Stopping first hands each property back, so the seeds land and the
+        /// choreography below is reproducible frame for frame.
+        /// </para>
+        /// <para>
+        /// The rest state <see cref="Reset"/> snaps to on its way past is never seen: it and the
+        /// seeding below happen in the same turn of the UI thread, and the compositor only commits
+        /// once at the end of it, so the seeded values are the only ones ever presented. Reusing it
+        /// rather than repeating its list of stops here is also what keeps the two in step — a
+        /// property added to the choreography below has to be added to <see cref="Reset"/> to snap
+        /// back at all, so it cannot be left un-stopped here by omission.
+        /// </para>
         /// </summary>
         public void PlayEntrance()
         {
             try
             {
+                // Stop, then seed. The reverse order silently does nothing whenever a previous run
+                // is still in flight — see this method's own remarks.
+                Reset();
+
                 var art = ArtVisual();
                 art.RotationAngleInDegrees = SpinDegrees;
 
@@ -414,6 +463,16 @@ public static class AppLogo
 
         /// <summary>
         /// Plays the mark back out — <see cref="PlayEntrance"/> rewound, last petal in first out.
+        /// <para>
+        /// Deliberately does <em>not</em> stop what is playing first, unlike <see cref="PlayEntrance"/>.
+        /// Starting an animation on a property replaces whatever was driving it, and every keyframe
+        /// below names only its end value, so each one picks up from wherever the entrance had got
+        /// to and carries on out from there. That is exactly right for an exit: an orbit dismissed
+        /// while it is still arriving should flow back out of the frame it reached, not jump to a
+        /// canonical starting pose first. The entrance is the opposite case — it has a start frame
+        /// it must actually begin on — which is why only it seeds values and therefore only it has
+        /// to clear the way for them.
+        /// </para>
         /// </summary>
         public void PlayExit()
         {
@@ -463,8 +522,15 @@ public static class AppLogo
         /// <summary>
         /// Drops every animation and snaps the mark to rest. For the hub being reused: a dismiss
         /// that a new summon interrupted leaves <see cref="PlayExit"/>'s half-faded petals applied
-        /// to these very visuals, and without this the ring would come up with a mark part way out
+        /// to these very visuals, and without this the orbit would come up with a mark part way out
         /// the door.
+        /// <para>
+        /// It is also the first thing <see cref="PlayEntrance"/> does, for the stopping rather than
+        /// the snapping — see there for why an entrance cannot seed its start frame until the
+        /// animations that own those properties have let go of them. Between the two callers, the
+        /// list of stops below has to cover every property the entrance animates: miss one and the
+        /// mark neither resets cleanly nor replays identically.
+        /// </para>
         /// </summary>
         public void Reset()
         {

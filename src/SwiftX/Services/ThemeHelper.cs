@@ -42,8 +42,8 @@ public static class ThemeHelper
     /// <summary>
     /// Black-aware overload for callers that can tell Black apart from plain Dark directly (i.e.
     /// they hold the live <see cref="AppTheme"/>, not just an ActualTheme that can't express it —
-    /// see the class doc's own warning about that gap). Used by Settings' own ring/quadrant preview
-    /// bubbles so they match the real ring's glass under Black the same way they already do under
+    /// see the class doc's own warning about that gap). Used by Settings' own orbit/quadrant preview
+    /// bubbles so they match the real orbit's glass under Black the same way they already do under
     /// Dark.
     /// </summary>
     public static Brush Brush(FrameworkElement element, bool isBlack, string key) =>
@@ -55,7 +55,7 @@ public static class ThemeHelper
     /// <summary>
     /// Black-aware color lookup — see the <see cref="Brush(FrameworkElement, bool, string)"/>
     /// overload's doc for why <paramref name="isBlack"/> has to be passed in rather than inferred.
-    /// Every key but the ring bubbles' own glass tint behaves exactly like
+    /// Every key but the orbit bubbles' own glass tint behaves exactly like
     /// <see cref="ColorFor(bool, string)"/> regardless of <paramref name="isBlack"/> — Black only
     /// ever changes SwiftX's own surface fills (this key, and Settings' resource overrides in
     /// SettingsWindow.ApplyBlackOverrides), never foreground/border/muted/accent, which read the
@@ -63,10 +63,10 @@ public static class ThemeHelper
     /// </summary>
     public static Color ColorFor(bool dark, bool isBlack, string key) => key switch
     {
-        // Black's ring bubbles read as a deeper, more opaque black glass than Dark's lighter 40%
-        // tint — Dark's own tint is already pure black (there's no "grey ring" to darken further),
-        // so a higher alpha is what actually tells the two apart on the ring itself.
-        "RingBubbleGlassTint" or "RingBubbleGlassTintColor" when isBlack =>
+        // Black's orbit bubbles read as a deeper, more opaque black glass than Dark's lighter 40%
+        // tint — Dark's own tint is already pure black (there's no "grey orbit" to darken further),
+        // so a higher alpha is what actually tells the two apart on the orbit itself.
+        "OrbitBubbleGlassTint" or "OrbitBubbleGlassTintColor" when isBlack =>
             Color.FromArgb(0xCC, 0, 0, 0),
 
         _ => ColorFor(dark, key),
@@ -75,17 +75,17 @@ public static class ThemeHelper
     public static Color ColorFor(bool dark, string key) => key switch
     {
         "SwiftXSurfaceBrush" or "SwiftXSurfaceColor"
-            or "RingBubbleBackground" or "RingHubBackground" =>
+            or "OrbitBubbleBackground" or "OrbitHubBackground" =>
             dark ? Color.FromArgb(255, 0, 0, 0) : Color.FromArgb(255, 255, 255, 255),
 
         "SwiftXForegroundBrush" or "SwiftXForegroundColor"
             or "SwiftXAccentBrush" or "SwiftXAccentColor" =>
             dark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 0, 0, 0),
 
-        // The ring bubbles' glass tint (see RingWindow's CreateBubble/ApplyBubbleFill) — sits over
+        // The orbit bubbles' glass tint (see OrbitWindow's CreateBubble/ApplyBubbleFill) — sits over
         // a real DesktopAcrylicBackdrop, so it only needs to carry SwiftX's own dark/light identity
         // at partial opacity; the backdrop's own recipe already handles blur-vs-legibility contrast.
-        "RingBubbleGlassTint" or "RingBubbleGlassTintColor" =>
+        "OrbitBubbleGlassTint" or "OrbitBubbleGlassTintColor" =>
             dark ? Color.FromArgb(0x66, 0, 0, 0) : Color.FromArgb(0x66, 255, 255, 255),
 
         "SwiftXBorderBrush" or "SwiftXBorderColor" =>
@@ -94,16 +94,16 @@ public static class ThemeHelper
         "SwiftXMutedBrush" or "SwiftXMutedColor" =>
             dark ? Color.FromArgb(255, 0x88, 0x88, 0x88) : Color.FromArgb(255, 0x66, 0x66, 0x66),
 
-        "RingWindowBackground" =>
+        "OrbitWindowBackground" =>
             Color.FromArgb(0, 0, 0, 0),
 
-        // Destructive-action hover, the one place the ring leaves the black/white palette. The
+        // Destructive-action hover, the one place the orbit leaves the black/white palette. The
         // same soft red in both themes: it has to stay legible under white and black glyphs
         // alike, and a theme-flipped red would read as two different signals.
-        "RingCloseHoverBackground" =>
+        "OrbitCloseHoverBackground" =>
             Color.FromArgb(255, 0xEF, 0x6F, 0x6F),
 
-        "RingCloseHoverForeground" =>
+        "OrbitCloseHoverForeground" =>
             Color.FromArgb(255, 0xFF, 0xFF, 0xFF),
 
         _ => dark ? Color.FromArgb(255, 0, 0, 0) : Color.FromArgb(255, 255, 255, 255),

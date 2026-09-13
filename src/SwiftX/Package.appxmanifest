@@ -19,7 +19,7 @@
   <Identity
     Name="44492ajaykontham.SwiftX"
     Publisher="CN=93C75305-77D7-448E-B1C4-591A0E9665E1"
-    Version="1.0.0.0" />
+    Version="1.0.1.0" />
 
   <Properties>
     <DisplayName>SwiftX</DisplayName>
@@ -40,9 +40,21 @@
          directly for its hit-test regions, global hotkey, hot-corner polling and tray icon
          (see Interop/NativeMethods.cs), which only a full-trust package can do. -->
     <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="Windows.FullTrustApplication">
+      <!-- BackgroundColor is the fill of the *plate* Windows draws behind a plated app icon, and
+           "transparent" is why an installed SwiftX used to sit on a blue square in the taskbar and
+           Start: with no colour of its own declared, Windows falls back to the user's accent
+           colour, which is blue on a default install. The fix is not a different colour here — it
+           is the altform-unplated / altform-lightunplated variants of Square44x44Logo now shipped
+           in Images\ (written by tools/generate-brand-assets.py), which the taskbar, Start's app
+           list, Alt-Tab and Task View use in preference to anything plated, drawing the mark
+           straight onto their own surface with no plate at all.
+
+           So "transparent" stays, and is now right rather than merely harmless: what it still
+           governs is the Start *tile*, where a transparent background lets the Start menu's own
+           acrylic show through behind the mark instead of boxing it in a brand-coloured square. -->
       <uap:VisualElements
         DisplayName="SwiftX"
-        Description="A quick-access ring for Windows 11."
+        Description="A quick-access orbit for Windows 11."
         BackgroundColor="transparent"
         Square150x150Logo="Images\Square150x150Logo.png"
         Square44x44Logo="Images\Square44x44Logo.png">

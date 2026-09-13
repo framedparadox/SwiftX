@@ -11,7 +11,7 @@ namespace SwiftX.Tests.Models;
 public class QuadrantLayoutTests
 {
     private const double Bubble = 50 * 1.14;   // medium item, hover-grown
-    private const double RingRadius = 100;     // the ring's own default
+    private const double OrbitRadius = 100;     // the orbit's own default
 
     private static (double X, double Y) PointAt(HotCorner corner, int index, int count, double radius)
     {
@@ -29,7 +29,7 @@ public class QuadrantLayoutTests
     public void Every_item_is_wholly_on_screen(HotCorner corner)
     {
         int count = QuadrantLayout.ItemCount;
-        double radius = QuadrantLayout.Radius(count, Bubble, RingRadius);
+        double radius = QuadrantLayout.Radius(count, Bubble, OrbitRadius);
 
         for (int i = 0; i < count; i++)
         {
@@ -44,7 +44,7 @@ public class QuadrantLayoutTests
     public void Neighbouring_items_do_not_touch()
     {
         int count = QuadrantLayout.ItemCount;
-        double radius = QuadrantLayout.Radius(count, Bubble, RingRadius);
+        double radius = QuadrantLayout.Radius(count, Bubble, OrbitRadius);
 
         for (int i = 1; i < count; i++)
         {
@@ -58,11 +58,11 @@ public class QuadrantLayoutTests
     [Fact]
     public void The_arc_grows_only_as_far_as_it_has_to()
     {
-        // Four medium items cannot fit on a quarter arc at the ring's own radius, so the layout
+        // Four medium items cannot fit on a quarter arc at the orbit's own radius, so the layout
         // pushes them out — but a radius that already fits is left exactly alone.
-        Assert.True(QuadrantLayout.Radius(4, Bubble, RingRadius) > RingRadius);
+        Assert.True(QuadrantLayout.Radius(4, Bubble, OrbitRadius) > OrbitRadius);
         Assert.Equal(1000d, QuadrantLayout.Radius(4, Bubble, 1000));
-        Assert.Equal(RingRadius, QuadrantLayout.Radius(1, Bubble, RingRadius));
+        Assert.Equal(OrbitRadius, QuadrantLayout.Radius(1, Bubble, OrbitRadius));
     }
 
     [Theory]
@@ -92,30 +92,30 @@ public class QuadrantLayoutTests
 
     // ---- Which items -------------------------------------------------------------------------
 
-    private static RingItem App(string name) => new()
+    private static OrbitItem App(string name) => new()
     {
-        Kind = RingItemKind.Application,
+        Kind = OrbitItemKind.Application,
         DisplayName = name,
         Target = name,
     };
 
-    private static RingItem Link(string name) => new()
+    private static OrbitItem Link(string name) => new()
     {
-        Kind = RingItemKind.WebLink,
+        Kind = OrbitItemKind.WebLink,
         DisplayName = name,
         Target = "https://" + name,
     };
 
-    private static RingItem Shortcut(string name) => new()
+    private static OrbitItem Shortcut(string name) => new()
     {
-        Kind = RingItemKind.Shortcut,
+        Kind = OrbitItemKind.Shortcut,
         DisplayName = name,
         Target = name + ".lnk",
     };
 
-    private static RingItem Group(string name, params RingItem[] children)
+    private static OrbitItem Group(string name, params OrbitItem[] children)
     {
-        var group = new RingItem { Kind = RingItemKind.Group, DisplayName = name };
+        var group = new OrbitItem { Kind = OrbitItemKind.Group, DisplayName = name };
         group.Children.AddRange(children);
         return group;
     }
@@ -125,9 +125,9 @@ public class QuadrantLayoutTests
     {
         var tools = ToolCatalog.CreateToolsGroup();
         var notepad = App("Notepad");
-        var items = new List<RingItem> { notepad, Link("github"), tools };
+        var items = new List<OrbitItem> { notepad, Link("github"), tools };
 
-        var quadrant = QuadrantLayout.Compose(items, SystemRingItems.CreateSettings());
+        var quadrant = QuadrantLayout.Compose(items, SystemOrbitItems.CreateSettings());
 
         Assert.Equal(
             new[] { "QuickAccess", "Notepad", "Tools", "Settings" },
@@ -137,13 +137,13 @@ public class QuadrantLayoutTests
     [Fact]
     public void QuickAccess_gathers_every_link_and_shortcut_wherever_it_sits()
     {
-        var items = new List<RingItem>
+        var items = new List<OrbitItem>
         {
             Link("github"),
             Group("Work", Shortcut("project"), App("calc")),
         };
 
-        var quadrant = QuadrantLayout.Compose(items, SystemRingItems.CreateSettings());
+        var quadrant = QuadrantLayout.Compose(items, SystemOrbitItems.CreateSettings());
 
         var quickAccess = Assert.Single(quadrant, i => i.DisplayName == "QuickAccess");
         Assert.Equal(new[] { "github", "project" }, quickAccess.Children.Select(c => c.DisplayName));
@@ -152,9 +152,9 @@ public class QuadrantLayoutTests
     [Fact]
     public void QuickAccess_drops_out_entirely_when_there_is_nothing_to_gather()
     {
-        var items = new List<RingItem> { App("Notepad") };
+        var items = new List<OrbitItem> { App("Notepad") };
 
-        var quadrant = QuadrantLayout.Compose(items, SystemRingItems.CreateSettings());
+        var quadrant = QuadrantLayout.Compose(items, SystemOrbitItems.CreateSettings());
 
         Assert.DoesNotContain(quadrant, i => i.DisplayName == "QuickAccess");
         // The place it would have taken goes unfilled rather than to some other item — the
@@ -163,21 +163,21 @@ public class QuadrantLayoutTests
     }
 
     [Fact]
-    public void The_rings_own_Notepad_is_used_when_it_has_one()
+    public void The_orbits_own_Notepad_is_used_when_it_has_one()
     {
         var notepad = App("My editor");
         notepad.Target = @"C:\Windows\System32\Notepad.exe";
-        var items = new List<RingItem> { notepad };
+        var items = new List<OrbitItem> { notepad };
 
-        var quadrant = QuadrantLayout.Compose(items, SystemRingItems.CreateSettings());
+        var quadrant = QuadrantLayout.Compose(items, SystemOrbitItems.CreateSettings());
 
         Assert.Same(notepad, quadrant.First());
     }
 
     [Fact]
-    public void A_ring_with_no_notepad_gets_the_same_default_SeedDefaults_plants()
+    public void A_orbit_with_no_notepad_gets_the_same_default_SeedDefaults_plants()
     {
-        var quadrant = QuadrantLayout.Compose(new List<RingItem>(), SystemRingItems.CreateSettings());
+        var quadrant = QuadrantLayout.Compose(new List<OrbitItem>(), SystemOrbitItems.CreateSettings());
 
         var notepad = quadrant.First();
         Assert.Equal("Notepad", notepad.DisplayName);
@@ -189,9 +189,9 @@ public class QuadrantLayoutTests
     {
         var hiddenLink = Link("hidden");
         hiddenLink.Hidden = true;
-        var items = new List<RingItem> { hiddenLink };
+        var items = new List<OrbitItem> { hiddenLink };
 
-        var quadrant = QuadrantLayout.Compose(items, SystemRingItems.CreateSettings());
+        var quadrant = QuadrantLayout.Compose(items, SystemOrbitItems.CreateSettings());
 
         Assert.DoesNotContain(quadrant, i => i.DisplayName == "QuickAccess");
     }
@@ -201,7 +201,7 @@ public class QuadrantLayoutTests
     {
         var hiddenShortcut = Shortcut("hidden");
         hiddenShortcut.Hidden = true;
-        var items = new List<RingItem> { Group("Work", hiddenShortcut, Link("visible")) };
+        var items = new List<OrbitItem> { Group("Work", hiddenShortcut, Link("visible")) };
 
         var quickAccess = QuadrantLayout.BuildQuickAccess(items);
 
@@ -210,9 +210,9 @@ public class QuadrantLayoutTests
     }
 
     [Fact]
-    public void An_almost_empty_ring_still_gets_its_built_ins()
+    public void An_almost_empty_orbit_still_gets_its_built_ins()
     {
-        var quadrant = QuadrantLayout.Compose(new List<RingItem>(), SystemRingItems.CreateSettings());
+        var quadrant = QuadrantLayout.Compose(new List<OrbitItem>(), SystemOrbitItems.CreateSettings());
         Assert.Equal(new[] { "Notepad", "Settings" }, quadrant.Select(i => i.DisplayName));
     }
 }

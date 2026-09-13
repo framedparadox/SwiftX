@@ -359,8 +359,8 @@ public sealed class CertificatePage : EditorToolPage
     };
 
     // Built from the codepoint, not a literal character in source — see the memory note on PUA
-    // glyph corruption from a stray copy/paste. The X is the same glyph SystemRingItems already
-    // uses for the ring's "Close" item, so it's a codepoint this app already ships and renders.
+    // glyph corruption from a stray copy/paste. The X is the same glyph SystemOrbitItems already
+    // uses for the orbit's "Close" item, so it's a codepoint this app already ships and renders.
     private static readonly string ValidCheckGlyph = char.ConvertFromUtf32(0xE8FB);
     private static readonly string InvalidGlyph = char.ConvertFromUtf32(0xE711);
 

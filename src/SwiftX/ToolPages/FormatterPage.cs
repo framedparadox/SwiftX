@@ -165,7 +165,7 @@ public sealed class FormatterPage : EditorToolPage
 
         // A paste is a deliberate "here's a document" moment, unlike the keystrokes TextChanged
         // debounces above — so it gets the full clean+format+detect pass immediately, the same
-        // one the ring's "paste clipboard" chip already triggers via PasteClipboardText.
+        // one the orbit's "paste clipboard" chip already triggers via PasteClipboardText.
         _editor.Pasted += (_, _) => ValidateAndClean();
 
         ToolTipService.SetToolTip(_indentBox, Loc.Get("Formatter.Indent"));

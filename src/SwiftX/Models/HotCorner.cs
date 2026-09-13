@@ -1,6 +1,6 @@
 namespace SwiftX.Models;
 
-/// <summary>Which screen corner summons the ring when the pointer is pushed into it.</summary>
+/// <summary>Which screen corner summons the orbit when the pointer is pushed into it.</summary>
 public enum HotCorner
 {
     TopLeft,
@@ -9,11 +9,11 @@ public enum HotCorner
     BottomRight,
 }
 
-/// <summary>How much of the ring a hot-corner summon puts on screen.</summary>
+/// <summary>How much of the orbit a hot-corner summon puts on screen.</summary>
 public enum HotCornerLayout
 {
-    /// <summary>The whole ring, exactly as the keyboard shortcut summons it.</summary>
-    Ring,
+    /// <summary>The whole orbit, exactly as the keyboard shortcut summons it.</summary>
+    Orbit,
 
     /// <summary>
     /// Four items only, fanned out along a quarter circle centered on the corner itself — the

@@ -3,22 +3,22 @@ using SwiftX.Models;
 namespace SwiftX.Services;
 
 /// <summary>Shared helpers for turning a raw target string into a typed dock item.</summary>
-public static class RingItemFactory
+public static class OrbitItemFactory
 {
-    /// <summary>Infers the <see cref="RingItemKind"/> of a target (path or URL).</summary>
-    public static RingItemKind Classify(string target)
+    /// <summary>Infers the <see cref="OrbitItemKind"/> of a target (path or URL).</summary>
+    public static OrbitItemKind Classify(string target)
     {
         if (Directory.Exists(target))
-            return RingItemKind.Folder;
+            return OrbitItemKind.Folder;
 
         if (Uri.TryCreate(target, UriKind.Absolute, out var uri) &&
             (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-            return RingItemKind.WebLink;
+            return OrbitItemKind.WebLink;
 
         return Path.GetExtension(target).ToLowerInvariant() switch
         {
-            ".exe" or ".lnk" or ".bat" or ".cmd" or ".com" => RingItemKind.Application,
-            _ => RingItemKind.File,
+            ".exe" or ".lnk" or ".bat" or ".cmd" or ".com" => OrbitItemKind.Application,
+            _ => OrbitItemKind.File,
         };
     }
 

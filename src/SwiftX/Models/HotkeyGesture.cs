@@ -19,7 +19,7 @@ public enum HotkeyModifiers
 
 /// <summary>
 /// A system-wide keyboard shortcut — one or more modifiers plus a key — stored in the config as
-/// a readable string such as <c>"Ctrl+Alt+A"</c> so a hand-edited <c>ring.json</c> stays legible.
+/// a readable string such as <c>"Ctrl+Alt+A"</c> so a hand-edited <c>orbit.json</c> stays legible.
 /// Immutable; parse with <see cref="TryParse"/> and render with <see cref="ToString"/>.
 /// </summary>
 public sealed class HotkeyGesture : IEquatable<HotkeyGesture>

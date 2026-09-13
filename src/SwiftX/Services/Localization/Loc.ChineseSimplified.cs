@@ -5,8 +5,8 @@ public static partial class Loc
     private static readonly Dictionary<string, string> ChineseSimplified = new(StringComparer.Ordinal)
     {
         ["Tray.Tooltip"] = "SwiftX",
-        ["Tray.Show"] = "显示指环",
-        ["Tray.HideDock"] = "隐藏指环",
+        ["Tray.Show"] = "显示轨道",
+        ["Tray.HideDock"] = "隐藏轨道",
         ["Tray.AddNew"] = "添加项目…",
         ["Tray.Settings"] = "设置",
         ["Tray.Quit"] = "退出",

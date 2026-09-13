@@ -5,9 +5,9 @@ namespace SwiftX.Tests;
 /// <summary>
 /// Redirects the whole test assembly onto a throwaway data directory before a single test runs.
 /// <para>
-/// <b>This is not hygiene, it is data loss prevention.</b> <c>RingStore.DataDirectory</c> resolves
+/// <b>This is not hygiene, it is data loss prevention.</b> <c>OrbitStore.DataDirectory</c> resolves
 /// to <c>%AppData%\SwiftX</c> unless <c>SWIFTX_DATA_DIR</c> overrides it, and
-/// <c>SecureValueStore</c> / <c>RingStore</c> write <em>whole-file</em> — <c>Save</c> serializes
+/// <c>SecureValueStore</c> / <c>OrbitStore</c> write <em>whole-file</em> — <c>Save</c> serializes
 /// the list it is handed and moves it over the existing file. So a test that called
 /// <c>SecureValueStore.Save(...)</c> with generated entries did not add rows to a scratch store:
 /// it replaced the running user's real <c>secure-values.json</c>, DPAPI blob and all, with the
@@ -15,7 +15,7 @@ namespace SwiftX.Tests;
 /// </para>
 /// <para>
 /// A <see cref="ModuleInitializerAttribute"/> is what makes the guard reliable. The directory has
-/// to be redirected before <c>RingStore.DataDirectory</c> is first read, because it is a
+/// to be redirected before <c>OrbitStore.DataDirectory</c> is first read, because it is a
 /// <c>static readonly</c> resolved once per process; a fixture, a base class or a per-test setup
 /// all run after some other test may already have touched it. A module initializer runs when the
 /// assembly is loaded, ahead of every test in it.

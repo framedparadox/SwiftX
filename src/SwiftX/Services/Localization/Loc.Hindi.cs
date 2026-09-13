@@ -5,8 +5,8 @@ public static partial class Loc
     private static readonly Dictionary<string, string> Hindi = new(StringComparer.Ordinal)
     {
         ["Tray.Tooltip"] = "SwiftX",
-        ["Tray.Show"] = "रिंग दिखाएँ",
-        ["Tray.HideDock"] = "रिंग छिपाएँ",
+        ["Tray.Show"] = "ऑर्बिट दिखाएँ",
+        ["Tray.HideDock"] = "ऑर्बिट छिपाएँ",
         ["Tray.AddNew"] = "आइटम जोड़ें…",
         ["Tray.Settings"] = "सेटिंग्स",
         ["Tray.Quit"] = "बंद करें",

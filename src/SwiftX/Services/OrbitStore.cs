@@ -4,8 +4,8 @@ using SwiftX.Models;
 
 namespace SwiftX.Services;
 
-/// <summary>Loads and saves configuration as JSON under %AppData%\SwiftX\ring.json.</summary>
-public static class RingStore
+/// <summary>Loads and saves configuration as JSON under %AppData%\SwiftX\orbit.json.</summary>
+public static class OrbitStore
 {
     public static string DataDirectory { get; } = ResolveDataDirectory(Environment.SpecialFolder.ApplicationData);
 
@@ -28,7 +28,16 @@ public static class RingStore
         return Path.Combine(Environment.GetFolderPath(folder), "SwiftX");
     }
 
-    private static readonly string FilePath = Path.Combine(DataDirectory, "ring.json");
+    private static readonly string FilePath = Path.Combine(DataDirectory, "orbit.json");
+
+    /// <summary>
+    /// The file a build from before the ring-to-orbit rename wrote. Read only when
+    /// <see cref="FilePath"/> is absent, and never written back to — the first
+    /// <see cref="Save"/> after an upgrade lands on <see cref="FilePath"/> and this one is left
+    /// alone from then on, so a user who downgrades still has the configuration they had.
+    /// </summary>
+    private static readonly string LegacyFilePath =
+        Path.Combine(DataDirectory, LegacyConfigFormat.LegacyFileName);
 
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -38,15 +47,22 @@ public static class RingStore
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    public static bool Exists => File.Exists(FilePath);
+    public static bool Exists => File.Exists(FilePath) || File.Exists(LegacyFilePath);
 
     public static AppConfig Load()
     {
         try
         {
-            if (File.Exists(FilePath))
+            // Today's file wins outright; the pre-rename one is a fallback for the single upgrade
+            // run that has not written orbit.json yet.
+            var path = File.Exists(FilePath) ? FilePath
+                     : File.Exists(LegacyFilePath) ? LegacyFilePath
+                     : null;
+            if (path is not null)
             {
-                var json = File.ReadAllText(FilePath);
+                if (path == LegacyFilePath)
+                    Diag.Log($"OrbitStore.Load: upgrading from {LegacyConfigFormat.LegacyFileName}");
+                var json = LegacyConfigFormat.Upgrade(File.ReadAllText(path));
                 var cfg = JsonSerializer.Deserialize<AppConfig>(json, Options);
                 if (cfg is not null)
                     return cfg.EnsurePrimary();
@@ -54,7 +70,7 @@ public static class RingStore
         }
         catch (Exception ex)
         {
-            Diag.Log("RingStore.Load failed: " + ex.Message);
+            Diag.Log("OrbitStore.Load failed: " + ex.Message);
         }
         return new AppConfig().EnsurePrimary();
     }
@@ -71,7 +87,7 @@ public static class RingStore
         }
         catch (Exception ex)
         {
-            Diag.Log("RingStore.Save failed: " + ex.Message);
+            Diag.Log("OrbitStore.Save failed: " + ex.Message);
         }
     }
 
@@ -87,7 +103,7 @@ public static class RingStore
         }
         catch (Exception ex)
         {
-            Diag.Log($"RingStore.ExportTo('{path}') failed: {ex.Message}");
+            Diag.Log($"OrbitStore.ExportTo('{path}') failed: {ex.Message}");
             return false;
         }
     }
@@ -111,20 +127,24 @@ public static class RingStore
             var read = InputLimits.ReadText(path, InputLimits.MaxConfigBytes);
             if (!read.Ok)
             {
-                Diag.Log($"RingStore.ImportFrom('{path}') refused: {read.Error}");
+                Diag.Log($"OrbitStore.ImportFrom('{path}') refused: {read.Error}");
                 return null;
             }
 
-            var config = JsonSerializer.Deserialize<AppConfig>(read.Text, Options);
+            // Same forward-mapping as Load: a configuration exported by a pre-rename build is a
+            // file the user can still pick, and it has to import as what it was rather than as
+            // nothing.
+            var json = LegacyConfigFormat.Upgrade(read.Text);
+            var config = JsonSerializer.Deserialize<AppConfig>(json, Options);
             if (config is null)
                 return null;
-            if (config.Rings.Count == 0)
+            if (config.Orbits.Count == 0)
                 return null;
             return config.EnsurePrimary();
         }
         catch (Exception ex)
         {
-            Diag.Log($"RingStore.ImportFrom('{path}') failed: {ex.Message}");
+            Diag.Log($"OrbitStore.ImportFrom('{path}') failed: {ex.Message}");
             return null;
         }
     }

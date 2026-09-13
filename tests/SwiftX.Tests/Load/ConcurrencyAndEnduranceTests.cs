@@ -26,7 +26,7 @@ namespace SwiftX.Tests.Load;
 /// the bug would take: no crash, just the wrong answer.
 /// </para>
 /// <para>
-/// <b>Why endurance is in scope.</b> The ring is a long-running tray application that is summoned
+/// <b>Why endurance is in scope.</b> The orbit is a long-running tray application that is summoned
 /// and dismissed hundreds of times a day and rarely restarted. A per-cycle leak or a cache that is
 /// never trimmed is invisible in a single run and obvious after a week, so the endurance tests
 /// repeat the real cycle enough times for retention to show up as heap growth.
@@ -212,7 +212,7 @@ public class ConcurrencyAndEnduranceTests(ITestOutputHelper output)
     public void ShortcutResolver_UnderConcurrentLookups_StaysConsistent()
     {
         var paths = Enumerable.Range(0, 32)
-            .Select(i => Path.Combine(RingStore.DataDirectory, $"shortcut-{i}.lnk"))
+            .Select(i => Path.Combine(OrbitStore.DataDirectory, $"shortcut-{i}.lnk"))
             .ToArray();
 
         InParallel(iterationsPerWorker: 50, (worker, iteration) =>
@@ -229,19 +229,19 @@ public class ConcurrencyAndEnduranceTests(ITestOutputHelper output)
     // =========================================================================================
 
     /// <summary>
-    /// A configuration far larger than any real ring, to check the save/load round trip is bounded
+    /// A configuration far larger than any real orbit, to check the save/load round trip is bounded
     /// by the data rather than by something quadratic in the item count, and that it survives the
     /// atomic temp-file-then-move write intact.
     /// </summary>
     [Fact]
-    public void RingStore_WithAVeryLargeConfiguration_RoundTripsIntact()
+    public void OrbitStore_WithAVeryLargeConfiguration_RoundTripsIntact()
     {
         var config = new AppConfig().EnsurePrimary();
         for (int i = 0; i < 5_000; i++)
         {
-            config.Primary.Items.Add(new RingItem
+            config.Primary.Items.Add(new OrbitItem
             {
-                Kind = RingItemKind.Application,
+                Kind = OrbitItemKind.Application,
                 DisplayName = $"Item {i} with a name long enough to matter",
                 Target = $@"C:\Program Files\Vendor {i}\app-{i}.exe",
                 Arguments = $"--flag-{i} --another",
@@ -249,8 +249,8 @@ public class ConcurrencyAndEnduranceTests(ITestOutputHelper output)
         }
 
         var clock = Stopwatch.StartNew();
-        RingStore.Save(config);
-        var reloaded = RingStore.Load();
+        OrbitStore.Save(config);
+        var reloaded = OrbitStore.Load();
         clock.Stop();
         output.WriteLine($"5000-item config save+load: {clock.ElapsedMilliseconds}ms");
 
@@ -265,31 +265,31 @@ public class ConcurrencyAndEnduranceTests(ITestOutputHelper output)
     /// than drifting after the first pass.
     /// </summary>
     [Fact]
-    public void RingStore_ExportImportCycle_IsStableAcrossManyRepetitions()
+    public void OrbitStore_ExportImportCycle_IsStableAcrossManyRepetitions()
     {
-        var config = new AppConfig { Theme = AppTheme.Dark, ItemSize = RingItemSize.Large }.EnsurePrimary();
+        var config = new AppConfig { Theme = AppTheme.Dark, ItemSize = OrbitItemSize.Large }.EnsurePrimary();
         for (int i = 0; i < 50; i++)
         {
-            config.Primary.Items.Add(new RingItem
+            config.Primary.Items.Add(new OrbitItem
             {
-                Kind = RingItemKind.WebLink,
+                Kind = OrbitItemKind.WebLink,
                 DisplayName = $"Link {i}",
                 Target = $"https://example.invalid/{i}",
             });
         }
 
-        var path = Path.Combine(RingStore.DataDirectory, "roundtrip.json");
+        var path = Path.Combine(OrbitStore.DataDirectory, "roundtrip.json");
         var current = config;
 
         for (int cycle = 0; cycle < 25; cycle++)
         {
-            Assert.True(RingStore.ExportTo(current, path));
-            var imported = RingStore.ImportFrom(path);
+            Assert.True(OrbitStore.ExportTo(current, path));
+            var imported = OrbitStore.ImportFrom(path);
 
             Assert.NotNull(imported);
             Assert.Equal(config.Primary.Items.Count, imported.Primary.Items.Count);
             Assert.Equal(AppTheme.Dark, imported.Theme);
-            Assert.Equal(RingItemSize.Large, imported.ItemSize);
+            Assert.Equal(OrbitItemSize.Large, imported.ItemSize);
             current = imported;
         }
     }

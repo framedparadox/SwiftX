@@ -30,16 +30,23 @@ public sealed class AppTitleBar : Grid
 
     /// <summary>
     /// A title bar led by the SwiftX mark rather than a glyph, for the app's own windows (Settings,
-    /// Add to ring) as opposed to the individual tools. Those windows extend their content into the
+    /// Add to orbit) as opposed to the individual tools. Those windows extend their content into the
     /// caption, so Windows never draws the window icon for them — without this they carry no mark
     /// at all.
     /// </summary>
     public static AppTitleBar WithAppMark(string title, FrameworkElement? headerActions = null) =>
         new(AppLogo.Create(AppMarkSize), title, headerActions);
 
+    /// <summary>
+    /// The caption strip's fixed height in DIPs. Public because a window that sizes itself to its
+    /// own content has to add this on top of what that content measures — the title bar is a
+    /// sibling row, not part of it. See <c>AddItemWindow.FitWindowToContent</c>.
+    /// </summary>
+    public const double HeightDip = 40;
+
     private AppTitleBar(FrameworkElement? leading, string title, FrameworkElement? headerActions)
     {
-        Height = 40;
+        Height = HeightDip;
         Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
 
         var content = new StackPanel

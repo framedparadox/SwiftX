@@ -9,7 +9,7 @@ namespace SwiftX.Models;
 /// never fatal, it just shows English for the untranslated rows.
 /// </para>
 /// <para>
-/// Persisted by name via <c>JsonStringEnumConverter</c> (see <c>RingStore</c>), so these member
+/// Persisted by name via <c>JsonStringEnumConverter</c> (see <c>OrbitStore</c>), so these member
 /// names are a storage contract: rename one and every config that already wrote the old name is
 /// stranded. Add new languages by appending members, never by renaming existing ones.
 /// </para>
