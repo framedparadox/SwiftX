@@ -6,11 +6,11 @@ namespace SwiftX.Tests.Services;
 /// <summary>
 /// The identity of a resolved icon — what makes one resolution reusable and another stale.
 /// <para>
-/// <c>RingWindow.RenderCurrent</c> fires an icon resolution per item on every render, and a
+/// <c>OrbitWindow.RenderCurrent</c> fires an icon resolution per item on every render, and a
 /// render happens on every summon, every theme change and every settings save. Resolution is not
 /// cheap: an app or file goes through the shell's jumbo image list, <c>GetDIBits</c>, a PNG
 /// encode and a XAML decode. Skipping it when the answer cannot have changed is what keeps a
-/// summon instant, and <see cref="RingItem.IconKey"/> is the whole basis of that decision — so
+/// summon instant, and <see cref="OrbitItem.IconKey"/> is the whole basis of that decision — so
 /// the properties below are the ones a caching bug would violate.
 /// </para>
 /// <para>
@@ -21,9 +21,9 @@ namespace SwiftX.Tests.Services;
 /// </summary>
 public class IconIdentityTests
 {
-    private static RingItem Item() => new()
+    private static OrbitItem Item() => new()
     {
-        Kind = RingItemKind.Application,
+        Kind = OrbitItemKind.Application,
         DisplayName = "Notepad",
         Target = @"C:\Windows\notepad.exe",
     };
@@ -47,7 +47,7 @@ public class IconIdentityTests
         var baseline = Item().IconKey;
 
         var differentKind = Item();
-        differentKind.Kind = RingItemKind.Folder;
+        differentKind.Kind = OrbitItemKind.Folder;
         Assert.NotEqual(baseline, differentKind.IconKey);
 
         var differentTarget = Item();
@@ -65,7 +65,7 @@ public class IconIdentityTests
 
     /// <summary>
     /// The display name is deliberately <em>not</em> part of the key. Renaming an item on the
-    /// ring does not change what its icon resolves to, and re-extracting a shell icon because
+    /// orbit does not change what its icon resolves to, and re-extracting a shell icon because
     /// someone fixed a typo would give back the identical bitmap.
     /// </summary>
     [Fact]
@@ -85,8 +85,8 @@ public class IconIdentityTests
     [Fact]
     public void Fields_cannot_run_together_into_a_colliding_key()
     {
-        var targetOnly = new RingItem { Kind = RingItemKind.File, Target = "a", CustomIconPath = "b" };
-        var pathOnly = new RingItem { Kind = RingItemKind.File, Target = "a\u001fb" };
+        var targetOnly = new OrbitItem { Kind = OrbitItemKind.File, Target = "a", CustomIconPath = "b" };
+        var pathOnly = new OrbitItem { Kind = OrbitItemKind.File, Target = "a\u001fb" };
 
         Assert.NotEqual(targetOnly.IconKey, pathOnly.IconKey);
     }
@@ -111,8 +111,8 @@ public class IconIdentityTests
     /// <summary>
     /// Suppressing the no-op must not suppress a real one: the idempotence guard compares by
     /// reference, so it has to let a genuinely different value through. Asserted on
-    /// <see cref="RingItem.CustomGlyph"/>, which carries the identical guard and — unlike
-    /// <see cref="RingItem.IconImage"/> — needs no <c>ImageSource</c> to exercise it. Constructing
+    /// <see cref="OrbitItem.CustomGlyph"/>, which carries the identical guard and — unlike
+    /// <see cref="OrbitItem.IconImage"/> — needs no <c>ImageSource</c> to exercise it. Constructing
     /// one of those means activating a WinUI <c>DependencyObject</c>, which needs a XAML thread
     /// this test host does not have.
     /// </summary>
@@ -125,9 +125,9 @@ public class IconIdentityTests
 
         item.CustomGlyph = "";
 
-        Assert.Contains(nameof(RingItem.CustomGlyph), changed);
-        Assert.Contains(nameof(RingItem.Glyph), changed);
-        Assert.Contains(nameof(RingItem.HasCustomIcon), changed);
+        Assert.Contains(nameof(OrbitItem.CustomGlyph), changed);
+        Assert.Contains(nameof(OrbitItem.Glyph), changed);
+        Assert.Contains(nameof(OrbitItem.HasCustomIcon), changed);
 
         // And setting the same value again is silent, the same way the icon setter is.
         changed.Clear();
@@ -152,7 +152,7 @@ public class IconIdentityTests
 
     /// <summary>
     /// The signature is scratch state, not configuration. Persisting it would put a meaningless
-    /// resolution stamp in every user's <c>ring.json</c>, and — worse — a stamp read back from
+    /// resolution stamp in every user's <c>orbit.json</c>, and — worse — a stamp read back from
     /// disk would claim an icon had already been resolved in a process that has resolved nothing.
     /// </summary>
     [Fact]
@@ -163,7 +163,7 @@ public class IconIdentityTests
 
         var json = System.Text.Json.JsonSerializer.Serialize(item);
 
-        Assert.DoesNotContain(nameof(RingItem.IconSignature), json, StringComparison.Ordinal);
-        Assert.DoesNotContain(nameof(RingItem.IconKey), json, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(OrbitItem.IconSignature), json, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(OrbitItem.IconKey), json, StringComparison.Ordinal);
     }
 }

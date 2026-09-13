@@ -39,6 +39,101 @@ public static class StartupService
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ValueName = "SwiftX";
 
+    /// <summary>
+    /// Marks a launch as Windows' own, not the user's.
+    /// <para>
+    /// Launching SwiftX by hand now opens Settings, so that the Start-menu, taskbar and desktop
+    /// entries visibly do something for an app that has no window of its own (see
+    /// <see cref="SingleInstanceSignal"/>). An autostart launch must not: nobody wants a settings
+    /// window in their face every time they sign in. The two are indistinguishable from inside the
+    /// process unless the autostart registration says so, which is what this argument is for.
+    /// </para>
+    /// </summary>
+    public const string StartupArgument = "--startup";
+
+    /// <summary>
+    /// Whether Windows started this process at sign-in rather than the user starting it.
+    /// <para>
+    /// Two mechanisms, because there are two registrations. The unpackaged build's <c>Run</c> value
+    /// carries <see cref="StartupArgument"/> on its command line. The packaged build's
+    /// <c>windows.startupTask</c> has no command line to carry anything — the manifest gives no
+    /// place to put arguments — so it is recognised by its activation kind instead, which is the
+    /// only signal Windows offers there.
+    /// </para>
+    /// </summary>
+    public static bool IsAutostartLaunch { get; } = ResolveAutostartLaunch();
+
+    private static bool ResolveAutostartLaunch()
+    {
+        foreach (var arg in Environment.GetCommandLineArgs().Skip(1))
+        {
+            if (string.Equals(arg, StartupArgument, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        try
+        {
+            var kind = Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent()
+                .GetActivatedEventArgs()?.Kind;
+            if (kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.StartupTask)
+                return true;
+        }
+        catch (Exception ex)
+        {
+            // Only reachable on the packaged build in practice, and a failure here means the app
+            // opens Settings on a sign-in launch — mildly annoying, never broken — so it is logged
+            // and shrugged off rather than allowed to stop startup.
+            Diag.Log("StartupService: activation-kind lookup failed: " + ex.Message);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Brings an existing autostart registration up to date with what this build writes.
+    /// <para>
+    /// Specifically: a <c>Run</c> value written by a build from before
+    /// <see cref="StartupArgument"/> existed has no argument on it, so every sign-in would look
+    /// like a user launch and pop Settings open. Rather than make the user toggle "Start with
+    /// Windows" off and on again to fix it, the app repairs its own entry at startup. It is
+    /// cheap (one registry read, and a write only when something is actually wrong) and it cannot
+    /// run away with itself, because after the first repair the value already matches.
+    /// </para>
+    /// <para>
+    /// Deliberately narrow: it rewrites the entry only when the entry points at <em>this</em>
+    /// executable. A value naming some other copy of SwiftX belongs to that copy — a portable
+    /// build run once out of a downloads folder has no business repointing the installed copy's
+    /// autostart at itself. Nothing to do on the packaged build: the startup task carries no
+    /// command line to be out of date.
+    /// </para>
+    /// </summary>
+    public static void RepairRegistration()
+    {
+        if (PackagedRuntime.IsPackaged)
+            return;
+
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
+            if (key?.GetValue(ValueName) is not string existing || existing.Length == 0)
+                return;
+
+            string exe = CurrentExecutable();
+            string expected = RunCommandFor(exe);
+            if (string.Equals(existing, expected, StringComparison.OrdinalIgnoreCase))
+                return;
+            if (!string.Equals(ExecutableFrom(existing), exe, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            key.SetValue(ValueName, expected);
+            Diag.Log("StartupService: repaired the autostart entry to carry " + StartupArgument);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("StartupService.RepairRegistration failed: " + ex.Message);
+        }
+    }
+
     /// <summary>What the startup entry ended up as after a request to change it.</summary>
     public enum StartupState
     {
@@ -140,18 +235,37 @@ public static class StartupService
                 return;
 
             if (enabled)
-            {
-                var exe = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "SwiftX.exe");
-                key.SetValue(ValueName, $"\"{exe}\"");
-            }
+                key.SetValue(ValueName, RunCommandFor(CurrentExecutable()));
             else
-            {
                 key.DeleteValue(ValueName, throwOnMissingValue: false);
-            }
         }
         catch (Exception ex)
         {
             Diag.Log("StartupService.SetRunKey failed: " + ex.Message);
         }
+    }
+
+    private static string CurrentExecutable() =>
+        Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "SwiftX.exe");
+
+    /// <summary>The exact command line an autostart entry for <paramref name="exe"/> should hold.
+    /// Quoted because Program Files and most user profiles contain spaces.</summary>
+    private static string RunCommandFor(string exe) => $"\"{exe}\" {StartupArgument}";
+
+    /// <summary>
+    /// The executable named by a <c>Run</c> command line, or null if it cannot be picked out. Only
+    /// the quoted and bare-single-token forms are understood, which is all SwiftX has ever
+    /// written; anything stranger is left alone rather than guessed at.
+    /// </summary>
+    private static string? ExecutableFrom(string command)
+    {
+        command = command.Trim();
+        if (command.StartsWith('"'))
+        {
+            int end = command.IndexOf('"', 1);
+            return end > 1 ? command[1..end] : null;
+        }
+        int space = command.IndexOf(' ');
+        return space < 0 ? command : command[..space];
     }
 }

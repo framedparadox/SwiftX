@@ -21,8 +21,8 @@ charge.
 
 ## 3. Your data
 
-SwiftX stores your ring items and settings on your PC and sends nothing on its own,
-apart from asking a website for its own icon when you put a web link on the ring. The
+SwiftX stores your orbit items and settings on your PC and sends nothing on its own,
+apart from asking a website for its own icon when you put a web link on the orbit. The
 full description of what the app does and does not do with what you put into it is on
 the Privacy page inside Settings, and it forms part of these terms.
 

@@ -4,12 +4,12 @@ using Xunit;
 
 namespace SwiftX.Tests.Services;
 
-public class RingStoreTests : IDisposable
+public class OrbitStoreTests : IDisposable
 {
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), "swiftx-store-tests", Guid.NewGuid().ToString("N"));
 
-    public RingStoreTests() => Directory.CreateDirectory(_directory);
+    public OrbitStoreTests() => Directory.CreateDirectory(_directory);
 
     public void Dispose()
     {
@@ -25,29 +25,29 @@ public class RingStoreTests : IDisposable
         {
             Theme = AppTheme.Light,
             Language = AppLanguage.French,
-            ItemSize = RingItemSize.Small,
+            ItemSize = OrbitItemSize.Small,
             Hotkey = "Ctrl+Alt+Space",
             ShowDataTool = true,
             ShowCertificateTool = false,
         };
-        config.Rings.Add(new RingProfile
+        config.Orbits.Add(new OrbitProfile
         {
             Name = "Home",
             Items =
             {
-                new RingItem
+                new OrbitItem
                 {
-                    Kind = RingItemKind.Application,
+                    Kind = OrbitItemKind.Application,
                     DisplayName = "Notepad",
                     Target = @"C:\Windows\System32\notepad.exe",
                 },
-                new RingItem
+                new OrbitItem
                 {
-                    Kind = RingItemKind.Group,
+                    Kind = OrbitItemKind.Group,
                     DisplayName = "Tools",
                     Children =
                     {
-                        new RingItem { Kind = RingItemKind.Tool, DisplayName = "Data", Target = "Data" },
+                        new OrbitItem { Kind = OrbitItemKind.Tool, DisplayName = "Data", Target = "Data" },
                     },
                 },
             },
@@ -61,22 +61,22 @@ public class RingStoreTests : IDisposable
         var path = Path_("backup.json");
         var original = SampleConfig();
 
-        Assert.True(RingStore.ExportTo(original, path));
-        var restored = RingStore.ImportFrom(path);
+        Assert.True(OrbitStore.ExportTo(original, path));
+        var restored = OrbitStore.ImportFrom(path);
 
         Assert.NotNull(restored);
         Assert.Equal(AppTheme.Light, restored!.Theme);
         Assert.Equal(AppLanguage.French, restored.Language);
-        Assert.Equal(RingItemSize.Small, restored.ItemSize);
+        Assert.Equal(OrbitItemSize.Small, restored.ItemSize);
         Assert.Equal("Ctrl+Alt+Space", restored.Hotkey);
         Assert.True(restored.ShowDataTool);
         Assert.False(restored.ShowCertificateTool);
 
-        var ring = Assert.Single(restored.Rings);
-        Assert.Equal("Home", ring.Name);
-        Assert.Equal(2, ring.Items.Count);
-        var group = ring.Items[1];
-        Assert.Equal(RingItemKind.Group, group.Kind);
+        var orbit = Assert.Single(restored.Orbits);
+        Assert.Equal("Home", orbit.Name);
+        Assert.Equal(2, orbit.Items.Count);
+        var group = orbit.Items[1];
+        Assert.Equal(OrbitItemKind.Group, group.Kind);
         Assert.Equal("Data", Assert.Single(group.Children).DisplayName);
     }
 
@@ -85,6 +85,6 @@ public class RingStoreTests : IDisposable
     {
         var path = Path_("not-a-config.json");
         File.WriteAllText(path, """{"hello":"world"}""");
-        Assert.Null(RingStore.ImportFrom(path));
+        Assert.Null(OrbitStore.ImportFrom(path));
     }
 }

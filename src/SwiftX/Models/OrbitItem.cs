@@ -6,7 +6,7 @@ using Microsoft.UI.Xaml.Media;
 
 namespace SwiftX.Models;
 
-public enum RingItemKind
+public enum OrbitItemKind
 {
     Application,
     File,
@@ -17,12 +17,12 @@ public enum RingItemKind
     Tool,
 }
 
-/// <summary>One entry on the ring. Serializable fields persist; <see cref="IconImage"/> does not.</summary>
-public sealed class RingItem : INotifyPropertyChanged
+/// <summary>One entry on the orbit. Serializable fields persist; <see cref="IconImage"/> does not.</summary>
+public sealed class OrbitItem : INotifyPropertyChanged
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
 
-    public RingItemKind Kind { get; set; } = RingItemKind.Application;
+    public OrbitItemKind Kind { get; set; } = OrbitItemKind.Application;
 
     private string _displayName = "";
     public string DisplayName
@@ -54,15 +54,15 @@ public sealed class RingItem : INotifyPropertyChanged
     public bool Hidden { get; set; }
 
     /// <summary>
-    /// A ring entry the ring itself synthesizes (Settings, Close) rather than one the user owns.
+    /// An orbit entry the orbit itself synthesizes (Settings, Close) rather than one the user owns.
     /// Never persisted: the only instances that carry it are built at render time by
-    /// <see cref="SystemRingItems"/>, so writing it would put a meaningless <c>false</c> on every
+    /// <see cref="SystemOrbitItems"/>, so writing it would put a meaningless <c>false</c> on every
     /// user item — and let a hand-edited config claim built-in status for an ordinary one.
     /// </summary>
     [JsonIgnore]
     public bool IsSystem { get; set; }
 
-    public List<RingItem> Children { get; set; } = new();
+    public List<OrbitItem> Children { get; set; } = new();
 
     private ImageSource? _iconImage;
 
@@ -82,7 +82,7 @@ public sealed class RingItem : INotifyPropertyChanged
     /// <summary>
     /// The <see cref="IconKey"/> that <see cref="IconImage"/> was resolved from, or null when
     /// nothing has been resolved yet. Lets a render skip an item whose icon is already correct —
-    /// see <c>RingWindow.ResolveIconAsync</c>, which is what reads it.
+    /// see <c>OrbitWindow.ResolveIconAsync</c>, which is what reads it.
     /// </summary>
     [JsonIgnore]
     public string? IconSignature { get; set; }
@@ -94,7 +94,7 @@ public sealed class RingItem : INotifyPropertyChanged
         set
         {
             // Idempotent, like CustomGlyph above. A render that finds the icon already correct
-            // still assigns the same value back (see RingWindow.ResolveIconAsync), and three
+            // still assigns the same value back (see OrbitWindow.ResolveIconAsync), and three
             // change notifications per item per summon for a picture nobody repainted is noise
             // every bubble's handler then has to do nothing about.
             if (ReferenceEquals(_iconImage, value)) return;
@@ -108,11 +108,11 @@ public sealed class RingItem : INotifyPropertyChanged
     [JsonIgnore]
     public string Glyph => !string.IsNullOrEmpty(CustomGlyph) ? CustomGlyph! : Kind switch
     {
-        RingItemKind.WebLink => "\uE774",
-        RingItemKind.Folder => "\uE8B7",
-        RingItemKind.Group => "\uE838",
-        RingItemKind.Tool => "\uE943",
-        RingItemKind.Shortcut => "\uE71B",
+        OrbitItemKind.WebLink => "\uE774",
+        OrbitItemKind.Folder => "\uE8B7",
+        OrbitItemKind.Group => "\uE838",
+        OrbitItemKind.Tool => "\uE943",
+        OrbitItemKind.Shortcut => "\uE71B",
         _ => "\uE7C3",
     };
 
@@ -123,10 +123,10 @@ public sealed class RingItem : INotifyPropertyChanged
     public Visibility GlyphVisibility => _iconImage is null ? Visibility.Visible : Visibility.Collapsed;
 
     [JsonIgnore]
-    public bool IsGroup => Kind == RingItemKind.Group;
+    public bool IsGroup => Kind == OrbitItemKind.Group;
 
     [JsonIgnore]
-    public bool IsTool => Kind == RingItemKind.Tool;
+    public bool IsTool => Kind == OrbitItemKind.Tool;
 
     [JsonIgnore]
     public bool HasCustomIcon =>

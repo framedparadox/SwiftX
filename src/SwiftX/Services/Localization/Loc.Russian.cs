@@ -5,8 +5,8 @@ public static partial class Loc
     private static readonly Dictionary<string, string> Russian = new(StringComparer.Ordinal)
     {
         ["Tray.Tooltip"] = "SwiftX",
-        ["Tray.Show"] = "Показать кольцо",
-        ["Tray.HideDock"] = "Скрыть кольцо",
+        ["Tray.Show"] = "Показать орбиту",
+        ["Tray.HideDock"] = "Скрыть орбиту",
         ["Tray.AddNew"] = "Добавить элемент…",
         ["Tray.Settings"] = "Настройки",
         ["Tray.Quit"] = "Выход",

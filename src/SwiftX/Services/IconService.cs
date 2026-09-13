@@ -19,9 +19,9 @@ public static class IconService
     // reject "no user agent" requests.
     private static readonly HttpClient Http = CreateClient();
 
-    // Alongside ring.json, so an override of SwiftX's data directory takes the cache with it
-    // rather than leaving downloaded favicons in the real profile (see RingStore.DataDirectory).
-    private static readonly string CacheDir = Path.Combine(RingStore.DataDirectory, "IconCache");
+    // Alongside orbit.json, so an override of SwiftX's data directory takes the cache with it
+    // rather than leaving downloaded favicons in the real profile (see OrbitStore.DataDirectory).
+    private static readonly string CacheDir = Path.Combine(OrbitStore.DataDirectory, "IconCache");
 
     private static HttpClient CreateClient()
     {
@@ -32,7 +32,7 @@ public static class IconService
         return c;
     }
 
-    public static async Task<ImageSource?> LoadIconAsync(RingItem item)
+    public static async Task<ImageSource?> LoadIconAsync(OrbitItem item)
     {
         try
         {
@@ -56,19 +56,19 @@ public static class IconService
             // 2. Kind-specific resolution.
             switch (item.Kind)
             {
-                case RingItemKind.Application:
-                case RingItemKind.File:
-                case RingItemKind.Shortcut:
+                case OrbitItemKind.Application:
+                case OrbitItemKind.File:
+                case OrbitItemKind.Shortcut:
                     if (File.Exists(item.Target))
                         return await ShellIconAsync(item.Target);
                     break;
 
-                case RingItemKind.Folder:
+                case OrbitItemKind.Folder:
                     if (Directory.Exists(item.Target))
                         return await ShellIconAsync(item.Target);
                     break;
 
-                case RingItemKind.WebLink:
+                case OrbitItemKind.WebLink:
                     return await FaviconAsync(item.Target);
             }
         }
@@ -234,7 +234,7 @@ public static class IconService
     /// the read. The ceiling had been declared for this caller and never applied, which left the
     /// one icon path that takes an arbitrary user-chosen file reading it whole with
     /// <c>File.ReadAllBytesAsync</c> — and doing so once per item on every render, so a 4 GB file
-    /// picked as an icon was an <see cref="OutOfMemoryException"/> every time the ring came up.
+    /// picked as an icon was an <see cref="OutOfMemoryException"/> every time the orbit came up.
     /// A custom icon is drawn at 44 px; anything past the ceiling is not one.
     /// </para>
     /// </summary>

@@ -30,7 +30,7 @@ public sealed class AppTitleBar : Grid
 
     /// <summary>
     /// A title bar led by the SwiftX mark rather than a glyph, for the app's own windows (Settings,
-    /// Add to ring) as opposed to the individual tools. Those windows extend their content into the
+    /// Add to orbit) as opposed to the individual tools. Those windows extend their content into the
     /// caption, so Windows never draws the window icon for them — without this they carry no mark
     /// at all.
     /// </summary>

@@ -1,12 +1,13 @@
 using SwiftX.Interop;
 using SwiftX.Models;
 using SwiftX.Services;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 
 namespace SwiftX;
 
-/// <summary>Owns store, tray, hotkey, settings, ring window, and tool hosting.</summary>
-public sealed class RingManager
+/// <summary>Owns store, tray, hotkey, settings, orbit window, and tool hosting.</summary>
+public sealed class OrbitManager
 {
     public const int SummonHotkeyId = 1;
 
@@ -16,11 +17,11 @@ public sealed class RingManager
     private HotCornerWatcher? _hotCorner;
     private SettingsWindow? _settingsWindow;
     private AddItemWindow? _addItemWindow;
-    private RingWindow? _ringWindow;
+    private OrbitWindow? _orbitWindow;
     private bool _hiddenByUser;
     private bool _shuttingDown;
 
-    public RingManager(AppConfig config)
+    public OrbitManager(AppConfig config)
     {
         Config = config;
         ToolWindows = new ToolWindowManager();
@@ -31,23 +32,23 @@ public sealed class RingManager
     public ToolWindowManager ToolWindows { get; }
     public ToolWindowLauncher Tools { get; }
 
-    /// <summary>Whether Settings is currently open — <see cref="RingWindow"/> checks this so it can
+    /// <summary>Whether Settings is currently open — <see cref="OrbitWindow"/> checks this so it can
     /// stay on screen instead of dismissing itself the instant Settings takes foreground
     /// activation away from it.</summary>
     public bool IsSettingsOpen => _settingsWindow is not null;
 
     /// <summary>Same idea as <see cref="IsSettingsOpen"/>, for the "Add new" quick action's own
-    /// window (a Settings ring item flyout child — see SystemRingItems.CreateAddNew).</summary>
+    /// window (a Settings orbit item flyout child — see SystemOrbitItems.CreateAddNew).</summary>
     public bool IsAddItemOpen => _addItemWindow is not null;
 
     /// <summary>
     /// Whether Settings or Add-new currently holds foreground focus — checked by hwnd against the
     /// live foreground window, not by <see cref="IsSettingsOpen"/>/<see cref="IsAddItemOpen"/>
-    /// merely being true. <see cref="RingWindow"/>'s outside-click dismiss uses this rather than
+    /// merely being true. <see cref="OrbitWindow"/>'s outside-click dismiss uses this rather than
     /// those, because a window being <em>open</em> (however briefly, or minimized, or sitting
     /// behind other windows for the rest of the session) is not the same thing as it having just
-    /// taken the activation the ring lost — the whole point of the exemption is to survive the one
-    /// moment focus moves from the ring to one of these, not to suppress click-anywhere-to-dismiss
+    /// taken the activation the orbit lost — the whole point of the exemption is to survive the one
+    /// moment focus moves from the orbit to one of these, not to suppress click-anywhere-to-dismiss
     /// for as long as either window happens to still exist.
     /// </summary>
     public bool IsExemptWindowForeground()
@@ -62,22 +63,29 @@ public sealed class RingManager
 
     public event Action? ItemsChanged;
 
-    public void Start()
+    /// <param name="openSettings">
+    /// Whether to show Settings once the orbit is up. True for a launch the user performed and
+    /// false for one Windows performed at sign-in, which is the only distinction that matters
+    /// here — see <see cref="StartupService.StartupArgument"/>. SwiftX puts nothing on the taskbar,
+    /// so without this the Start-menu, taskbar and desktop entries would appear to do nothing at
+    /// all; Settings is the app's only real window and therefore the honest thing to show.
+    /// </param>
+    public void Start(bool openSettings = false)
     {
         bool firstRun = !Config.Seeded;
         Config.Seeded = true;
-        RingMetrics.SetItemSize(Config.ItemSize);
-        RingMetrics.SetRadius(Config.RingRadius);
+        OrbitMetrics.SetItemSize(Config.ItemSize);
+        OrbitMetrics.SetRadius(Config.OrbitRadius);
 
         bool repaired = false;
         if (firstRun && Config.Primary.Items.Count == 0)
             SeedDefaults(Config.Primary);
         else
         {
-            // Settings and Close are synthesized onto the ring now, not stored. Drop the copies
-            // a config written by an older build still carries. See SystemRingItems.
-            repaired = SystemRingItems.Strip(Config.Primary.Items);
-            // JSON and XML were merged into the single Data Formatter tool. Rewrite any ring item
+            // Settings and Close are synthesized onto the orbit now, not stored. Drop the copies
+            // a config written by an older build still carries. See SystemOrbitItems.
+            repaired = SystemOrbitItems.Strip(Config.Primary.Items);
+            // JSON and XML were merged into the single Data Formatter tool. Rewrite any orbit item
             // still pointing at either retired target so it keeps working in the same slot.
             repaired |= ToolCatalog.MigrateLegacyTargets(Config.Primary.Items);
             // Every tool belongs under the one Tools group, wherever an older config left them.
@@ -95,66 +103,85 @@ public sealed class RingManager
             Save();
 
         // Keep a hidden owner window alive so WinUI doesn't exit with no windows.
-        _ringWindow = new RingWindow(this);
-        _ringWindow.Closed += (_, _) =>
+        _orbitWindow = new OrbitWindow(this);
+        _orbitWindow.Closed += (_, _) =>
         {
             if (!_shuttingDown)
                 Quit();
         };
+
+        // Anyone who turned "Start with Windows" on before the autostart entry learned to say it
+        // was an autostart entry has one that doesn't — and would get Settings in their face at
+        // every sign-in. Rather than make them toggle the setting off and on again, the entry
+        // repairs itself here, once, the first time a build that knows about it runs.
+        StartupService.RepairRegistration();
+
+        if (openSettings)
+        {
+            // The offer to put a shortcut on the desktop rides along with the first run's Settings
+            // window rather than arriving as a dialog of its own. A modal on the very first launch,
+            // before the user has seen anything the app does, is the definition of obnoxious; an
+            // InfoBar at the top of the page they were going to be shown anyway asks the question
+            // once, takes one click to answer either way, and leaves the same switch sitting a few
+            // centimetres below it for anyone who dismisses it and changes their mind. It is also
+            // skipped outright when a SwiftX shortcut is already on the desktop, so a reinstall
+            // over an existing one asks nothing.
+            OpenSettings(offerDesktopShortcut: firstRun && !DesktopShortcutService.Exists());
+        }
     }
 
-    public void Save() => RingStore.Save(Config);
+    public void Save() => OrbitStore.Save(Config);
 
     public void NotifyItemsChanged()
     {
         Save();
         ItemsChanged?.Invoke();
-        _ringWindow?.ReloadItems();
+        _orbitWindow?.ReloadItems();
     }
 
     /// <summary>
-    /// Fills the ring's <see cref="RingMetrics.UserSlotCount"/> user slots. Settings and Close are
-    /// deliberately absent: the ring always adds them itself (see <see cref="SystemRingItems"/>).
+    /// Fills the orbit's <see cref="OrbitMetrics.UserSlotCount"/> user slots. Settings and Close are
+    /// deliberately absent: the orbit always adds them itself (see <see cref="SystemOrbitItems"/>).
     /// </summary>
-    public void SeedDefaults(RingProfile profile)
+    public void SeedDefaults(OrbitProfile profile)
     {
         profile.Items.Clear();
-        profile.Items.Add(new RingItem
+        profile.Items.Add(new OrbitItem
         {
-            Kind = RingItemKind.Application,
+            Kind = OrbitItemKind.Application,
             DisplayName = "Notepad",
             Target = Path.Combine(Environment.SystemDirectory, "notepad.exe"),
         });
-        profile.Items.Add(new RingItem
+        profile.Items.Add(new OrbitItem
         {
-            Kind = RingItemKind.WebLink,
+            Kind = OrbitItemKind.WebLink,
             DisplayName = "GitHub",
             Target = "https://github.com",
             CustomGlyph = "\uE943",
         });
-        profile.Items.Add(new RingItem
+        profile.Items.Add(new OrbitItem
         {
-            Kind = RingItemKind.Folder,
+            Kind = OrbitItemKind.Folder,
             DisplayName = "Downloads",
             Target = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
         });
-        // One parent item owning every built-in tool, rather than tools scattered across the ring
-        // — see ToolCatalog.EnsureToolsGroup, which keeps an existing ring in that shape too.
+        // One parent item owning every built-in tool, rather than tools scattered across the orbit
+        // — see ToolCatalog.EnsureToolsGroup, which keeps an existing orbit in that shape too.
         profile.Items.Add(ToolCatalog.CreateToolsGroup());
         // Data and Secure values are already one tap away inside "Tools" above — a top-level
         // duplicate of each just doubled up on the same tool, so the two remaining user slots go
-        // to a couple of stock Windows apps instead (the ring's other defaults — Notepad, GitHub,
-        // Downloads — are the same idea: something useful out of the box, not an empty ring).
-        profile.Items.Add(new RingItem
+        // to a couple of stock Windows apps instead (the orbit's other defaults — Notepad, GitHub,
+        // Downloads — are the same idea: something useful out of the box, not an empty orbit).
+        profile.Items.Add(new OrbitItem
         {
-            Kind = RingItemKind.Application,
+            Kind = OrbitItemKind.Application,
             DisplayName = "Calculator",
             Target = Path.Combine(Environment.SystemDirectory, "calc.exe"),
         });
-        profile.Items.Add(new RingItem
+        profile.Items.Add(new OrbitItem
         {
-            Kind = RingItemKind.Application,
+            Kind = OrbitItemKind.Application,
             DisplayName = "File Explorer",
             Target = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
         });
@@ -169,17 +196,23 @@ public sealed class RingManager
             {
                 IsDockVisible = () => !_hiddenByUser,
             };
-            _tray.Activated += ToggleRing;
+            _tray.Activated += ToggleOrbit;
             _tray.ShowHideRequested += ToggleVisibility;
             _tray.AddNewRequested += () => OpenAddItem();
             _tray.SettingsRequested += OpenSettings;
             _tray.QuitRequested += Quit;
 
+            // A second SwiftX process — someone clicking the Start-menu, taskbar or desktop icon
+            // while this one is already running — broadcasts a request to come forward rather than
+            // exiting into silence. The hidden message window is already pumping on the UI thread,
+            // so the request arrives somewhere OpenSettings can simply be called.
+            SingleInstanceSignal.Listen(_messageWindow, () => OpenSettings());
+
             _hotkeys = new HotkeyService(_messageWindow);
             _hotkeys.Pressed += id =>
             {
                 if (id == SummonHotkeyId)
-                    ToggleRing();
+                    ToggleOrbit();
             };
             ApplyHotkey();
 
@@ -216,7 +249,7 @@ public sealed class RingManager
     /// A toggle, the same as the hotkey and the tray icon: the pointer reaching the corner while
     /// the dock is already open is read as "put it away" rather than a second summon, so parking
     /// the mouse back in the corner is a reliable way to dismiss it however it was opened — by
-    /// this corner, the other corner, the hotkey, or the tray. Hiding the ring from the tray still
+    /// this corner, the other corner, the hotkey, or the tray. Hiding the orbit from the tray still
     /// overrides it — that is an explicit "not now", and unlike the hotkey the pointer can wander
     /// into a corner without being asked to.
     /// </summary>
@@ -224,55 +257,78 @@ public sealed class RingManager
     {
         if (_hiddenByUser)
             return;
-        _ringWindow ??= new RingWindow(this);
-        if (_ringWindow.IsOpen || _ringWindow.IsClosing)
+        _orbitWindow ??= new OrbitWindow(this);
+        if (_orbitWindow.IsOpen || _orbitWindow.IsClosing)
         {
-            _ringWindow.Dismiss();
+            _orbitWindow.Dismiss();
             return;
         }
 
-        // The quadrant form is anchored on the corner the pointer just reached; the full ring
+        // The quadrant form is anchored on the corner the pointer just reached; the full orbit
         // comes up under the pointer exactly as the hotkey summons it.
-        _ringWindow.Summon(
+        _orbitWindow.Summon(
             Config.HotCornerLayout == HotCornerLayout.Quadrant ? Config.HotCorner : null);
     }
 
-    public void ToggleRing()
+    public void ToggleOrbit()
     {
         if (_hiddenByUser)
         {
             _hiddenByUser = false;
         }
-        _ringWindow ??= new RingWindow(this);
+        _orbitWindow ??= new OrbitWindow(this);
         // IsClosing as well as IsOpen: a click on the tray icon toggles on the button coming up,
         // by which time that same click may already have dismissed the dock from outside it (see
-        // RingWindow.IsClosing) — one gesture must not both close and reopen it.
-        if (_ringWindow.IsOpen || _ringWindow.IsClosing)
-            _ringWindow.Dismiss();
+        // OrbitWindow.IsClosing) — one gesture must not both close and reopen it.
+        if (_orbitWindow.IsOpen || _orbitWindow.IsClosing)
+            _orbitWindow.Dismiss();
         else
-            _ringWindow.Summon();
+            _orbitWindow.Summon();
     }
 
     private void ToggleVisibility()
     {
         _hiddenByUser = !_hiddenByUser;
         if (_hiddenByUser)
-            _ringWindow?.Dismiss();
+            _orbitWindow?.Dismiss();
     }
 
-    public void OpenSettings()
+    public void OpenSettings() => OpenSettings(offerDesktopShortcut: false);
+
+    /// <param name="offerDesktopShortcut">
+    /// Shows the first-run prompt offering to put a SwiftX shortcut on the desktop. Only ever true
+    /// for the first launch on a machine — see <see cref="Start"/>.
+    /// </param>
+    public void OpenSettings(bool offerDesktopShortcut)
     {
         if (_settingsWindow is null)
         {
-            _settingsWindow = new SettingsWindow(this);
+            _settingsWindow = new SettingsWindow(this, offerDesktopShortcut);
             _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         }
+        else if (_settingsWindow.AppWindow.Presenter is OverlappedPresenter presenter &&
+                 presenter.State == OverlappedPresenterState.Minimized)
+        {
+            // Activate() on a minimized window shows it but leaves it minimized, so a Settings
+            // window the user had put away would answer a fresh launch of the app with a taskbar
+            // flash and nothing else.
+            presenter.Restore();
+        }
+
         _settingsWindow.Activate();
         WindowChrome.CenterOnCursor(_settingsWindow.AppWindow, _settingsWindow.AppWindow.Id);
+
+        // Activate() alone is not enough to raise a window that is already open behind others: it
+        // asks for activation, and Windows' foreground lock is free to turn that into a flashing
+        // taskbar button when the requesting process cannot show it is acting on real user input.
+        // That is exactly SwiftX's situation when the request arrived as a broadcast from a second
+        // process (see SingleInstanceSignal, which hands this process the foreground right first).
+        // ForceForeground is the same borrowed-input-state dance the orbit's own summon uses.
+        WindowChrome.ForceForeground(WinRT.Interop.WindowNative.GetWindowHandle(_settingsWindow));
     }
 
     /// <param name="allowGroups">
-    /// Pass false when <paramref name="targetList"/> is a group's own children — the ring cannot
+    /// Pass false when <paramref name="targetList"/> is a group's own children — the orbit cannot
     /// expand a group nested inside a group, so the dialog must not offer to create one there.
     /// </param>
     /// <param name="heading">
@@ -282,7 +338,7 @@ public sealed class RingManager
     /// </param>
     /// <param name="confirmLabel">The commit button's label, for the same reason.</param>
     public void OpenAddItem(
-        Action<RingItem>? onAdded = null, List<RingItem>? targetList = null,
+        Action<OrbitItem>? onAdded = null, List<OrbitItem>? targetList = null,
         bool isGenericAddItem = false, bool allowGroups = true,
         string? heading = null, string? confirmLabel = null)
     {
@@ -305,9 +361,9 @@ public sealed class RingManager
             Tools.Open(def);
     }
 
-    public void HandleItemActivation(RingItem item)
+    public void HandleItemActivation(OrbitItem item)
     {
-        if (item.Kind == RingItemKind.Tool)
+        if (item.Kind == OrbitItemKind.Tool)
         {
             var def = ToolCatalog.GetByName(item.Target);
             if (def is not null)
@@ -315,13 +371,13 @@ public sealed class RingManager
             return;
         }
 
-        if (string.Equals(item.Target, SystemRingItems.SettingsTarget, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(item.Target, SystemOrbitItems.SettingsTarget, StringComparison.OrdinalIgnoreCase))
         {
             OpenSettings();
             return;
         }
 
-        if (string.Equals(item.Target, SystemRingItems.AddNewTarget, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(item.Target, SystemOrbitItems.AddNewTarget, StringComparison.OrdinalIgnoreCase))
         {
             // Same call the tray icon's own Add entry makes: no explicit callback/target list, so
             // AddItemWindow falls back to adding straight into Config.Primary.Items itself (Settings
@@ -337,12 +393,26 @@ public sealed class RingManager
     {
         // No app-wide theme push here: WinUI's Application has no RequestedTheme setter that
         // propagates to open windows, so each window resolves and applies its own theme via
-        // ThemeHelper (see the doc comment on RingWindow.ThemeBrush).
+        // ThemeHelper (see the doc comment on OrbitWindow.ThemeBrush).
         ToolWindows.ApplyThemeToAll();
-        _ringWindow?.ApplyTheme();
+        _orbitWindow?.ApplyTheme();
         _settingsWindow?.ApplyTheme();
         _addItemWindow?.ApplyTheme();
     }
+
+    /// <summary>
+    /// Pushes a just-changed accent colour to the other windows that honour it. Settings applies
+    /// its own before calling this — it is the window the picker lives in — so this only has to
+    /// reach the ones that would otherwise keep painting the old colour until they were reopened.
+    /// <para>
+    /// Separate from <see cref="ApplyTheme"/> rather than folded into it because the accent picker
+    /// raises ColorChanged on every frame of a drag, and a full theme pass per frame would re-walk
+    /// every themed resource in every open window for a change that touches a handful of brushes.
+    /// Settings' "Add new" flyout child can be open at the same time as the picker, which is
+    /// exactly when this matters.
+    /// </para>
+    /// </summary>
+    public void ApplyAccentColour() => _addItemWindow?.ApplyAccent();
 
     /// <summary>
     /// Puts <see cref="Config"/>'s language choice into effect. Anything that reads
@@ -351,7 +421,7 @@ public sealed class RingManager
     /// click — so beyond re-pointing <see cref="Services.Loc"/> itself, the only thing that needs
     /// an explicit nudge is the tray icon's tooltip, which is set once and left alone otherwise
     /// (see <see cref="TrayIconService.RefreshTooltip"/>). Windows built once from literal XAML
-    /// text (Settings itself, Add item, the ring's own tooltips) still need a restart.
+    /// text (Settings itself, Add item, the orbit's own tooltips) still need a restart.
     /// </summary>
     public void ApplyLanguage()
     {
@@ -359,20 +429,20 @@ public sealed class RingManager
         _tray?.RefreshTooltip();
     }
 
-    public void SetItemSize(RingItemSize size)
+    public void SetItemSize(OrbitItemSize size)
     {
         Config.ItemSize = size;
-        RingMetrics.SetItemSize(size);
+        OrbitMetrics.SetItemSize(size);
         Save();
-        _ringWindow?.ReloadItems();
+        _orbitWindow?.ReloadItems();
     }
 
     public void SetRadius(double? radius)
     {
-        Config.RingRadius = radius;
-        RingMetrics.SetRadius(radius);
+        Config.OrbitRadius = radius;
+        OrbitMetrics.SetRadius(radius);
         Save();
-        _ringWindow?.ReloadItems();
+        _orbitWindow?.ReloadItems();
     }
 
     public void ReleaseShellIntegration()

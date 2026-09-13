@@ -5,8 +5,8 @@ public static partial class Loc
     private static readonly Dictionary<string, string> Japanese = new(StringComparer.Ordinal)
     {
         ["Tray.Tooltip"] = "SwiftX",
-        ["Tray.Show"] = "リングを表示",
-        ["Tray.HideDock"] = "リングを非表示",
+        ["Tray.Show"] = "オービットを表示",
+        ["Tray.HideDock"] = "オービットを非表示",
         ["Tray.AddNew"] = "項目を追加…",
         ["Tray.Settings"] = "設定",
         ["Tray.Quit"] = "終了",

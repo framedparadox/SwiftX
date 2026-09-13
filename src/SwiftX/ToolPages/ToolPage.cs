@@ -35,13 +35,13 @@ public abstract class ToolPage : UserControl
     public nint HostHwnd { get; internal set; }
 
     /// <summary>
-    /// The <see cref="RingManager"/> that owns this page's hosting window, set once at
-    /// construction — lets a page open another built-in tool the same way the ring itself does
-    /// (see <see cref="RingManager.OpenTool"/>; Quick Format's "open Data Formatter" button is the
+    /// The <see cref="OrbitManager"/> that owns this page's hosting window, set once at
+    /// construction — lets a page open another built-in tool the same way the orbit itself does
+    /// (see <see cref="OrbitManager.OpenTool"/>; Quick Format's "open Data Formatter" button is the
     /// first user of this). Null only for the brief window before <c>ToolWindowBase</c>'s own
     /// constructor finishes — every click handler that reads it runs well after that.
     /// </summary>
-    public RingManager? HostManager { get; internal set; }
+    public OrbitManager? HostManager { get; internal set; }
 
     /// <summary>Seed the page from a dropped file or a picker.</summary>
     public virtual Task LoadFileAsync(string path) => Task.CompletedTask;

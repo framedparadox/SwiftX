@@ -1,7 +1,7 @@
 namespace SwiftX.Models;
 
-/// <summary>How large the items arranged around the ring are drawn.</summary>
-public enum RingItemSize
+/// <summary>How large the items arranged around the orbit are drawn.</summary>
+public enum OrbitItemSize
 {
     Small,
     Medium,
@@ -9,27 +9,27 @@ public enum RingItemSize
 }
 
 /// <summary>
-/// Ring geometry. Two independent knobs, and only two:
+/// Orbit geometry. Two independent knobs, and only two:
 /// <list type="bullet">
-/// <item><see cref="ItemSize"/> — how big each item around the ring is drawn.</item>
+/// <item><see cref="ItemSize"/> — how big each item around the orbit is drawn.</item>
 /// <item><see cref="SetRadius"/> — how far out from the center they sit.</item>
 /// </list>
 /// <para>
 /// The hub is deliberately not among them: it is a fixed small mark
-/// (<see cref="Hub"/>/<see cref="HubLogo"/>) that no setting scales. An earlier "ring size"
+/// (<see cref="Hub"/>/<see cref="HubLogo"/>) that no setting scales. An earlier "orbit size"
 /// density preset drove the hub and a radius default, which meant the only visible effect of
 /// changing it was the center growing — the opposite of what the name promised, and invisible
 /// entirely once an explicit radius was set. Item size replaces it.
 /// </para>
 /// </summary>
-public static class RingMetrics
+public static class OrbitMetrics
 {
-    public static RingItemSize ItemSize { get; private set; } = RingItemSize.Medium;
+    public static OrbitItemSize ItemSize { get; private set; } = OrbitItemSize.Medium;
     private static double? s_radiusOverride;
 
     public static event Action? Changed;
 
-    public static void SetItemSize(RingItemSize size)
+    public static void SetItemSize(OrbitItemSize size)
     {
         if (ItemSize == size) return;
         ItemSize = size;
@@ -52,22 +52,22 @@ public static class RingMetrics
 
     public static double Bubble => ItemSize switch
     {
-        RingItemSize.Small => 38,
-        RingItemSize.Large => 64,
+        OrbitItemSize.Small => 38,
+        OrbitItemSize.Large => 64,
         _ => 50,
     };
 
     public static double Icon => ItemSize switch
     {
-        RingItemSize.Small => 17,
-        RingItemSize.Large => 28,
+        OrbitItemSize.Small => 17,
+        OrbitItemSize.Large => 28,
         _ => 22,
     };
 
     public static double Glyph => ItemSize switch
     {
-        RingItemSize.Small => 13,
-        RingItemSize.Large => 20,
+        OrbitItemSize.Small => 13,
+        OrbitItemSize.Large => 20,
         _ => 16,
     };
 
@@ -84,7 +84,7 @@ public static class RingMetrics
     public const double HoverScale = 1.14;
 
     /// <summary>
-    /// How much an item shrinks under the pointer when <see cref="RingHoverStyle.Zoom"/> is
+    /// How much an item shrinks under the pointer when <see cref="OrbitHoverStyle.Zoom"/> is
     /// active — the alternative to <see cref="HoverScale"/> for someone who wants hover to read
     /// as a recede rather than a color-inverted grow.
     /// </summary>
@@ -97,20 +97,20 @@ public static class RingMetrics
     /// </summary>
     public const double CloseHoverScale = 0.75;
 
-    // ---- Flyout (outer) ring -------------------------------------------------------------
-    // A group expands into a concentric outer ring rather than replacing the inner one, so the
+    // ---- Flyout (outer) orbit -------------------------------------------------------------
+    // A group expands into a concentric outer orbit rather than replacing the inner one, so the
     // outer band has to clear the inner items even when one of them is hover-grown.
 
-    /// <summary>Clear space between the outer edge of the inner ring and the inner edge of the flyout ring.</summary>
+    /// <summary>Clear space between the outer edge of the inner orbit and the inner edge of the flyout orbit.</summary>
     public static double FlyoutGap => 16;
 
     public static double FlyoutBubble => Math.Round(Bubble * 0.88);
 
-    /// <summary>Distance from the ring center to a flyout item's center.</summary>
+    /// <summary>Distance from the orbit center to a flyout item's center.</summary>
     public static double FlyoutRadius => FlyoutRadiusFor(Radius);
 
     /// <summary>
-    /// <see cref="FlyoutRadius"/> for an inner ring of an arbitrary radius. The quarter-circle a
+    /// <see cref="FlyoutRadius"/> for an inner orbit of an arbitrary radius. The quarter-circle a
     /// hot corner can summon sits further out than <see cref="Radius"/> (it has to clear two
     /// screen edges — see <see cref="QuadrantLayout"/>), and its flyout has to clear it in turn,
     /// so every band below is expressed against whatever radius the inner items actually got.
@@ -122,10 +122,10 @@ public static class RingMetrics
 
     public static double FlyoutGlyph => Math.Round(Glyph * 0.9);
 
-    /// <summary>Where the flyout band starts — pointer distances beyond this target the outer ring.</summary>
+    /// <summary>Where the flyout band starts — pointer distances beyond this target the outer orbit.</summary>
     public static double FlyoutBandStart => FlyoutBandStartFor(Radius);
 
-    /// <summary><see cref="FlyoutBandStart"/> for an inner ring of an arbitrary radius.</summary>
+    /// <summary><see cref="FlyoutBandStart"/> for an inner orbit of an arbitrary radius.</summary>
     public static double FlyoutBandStartFor(double radius) =>
         radius + (Bubble / 2) * HoverScale + FlyoutGap / 2;
 
@@ -153,9 +153,9 @@ public static class RingMetrics
     public const double PillGap = 10;
 
     /// <summary>
-    /// Pill text size. Deliberately below the ring's other type: the label is a transient
+    /// Pill text size. Deliberately below the orbit's other type: the label is a transient
     /// confirmation of what is under the pointer, not something to be read at a glance from
-    /// across the screen, and a large one crowds the ring it floats over.
+    /// across the screen, and a large one crowds the orbit it floats over.
     /// </summary>
     public const double PillFontSize = 10.5;
 
@@ -169,30 +169,30 @@ public static class RingMetrics
     // ---- Window / hit region -------------------------------------------------------------
 
     /// <summary>
-    /// Radius of the ring itself at its largest — inner ring, hover growth, and an expanded
-    /// flyout ring, with a little slack.
+    /// Radius of the orbit itself at its largest — inner orbit, hover growth, and an expanded
+    /// flyout orbit, with a little slack.
     /// <para>
     /// The window's hit region has to bound painted content, because
     /// <see cref="Services.WindowChrome.SetEllipticHitRegions"/> genuinely clips DWM's composited
     /// pixels; a region drawn tight to the resting items is what used to shave the edge off an
     /// item the moment hover grew it. The hover pill is deliberately <em>not</em> budgeted in
     /// here, though — a pill is as wide as someone's longest item name, and reserving that much
-    /// in every direction would both swell the click-capturing disc and, because the ring center
-    /// is clamped this far from every screen edge, stop the ring appearing under the cursor at
-    /// all. RingWindow adds a second region circle around the pill only while one is showing.
+    /// in every direction would both swell the click-capturing disc and, because the orbit center
+    /// is clamped this far from every screen edge, stop the orbit appearing under the cursor at
+    /// all. OrbitWindow adds a second region circle around the pill only while one is showing.
     /// </para>
     /// </summary>
     public static double ContentRadius => ContentRadiusFor(Radius);
 
-    /// <summary><see cref="ContentRadius"/> for an inner ring of an arbitrary radius.</summary>
+    /// <summary><see cref="ContentRadius"/> for an inner orbit of an arbitrary radius.</summary>
     public static double ContentRadiusFor(double radius) =>
         FlyoutRadiusFor(radius) + (FlyoutBubble / 2) * HoverScale + 14;
 
-    /// <summary>Diameter of the ring's full painted footprint.</summary>
+    /// <summary>Diameter of the orbit's full painted footprint.</summary>
     public static double WindowSize => ContentRadius * 2;
 
     /// <summary>
-    /// Inner radius of the quarter-circle a hot corner summons. Starts from the ring's own radius
+    /// Inner radius of the quarter-circle a hot corner summons. Starts from the orbit's own radius
     /// and grows only as far as it must for four hover-grown items to fit on the quarter arc
     /// without touching each other or the two screen edges (see <see cref="QuadrantLayout"/>).
     /// </summary>
@@ -203,14 +203,14 @@ public static class RingMetrics
 
     /// <summary>
     /// Slots available to user items: the last two are reserved for the built-in Settings and
-    /// Close entries, which are always on the ring (see <see cref="SystemRingItems"/>).
+    /// Close entries, which are always on the orbit (see <see cref="SystemOrbitItems"/>).
     /// </summary>
     public const int UserSlotCount = SlotCount - 2;
 
     /// <summary>
     /// The slot (0..<see cref="SlotCount"/>-1) angularly nearest a pointer at offset
-    /// (<paramref name="dx"/>, <paramref name="dy"/>) from the ring center, matching the layout
-    /// in RingWindow.CreateBubble: slot 0 is straight up, slots advance clockwise 45° apart.
+    /// (<paramref name="dx"/>, <paramref name="dy"/>) from the orbit center, matching the layout
+    /// in OrbitWindow.CreateBubble: slot 0 is straight up, slots advance clockwise 45° apart.
     /// Pure geometry — no notion of which slots actually have an item in them, so callers must
     /// still check that one exists at the returned index.
     /// </summary>

@@ -8,45 +8,53 @@ using SwiftX.Models;
 using SwiftX.Services;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage.Pickers;
+using Windows.UI;
 using WinRT.Interop;
 
 namespace SwiftX;
 
 /// <summary>
 /// Add-item dialog: type tiles, target/name form, solid theme chrome (no Mica).
+/// <para>
+/// Two things here are not stock WinUI. The accented surfaces — the commit button and whichever
+/// type tile is checked — are repainted in SwiftX's own accent rather than the Windows system one
+/// (see <see cref="ApplyAccentColorOverride"/>), and the whole window is a drop target, so a file,
+/// folder, shortcut or link can be dragged onto it instead of hunting for it through Browse (see
+/// <see cref="Root_Drop"/>).
+/// </para>
 /// </summary>
 public sealed partial class AddItemWindow : Window
 {
     private enum AddKind { App, File, Folder, Link, Shortcut, Group, Tool }
 
-    private readonly RingManager _manager;
-    private readonly Action<RingItem>? _onAdded;
-    private readonly List<RingItem> _targetList;
+    private readonly OrbitManager _manager;
+    private readonly Action<OrbitItem>? _onAdded;
+    private readonly List<OrbitItem> _targetList;
     private readonly nint _hwnd;
     private readonly AppWindow _appWindow;
     private AddKind _kind = AddKind.App;
     private bool _nameEdited;
 
     /// <summary>
-    /// Same dialog, two names: every "Add new" reached from the ring, the tray icon, or the ring
-    /// preview itself is still adding "to the ring", but the "Elements" tab's own "Add item…" button
-    /// is not adding to any specific ring slot, so it gets the more generic title — see the
-    /// callers of <see cref="RingManager.OpenAddItem"/>.
+    /// Same dialog, two names: every "Add new" reached from the orbit, the tray icon, or the orbit
+    /// preview itself is still adding "to the orbit", but the "Elements" tab's own "Add item…" button
+    /// is not adding to any specific orbit slot, so it gets the more generic title — see the
+    /// callers of <see cref="OrbitManager.OpenAddItem"/>.
     /// </summary>
     /// <param name="allowGroups">
     /// False when the target list is a group's own children. A group inside a group would need a
-    /// third ring to land in and the ring has none (see <c>RingWindow.OnSelectAsync</c>), so the
-    /// tile that would create one is taken away rather than left to add something the ring can
+    /// third orbit to land in and the orbit has none (see <c>OrbitWindow.OnSelectAsync</c>), so the
+    /// tile that would create one is taken away rather than left to add something the orbit can
     /// never expand.
     /// </param>
     /// <param name="heading">
     /// Overrides the title/heading the two flows above would pick. Settings' "Replace…" reuses
-    /// this same form to swap what is already in a ring slot or a corner place, which is neither
+    /// this same form to swap what is already in an orbit slot or a corner place, which is neither
     /// of them.
     /// </param>
     /// <param name="confirmLabel">The commit button's label, for the same reason.</param>
     public AddItemWindow(
-        RingManager manager, Action<RingItem>? onAdded, List<RingItem> targetList,
+        OrbitManager manager, Action<OrbitItem>? onAdded, List<OrbitItem> targetList,
         bool isGenericAddItem = false, bool allowGroups = true,
         string? heading = null, string? confirmLabel = null)
     {
@@ -57,7 +65,7 @@ public sealed partial class AddItemWindow : Window
 
         _hwnd = WindowNative.GetWindowHandle(this);
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
-        heading ??= isGenericAddItem ? "Add item" : "Add to ring";
+        heading ??= isGenericAddItem ? "Add item" : "Add to orbit";
         Title = heading;
         HeadingText.Text = heading;
         if (!string.IsNullOrEmpty(confirmLabel))
@@ -65,7 +73,7 @@ public sealed partial class AddItemWindow : Window
 
         // Adding a plain item (App/File/Folder/Link/Shortcut/Group) is the generic flow's whole
         // job; a built-in tool already has its own home on the Tools page, so that tile only makes
-        // sense from a ring/corner slot that can actually hold one.
+        // sense from an orbit/corner slot that can actually hold one.
         if (isGenericAddItem)
             ToolType.Visibility = Visibility.Collapsed;
 
@@ -80,7 +88,16 @@ public sealed partial class AddItemWindow : Window
         SetTitleBar(titleBar);
 
         ApplyTheme();
-        Root.ActualThemeChanged += (_, _) => ApplyChromeTheme();
+        Root.ActualThemeChanged += (_, _) =>
+        {
+            // Fires on an OS theme flip, which only AppTheme.System can follow. The accent has to
+            // be rewritten for it because the built-in default is theme-dependent (see
+            // AccentPalette's two default constants) — a no-op when the user has picked their own
+            // colour, but the colour they get by default is a different teal either side of the
+            // flip. Same reasoning, same call, as SettingsWindow's own handler.
+            ApplyAccentColorOverride();
+            ApplyChromeTheme();
+        };
         Activated += (_, _) => ApplyChromeTheme();
 
         if (_appWindow.Presenter is OverlappedPresenter p)
@@ -91,7 +108,10 @@ public sealed partial class AddItemWindow : Window
         }
         _appWindow.IsShownInSwitchers = true;
 
-        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 760, 560);
+        // 530 rather than the 560 this used to be. The form no longer has to stretch to reach the
+        // buttons — the drop zone takes the slack now (see the XAML) — so the extra height was
+        // only ever making that zone taller than it needs to be.
+        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 760, 530);
         WindowChrome.SetRoundedCorners(_hwnd);
         WindowChrome.CenterOnCursor(_appWindow, _appWindow.Id);
 
@@ -107,9 +127,25 @@ public sealed partial class AddItemWindow : Window
     public void ApplyTheme()
     {
         ApplyBlackOverrides();
+        // Both resource passes have to come before the refresh below, which is the thing that
+        // makes every {ThemeResource} under Root re-resolve and actually notice them.
+        ApplyAccentColorOverride();
         ForceThemeResourceRefresh(ThemeHelper.Resolve(_manager.Config.Theme));
         ApplyChromeTheme();
     }
+
+    /// <summary>
+    /// Re-reads just the accent colour, for a live change made while this window is open — Settings'
+    /// colour picker is a sibling window, and the two are routinely on screen together.
+    /// <para>
+    /// Deliberately not <see cref="ApplyTheme"/>: the picker raises its ColorChanged continuously
+    /// as the user drags, and ApplyTheme's <see cref="ForceThemeResourceRefresh"/> re-walks every
+    /// <c>{ThemeResource}</c> under Root twice per call — far too heavy to run per frame of a drag,
+    /// and pointless when nothing but these brushes has changed. Assigning into
+    /// <c>Root.Resources</c> repaints the controls reading those keys on its own.
+    /// </para>
+    /// </summary>
+    public void ApplyAccent() => ApplyAccentColorOverride();
 
     /// <summary>
     /// Midnight rides on Dark's own <see cref="ElementTheme"/> (see <see cref="ThemeHelper.Resolve"/>),
@@ -145,6 +181,125 @@ public sealed partial class AddItemWindow : Window
 
         Root.Resources["SwiftXDialogSurfaceBrush"] =
             new SolidColorBrush(Microsoft.UI.Colors.Black);
+    }
+
+    /// <summary>
+    /// Repaints this dialog's accented surfaces — the commit button and the checked type tile — in
+    /// SwiftX's accent colour, whether that is the user's own pick or the built-in teal.
+    /// <para>
+    /// Both were stock WinUI and therefore neither was SwiftX's: the commit button carries
+    /// <c>AccentButtonStyle</c>, and a checked <c>ToggleButton</c> uses the framework's default
+    /// template, and both read their fills from keys the framework's own dictionary defines as
+    /// <c>&lt;StaticResource ResourceKey="AccentFillColorDefaultBrush"/&gt;</c> — the <em>Windows</em>
+    /// accent, blue on a default install. Overriding <c>AccentFillColorDefaultBrush</c> instead
+    /// would change nothing, because a StaticResource alias is resolved once, when the framework
+    /// dictionary is parsed, and never looked up again; the leaf keys are the only reachable
+    /// handle. So they are shadowed here in <see cref="Root"/>'s own Resources, where a nearer
+    /// dictionary wins — the same mechanism <see cref="ApplyBlackOverrides"/> uses, and the same
+    /// list SettingsWindow keeps for the controls Settings happens to use.
+    /// </para>
+    /// <para>
+    /// Setting <c>Foreground</c> or <c>Background</c> on the controls themselves is not an
+    /// alternative: the templates' own visual states assign those properties on hover and press,
+    /// and a locally set value is what they overwrite.
+    /// </para>
+    /// <para>
+    /// Disabled variants are deliberately left alone — a disabled control should read as disabled,
+    /// not as a washed-out accent.
+    /// </para>
+    /// </summary>
+    private void ApplyAccentColorOverride()
+    {
+        var accent = AccentPalette.Resolve(
+            _manager.Config, AccentPalette.IsDark(_manager.Config, Root));
+        var hoverColor = AccentPalette.PointerOver(accent);
+        var pressedColor = AccentPalette.Pressed(accent);
+        // The accent is the user's to choose and may be pale, so what gets drawn on top of it is
+        // computed from its luminance rather than assumed to be white (which is all WinUI's own
+        // TextOnAccentFillColorPrimaryBrush amounts to). One foreground for all three states:
+        // see AccentPalette.OnAccent for why it is not decided per state.
+        var onAccentColor = AccentPalette.OnAccent(accent, hoverColor, pressedColor);
+
+        var normal = new SolidColorBrush(accent);
+        var hover = new SolidColorBrush(hoverColor);
+        var pressed = new SolidColorBrush(pressedColor);
+        var onAccent = new SolidColorBrush(onAccentColor);
+
+        ApplyDropOverlayAccent(accent, onAccentColor);
+
+        // Key names verified against the WinUI dictionary this project actually resolves to
+        // (Microsoft.WindowsAppSDK 2.4.0 depends on Microsoft.WindowsAppSDK.WinUI 2.3.6; its
+        // Themes/generic.xaml is the file below): AccentButtonStyle sets Foreground/Background/
+        // BorderBrush from the AccentButton* keys and swaps in the PointerOver/Pressed variants
+        // from its own visual states, and the implicit ToggleButton style (DefaultToggleButtonStyle,
+        // which the bare <ToggleButton>s in the XAML pick up) reads the ToggleButton*Checked*
+        // keys from its Checked / CheckedPointerOver / CheckedPressed states. Border brushes get
+        // the same triple as the fills, which flattens the framework's subtle elevation gradient
+        // into one colour — the accent reading as a single deliberate colour matters more here
+        // than that gradient does.
+        var overrides = new (string Key, Brush Brush)[]
+        {
+            ("AccentButtonBackground", normal),
+            ("AccentButtonBackgroundPointerOver", hover),
+            ("AccentButtonBackgroundPressed", pressed),
+            ("AccentButtonBorderBrush", normal),
+            ("AccentButtonBorderBrushPointerOver", hover),
+            ("AccentButtonBorderBrushPressed", pressed),
+            ("AccentButtonForeground", onAccent),
+            ("AccentButtonForegroundPointerOver", onAccent),
+            ("AccentButtonForegroundPressed", onAccent),
+            ("ToggleButtonBackgroundChecked", normal),
+            ("ToggleButtonBackgroundCheckedPointerOver", hover),
+            ("ToggleButtonBackgroundCheckedPressed", pressed),
+            ("ToggleButtonBorderBrushChecked", normal),
+            ("ToggleButtonBorderBrushCheckedPointerOver", hover),
+            ("ToggleButtonBorderBrushCheckedPressed", pressed),
+            ("ToggleButtonForegroundChecked", onAccent),
+            ("ToggleButtonForegroundCheckedPointerOver", onAccent),
+            ("ToggleButtonForegroundCheckedPressed", onAccent),
+        };
+
+        // High Contrast always wins (design doc §13.3). Those theme dictionaries aim these very
+        // same keys at the OS's guaranteed-contrast system brushes, so a custom accent painted
+        // over them would undo precisely the contrast the mode exists to provide. Removing rather
+        // than skipping, so turning High Contrast on while this window is open still lets the
+        // shadowed keys fall back through to the framework's.
+        bool highContrast = HighContrast.IsActive();
+        foreach (var (key, brush) in overrides)
+        {
+            if (highContrast)
+                Root.Resources.Remove(key);
+            else
+                Root.Resources[key] = brush;
+        }
+    }
+
+    /// <summary>
+    /// Colours the drag-over affordance (see the XAML) from the same accent everything else here
+    /// now uses. Painted directly rather than through a shadowed resource key because it is
+    /// SwiftX's own chrome, not a framework control template — and it stays accent-coloured even
+    /// under High Contrast, where its legibility is not a gamble: the pill's label is picked
+    /// against the pill's own fill by luminance, and the wash beneath is faint enough to leave the
+    /// form under it readable.
+    /// </summary>
+    private void ApplyDropOverlayAccent(Color accent, Color onAccent)
+    {
+        // The standing drop zone: the accent at reading strength on the glyph, a dimmed rim, and a
+        // wash faint enough that the caption inside it stays legible on Light's white surface as
+        // well as on Midnight's black. Assigned rather than bound for the same reason as the
+        // overlay below — the accent is a runtime colour with no ThemeResource behind it.
+        DropZone.BorderBrush = new SolidColorBrush(Color.FromArgb(0x8C, accent.R, accent.G, accent.B));
+        DropZone.Background = new SolidColorBrush(Color.FromArgb(0x14, accent.R, accent.G, accent.B));
+        DropZoneGlyph.Foreground = new SolidColorBrush(accent);
+
+        DropOverlay.BorderBrush = new SolidColorBrush(accent);
+        DropOverlay.Background =
+            new SolidColorBrush(Color.FromArgb(0x24, accent.R, accent.G, accent.B));
+        DropPill.Background = new SolidColorBrush(accent);
+
+        var label = new SolidColorBrush(onAccent);
+        DropPillGlyph.Foreground = label;
+        DropPillText.Foreground = label;
     }
 
     private void ApplyChromeTheme()
@@ -214,7 +369,7 @@ public sealed partial class AddItemWindow : Window
             AddKind.Shortcut => ("Shortcut / command", "Path or command line",
                 "Any launchable path or .lnk."),
             AddKind.Group => ("", "",
-                "A group holds other ring items in a nested ring."),
+                "A group holds other orbit items in a nested orbit."),
             AddKind.Tool => ("", "",
                 "Built-in formatter tool (JSON or XML)."),
             _ => ("Target", "Path or URL", ""),
@@ -229,73 +384,297 @@ public sealed partial class AddItemWindow : Window
     private void TargetBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_nameEdited || string.IsNullOrWhiteSpace(TargetBox.Text)) return;
-        NameBox.Text = RingItemFactory.SuggestName(TargetBox.Text.Trim());
-    }
-
-    private void SetTarget(string path)
-    {
-        TargetBox.Text = path;
-        if (!_nameEdited)
-            NameBox.Text = RingItemFactory.SuggestName(path);
-        HideError();
-    }
-
-    private void Root_DragOver(object sender, DragEventArgs e)
-    {
-        bool acceptable = e.DataView.Contains(StandardDataFormats.StorageItems)
-            || e.DataView.Contains(StandardDataFormats.WebLink)
-            || e.DataView.Contains(StandardDataFormats.Text);
-        e.AcceptedOperation = acceptable ? DataPackageOperation.Copy : DataPackageOperation.None;
-        if (acceptable)
-            e.DragUIOverride.Caption = "Add to ring";
+        NameBox.Text = OrbitItemFactory.SuggestName(TargetBox.Text.Trim());
     }
 
     /// <summary>
-    /// Lets a file/folder/shortcut/app (from Explorer, the Start menu, a desktop icon) or a web
-    /// link (a browser's address bar or an anchor drag) be dropped straight onto this window
-    /// instead of always going through Browse. Tries storage items first, then a web link, then
-    /// falls back to plain text in case some source only offers that —
-    /// <see cref="RingItemFactory.Classify"/> re-derives the actual kind from the string either
-    /// way. Only fills the form (type tile, target, name); the user still reviews and presses Add.
+    /// Fills the target box, and the name box with it.
+    /// </summary>
+    /// <param name="displayName">
+    /// A name to force in rather than leaving <see cref="OrbitItemFactory.SuggestName"/> to derive
+    /// one — and, unlike the derived name, it overwrites a name the user has already typed. Only
+    /// the drop path passes it: a drop replaces the entire subject of the form, so a name left
+    /// over from whatever was being described before it is stale, not precious. Browse and typing
+    /// keep the old behaviour of never touching a hand-edited name.
+    /// </param>
+    private void SetTarget(string path, string? displayName = null)
+    {
+        TargetBox.Text = path;
+        if (displayName is null)
+        {
+            if (!_nameEdited)
+                NameBox.Text = OrbitItemFactory.SuggestName(path);
+        }
+        else
+        {
+            NameBox.Text = displayName;
+            // Assigning NameBox.Text re-enters the TextChanged handler wired in the constructor,
+            // which latches _nameEdited whenever the box happens to hold focus. Clear it after, so
+            // the latch keeps meaning "the user typed this" rather than "a drop filled this in".
+            _nameEdited = false;
+        }
+        HideError();
+    }
+
+    /// <summary>
+    /// Whether the payload currently hovering the window can become an item, cached for the length
+    /// of one drag by <see cref="Root_DragEnter"/>. Null means "not answered yet", which only
+    /// happens for a text-only payload, whose usability cannot be decided without an async read.
+    /// </summary>
+    private bool? _dropUsable;
+
+    /// <summary>
+    /// Bumped every time a drag starts, leaves, or lands, so the async probe below can tell
+    /// whether the drag it was asked about is still the one over the window by the time its answer
+    /// comes back. Without it, a pointer that leaves again before the text read finishes would
+    /// have the affordance quietly put back up behind it, with no drag left to dismiss it.
+    /// </summary>
+    private int _dragToken;
+
+    /// <summary>
+    /// Works out once, as the drag arrives, whether this payload is something the form can take,
+    /// and puts the affordance up if it is.
+    /// <para>
+    /// Storage items and web links can be recognised from the format list alone. Plain text cannot:
+    /// a dragged word out of a document offers text exactly as a dragged URL does, and the only way
+    /// to tell them apart is to read it, which is async. Doing that read here rather than in
+    /// <see cref="Root_DragOver"/> means it happens once per drag instead of on every mouse tick.
+    /// </para>
+    /// </summary>
+    private async void Root_DragEnter(object sender, DragEventArgs e)
+    {
+        int token = ++_dragToken;
+        try
+        {
+            var data = e.DataView;
+            if (data.Contains(StandardDataFormats.StorageItems) ||
+                data.Contains(StandardDataFormats.WebLink))
+            {
+                SetDropState(true, e);
+                return;
+            }
+
+            if (!data.Contains(StandardDataFormats.Text))
+            {
+                SetDropState(false, e);
+                return;
+            }
+
+            // Optimistic while the read is in flight: guessing "no" would flash a no-entry cursor
+            // over every ordinary drag for the frame or two the read takes. Root_DragOver keeps
+            // re-asserting whatever the answer turns out to be.
+            SetDropState(null, e);
+            var deferral = e.GetDeferral();
+            bool usable;
+            try
+            {
+                usable = TryReadTextTarget(await data.GetTextAsync(), out _);
+            }
+            finally
+            {
+                deferral.Complete();
+            }
+            // The args are spent by now, so only the affordance is updated here; the operation
+            // itself is DragOver's to set from the cached answer.
+            if (token == _dragToken)
+                SetDropState(usable, null);
+        }
+        catch (Exception ex)
+        {
+            // async void: an exception escaping this is not an unhandled event, it is the process
+            // going away. A drag hovering a dialog is not worth the app.
+            Diag.Log("AddItemWindow.Root_DragEnter failed: " + ex);
+            if (token == _dragToken)
+                SetDropState(false, null);
+        }
+    }
+
+    private void Root_DragOver(object sender, DragEventArgs e) => ApplyDropOperation(e);
+
+    private void Root_DragLeave(object sender, DragEventArgs e)
+    {
+        _dragToken++;
+        SetDropState(null, null);
+    }
+
+    /// <summary>
+    /// Records what is known about the current payload, shows or hides the affordance to match,
+    /// and — when there are still live args to say it to — tells the source.
+    /// </summary>
+    /// <param name="usable">True, false, or null for "not known yet / no drag in progress".</param>
+    private void SetDropState(bool? usable, DragEventArgs? e)
+    {
+        _dropUsable = usable;
+        DropOverlay.Visibility = usable == false || (usable is null && e is null)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        if (e is not null)
+            ApplyDropOperation(e);
+    }
+
+    /// <summary>
+    /// Sets the operation the source sees, and the caption shown next to the pointer.
+    /// </summary>
+    private void ApplyDropOperation(DragEventArgs e)
+    {
+        // Unknown counts as acceptable — see Root_DragEnter.
+        bool acceptable = _dropUsable != false;
+        e.AcceptedOperation = acceptable ? DataPackageOperation.Copy : DataPackageOperation.None;
+        if (!acceptable)
+            return;
+
+        // The caption is only drawn if the source's own DataPackage left the drag UI visible and
+        // the caption enabled, and a source is free to arrive with either turned off, so both are
+        // asserted here rather than assumed — setting Caption alone was silently doing nothing for
+        // some sources.
+        var ui = e.DragUIOverride;
+        if (ui is null)
+            return;
+        ui.Caption = "Add to orbit";
+        ui.IsCaptionVisible = true;
+        ui.IsGlyphVisible = true;
+        ui.IsContentVisible = true;
+    }
+
+    /// <summary>
+    /// Lets a file, folder, app, .lnk shortcut (from Explorer, the desktop, the Start menu) or a
+    /// web link (a browser's address bar or an anchor drag) be dropped straight onto this window
+    /// instead of going through Browse. Fills the form only — type tile, target and name; the user
+    /// still reviews it and presses Add.
+    /// <para>
+    /// The deferral is not optional and its absence is what made this silently do nothing.
+    /// A <see cref="DragEventArgs"/>' data view is torn down the moment the handler hands control
+    /// back to the framework, and an <c>async void</c> handler hands control back at its first
+    /// <c>await</c> — so the old code was awaiting <c>GetStorageItemsAsync</c> against a view the
+    /// framework had already released. <c>GetDeferral</c> is what tells the framework the drop is
+    /// still in progress; completing it in a <c>finally</c> is what stops a failure from wedging
+    /// the source's drag.
+    /// </para>
     /// </summary>
     private async void Root_Drop(object sender, DragEventArgs e)
     {
-        string? target = null;
+        _dragToken++;
+        SetDropState(null, null);
 
-        if (e.DataView.Contains(StandardDataFormats.StorageItems))
+        var deferral = e.GetDeferral();
+        try
         {
-            var items = await e.DataView.GetStorageItemsAsync();
-            target = items.FirstOrDefault()?.Path;
-        }
+            var target = await ReadDroppedTargetAsync(e.DataView);
+            if (string.IsNullOrEmpty(target))
+            {
+                // Nothing usable in there. Refuse it properly and leave the form exactly as the
+                // user left it — a half-filled row from a drag they didn't mean to finish here is
+                // worse than no reaction at all.
+                e.AcceptedOperation = DataPackageOperation.None;
+                return;
+            }
 
-        if (string.IsNullOrEmpty(target) && e.DataView.Contains(StandardDataFormats.WebLink))
+            e.AcceptedOperation = DataPackageOperation.Copy;
+            SelectType(ToAddKind(OrbitItemFactory.Classify(target)));
+            SetTarget(target, OrbitItemFactory.SuggestName(target));
+        }
+        catch (Exception ex)
         {
-            var uri = await e.DataView.GetWebLinkAsync();
-            target = uri?.ToString();
+            // async void again: see Root_DragEnter. Anything thrown past here kills the app.
+            Diag.Log("AddItemWindow.Root_Drop failed: " + ex);
         }
-
-        if (string.IsNullOrEmpty(target) && e.DataView.Contains(StandardDataFormats.Text))
+        finally
         {
-            var text = (await e.DataView.GetTextAsync())?.Trim();
-            if (!string.IsNullOrEmpty(text) &&
-                Uri.TryCreate(text, UriKind.Absolute, out var uri) &&
-                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-                target = text;
+            deferral.Complete();
         }
-
-        if (string.IsNullOrEmpty(target))
-            return;
-
-        SelectType(ToAddKind(RingItemFactory.Classify(target)));
-        SetTarget(target);
     }
 
-    private static AddKind ToAddKind(RingItemKind kind) => kind switch
+    /// <summary>
+    /// The target string a dropped payload should become, or null if it carries nothing usable.
+    /// Storage items first, then a web link, then plain text for the sources that offer only that.
+    /// <see cref="OrbitItemFactory.Classify"/> re-derives the kind from the string afterwards, so
+    /// every path here only has to produce the string.
+    /// <para>
+    /// A dropped <c>.lnk</c> keeps its own path and is deliberately <em>not</em> resolved through
+    /// <see cref="ShortcutResolver"/> to the executable behind it. The shortcut is the more useful
+    /// thing to keep: <c>ShellExecute</c> follows one by itself (see <see cref="Launcher"/>), and
+    /// the .lnk carries the arguments, working directory and icon its bare target does not — a
+    /// resolved "chrome.exe" would quietly drop the switches that made that particular shortcut
+    /// worth pinning, and <see cref="ShortcutResolver.Resolve"/> returns null outright for the
+    /// Store-app and control-panel shortcuts that have no file-system target at all. The user is
+    /// still shown a name and not a path, because <see cref="OrbitItemFactory.SuggestName"/> takes
+    /// the file name without its extension, which for a shortcut is exactly the human-friendly
+    /// label Explorer shows ("Visual Studio Code", not "C:\...\Visual Studio Code.lnk").
+    /// </para>
+    /// </summary>
+    private static async Task<string?> ReadDroppedTargetAsync(DataPackageView data)
     {
-        RingItemKind.Folder => AddKind.Folder,
-        RingItemKind.WebLink => AddKind.Link,
-        RingItemKind.Shortcut => AddKind.Shortcut,
-        RingItemKind.File => AddKind.File,
+        if (data.Contains(StandardDataFormats.StorageItems))
+        {
+            var items = await data.GetStorageItemsAsync();
+            // The first item with a path, rather than flatly the first: a multi-select drop is
+            // legal and only one item can be filled in, and the leading item can be a virtual
+            // shell item carrying no file-system path at all (a packaged app's Start-menu entry),
+            // which nothing downstream could launch.
+            var path = items
+                .Select(item => item.Path)
+                .FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
+            if (!string.IsNullOrWhiteSpace(path))
+                return path;
+        }
+
+        if (data.Contains(StandardDataFormats.WebLink))
+        {
+            var uri = await data.GetWebLinkAsync();
+            if (uri is not null)
+                return uri.ToString();
+        }
+
+        if (data.Contains(StandardDataFormats.Text) &&
+            TryReadTextTarget(await data.GetTextAsync(), out var text))
+            return text;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Whether a plain-text payload is something this form can actually use, and what of it.
+    /// <para>
+    /// Text is the last resort because it is the least specific: a browser's address bar offers a
+    /// web link, but a terminal, an editor or a chat window offers only text, and a word dragged
+    /// out of a document offers text too. So this accepts an http/https URL or a path that really
+    /// exists on disk, and refuses everything else rather than turning a stray fragment of prose
+    /// into a target the user never meant. Surrounding quotes come off first — copying a path from
+    /// a shell usually brings them along.
+    /// </para>
+    /// </summary>
+    private static bool TryReadTextTarget(string? text, out string target)
+    {
+        target = string.Empty;
+
+        var trimmed = text?.Trim().Trim('"');
+        if (string.IsNullOrEmpty(trimmed))
+            return false;
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        {
+            target = trimmed;
+            return true;
+        }
+
+        // File/Directory.Exists swallow their own failures and answer false for a malformed or
+        // over-long path, so there is nothing here to guard against.
+        if (File.Exists(trimmed) || Directory.Exists(trimmed))
+        {
+            target = trimmed;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static AddKind ToAddKind(OrbitItemKind kind) => kind switch
+    {
+        OrbitItemKind.Folder => AddKind.Folder,
+        OrbitItemKind.WebLink => AddKind.Link,
+        OrbitItemKind.Shortcut => AddKind.Shortcut,
+        OrbitItemKind.File => AddKind.File,
         _ => AddKind.App,
     };
 
@@ -339,13 +718,13 @@ public sealed partial class AddItemWindow : Window
 
     private void Add_Click(object sender, RoutedEventArgs e)
     {
-        var item = new RingItem();
+        var item = new OrbitItem();
 
         if (_kind == AddKind.Tool)
         {
             var tool = (ToolBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Data";
             var def = ToolCatalog.GetByName(tool);
-            item.Kind = RingItemKind.Tool;
+            item.Kind = OrbitItemKind.Tool;
             item.Target = tool;
             item.DisplayName = string.IsNullOrWhiteSpace(NameBox.Text)
                 ? (def?.DisplayName ?? tool)
@@ -354,7 +733,7 @@ public sealed partial class AddItemWindow : Window
         }
         else if (_kind == AddKind.Group)
         {
-            item.Kind = RingItemKind.Group;
+            item.Kind = OrbitItemKind.Group;
             item.DisplayName = string.IsNullOrWhiteSpace(NameBox.Text) ? "Group" : NameBox.Text.Trim();
             item.CustomGlyph = "\uE838";
         }
@@ -367,7 +746,7 @@ public sealed partial class AddItemWindow : Window
                 return;
             }
             // "swiftx:" targets are reserved for built-in items (Settings, Close) — otherwise a
-            // hand-typed duplicate is indistinguishable from the real one to RingManager's
+            // hand-typed duplicate is indistinguishable from the real one to OrbitManager's
             // dispatch, and could hijack or shadow it.
             if (target.StartsWith("swiftx:", StringComparison.OrdinalIgnoreCase))
             {
@@ -377,15 +756,15 @@ public sealed partial class AddItemWindow : Window
 
             item.Kind = _kind switch
             {
-                AddKind.File => RingItemKind.File,
-                AddKind.Folder => RingItemKind.Folder,
-                AddKind.Link => RingItemKind.WebLink,
-                AddKind.Shortcut => RingItemKind.Shortcut,
-                _ => RingItemKind.Application,
+                AddKind.File => OrbitItemKind.File,
+                AddKind.Folder => OrbitItemKind.Folder,
+                AddKind.Link => OrbitItemKind.WebLink,
+                AddKind.Shortcut => OrbitItemKind.Shortcut,
+                _ => OrbitItemKind.Application,
             };
             item.Target = target;
             item.DisplayName = string.IsNullOrWhiteSpace(NameBox.Text)
-                ? RingItemFactory.SuggestName(target)
+                ? OrbitItemFactory.SuggestName(target)
                 : NameBox.Text.Trim();
         }
 

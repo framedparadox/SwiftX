@@ -58,15 +58,15 @@ public static class ToolCatalog
     ];
 
     /// <summary>
-    /// Target of the one ring group that owns every built-in tool. Stored (unlike the
-    /// <see cref="SystemRingItems"/> targets, which are synthesized at render time) so the user
-    /// can move it around the ring like any other item, but stable enough for
+    /// Target of the one orbit group that owns every built-in tool. Stored (unlike the
+    /// <see cref="SystemOrbitItems"/> targets, which are synthesized at render time) so the user
+    /// can move it around the orbit like any other item, but stable enough for
     /// <see cref="EnsureToolsGroup"/> to find it again on the next launch whatever it has been
     /// renamed to.
     /// </summary>
     public const string ToolsGroupTarget = "swiftx:toolsgroup";
 
-    /// <summary>Glyph the tools group wears on the ring.</summary>
+    /// <summary>Glyph the tools group wears on the orbit.</summary>
     public const string ToolsGroupGlyph = "\uE90F";
 
     public static ToolDefinition? Get(ToolKind kind) =>
@@ -76,12 +76,12 @@ public static class ToolCatalog
         Enum.TryParse<ToolKind>(name, ignoreCase: true, out var kind) ? Get(kind) : null;
 
     /// <summary>
-    /// Rewrites ring items still pointing at the retired "Json"/"Xml" tool targets (their catalog
+    /// Rewrites orbit items still pointing at the retired "Json"/"Xml" tool targets (their catalog
     /// entries no longer exist, having been merged into "Data") to "Data" in place, walking into
-    /// every group the way <see cref="SystemRingItems.Strip"/> does. Called once at startup on an
-    /// existing config so a ring item or "Dev tools" entry a user already has keeps working in
+    /// every group the way <see cref="SystemOrbitItems.Strip"/> does. Called once at startup on an
+    /// existing config so an orbit item or "Dev tools" entry a user already has keeps working in
     /// the same slot instead of going dead. Returns true if anything changed, matching
-    /// <see cref="SystemRingItems.Strip"/>'s contract, so the caller knows whether to persist.
+    /// <see cref="SystemOrbitItems.Strip"/>'s contract, so the caller knows whether to persist.
     /// <para>
     /// A group that held the old "Data" entry <em>alongside</em> separate "Json" and "Xml" ones
     /// (the pre-merge "Dev tools" shape) ends up with three copies of "Data" side by side once
@@ -92,13 +92,13 @@ public static class ToolCatalog
     /// business.
     /// </para>
     /// </summary>
-    public static bool MigrateLegacyTargets(List<RingItem> items)
+    public static bool MigrateLegacyTargets(List<OrbitItem> items)
     {
         bool changed = false;
         bool renamedHere = false;
         foreach (var item in items)
         {
-            if (item.Kind == RingItemKind.Tool && (item.Target == "Json" || item.Target == "Xml"))
+            if (item.Kind == OrbitItemKind.Tool && (item.Target == "Json" || item.Target == "Xml"))
             {
                 item.Target = "Data";
                 changed = true;
@@ -114,7 +114,7 @@ public static class ToolCatalog
             for (int i = 0; i < items.Count; i++)
             {
                 var item = items[i];
-                if (item.Kind != RingItemKind.Tool)
+                if (item.Kind != OrbitItemKind.Tool)
                     continue;
                 if (!seenTargets.Add(item.Target))
                 {
@@ -127,50 +127,50 @@ public static class ToolCatalog
         return changed;
     }
 
-    /// <summary>Builds the tools group itself — one ring item holding every built-in tool.</summary>
-    public static RingItem CreateToolsGroup() => new()
+    /// <summary>Builds the tools group itself — one orbit item holding every built-in tool.</summary>
+    public static OrbitItem CreateToolsGroup() => new()
     {
-        Kind = RingItemKind.Group,
+        Kind = OrbitItemKind.Group,
         DisplayName = "Tools",
         Target = ToolsGroupTarget,
         CustomGlyph = ToolsGroupGlyph,
         Children = All.Select(CreateToolItem).ToList(),
     };
 
-    private static RingItem CreateToolItem(ToolDefinition tool) => new()
+    private static OrbitItem CreateToolItem(ToolDefinition tool) => new()
     {
-        Kind = RingItemKind.Tool,
+        Kind = OrbitItemKind.Tool,
         DisplayName = tool.DisplayName,
         Target = tool.Kind.ToString(),
         CustomGlyph = tool.Glyph,
     };
 
     /// <summary>
-    /// Gathers every tool on the ring into a single "Tools" group and makes sure that group holds
-    /// all of them, so tools are always one parent item deep instead of scattered across the ring
+    /// Gathers every tool on the orbit into a single "Tools" group and makes sure that group holds
+    /// all of them, so tools are always one parent item deep instead of scattered across the orbit
     /// (some at the top level, some inside a group, some missing entirely).
     /// <para>
     /// The group is found by <see cref="ToolsGroupTarget"/> first and by name second, which is
     /// what adopts the "Dev tools" group earlier builds seeded rather than leaving it beside a
     /// new one. Tools found anywhere else are moved in — keeping the order they already had, and
     /// dropping duplicates of a kind the group already holds — and any built-in tool that is on
-    /// the ring nowhere at all is added. A group created here takes the ring slot of the first
+    /// the orbit nowhere at all is added. A group created here takes the orbit slot of the first
     /// tool it absorbed, so the tools stay roughly where the user last saw them.
     /// </para>
     /// <para>
     /// Returns true if anything changed, matching <see cref="MigrateLegacyTargets"/> and
-    /// <see cref="SystemRingItems.Strip"/>, so the caller knows whether to persist. Note it never
-    /// creates the group on a ring that has no tools at all: a user who deleted the group and its
+    /// <see cref="SystemOrbitItems.Strip"/>, so the caller knows whether to persist. Note it never
+    /// creates the group on an orbit that has no tools at all: a user who deleted the group and its
     /// tools outright should not find them back on the next launch.
     /// </para>
     /// </summary>
-    public static bool EnsureToolsGroup(List<RingItem> items)
+    public static bool EnsureToolsGroup(List<OrbitItem> items)
     {
         var group = FindToolsGroup(items);
-        var loose = new List<RingItem>();
+        var loose = new List<OrbitItem>();
         int firstLooseIndex = -1;
 
-        void Collect(List<RingItem> list, bool topLevel)
+        void Collect(List<OrbitItem> list, bool topLevel)
         {
             for (int i = list.Count - 1; i >= 0; i--)
             {
@@ -194,12 +194,12 @@ public static class ToolCatalog
 
         if (group is null)
         {
-            // Nothing to hold and nothing to hold it in: leave the ring exactly as it is.
+            // Nothing to hold and nothing to hold it in: leave the orbit exactly as it is.
             if (loose.Count == 0)
                 return false;
-            group = new RingItem
+            group = new OrbitItem
             {
-                Kind = RingItemKind.Group,
+                Kind = OrbitItemKind.Group,
                 DisplayName = "Tools",
                 Target = ToolsGroupTarget,
                 CustomGlyph = ToolsGroupGlyph,
@@ -218,7 +218,7 @@ public static class ToolCatalog
                 group.Children.Add(tool);
         }
 
-        // Every built-in tool belongs to this group, including one the ring never had an item for
+        // Every built-in tool belongs to this group, including one the orbit never had an item for
         // (a tool added to the catalog after this config was written).
         foreach (var tool in All)
         {
@@ -233,12 +233,12 @@ public static class ToolCatalog
     }
 
     /// <summary>
-    /// Points every tool item on the ring at the Tools page's switches, so a tool that is turned
+    /// Points every tool item on the orbit at the Tools page's switches, so a tool that is turned
     /// off is hidden wherever it sits. Run at startup as well as on a toggle: a tool item
     /// <see cref="EnsureToolsGroup"/> has just added has no idea yet whether it is meant to be
     /// showing, and a hand-edited config can disagree with itself.
     /// </summary>
-    public static void ApplyVisibility(List<RingItem> items, AppConfig config)
+    public static void ApplyVisibility(List<OrbitItem> items, AppConfig config)
     {
         foreach (var item in items)
         {
@@ -249,7 +249,7 @@ public static class ToolCatalog
         }
     }
 
-    private static RingItem? FindToolsGroup(List<RingItem> items)
+    private static OrbitItem? FindToolsGroup(List<OrbitItem> items)
     {
         var byTarget = items.FirstOrDefault(
             i => i.IsGroup && string.Equals(i.Target, ToolsGroupTarget, StringComparison.OrdinalIgnoreCase));
@@ -264,7 +264,7 @@ public static class ToolCatalog
 
     /// <summary>Stamps the group's stable target on a group adopted by name. Its display name is
     /// left alone — renaming it is the user's business, and the target is what finds it now.</summary>
-    private static bool AdoptGroup(RingItem group)
+    private static bool AdoptGroup(OrbitItem group)
     {
         if (string.Equals(group.Target, ToolsGroupTarget, StringComparison.Ordinal))
             return false;

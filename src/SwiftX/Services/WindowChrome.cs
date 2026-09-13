@@ -26,9 +26,9 @@ public static class WindowChrome
     /// prove the request rides on a real input event (see the doc comment on
     /// <see cref="NativeMethods.AttachThreadInput"/>).
     /// <para>
-    /// This matters for the ring specifically because its own "click anywhere to dismiss" only
+    /// This matters for the orbit specifically because its own "click anywhere to dismiss" only
     /// fires when it loses activation it genuinely had — a summon that silently failed to become
-    /// foreground can never later fire that transition, leaving the ring stuck on screen through a
+    /// foreground can never later fire that transition, leaving the orbit stuck on screen through a
     /// click elsewhere. A hotkey press or a tray click already carry real input and would likely
     /// succeed on their own, but routing every summon through here costs nothing and removes the
     /// one summon path — the hot corner's <c>WM_TIMER</c> poll — that provably would not.
@@ -139,7 +139,7 @@ public static class WindowChrome
     /// <see cref="SetFrameTheme"/>) so DWM renders the window edge / corner anti-aliasing for the
     /// right background.
     /// <para>
-    /// Used by every SwiftX window. On the ring it hides a rim that would otherwise read as a
+    /// Used by every SwiftX window. On the orbit it hides a rim that would otherwise read as a
     /// rectangle drawn around the rounded glass strip. On the Mica dialogs it hides the one piece
     /// of rim those windows still show: they extend their content into the title bar, so the top
     /// edge is all that is left of the frame, and anything that doesn't match the surface reads as
@@ -226,7 +226,7 @@ public static class WindowChrome
     /// <para>
     /// Nothing else contributes, so nothing else is done. Empty-region
     /// <c>DwmEnableBlurBehindWindow</c> and <c>DwmExtendFrameIntoClientArea</c> were both tried
-    /// and make no difference — the ring renders pixel-identical with and without them.
+    /// and make no difference — the orbit renders pixel-identical with and without them.
     /// </para>
     /// </summary>
     public static void MakeTransparentOverlay(Window window, nint hwnd)
@@ -297,7 +297,7 @@ public static class WindowChrome
 
         // SetWindowRgn takes ownership of the region handle — but only when it succeeds. On
         // failure the caller still owns it, and this runs on every render and every hover pill,
-        // so a handle dropped here would leak GDI objects for as long as the ring is used. The
+        // so a handle dropped here would leak GDI objects for as long as the orbit is used. The
         // process-wide GDI limit is 10 000.
         if (NativeMethods.SetWindowRgn(hwnd, combined, true) == 0)
         {

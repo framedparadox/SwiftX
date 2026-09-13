@@ -52,7 +52,7 @@ public class BoundedInputTests
             using (var stream = File.Create(path))
                 stream.SetLength(InputLimits.MaxConfigBytes + 1);
 
-            Assert.Null(RingStore.ImportFrom(path));
+            Assert.Null(OrbitStore.ImportFrom(path));
         }
         finally
         {
@@ -71,12 +71,12 @@ public class BoundedInputTests
         try
         {
             var config = new AppConfig().EnsurePrimary();
-            config.Primary.Items.Add(new RingItem { DisplayName = "Notepad", Target = @"C:\Windows\notepad.exe" });
-            Assert.True(RingStore.ExportTo(config, path));
+            config.Primary.Items.Add(new OrbitItem { DisplayName = "Notepad", Target = @"C:\Windows\notepad.exe" });
+            Assert.True(OrbitStore.ExportTo(config, path));
 
             Assert.True(new FileInfo(path).Length < InputLimits.MaxConfigBytes);
 
-            var imported = RingStore.ImportFrom(path);
+            var imported = OrbitStore.ImportFrom(path);
             Assert.NotNull(imported);
             Assert.Equal("Notepad", imported!.Primary.Items[0].DisplayName);
         }
@@ -154,7 +154,7 @@ public class BoundedInputTests
     // =========================================================================================
 
     /// <summary>
-    /// A custom icon is any path on disk the user pointed at, and it is re-read whenever the ring
+    /// A custom icon is any path on disk the user pointed at, and it is re-read whenever the orbit
     /// renders. The ceiling exists because an icon is drawn at 44 px, so a file past it is not an
     /// icon — and because image decoders are a classic place to hand a deliberately expensive
     /// file. This asserts the ceiling is a real one rather than a declared constant: the refusal
