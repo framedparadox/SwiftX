@@ -108,12 +108,19 @@ public sealed partial class AddItemWindow : Window
         }
         _appWindow.IsShownInSwitchers = true;
 
-        // 530 rather than the 560 this used to be. The form no longer has to stretch to reach the
-        // buttons — the drop zone takes the slack now (see the XAML) — so the extra height was
-        // only ever making that zone taller than it needs to be.
-        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 760, 530);
+        // A starting height only. The real one is measured from the content once it has been laid
+        // out for the first time (see FitWindowToContent), because a hard-coded number cannot stay
+        // right: the hint text under the target box wraps to a second or third line in the longer
+        // languages, the Tool and Group types show a different set of fields, and the error bar
+        // adds a row when it opens. Each of those moves the figure, and guessing it too low puts
+        // the Cancel/Add buttons off the bottom of a window the user cannot resize.
+        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, ClientWidthDip, InitialClientHeightDip);
         WindowChrome.SetRoundedCorners(_hwnd);
         WindowChrome.CenterOnCursor(_appWindow, _appWindow.Id);
+
+        // Loaded, not the constructor: DesiredSize is meaningless until the tree has been through
+        // a layout pass with its real styles and font metrics resolved.
+        Root.Loaded += (_, _) => FitWindowToContent(recentre: true);
 
         NameBox.TextChanged += (_, _) =>
         {
@@ -284,13 +291,17 @@ public sealed partial class AddItemWindow : Window
     /// </summary>
     private void ApplyDropOverlayAccent(Color accent, Color onAccent)
     {
-        // The standing drop zone: the accent at reading strength on the glyph, a dimmed rim, and a
-        // wash faint enough that the caption inside it stays legible on Light's white surface as
-        // well as on Midnight's black. Assigned rather than bound for the same reason as the
-        // overlay below — the accent is a runtime colour with no ThemeResource behind it.
-        DropZone.BorderBrush = new SolidColorBrush(Color.FromArgb(0x8C, accent.R, accent.G, accent.B));
-        DropZone.Background = new SolidColorBrush(Color.FromArgb(0x14, accent.R, accent.G, accent.B));
-        DropZoneGlyph.Foreground = new SolidColorBrush(accent);
+        // The Drag 'n Drop tile beside the type tiles: accent glyph and label, a dimmed rim and a
+        // faint wash of the same colour. Faint deliberately — it stands next to seven ToggleButtons
+        // whose *checked* state is this exact accent at full strength, and a tile that read as
+        // strongly as a selected one would look like an eighth type that was already picked.
+        // Assigned rather than bound for the same reason as the overlay below: the accent is a
+        // runtime colour with no ThemeResource behind it.
+        DragDropTile.BorderBrush = new SolidColorBrush(Color.FromArgb(0x8C, accent.R, accent.G, accent.B));
+        DragDropTile.Background = new SolidColorBrush(Color.FromArgb(0x14, accent.R, accent.G, accent.B));
+        var accentBrush = new SolidColorBrush(accent);
+        DragDropTileGlyph.Foreground = accentBrush;
+        DragDropTileText.Foreground = accentBrush;
 
         DropOverlay.BorderBrush = new SolidColorBrush(accent);
         DropOverlay.Background =
@@ -322,6 +333,96 @@ public sealed partial class AddItemWindow : Window
     private const int RimColorDark = 0x00222222;
     private const int RimColorLight = 0x00FFFFFF;
     private const int RimColorBlack = 0x00000000;
+
+    /// <summary>Fixed dialog width. The seven type tiles sit in one unwrapped row, and that is what
+    /// sets it — narrower and they spill.</summary>
+    private const int ClientWidthDip = 760;
+
+    /// <summary>
+    /// The size the window is first created at: roughly what the default App type measures to, so
+    /// the common case is already right before <see cref="FitWindowToContent"/> has run and the
+    /// window does not visibly resize as it opens.
+    /// </summary>
+    private const int InitialClientHeightDip = 460;
+
+    /// <summary>
+    /// Floor for the measured height. Low enough to be out of the way in every normal state — the
+    /// measurement is the thing that decides, not this — and there purely so a measurement that
+    /// somehow came back at or near zero could not collapse the window to a sliver.
+    /// </summary>
+    private const int MinClientHeightDip = 320;
+
+    /// <summary>Ceiling, before the display's own work area clamps it further.</summary>
+    private const int MaxClientHeightDip = 900;
+
+    private int _clientHeightDip = InitialClientHeightDip;
+
+    /// <summary>
+    /// Sizes the window to whatever its content actually needs, rather than to a constant that has
+    /// to be re-guessed every time the form changes. Called once the tree is loaded and again after
+    /// each type change, since the types do not show the same fields.
+    /// <para>
+    /// Shrinks as well as grows, now that every row is Auto. Nothing stretches any more, so spare
+    /// height has nowhere to go but a gap above the buttons — the exact thing this is here to
+    /// prevent — and the only way to have no gap in the short states (Group, Tool) as well as the
+    /// tall ones is to hand the height back.
+    /// </para>
+    /// <para>
+    /// <paramref name="recentre"/> is false for those later calls on purpose. Re-centring uses the
+    /// *cursor*, which has moved by then — usually onto the type tile that triggered this — so
+    /// re-centring on every type change would walk the window across the screen as the user
+    /// clicked through the row. Resize alone keeps the top-left pinned, so only the bottom edge
+    /// moves.
+    /// </para>
+    /// </summary>
+    private void FitWindowToContent(bool recentre = false)
+    {
+        try
+        {
+            // Measured against the real width and an unbounded height, so what comes back is what
+            // the content wants rather than what it has already been squeezed into.
+            Body.Measure(new Windows.Foundation.Size(ClientWidthDip, double.PositiveInfinity));
+
+            int target = (int)Math.Ceiling(AppTitleBar.HeightDip + Body.DesiredSize.Height);
+            target = Math.Clamp(target, MinClientHeightDip, MaxHeightForDisplay());
+            if (target == _clientHeightDip && !recentre)
+                return;
+
+            _clientHeightDip = target;
+            WindowChrome.SetClientSizeDip(_appWindow, _hwnd, ClientWidthDip, target);
+            if (recentre)
+                WindowChrome.CenterOnCursor(_appWindow, _appWindow.Id);
+        }
+        catch (Exception ex)
+        {
+            // A dialog that cannot measure itself keeps the height it has, which is the floor above
+            // — never a reason to fail opening it.
+            Diag.Log("AddItemWindow.FitWindowToContent failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// The tallest this window may become on the display it is actually on, leaving a margin so it
+    /// never runs edge to edge. Guards the case the clamp exists for: a low-resolution or heavily
+    /// scaled display where the content's natural height is taller than the screen, and a window
+    /// sized to it would put its own buttons off the bottom — the very failure the measuring is
+    /// meant to prevent.
+    /// </summary>
+    private int MaxHeightForDisplay()
+    {
+        try
+        {
+            var work = DisplayArea.GetFromWindowId(_appWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
+            double scale = Root.XamlRoot?.RasterizationScale ?? 1.0;
+            if (scale <= 0) scale = 1.0;
+            int available = (int)(work.Height / scale) - 48;
+            return Math.Clamp(available, MinClientHeightDip, MaxClientHeightDip);
+        }
+        catch
+        {
+            return MaxClientHeightDip;
+        }
+    }
 
     private void TypeSelected(object sender, RoutedEventArgs e)
     {
@@ -379,6 +480,11 @@ public sealed partial class AddItemWindow : Window
             NameBox.Text = "Group";
 
         HideError();
+
+        // The types do not show the same fields — Tool swaps the target row for a picker, Group
+        // drops it entirely — so the height that fit the last one is not necessarily enough for
+        // this one.
+        FitWindowToContent();
     }
 
     private void TargetBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -782,6 +888,9 @@ public sealed partial class AddItemWindow : Window
     {
         ErrorBar.Message = message;
         ErrorBar.IsOpen = true;
+        // An InfoBar opening adds a row the window had not allowed for. Without this the error
+        // explaining what went wrong can push the buttons that fix it off the bottom edge.
+        FitWindowToContent();
     }
 
     private void HideError()

@@ -23,11 +23,15 @@
              code-behind because its constructor takes glyph/title and XAML object elements need a
              parameterless constructor. -->
 
-        <Grid Grid.Row="1" Padding="24,8,24,20" RowSpacing="14">
+        <Grid x:Name="Body" Grid.Row="1" Padding="24,8,24,20" RowSpacing="14">
+            <!-- Every row is Auto, including the form: nothing stretches, so no row can quietly
+                 accumulate the window's spare height into a gap above the buttons. The window is
+                 then sized to exactly what these rows measure — see FitWindowToContent — which is
+                 what keeps the Cancel/Add pair sitting just under the last field in every state. -->
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
@@ -47,8 +51,18 @@
 
             <StackPanel Grid.Row="1" Spacing="8">
                 <TextBlock Text="What are you adding?" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                <!-- Eight tiles (seven types plus the Drag 'n Drop one at the end) in one row that
+                     never wraps, so their width times eight plus their spacing times seven has to
+                     fit inside AddItemWindow.ClientWidthDip (760) minus Body's own left/right
+                     Padding (24+24). That is 712dip to spend. At the 88dip width these tiles used
+                     to have, eight of them plus spacing came to 760 — already the full window width
+                     before Body's padding was even subtracted — and the row spilled past the edge
+                     with no wrap to catch it, which is what "Drag 'n Drop" overlapping the window
+                     edge actually was. 80dip leaves 16dip of slack instead. If an eighth — sorry,
+                     ninth — tile is ever added here, this arithmetic has to be redone rather than
+                     assumed to still hold. -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <ToggleButton x:Name="AppType" Click="TypeSelected" Width="88" Height="80" Padding="4,0"
+                    <ToggleButton x:Name="AppType" Click="TypeSelected" Width="80" Height="80" Padding="4,0"
                                   HorizontalContentAlignment="Center"
                                   AutomationProperties.Name="App">
                         <StackPanel Spacing="6" VerticalAlignment="Center">
@@ -57,7 +71,7 @@
                                        TextWrapping="Wrap" Style="{ThemeResource CaptionTextBlockStyle}" />
                         </StackPanel>
                     </ToggleButton>
-                    <ToggleButton x:Name="FileType" Click="TypeSelected" Width="88" Height="80" Padding="4,0"
+                    <ToggleButton x:Name="FileType" Click="TypeSelected" Width="80" Height="80" Padding="4,0"
                                   HorizontalContentAlignment="Center"
                                   AutomationProperties.Name="File">
                         <StackPanel Spacing="6" VerticalAlignment="Center">
@@ -66,7 +80,7 @@
                                        TextWrapping="Wrap" Style="{ThemeResource CaptionTextBlockStyle}" />
                         </StackPanel>
                     </ToggleButton>
-                    <ToggleButton x:Name="FolderType" Click="TypeSelected" Width="88" Height="80" Padding="4,0"
+                    <ToggleButton x:Name="FolderType" Click="TypeSelected" Width="80" Height="80" Padding="4,0"
                                   HorizontalContentAlignment="Center"
                                   AutomationProperties.Name="Folder">
                         <StackPanel Spacing="6" VerticalAlignment="Center">
@@ -75,7 +89,7 @@
                                        TextWrapping="Wrap" Style="{ThemeResource CaptionTextBlockStyle}" />
                         </StackPanel>
                     </ToggleButton>
-                    <ToggleButton x:Name="LinkType" Click="TypeSelected" Width="88" Height="80" Padding="4,0"
+                    <ToggleButton x:Name="LinkType" Click="TypeSelected" Width="80" Height="80" Padding="4,0"
                                   HorizontalContentAlignment="Center"
                                   AutomationProperties.Name="Web link">
                         <StackPanel Spacing="6" VerticalAlignment="Center">
@@ -84,7 +98,7 @@
                                        TextWrapping="Wrap" Style="{ThemeResource CaptionTextBlockStyle}" />
                         </StackPanel>
                     </ToggleButton>
-                    <ToggleButton x:Name="ShortcutType" Click="TypeSelected" Width="88" Height="80" Padding="4,0"
+                    <ToggleButton x:Name="ShortcutType" Click="TypeSelected" Width="80" Height="80" Padding="4,0"
                                   HorizontalContentAlignment="Center"
                                   AutomationProperties.Name="Shortcut">
                         <StackPanel Spacing="6" VerticalAlignment="Center">
@@ -93,7 +107,7 @@
                                        TextWrapping="Wrap" Style="{ThemeResource CaptionTextBlockStyle}" />
                         </StackPanel>
                     </ToggleButton>
-                    <ToggleButton x:Name="GroupType" Click="TypeSelected" Width="88" Height="80" Padding="4,0"
+                    <ToggleButton x:Name="GroupType" Click="TypeSelected" Width="80" Height="80" Padding="4,0"
                                   HorizontalContentAlignment="Center"
                                   AutomationProperties.Name="Group">
                         <StackPanel Spacing="6" VerticalAlignment="Center">
@@ -102,7 +116,7 @@
                                        TextWrapping="Wrap" Style="{ThemeResource CaptionTextBlockStyle}" />
                         </StackPanel>
                     </ToggleButton>
-                    <ToggleButton x:Name="ToolType" Click="TypeSelected" Width="88" Height="80" Padding="4,0"
+                    <ToggleButton x:Name="ToolType" Click="TypeSelected" Width="80" Height="80" Padding="4,0"
                                   HorizontalContentAlignment="Center"
                                   AutomationProperties.Name="Tool">
                         <StackPanel Spacing="6" VerticalAlignment="Center">
@@ -111,22 +125,34 @@
                                        TextWrapping="Wrap" Style="{ThemeResource CaptionTextBlockStyle}" />
                         </StackPanel>
                     </ToggleButton>
+
+                    <!-- Not a type, so deliberately not a ToggleButton: it sits in this row because
+                         this is where the eye already is when deciding what to add, but nothing
+                         about it is selectable and it must never look picked. A Border shaped like
+                         its neighbours reads as "one more way in" without joining the group.
+
+                         Glyph E896 is an arrow descending into a tray — the intake mark — which
+                         says "put something in here" rather than "download".
+
+                         Hit-test invisible so it can never swallow the drop it advertises: AllowDrop
+                         lives on Root alone (see Root's own comment), and the drop target is the
+                         whole window, not this tile. Accent colours come from
+                         ApplyAccentColorOverride, the same accent the tiles and Add button use. -->
+                    <Border x:Name="DragDropTile" Width="80" Height="80" CornerRadius="4"
+                            BorderThickness="1" Padding="4,0" IsHitTestVisible="False"
+                            AutomationProperties.AccessibilityView="Raw">
+                        <StackPanel Spacing="6" VerticalAlignment="Center">
+                            <FontIcon x:Name="DragDropTileGlyph" Glyph="&#xE896;"
+                                      FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="22" />
+                            <TextBlock x:Name="DragDropTileText" Text="Drag 'n Drop"
+                                       HorizontalAlignment="Center" TextAlignment="Center"
+                                       TextWrapping="Wrap" Style="{ThemeResource CaptionTextBlockStyle}" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </StackPanel>
 
-            <!-- Row 2 is the only row that grows, so every pixel the window has spare used to pile
-                 up as dead space between the Display name box and the Cancel/Add buttons pinned
-                 below. It is now split: the form takes exactly what it needs (Auto), and the
-                 leftover goes to the drop zone rather than to nothing. The buttons stay pinned to
-                 the bottom right where a Windows dialog puts them, and the gap above them is gone
-                 because something useful is standing in it. -->
-            <Grid Grid.Row="2" RowSpacing="12">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-
-            <StackPanel Grid.Row="0" Spacing="12" VerticalAlignment="Top">
+            <StackPanel Grid.Row="2" Spacing="12" VerticalAlignment="Top">
                 <StackPanel Spacing="6">
                     <TextBlock x:Name="TargetLabel" Text="Path or command" />
                     <Grid x:Name="TargetRow" ColumnSpacing="8">
@@ -167,37 +193,6 @@
 
                 <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" IsClosable="False" />
             </StackPanel>
-
-                <!-- The standing "you can drop things here" affordance, as opposed to DropOverlay
-                     below, which only appears once a drag is already in flight. Without this the
-                     feature stayed invisible to anyone who had not been told it existed: a drag-over
-                     highlight can only be discovered by someone who has already started dragging.
-
-                     The glyph is Segoe's E896, an arrow descending into a tray — the "intake" mark
-                     — which reads as "put something in here" rather than as a download.
-
-                     Deliberately inert: no Click, and hit-test invisible, so it can never eat the
-                     drop it is advertising. AllowDrop lives on Root alone (see Root's own comment)
-                     and the whole window is the target, which is what the caption says. -->
-            <Border x:Name="DropZone" Grid.Row="1" MinHeight="86" CornerRadius="10"
-                    BorderThickness="1" Padding="16,12" IsHitTestVisible="False"
-                    AutomationProperties.AccessibilityView="Raw">
-                <StackPanel Orientation="Horizontal" Spacing="12"
-                            HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <FontIcon x:Name="DropZoneGlyph" Glyph="&#xE896;"
-                              FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="22"
-                              VerticalAlignment="Center" />
-                    <StackPanel VerticalAlignment="Center" MaxWidth="420">
-                        <TextBlock Text="Or drag and drop it here"
-                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                        <TextBlock Text="Drop an app, web link, file, folder or shortcut anywhere on this window and the type, target and name fill in for you."
-                                   Style="{ThemeResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource SwiftXMutedBrush}"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-            </Grid>
 
             <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8"
                         HorizontalAlignment="Right">
