@@ -275,9 +275,16 @@ public sealed class RingManager
     /// Pass false when <paramref name="targetList"/> is a group's own children — the ring cannot
     /// expand a group nested inside a group, so the dialog must not offer to create one there.
     /// </param>
+    /// <param name="heading">
+    /// Overrides the dialog's own title and heading. Set by the callers that are not adding
+    /// anywhere — Settings' "Replace…" reuses the same form to swap what is in a place it already
+    /// has — so the window says what pressing its button will actually do.
+    /// </param>
+    /// <param name="confirmLabel">The commit button's label, for the same reason.</param>
     public void OpenAddItem(
         Action<RingItem>? onAdded = null, List<RingItem>? targetList = null,
-        bool isGenericAddItem = false, bool allowGroups = true)
+        bool isGenericAddItem = false, bool allowGroups = true,
+        string? heading = null, string? confirmLabel = null)
     {
         if (_addItemWindow is not null)
         {
@@ -285,7 +292,8 @@ public sealed class RingManager
             return;
         }
         _addItemWindow = new AddItemWindow(
-            this, onAdded, targetList ?? Config.Primary.Items, isGenericAddItem, allowGroups);
+            this, onAdded, targetList ?? Config.Primary.Items, isGenericAddItem, allowGroups,
+            heading, confirmLabel);
         _addItemWindow.Closed += (_, _) => _addItemWindow = null;
         _addItemWindow.Activate();
     }
@@ -334,6 +342,21 @@ public sealed class RingManager
         _ringWindow?.ApplyTheme();
         _settingsWindow?.ApplyTheme();
         _addItemWindow?.ApplyTheme();
+    }
+
+    /// <summary>
+    /// Puts <see cref="Config"/>'s language choice into effect. Anything that reads
+    /// <see cref="Services.Loc"/> when it next builds its UI already picks this up — the tool
+    /// pages construct fresh each time their window opens, and the tray menu rebuilds on every
+    /// click — so beyond re-pointing <see cref="Services.Loc"/> itself, the only thing that needs
+    /// an explicit nudge is the tray icon's tooltip, which is set once and left alone otherwise
+    /// (see <see cref="TrayIconService.RefreshTooltip"/>). Windows built once from literal XAML
+    /// text (Settings itself, Add item, the ring's own tooltips) still need a restart.
+    /// </summary>
+    public void ApplyLanguage()
+    {
+        Loc.Initialize(Config.Language);
+        _tray?.RefreshTooltip();
     }
 
     public void SetItemSize(RingItemSize size)

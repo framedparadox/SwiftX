@@ -3,13 +3,19 @@ using SwiftX.Services.Syntax;
 
 namespace SwiftX.Services.Formats;
 
-/// <summary>JSON and XML format implementations with Auto-detect.</summary>
+/// <summary>JSON, XML, YAML and CSV format implementations with Auto-detect.</summary>
 public static class FormatRegistry
 {
     public static readonly IDataFormat Json = JsonFormat.Instance;
     public static readonly IDataFormat Xml = XmlFormat.Instance;
+    public static readonly IDataFormat Yaml = YamlFormat.Instance;
+    public static readonly IDataFormat Csv = CsvFormat.Instance;
 
-    public static readonly IReadOnlyList<IDataFormat> All = [Json, Xml];
+    // Json and Xml lead the list so DetectBest's "strictly greater score wins" tie-break favors
+    // them over Yaml/Csv on genuinely ambiguous input — see each format's own DetectConfidence,
+    // which is written to score 0 rather than compete whenever the input already looks like JSON
+    // or XML (a brace/bracket/angle-bracket lead character).
+    public static readonly IReadOnlyList<IDataFormat> All = [Json, Xml, Yaml, Csv];
 
     public static readonly IDataFormat Auto = new AutoDataFormat();
 
@@ -33,7 +39,7 @@ public static class FormatRegistry
     {
         public string Id => "auto";
         public string DisplayNameKey => "Format.Auto";
-        public string[] Extensions => [".json", ".xml"];
+        public string[] Extensions => [".json", ".xml", ".yaml", ".yml", ".csv"];
         public ITokenizer Tokenizer => PlainTokenizer.Instance;
         public int DetectConfidence(ReadOnlySpan<char> text) => 0;
         public FormatResult Format(string text, FormatOptions options) => DetectBest(text).Format(text, options);

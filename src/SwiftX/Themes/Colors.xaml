@@ -32,6 +32,14 @@
             <Color x:Key="SwiftXBorderColor">#333333</Color>
             <Color x:Key="SwiftXMutedColor">#888888</Color>
             <Color x:Key="SwiftXAccentColor">#FFFFFF</Color>
+            <!-- A fixed "communication blue", deliberately NOT SwiftXAccentColor/AccentFillColorDefaultBrush:
+                 Secure values' Copy button (SecureValuesPage.ApplyHoverColors) has to read as blue
+                 regardless of what the user (or Windows personalization) has the accent colour set
+                 to, the same way SystemFillColorCriticalBrush's red never tracks the accent either.
+                 The lighter tint in Dark mirrors how the framework's own SystemFillColorCritical
+                 goes lighter in Dark than Light (#FF99A4 vs #C42B1C) for the same on-black-vs-on-white
+                 contrast reason. -->
+            <Color x:Key="SwiftXCopyHoverColor">#60CDFF</Color>
             <Color x:Key="RingBubbleBackgroundColor">#000000</Color>
             <!-- The ring bubbles' live-glass tint (RingWindow's CreateBubble/ApplyBubbleFill) —
                  sits over a real DesktopAcrylicBackdrop, so this only needs to carry SwiftX's own
@@ -47,41 +55,43 @@
             <SolidColorBrush x:Key="SwiftXBorderBrush" Color="{StaticResource SwiftXBorderColor}"/>
             <SolidColorBrush x:Key="SwiftXMutedBrush" Color="{StaticResource SwiftXMutedColor}"/>
             <SolidColorBrush x:Key="SwiftXAccentBrush" Color="{StaticResource SwiftXAccentColor}"/>
+            <SolidColorBrush x:Key="SwiftXCopyHoverBrush" Color="{StaticResource SwiftXCopyHoverColor}"/>
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
             <SolidColorBrush x:Key="RingBubbleGlassTint" Color="{StaticResource RingBubbleGlassTintColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
+            <!-- The add/replace dialog's root fill (AddItemWindow.xaml's Root Grid). Dark's own
+                 surface, #222222, rather than the shared SwiftXSurfaceBrush above, whose #000000 is
+                 Midnight's colour and made the dialog show Midnight's chrome whenever Dark was
+                 selected. Fully opaque, unlike SettingsSurfaceBrush below: this window carries no
+                 backdrop for an alpha to reveal. Midnight is not a XAML theme (see ThemeHelper.Resolve),
+                 so AddItemWindow shadows this key with a flat black of its own when Midnight is
+                 selected — see AddItemWindow.ApplyBlackOverrides. -->
+            <SolidColorBrush x:Key="SwiftXDialogSurfaceBrush" Color="#222222"/>
             <!-- Settings-only root fill (SettingsWindow.xaml's Root Grid uses this, not
-                 SwiftXSurfaceBrush): docs/logi_options_design_features.md's dark Canvas Background,
-                 whose stated range is #1A1A1A to #222222 — #222222, its light end, so the nav pane
-                 below can take #1A1A1A and still read as a distinct, recessed surface beside it.
-                 (Was #202020, design-colours.md's Surface.Base; the Logi palette supersedes that for
-                 Settings only.) SwiftXSurfaceBrush above stays #000000 because AddItemWindow and the
-                 tool windows share that key and are out of scope here — see the longer comment a few
-                 lines down by the other Settings-exclusive keys. -->
+                 SwiftXSurfaceBrush): dark canvas background, whose range is #1A1A1A to #222222 —
+                 #222222, its light end, so the nav pane below can take #1A1A1A and still read as a
+                 distinct, recessed surface beside it. SwiftXSurfaceBrush above stays #000000 because
+                 the tool windows share that key and are out of scope here (AddItemWindow has since
+                 moved to SwiftXDialogSurfaceBrush above, for the same reason Settings moved). -->
             <Color x:Key="SettingsSurfaceColor">#222222</Color>
             <!-- Alpha-carrying so SettingsWindow's MicaBackdrop (see the constructor) shows through
                  — 0xD9 (~85%) keeps Mica's own wallpaper-derived tint to a subtle hint rather than a
-                 strong blur, matching how understated Mica reads everywhere else in Windows; the
-                 four plates' own distinct hues (below) are what still carries the raised/recessed
-                 hierarchy, the same way they did at full opacity. Kept deliberately when the palette
-                 moved to Logi's: Logi's own hexes are flat, so at 0xD9 these land close to them
-                 rather than exactly on them — the frosted look is worth the few points of drift, and
-                 going opaque here would make Mica a no-op and revert the acrylic-theme work.
+                 strong blur, matching how understated Mica reads everywhere else in Windows. The four
+                 plates' own distinct hues (below) still carry the raised/recessed hierarchy.
                  Dark only — Light's brushes below stay 100% opaque; Mica is still attached to the
                  window in Light too, it just never shows through anything. -->
             <SolidColorBrush x:Key="SettingsSurfaceBrush" Color="#D9222222"/>
-            <!-- Dark Settings palette anchored on docs/logi_options_design_features.md's contrast
-                 matrix: Canvas Background #1A1A1A-#222222, Card & Container BG #2C2C2C. The canvas
-                 takes #222222 — the same value Root's own Background resolves to (see
-                 SettingsWindow.xaml), so the sliver of Root that shows through around the title bar
-                 and NavigationView's own chrome matches the content exactly rather than reading as
-                 a second, darker surface. The nav pane takes #1A1A1A, the other end of Logi's canvas
-                 range, so pane and content read as the two distinct surfaces Logi's "elevated
-                 surface framework" describes. Cards were already at Logi's #2C2C2C and do not move.
+            <!-- Dark Settings palette: canvas background #1A1A1A-#222222, card and container
+                 background #2C2C2C. The canvas takes #222222 — the same value Root's own Background
+                 resolves to (see SettingsWindow.xaml), so the sliver of Root that shows through around
+                 the title bar and NavigationView's own chrome matches the content exactly rather than
+                 reading as a second, darker surface. The nav pane takes #1A1A1A, the other end of the
+                 range, so pane and content read as two distinct surfaces. Cards remain at #2C2C2C.
                  Only the Settings-exclusive keys change: SwiftXSurfaceColor/Foreground/Border/Muted
-                 above are shared with AddItemWindow, the tool windows, and the ring (which also
-                 hardcodes them a second time in ThemeHelper.ColorFor), and must stay as they are. -->
+                 above are shared with AddItemWindow (now by way of its own SwiftXDialogSurfaceBrush,
+                 anchored to this same #222222), the tool windows, and the ring (which also hardcodes
+                 them a second time in ThemeHelper.ColorFor), and must stay as they are. -->
             <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#D92C2C2C"/>
             <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#3A3A3A"/>
             <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#D9222222"/>
@@ -107,19 +117,17 @@
                  the moment this dictionary is the active one — it isn't just a Light-mode nicety.
                  The recessed layer: darker than the canvas and the cards it sits among, so the Home
                  tab's ring-preview canvas and its group-children strip read as a tray sunk into the
-                 page rather than as another card raised off it. Not the darkest plate in the
-                 dictionary any more — the nav pane is, at Logi's #1A1A1A — but the two are never
-                 adjacent, so what matters is that this stays a step below the #222222 canvas it is
-                 actually sunk into. -->
+                 page rather than as another card raised off it. The nav pane remains the darkest plate,
+                 but the two are never adjacent, so what matters is that this stays a step below the
+                 #222222 canvas it is actually sunk into. -->
             <SolidColorBrush x:Key="SwiftXRingCanvasBrush" Color="#D9202020"/>
 
-            <!-- Text and accent, Settings-only, from logi_options_design_features.md's matrix.
-                 Deliberately NOT the shared SwiftXMutedBrush/SwiftXAccentBrush above: those are read
-                 by the ring, AddItemWindow, and the tool windows, and SwiftXAccentBrush in particular
-                 is plain #FFFFFF there. Secondary Label Text is Logi's #AAAAAA (the shared muted key
-                 stays #888888). The accent is Logi's "Radiant Light Teal / Neon Cyan" and is the
-                 first non-monochrome color the app has ever painted — see the Feedback & Support
-                 page's links in SettingsWindow.xaml, its only consumer today. -->
+            <!-- Text and accent, Settings-only. Deliberately NOT the shared SwiftXMutedBrush/
+                 SwiftXAccentBrush above: those are read by the ring, AddItemWindow, and the tool
+                 windows, and SwiftXAccentBrush in particular is plain #FFFFFF there. Secondary Label
+                 Text is a cool neutral grey; the accent is a bright teal and is the first
+                 non-monochrome color the app has ever painted — see the Feedback & Support page's
+                 links in SettingsWindow.xaml, its only consumer today. -->
             <SolidColorBrush x:Key="SettingsSecondaryTextBrush" Color="#AAAAAA"/>
             <SolidColorBrush x:Key="SettingsAccentBrush" Color="#3DDCD3"/>
             <SolidColorBrush x:Key="SettingsAccentHoverBrush" Color="#6FE9E1"/>
@@ -147,6 +155,9 @@
             <Color x:Key="SwiftXBorderColor">#CCCCCC</Color>
             <Color x:Key="SwiftXMutedColor">#666666</Color>
             <Color x:Key="SwiftXAccentColor">#000000</Color>
+            <!-- See the matching comment in the Dark dictionary above — the darker end of the same
+                 communication-blue pair, for contrast on Light's white surfaces. -->
+            <Color x:Key="SwiftXCopyHoverColor">#0078D4</Color>
             <Color x:Key="RingBubbleBackgroundColor">#FFFFFF</Color>
             <!-- See the matching comment in the Dark dictionary above. -->
             <Color x:Key="RingBubbleGlassTintColor">#66FFFFFF</Color>
@@ -158,34 +169,39 @@
             <SolidColorBrush x:Key="SwiftXBorderBrush" Color="{StaticResource SwiftXBorderColor}"/>
             <SolidColorBrush x:Key="SwiftXMutedBrush" Color="{StaticResource SwiftXMutedColor}"/>
             <SolidColorBrush x:Key="SwiftXAccentBrush" Color="{StaticResource SwiftXAccentColor}"/>
+            <SolidColorBrush x:Key="SwiftXCopyHoverBrush" Color="{StaticResource SwiftXCopyHoverColor}"/>
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
             <SolidColorBrush x:Key="RingBubbleGlassTint" Color="{StaticResource RingBubbleGlassTintColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
-            <!-- Settings-only root fill, same idea as the Dark dictionary's, now on
-                 docs/logi_options_design_features.md's light Canvas Background: "Pure White
-                 (#FFFFFF) to soft, cold off-white". This is the pure-white end. It is also the
+            <!-- See the matching comment in the Dark dictionary above. Light's dialog surface is
+                 the plain white it has always been — the shared SwiftXSurfaceBrush was already
+                 right under Light, only Dark was showing the wrong theme — but it gets the same
+                 dedicated key anyway, so AddItemWindow never again depends on a shared brush
+                 happening to match by coincidence. -->
+            <SolidColorBrush x:Key="SwiftXDialogSurfaceBrush" Color="#FFFFFF"/>
+            <!-- Settings-only root fill, same idea as the Dark dictionary's: a pure-white canvas
+                 with a soft, cold off-white at the edges. This is the pure-white end. It is also the
                  inversion of what Light Settings used to be — see the card comment below, which is
                  where that change actually shows. Matches SwiftXCanvasBrush so Root's own background
                  (visible around the title bar) agrees with the content area exactly. -->
             <Color x:Key="SettingsSurfaceColor">#FFFFFF</Color>
             <SolidColorBrush x:Key="SettingsSurfaceBrush" Color="{StaticResource SettingsSurfaceColor}"/>
-            <!-- Logi's "Very Light Blue / Matte Gray" card background, #F0F4F8. This inverts the
-                 relationship Light Settings had before: it used to be a #F3F3F3 canvas with cards
-                 a step *lighter* at pure #FFFFFF, so cards read as raised white panels on grey.
-                 Logi's light mode is the other way round — a pure white canvas with cards a cool
-                 tint *darker*, so they read as recessed panels inset into the page. That reversal is
-                 the single biggest visual change in this palette and it is intentional; the stroke
-                 below is retinted to match (a cool #DDE4EC rather than the old neutral #CCCCCC) so
-                 the card edge belongs to the same cool family as its fill instead of cutting a grey
-                 line across it. -->
+            <!-- A cool light card background, #F0F4F8. This inverts the relationship Light Settings
+                 had before: it used to be a #F3F3F3 canvas with cards a step *lighter* at pure
+                 #FFFFFF, so cards read as raised white panels on grey. The new light mode is the
+                 other way round — a pure white canvas with cards a cool tint *darker*, so they read
+                 as recessed panels inset into the page. That reversal is the single biggest visual
+                 change in this palette and it is intentional; the stroke below is retinted to match
+                 (a cool #DDE4EC rather than the old neutral #CCCCCC) so the card edge belongs to the
+                 same cool family as its fill instead of cutting a grey line across it. -->
             <SolidColorBrush x:Key="SwiftXCardBackgroundBrush" Color="#F0F4F8"/>
             <SolidColorBrush x:Key="SwiftXCardStrokeBrush" Color="#DDE4EC"/>
             <!-- The NavigationView content area — pure white, per the canvas comment above. The
                  pane no longer shares this brush: it has its own SwiftXNavPaneBrush below, which
                  Light previously did not define at all. -->
             <SolidColorBrush x:Key="SwiftXCanvasBrush" Color="#FFFFFF"/>
-            <!-- New in Light (Dark and Default have always had this key). Logi's light mode gives
+            <!-- New in Light (Dark and Default have always had this key). The light mode gives
                  the control pane the same cool matte tone as its cards, one step off the white
                  canvas beside it, so the pane reads as its own surface rather than as more canvas.
                  With the canvas now pure white there is nothing left for the pane to differ from
@@ -229,11 +245,11 @@
                  against the old #F3F3F3. -->
             <StaticResource x:Key="NavigationViewContentBackground" ResourceKey="SwiftXCanvasBrush"/>
 
-            <!-- See the matching comment in the Dark dictionary above. Secondary Label Text is
-                 Logi's "Mid-tone Slate Gray" #555555 (the shared SwiftXMutedBrush stays #666666).
-                 The accent is a deepened version of Logi's signature teal rather than the bright
-                 one Dark uses: as link text on a white card the bright teal lands near 1.8:1, well
-                 under WCAG AA, while #0B7C7C holds the same hue at ~5:1. -->
+            <!-- See the matching comment in the Dark dictionary above. Secondary Label Text is a
+                 cool slate grey #555555 (the shared SwiftXMutedBrush stays #666666). The accent is a
+                 deepened teal rather than the bright one Dark uses: as link text on a white card the
+                 bright teal lands near 1.8:1, well under WCAG AA, while #0B7C7C holds the same hue
+                 at ~5:1. -->
             <SolidColorBrush x:Key="SettingsSecondaryTextBrush" Color="#555555"/>
             <SolidColorBrush x:Key="SettingsAccentBrush" Color="#0B7C7C"/>
             <SolidColorBrush x:Key="SettingsAccentHoverBrush" Color="#095E5E"/>
@@ -250,6 +266,8 @@
             <Color x:Key="SwiftXBorderColor">#333333</Color>
             <Color x:Key="SwiftXMutedColor">#888888</Color>
             <Color x:Key="SwiftXAccentColor">#FFFFFF</Color>
+            <!-- See the matching comment in the Dark dictionary above. -->
+            <Color x:Key="SwiftXCopyHoverColor">#60CDFF</Color>
             <Color x:Key="RingBubbleBackgroundColor">#000000</Color>
             <!-- The ring bubbles' live-glass tint (RingWindow's CreateBubble/ApplyBubbleFill) —
                  sits over a real DesktopAcrylicBackdrop, so this only needs to carry SwiftX's own
@@ -265,10 +283,15 @@
             <SolidColorBrush x:Key="SwiftXBorderBrush" Color="{StaticResource SwiftXBorderColor}"/>
             <SolidColorBrush x:Key="SwiftXMutedBrush" Color="{StaticResource SwiftXMutedColor}"/>
             <SolidColorBrush x:Key="SwiftXAccentBrush" Color="{StaticResource SwiftXAccentColor}"/>
+            <SolidColorBrush x:Key="SwiftXCopyHoverBrush" Color="{StaticResource SwiftXCopyHoverColor}"/>
             <SolidColorBrush x:Key="RingBubbleBackground" Color="{StaticResource RingBubbleBackgroundColor}"/>
             <SolidColorBrush x:Key="RingBubbleGlassTint" Color="{StaticResource RingBubbleGlassTintColor}"/>
             <SolidColorBrush x:Key="RingHubBackground" Color="{StaticResource RingHubBackgroundColor}"/>
             <SolidColorBrush x:Key="RingWindowBackground" Color="{StaticResource RingWindowBackgroundColor}"/>
+            <!-- See the matching comment in the Dark dictionary above — Default carries Dark's
+                 value verbatim, so the dialog can't flash a different surface before ActualTheme
+                 resolves. -->
+            <SolidColorBrush x:Key="SwiftXDialogSurfaceBrush" Color="#222222"/>
             <!-- See the matching comment in the Dark dictionary above. -->
             <Color x:Key="SettingsSurfaceColor">#222222</Color>
             <SolidColorBrush x:Key="SettingsSurfaceBrush" Color="#D9222222"/>

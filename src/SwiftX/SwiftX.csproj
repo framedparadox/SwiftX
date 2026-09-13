@@ -21,7 +21,11 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>enable</ImplicitUsings>
 
-    <WindowsPackageType>None</WindowsPackageType>
+    <!-- Unpackaged by default so `dotnet build`/`dotnet run` stay exactly as documented in the
+         README's dev loop. A packaging build overrides this from the command line
+         (-p:WindowsPackageType=MSIX) to produce a Store-ready MSIX from Package.appxmanifest —
+         see the README's "Packaging for the Microsoft Store" section. -->
+    <WindowsPackageType Condition="'$(WindowsPackageType)' == ''">None</WindowsPackageType>
     <EnableMsixTooling>true</EnableMsixTooling>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>

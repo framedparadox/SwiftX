@@ -7,9 +7,17 @@ namespace SwiftX.Services;
 /// <summary>Loads and saves configuration as JSON under %AppData%\SwiftX\ring.json.</summary>
 public static class RingStore
 {
-    public static string DataDirectory { get; } = ResolveDataDirectory();
+    public static string DataDirectory { get; } = ResolveDataDirectory(Environment.SpecialFolder.ApplicationData);
 
-    private static string ResolveDataDirectory()
+    /// <summary>
+    /// Resolves a per-user SwiftX data directory under <paramref name="folder"/>, honoring
+    /// <c>SWIFTX_DATA_DIR</c> first — shared with <see cref="SecureValueStore"/>, which resolves
+    /// under <see cref="Environment.SpecialFolder.LocalApplicationData"/> instead of this class's
+    /// own <see cref="Environment.SpecialFolder.ApplicationData"/>, so both stores still land in
+    /// the same throwaway directory under <c>SWIFTX_DATA_DIR</c> during tests (see
+    /// <c>TestEnvironment</c>'s module initializer) even though they diverge in production.
+    /// </summary>
+    public static string ResolveDataDirectory(Environment.SpecialFolder folder)
     {
         var custom = Environment.GetEnvironmentVariable("SWIFTX_DATA_DIR");
         if (!string.IsNullOrWhiteSpace(custom))
@@ -17,8 +25,7 @@ public static class RingStore
             try { return Path.GetFullPath(custom); }
             catch { /* fall through */ }
         }
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SwiftX");
+        return Path.Combine(Environment.GetFolderPath(folder), "SwiftX");
     }
 
     private static readonly string FilePath = Path.Combine(DataDirectory, "ring.json");

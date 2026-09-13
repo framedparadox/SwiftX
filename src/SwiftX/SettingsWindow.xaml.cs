@@ -26,9 +26,8 @@ namespace SwiftX;
 /// including the hot corner), General (the invoke shortcut and app-wide settings), Elements,
 /// Tools, and — pinned to the footer — Feedback &amp; Support, About, and Privacy.
 /// <para>
-/// This window, and only this window, follows the Logi Options+ palette (see
-/// <c>docs/logi_options_design_features.md</c> and the Settings-exclusive keys in
-/// <c>Themes/Colors.xaml</c>); the ring, AddItemWindow, and the tool windows keep the app's shared
+/// This window, and only this window, follows its own Settings-exclusive palette in
+/// <c>Themes/Colors.xaml</c>; the ring, AddItemWindow, and the tool windows keep the app's shared
 /// black/white identity, which is why the shared <c>SwiftX*</c> brushes are deliberately left
 /// alone here.
 /// </para>
@@ -39,9 +38,7 @@ namespace SwiftX;
 /// through Dark's brushes) under the layered, alpha-carrying plates in the Dark dictionary of
 /// <c>Themes/Colors.xaml</c> (nav pane, content canvas, cards, and the recessed "tray" areas each
 /// a deliberately different shade), so the surfaces stay visually distinct from each other while
-/// still letting Mica's own wallpaper tint read through every one of them. That alpha is why Dark
-/// lands near Logi's flat hexes rather than exactly on them — a deliberate trade to keep the
-/// frosted-glass look rather than making Mica a no-op.
+/// still letting Mica's own wallpaper tint read through every one of them.
 /// </para>
 /// </summary>
 public sealed partial class SettingsWindow : Window
@@ -138,6 +135,7 @@ public sealed partial class SettingsWindow : Window
         PreviewCanvas.PointerMoved += Preview_PointerMoved;
         PreviewCanvas.PointerReleased += Preview_PointerReleased;
         PreviewCanvas.PointerCaptureLost += (_, _) => EndPreviewDrag();
+        PreviewCanvas.RightTapped += Preview_RightTapped;
 
         GroupChildrenCanvas.PointerPressed += GroupRow_PointerPressed;
         GroupChildrenCanvas.PointerMoved += GroupRow_PointerMoved;
@@ -181,6 +179,7 @@ public sealed partial class SettingsWindow : Window
         {
             _loading = true;
             SelectTheme(_manager.Config.Theme);
+            PopulateLanguageBox();
             SelectHoverStyle(_manager.Config.HoverStyle);
             SelectItemSize(_manager.Config.ItemSize);
             RadiusSlider.Value = _manager.Config.RingRadius ?? RingMetrics.DefaultRadius;
@@ -495,7 +494,7 @@ public sealed partial class SettingsWindow : Window
     /// <summary>
     /// Rim colors for Settings, as COLORREFs (0x00BBGGRR) — these must track
     /// <c>SettingsSurfaceColor</c>/<c>SwiftXCanvasBrush</c> in <c>Themes/Colors.xaml</c> (now the
-    /// Logi Options+ canvas values, #FFFFFF and #222222), not the shared black/white every other
+    /// Settings canvas values, #FFFFFF and #222222), not the shared black/white every other
     /// window's rim still uses. Leave one stale after a palette change and the window grows a
     /// visible hairline where the rim stops matching the surface behind it. Both are neutral greys,
     /// so channel order is moot; the cool-tinted card/pane colors never reach the rim.
@@ -564,10 +563,11 @@ public sealed partial class SettingsWindow : Window
         var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
 
-        // Match the ring: the center is the app mark alone, painted on nothing. A filled plate
-        // here read as a big empty hole that does not exist on the real thing.
+        // Match the ring: the center is the app mark alone, painted on nothing — floating form and
+        // all, so the preview shows the same shadow the real hub has. A filled plate here read as a
+        // big empty hole that does not exist on the real thing.
         double logo = RingMetrics.HubLogo * scale;
-        var hub = AppLogo.Create(logo);
+        var hub = AppLogo.CreateFloating(logo);
         Canvas.SetLeft(hub, cx - logo / 2);
         Canvas.SetTop(hub, cy - logo / 2);
         PreviewCanvas.Children.Add(hub);
@@ -617,6 +617,7 @@ public sealed partial class SettingsWindow : Window
             else
             {
                 border.Child = PreviewGlyph(item.Glyph, glyphSize, foreground);
+                ToolTipService.SetToolTip(border, $"{item.DisplayName} — right-click to replace or delete");
                 _slotBorders[i] = border;
             }
 
@@ -635,9 +636,17 @@ public sealed partial class SettingsWindow : Window
     /// picture says which corner as much as what.
     /// <para>
     /// Editable, like the ring view beside it: one more place than the corner holds is drawn (up
-    /// to the four it can hold) and offers a +, each filled place carries a remove badge, and any
-    /// of them can be dragged onto another to reorder. The first such edit turns the corner's
-    /// default pick into an arrangement of the user's own — see <see cref="HotCornerItems"/>.
+    /// to the four it can hold) and offers a +, any place can be dragged onto another to reorder,
+    /// and right-clicking a filled one replaces or removes what is in it
+    /// (<see cref="BuildQuadrantItemMenu"/>). The first such edit turns the corner's default pick
+    /// into an arrangement of the user's own — see <see cref="HotCornerItems"/>.
+    /// </para>
+    /// <para>
+    /// Nothing is drawn but the places themselves. The guide arc the items used to be strung
+    /// along, and the remove badge each filled one used to wear, are both gone: the arc drew a
+    /// line through a picture whose whole job is to show where the items sit, and the badges put a
+    /// permanent piece of chrome on every item to carry one command that the context menu now
+    /// holds alongside the other.
     /// </para>
     /// </summary>
     private void RenderQuadrantPreview(double size)
@@ -675,16 +684,6 @@ public sealed partial class SettingsWindow : Window
         var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
 
-        // The arc the items sit on, so the shape reads as a quarter of the ring rather than four
-        // loose bubbles that happen to be curved. One place has no arc to speak of, and an arc
-        // whose two ends are the same point is ambiguous to draw, so it goes without.
-        if (slots > 1)
-        {
-            PreviewCanvas.Children.Add(BuildQuadrantArc(
-                corner, cx, cy, previewRadius, slots, hoverBubble, radius, muted));
-        }
-
-        var badges = new List<UIElement>();
         for (int i = 0; i < slots; i++)
         {
             double angle = QuadrantLayout.ScreenAngleRad(
@@ -707,81 +706,14 @@ public sealed partial class SettingsWindow : Window
                 Child = PreviewGlyph(
                     item?.Glyph ?? "\uE710", glyphSize, item is null || item.IsSystem ? muted : foreground),
             };
-            ToolTipService.SetToolTip(border, item?.DisplayName ?? "Add to this corner");
+            ToolTipService.SetToolTip(border, item is null
+                ? "Add to this corner"
+                : $"{item.DisplayName} — right-click to replace or remove");
             Canvas.SetLeft(border, left);
             Canvas.SetTop(border, top);
             PreviewCanvas.Children.Add(border);
             _quadrantSlotBorders[i] = border;
-
-            // The last item stays: a corner with nothing on it would summon an empty screen.
-            if (item is not null && items.Count > 1)
-                badges.Add(BuildQuadrantRemoveBadge(i, item, left, top, previewBubble));
         }
-
-        // Badges go on last so a bubble drawn after its neighbour can't cover one.
-        foreach (var badge in badges)
-            PreviewCanvas.Children.Add(badge);
-    }
-
-    /// <summary>The small × that takes one item back off the corner.</summary>
-    private Button BuildQuadrantRemoveBadge(int slot, RingItem item, double left, double top, double bubble)
-    {
-        const double badge = 18;
-        var button = new Button
-        {
-            Width = badge,
-            Height = badge,
-            Padding = new Thickness(0),
-            MinWidth = 0,
-            MinHeight = 0,
-            CornerRadius = new CornerRadius(badge / 2),
-            Content = new FontIcon { Glyph = char.ConvertFromUtf32(0xE711), FontSize = 9 },
-        };
-        ToolTipService.SetToolTip(button, $"Remove {item.DisplayName} from this corner");
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
-            button, $"Remove {item.DisplayName} from this corner");
-        button.Click += (_, _) => RemoveQuadrantItem(slot);
-
-        // Riding the bubble's upper-right shoulder, half on and half off it.
-        Canvas.SetLeft(button, left + bubble - badge * 0.75);
-        Canvas.SetTop(button, top - badge * 0.25);
-        return button;
-    }
-
-    /// <summary>The thin guide arc the quadrant's items are strung along.</summary>
-    private static Microsoft.UI.Xaml.Shapes.Path BuildQuadrantArc(
-        HotCorner corner, double cx, double cy, double previewRadius,
-        int count, double hoverBubble, double radius, Brush stroke)
-    {
-        double firstLocal = QuadrantLayout.LocalAngleRad(0, count, hoverBubble, radius);
-        double lastLocal = QuadrantLayout.LocalAngleRad(count - 1, count, hoverBubble, radius);
-        double first = QuadrantLayout.ScreenAngleRad(corner, firstLocal);
-        double last = QuadrantLayout.ScreenAngleRad(corner, lastLocal);
-
-        var start = new Point(cx + previewRadius * Math.Cos(first), cy + previewRadius * Math.Sin(first));
-        var end = new Point(cx + previewRadius * Math.Cos(last), cy + previewRadius * Math.Sin(last));
-
-        // Which way round the arc is drawn flips with the corner, because two of the four mirror
-        // the sweep; comparing the canvas angles says which without special-casing each corner.
-        var figure = new PathFigure { StartPoint = start, IsClosed = false, IsFilled = false };
-        figure.Segments.Add(new ArcSegment
-        {
-            Point = end,
-            Size = new Size(previewRadius, previewRadius),
-            SweepDirection = last > first ? SweepDirection.Clockwise : SweepDirection.Counterclockwise,
-            IsLargeArc = false,
-        });
-        var geometry = new PathGeometry();
-        geometry.Figures.Add(figure);
-
-        return new Microsoft.UI.Xaml.Shapes.Path
-        {
-            Data = geometry,
-            Stroke = stroke,
-            StrokeThickness = 1,
-            Opacity = 0.5,
-            IsHitTestVisible = false,
-        };
     }
 
     /// <summary>
@@ -862,7 +794,19 @@ public sealed partial class SettingsWindow : Window
     /// </summary>
     private void Preview_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        var point = e.GetCurrentPoint(PreviewCanvas).Position;
+        var current = e.GetCurrentPoint(PreviewCanvas);
+
+        // Left button only — which a touch contact and a pen tip both report as. A right press
+        // belongs to the context menu (see Preview_RightTapped); picking a bubble up on it would
+        // leave the canvas holding a drag, and the release that ends it would read as a plain
+        // click and open the inspector behind the menu.
+        if (!current.Properties.IsLeftButtonPressed)
+        {
+            EndPreviewDrag();
+            return;
+        }
+
+        var point = current.Position;
         _dragSlot = _previewQuadrant ? QuadrantSlotAt(point) : PreviewSlotAt(point);
         _dragBorder = _dragSlot >= 0
             ? (_previewQuadrant ? _quadrantSlotBorders[_dragSlot] : _slotBorders[_dragSlot])
@@ -1097,6 +1041,181 @@ public sealed partial class SettingsWindow : Window
                 RenderPreview();
             }, _manager.Config.Primary.Items);
         }
+    }
+
+    /// <summary>
+    /// The dock's own edit menu: right-clicking an item on either view offers to swap what is in
+    /// that place or take it out of it, so the two things you can do to an item you can already
+    /// see are done where you see it, rather than only on the Elements tab (the ring) or through a
+    /// badge pinned to every bubble (the corner, which no longer has one).
+    /// </summary>
+    private void Preview_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        var point = e.GetPosition(PreviewCanvas);
+        var menu = _previewQuadrant ? BuildQuadrantItemMenu(point) : BuildRingItemMenu(point);
+        if (menu is null)
+            return;
+
+        e.Handled = true;
+        menu.ShowAt(PreviewCanvas, new FlyoutShowOptions { Position = point });
+    }
+
+    /// <summary>
+    /// The menu for a ring slot, or null when the point is not on an item the user owns — an
+    /// empty slot is filled by clicking it, and Settings/Close are the ring's own and cannot be
+    /// replaced or removed at all.
+    /// </summary>
+    private MenuFlyout? BuildRingItemMenu(Point point)
+    {
+        int slot = PreviewSlotAt(point);
+        if (slot < 0 || slot >= RingMetrics.UserSlotCount)
+            return null;
+
+        // Only a filled user slot has a border recorded here — RenderPreview leaves the pinned and
+        // empty ones out — so this doubles as the "is this actually editable" check.
+        if (_slotBorders[slot]?.Tag is not RingItem item)
+            return null;
+
+        // The built-in tools are the Tools tab's, exactly as on the Elements tab, which leaves
+        // them out of its own list for the same reason: deleting the Tools group here would only
+        // have it rebuilt on the next start (ToolCatalog.EnsureToolsGroup), and a tool is taken off
+        // the ring by switching it off there, not by deleting it.
+        if (IsToolsOwned(item))
+            return null;
+
+        return BuildItemMenu(
+            item.DisplayName,
+            replace: () => ReplaceRingItem(item),
+            remove: () => RemoveRingItem(item),
+            removeLabel: "Delete",
+            canRemove: true);
+    }
+
+    /// <summary>
+    /// Quadrant counterpart of <see cref="BuildRingItemMenu"/>. The Tools group is editable here
+    /// where it is not on the ring: taking it off the corner is a change to the corner's own
+    /// arrangement, and leaves the ring's copy exactly where it was.
+    /// </summary>
+    private MenuFlyout? BuildQuadrantItemMenu(Point point)
+    {
+        int slot = QuadrantSlotAt(point);
+        if (slot < 0 || _quadrantSlotBorders[slot]?.Tag is not RingItem item)
+            return null;
+
+        // The last item stays: a corner with nothing on it would summon an empty screen. Shown
+        // greyed rather than left out, so the menu is the same shape whichever item it opens on.
+        int count = HotCornerItems.Resolve(_manager.Config, SystemRingItems.CreateSettings()).Count;
+
+        return BuildItemMenu(
+            item.DisplayName,
+            replace: () => ReplaceQuadrantItem(slot),
+            remove: () => RemoveQuadrantItem(slot),
+            removeLabel: "Remove from corner",
+            canRemove: count > 1);
+    }
+
+    private static MenuFlyout BuildItemMenu(
+        string name, Action replace, Action remove, string removeLabel, bool canRemove)
+    {
+        var menu = new MenuFlyout();
+
+        var replaceItem = new MenuFlyoutItem
+        {
+            Text = "Replace…",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE70F) },
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(replaceItem, "Replace " + name);
+        replaceItem.Click += (_, _) => replace();
+        menu.Items.Add(replaceItem);
+
+        var removeItem = new MenuFlyoutItem
+        {
+            Text = removeLabel,
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D) },
+            IsEnabled = canRemove,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(removeItem, removeLabel + " " + name);
+        removeItem.Click += (_, _) => remove();
+        menu.Items.Add(removeItem);
+
+        return menu;
+    }
+
+    /// <summary>Whether an item on the ring belongs to the Tools tab rather than to the user —
+    /// the same two cases <see cref="RebuildItemsList"/> leaves out of the Elements list.</summary>
+    private static bool IsToolsOwned(RingItem item) =>
+        item.IsTool ||
+        (item.IsGroup && string.Equals(
+            item.Target, ToolCatalog.ToolsGroupTarget, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Swaps one ring item for a newly added one in the same place, rather than dropping the old
+    /// one and appending the new one at the end — replacing is a change of what is in a slot, not
+    /// a rearrangement of the ring. The position is re-read inside the callback because the dialog
+    /// is modeless: the list can have moved on by the time it comes back.
+    /// <para>
+    /// Replacing a group takes its children with it, the same way deleting one does on the
+    /// Elements tab — they exist only inside it.
+    /// </para>
+    /// </summary>
+    private void ReplaceRingItem(RingItem item)
+    {
+        var items = _manager.Config.Primary.Items;
+        _manager.OpenAddItem(
+            added =>
+            {
+                int at = items.IndexOf(item);
+                if (at < 0)
+                    items.Add(added);
+                else
+                    items[at] = added;
+
+                if (ReferenceEquals(_expandedGroup, item)) CollapseGroup();
+                if (ReferenceEquals(_selectedItem, item)) HideInfo();
+                _manager.NotifyItemsChanged();
+                RenderPreview();
+                RebuildItemsList();
+            },
+            items,
+            heading: "Replace " + item.DisplayName,
+            confirmLabel: "Replace");
+    }
+
+    /// <summary>Takes one item off the ring — the same delete the Elements tab's own rows do.</summary>
+    private void RemoveRingItem(RingItem item)
+    {
+        if (!_manager.Config.Primary.Items.Remove(item))
+            return;
+
+        if (ReferenceEquals(_expandedGroup, item)) CollapseGroup();
+        if (ReferenceEquals(_selectedItem, item)) HideInfo();
+        _manager.NotifyItemsChanged();
+        RenderPreview();
+        RebuildItemsList();
+    }
+
+    /// <summary>
+    /// Quadrant counterpart of <see cref="ReplaceRingItem"/>. Writes into the corner's own stored
+    /// arrangement and nowhere else — the ring keeps whatever it had, exactly as
+    /// <see cref="RemoveQuadrantItem"/> and <see cref="AddQuadrantItem"/> already do.
+    /// </summary>
+    private void ReplaceQuadrantItem(int slot)
+    {
+        _manager.OpenAddItem(
+            added =>
+            {
+                var list = HotCornerItems.Edit(_manager.Config, SystemRingItems.CreateSettings());
+                if (slot < 0 || slot >= list.Count)
+                    return;
+
+                list[slot] = added;
+                _manager.Save();
+                HideInfo();
+                RenderPreview();
+            },
+            _manager.Config.HotCornerRing,
+            heading: "Replace on this corner",
+            confirmLabel: "Replace");
     }
 
     private void EndPreviewDrag()
@@ -1556,6 +1675,24 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
+    /// <summary>
+    /// Fills <c>LanguageBox</c> from <see cref="LanguageCatalog.Options"/> and selects whichever
+    /// entry matches <see cref="AppConfig.Language"/>. Built in code-behind rather than as static
+    /// ComboBoxItems in XAML (unlike ThemeBox/HoverStyleBox) because each entry's Content is that
+    /// language's own native name — data, not markup.
+    /// </summary>
+    private void PopulateLanguageBox()
+    {
+        LanguageBox.Items.Clear();
+        foreach (var option in LanguageCatalog.Options)
+        {
+            var item = new ComboBoxItem { Content = option.NativeName, Tag = option.Language.ToString() };
+            LanguageBox.Items.Add(item);
+            if (option.Language == _manager.Config.Language)
+                LanguageBox.SelectedItem = item;
+        }
+    }
+
     private void SelectHoverStyle(RingHoverStyle style)
     {
         foreach (ComboBoxItem item in HoverStyleBox.Items)
@@ -1594,6 +1731,17 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
+    private void LanguageBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || LanguageBox.SelectedItem is not ComboBoxItem item) return;
+        if (Enum.TryParse<AppLanguage>(item.Tag as string, out var language))
+        {
+            _manager.Config.Language = language;
+            _manager.Save();
+            _manager.ApplyLanguage();
+        }
+    }
+
     /// <summary>
     /// PLACEHOLDER. SwiftX has no Microsoft Store listing yet — it builds unpackaged
     /// (<c>WindowsPackageType=None</c>), so there is no product id to point at. Every Store link on
@@ -1629,16 +1777,37 @@ public sealed partial class SettingsWindow : Window
     private void StarOnGitHub_Click(object sender, RoutedEventArgs e) =>
         Launcher.OpenUrl(GitHubRepoUrl);
 
+    /// <summary>
+    /// The terms the app ships under, as the copy of them that lives with the source rather than a
+    /// string of legal text baked into the binary: the document can then be corrected without a new
+    /// build, and the link keeps pointing at whatever the current one says. Held beside the other
+    /// outbound links rather than in About's own code so every URL this window can open is in one
+    /// place.
+    /// </summary>
+    private const string TermsUrl = GitHubRepoUrl + "/blob/main/TERMS.md";
+
     private void ReportIssue_Click(object sender, RoutedEventArgs e) =>
         Launcher.OpenUrl(StoreListingUrl);
 
+    private void OpenTerms_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(TermsUrl);
+
+    /// <summary>The inline "Read privacy" link at the foot of Feedback &amp; Support.</summary>
+    private void OpenPrivacyFromFeedback_Click(Hyperlink sender, HyperlinkClickEventArgs args) =>
+        GoToPrivacyPage();
+
+    /// <summary>About's own Privacy link, beside Terms and conditions.</summary>
+    private void OpenPrivacyFromAbout_Click(object sender, RoutedEventArgs e) =>
+        GoToPrivacyPage();
+
     /// <summary>
-    /// Moves to the Privacy page instead of opening anything. Selecting the NavigationViewItem
-    /// rather than flipping panel Visibility directly, so Nav_SelectionChanged stays the single
-    /// place that knows which panel belongs to which tag, and the nav pane's own selection follows
-    /// along the way it would if the user had clicked Privacy themselves.
+    /// Moves to the Privacy page instead of opening anything — it is a page of this window, not a
+    /// page on the web. Selecting the NavigationViewItem rather than flipping panel Visibility
+    /// directly, so Nav_SelectionChanged stays the single place that knows which panel belongs to
+    /// which tag, and the nav pane's own selection follows along the way it would if the user had
+    /// clicked Privacy themselves.
     /// </summary>
-    private void OpenPrivacyFromFeedback_Click(Hyperlink sender, HyperlinkClickEventArgs args)
+    private void GoToPrivacyPage()
     {
         foreach (var item in Nav.FooterMenuItems)
         {
@@ -1693,6 +1862,7 @@ public sealed partial class SettingsWindow : Window
         RatingThanks.Visibility = Visibility.Visible;
     }
 
+
     private void HoverStyleBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || HoverStyleBox.SelectedItem is not ComboBoxItem item) return;
@@ -1741,9 +1911,11 @@ public sealed partial class SettingsWindow : Window
         _manager.Config.EnsurePrimary();
         _manager.NotifyItemsChanged();
         _manager.ApplyTheme();
+        _manager.ApplyLanguage();
         _manager.ApplyHotCorner();
         ApplyTheme();
         _loading = true;
+        PopulateLanguageBox();
         HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
         SelectHotCorner(_manager.Config.HotCorner);
         SelectHotCornerLayout(_manager.Config.HotCornerLayout);
@@ -2278,6 +2450,7 @@ public sealed partial class SettingsWindow : Window
     // silently swapped for a different (or invisible) private-use character by a stray
     // copy/paste. See the memory note on this exact failure mode.
     private static readonly string DataGlyph = char.ConvertFromUtf32(0xE943);
+    private static readonly string QuickFormatGlyph = char.ConvertFromUtf32(0xE917);
     private static readonly string SecureValuesGlyph = char.ConvertFromUtf32(0xE72E);
     private static readonly string CertificateGlyph = char.ConvertFromUtf32(0xEB95);
 
@@ -2285,6 +2458,8 @@ public sealed partial class SettingsWindow : Window
     [
         new("Data", ToolKind.Data, "Data formatter", "Auto-detect JSON or XML and format it.", DataGlyph, false,
             c => c.ShowDataTool, (c, v) => c.ShowDataTool = v),
+        new("QuickFormat", ToolKind.QuickFormat, "Quick Format", "Auto-format your last copied JSON, XML, YAML or CSV.", QuickFormatGlyph, false,
+            c => c.ShowQuickFormatTool, (c, v) => c.ShowQuickFormatTool = v),
         new("SecureValues", ToolKind.SecureValues, "Secure values", "Local key/secret store with masked values.", SecureValuesGlyph, false,
             c => c.ShowSecureValuesTool, (c, v) => c.ShowSecureValuesTool = v),
         new("Base64", ToolKind.Base64, "Base64", "Encode and decode Base64 text.", "B64", true,

@@ -209,6 +209,7 @@ public sealed class CertificatePage : EditorToolPage
         var passwordBox = new PasswordBox { PlaceholderText = Loc.Get("Certificate.PasswordPlaceholder"), Width = 240 };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(passwordBox, Loc.Get("Certificate.PasswordPlaceholder"));
         var unlockButton = new Button { Content = Loc.Get("Certificate.Unlock"), VerticalAlignment = VerticalAlignment.Center };
+        ApplyHoverIconColor(unlockButton, HoverAccent.Accent);
 
         void Submit() => Process(passwordBox.Password);
         unlockButton.Click += (_, _) => Submit();
@@ -526,6 +527,7 @@ public sealed class CertificatePage : EditorToolPage
         };
         ToolTipService.SetToolTip(copyButton, Loc.Get("Tool.CopyOutput"));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(copyButton, Loc.Format("Certificate.CopyField", label));
+        ApplyHoverIconColor(copyButton, HoverAccent.Copy);
         copyButton.Click += (_, _) =>
         {
             var package = new DataPackage();

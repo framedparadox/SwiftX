@@ -24,6 +24,7 @@ public class RingStoreTests : IDisposable
         var config = new AppConfig
         {
             Theme = AppTheme.Light,
+            Language = AppLanguage.French,
             ItemSize = RingItemSize.Small,
             Hotkey = "Ctrl+Alt+Space",
             ShowDataTool = true,
@@ -65,6 +66,7 @@ public class RingStoreTests : IDisposable
 
         Assert.NotNull(restored);
         Assert.Equal(AppTheme.Light, restored!.Theme);
+        Assert.Equal(AppLanguage.French, restored.Language);
         Assert.Equal(RingItemSize.Small, restored.ItemSize);
         Assert.Equal("Ctrl+Alt+Space", restored.Hotkey);
         Assert.True(restored.ShowDataTool);

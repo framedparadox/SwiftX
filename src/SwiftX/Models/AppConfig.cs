@@ -40,6 +40,9 @@ public sealed class AppConfig
     public bool LaunchAtStartup { get; set; }
     public AppTheme Theme { get; set; } = AppTheme.Dark;
 
+    /// <summary>The UI language — see <see cref="AppLanguage"/> and <see cref="Services.Loc"/>.</summary>
+    public AppLanguage Language { get; set; } = AppLanguage.System;
+
     /// <summary>How ring items respond to the pointer. See <see cref="RingHoverStyle"/>.</summary>
     public RingHoverStyle HoverStyle { get; set; } = RingHoverStyle.Invert;
 
@@ -69,6 +72,7 @@ public sealed class AppConfig
 
     public double? RingRadius { get; set; }
     public bool ShowDataTool { get; set; } = true;
+    public bool ShowQuickFormatTool { get; set; } = true;
     public bool ShowSecureValuesTool { get; set; } = true;
     public bool ShowBase64Tool { get; set; } = true;
     public bool ShowCertificateTool { get; set; } = true;
@@ -106,6 +110,7 @@ public sealed class AppConfig
     public bool IsToolShown(ToolKind kind) => kind switch
     {
         ToolKind.Data => ShowDataTool,
+        ToolKind.QuickFormat => ShowQuickFormatTool,
         ToolKind.SecureValues => ShowSecureValuesTool,
         ToolKind.Base64 => ShowBase64Tool,
         ToolKind.Certificate => ShowCertificateTool,
@@ -128,6 +133,7 @@ public sealed class AppConfig
     {
         LaunchAtStartup = other.LaunchAtStartup;
         Theme = other.Theme;
+        Language = other.Language;
         HoverStyle = other.HoverStyle;
         Hotkey = other.Hotkey;
         HotkeyEnabled = other.HotkeyEnabled;
@@ -138,6 +144,7 @@ public sealed class AppConfig
         ItemSize = other.ItemSize;
         RingRadius = other.RingRadius;
         ShowDataTool = other.ShowDataTool;
+        ShowQuickFormatTool = other.ShowQuickFormatTool;
         ShowSecureValuesTool = other.ShowSecureValuesTool;
         ShowBase64Tool = other.ShowBase64Tool;
         ShowCertificateTool = other.ShowCertificateTool;

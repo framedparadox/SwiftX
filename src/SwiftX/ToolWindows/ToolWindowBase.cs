@@ -33,6 +33,7 @@ public sealed class ToolWindowBase : Window
         var windowId = Win32Interop.GetWindowIdFromWindow(_hwnd);
         _appWindow = AppWindow.GetFromWindowId(windowId);
         page.HostHwnd = _hwnd;
+        page.HostManager = manager;
 
         Title = definition.DisplayName;
         ExtendsContentIntoTitleBar = true;
@@ -40,6 +41,15 @@ public sealed class ToolWindowBase : Window
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _root.Background = ThemeHelper.Brush(_root, "SwiftXSurfaceBrush");
+
+        // Mirror the whole window for right-to-left languages (Arabic, Hebrew). The tool page's
+        // contents are localized and built fresh each time the window opens (see
+        // ToolWindowLauncher), so reading the direction once here at construction is enough — a
+        // language change takes effect the next time a tool window is opened, the same way its
+        // translated text does. FlowDirection propagates down to the page and title bar.
+        _root.FlowDirection = Loc.CurrentIsRightToLeft
+            ? FlowDirection.RightToLeft
+            : FlowDirection.LeftToRight;
 
         var titleBar = new AppTitleBar(definition.Glyph, definition.DisplayName, page.HeaderActions);
         Grid.SetRow(titleBar, 0);
@@ -59,8 +69,9 @@ public sealed class ToolWindowBase : Window
         }
         _appWindow.IsShownInSwitchers = true;
 
+        var (width, height) = definition.WindowSize ?? (900, 640);
         WindowChrome.SetRoundedCorners(_hwnd);
-        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 900, 640);
+        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, width, height);
         WindowChrome.CenterOnCursor(_appWindow, windowId);
 
         Activated += (_, _) => ApplyChromeTheme();

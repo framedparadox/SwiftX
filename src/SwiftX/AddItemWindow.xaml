@@ -5,7 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Add to ring">
 
-    <Grid x:Name="Root" Background="{ThemeResource SwiftXSurfaceBrush}"
+    <Grid x:Name="Root" Background="{ThemeResource SwiftXDialogSurfaceBrush}"
           AllowDrop="True" DragOver="Root_DragOver" Drop="Root_Drop">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -139,6 +139,7 @@
                     <ComboBox x:Name="ToolBox" Width="280"
                               AutomationProperties.Name="Tool">
                         <ComboBoxItem Content="Data" Tag="Data" IsSelected="True" />
+                        <ComboBoxItem Content="Quick Format" Tag="QuickFormat" />
                         <ComboBoxItem Content="Secure values" Tag="SecureValues" />
                         <ComboBoxItem Content="Base64" Tag="Base64" />
                         <ComboBoxItem Content="Certificate" Tag="Certificate" />
@@ -155,7 +156,7 @@
                         <KeyboardAccelerator Key="Escape" />
                     </Button.KeyboardAccelerators>
                 </Button>
-                <Button Content="Add" MinWidth="140"
+                <Button x:Name="ConfirmButton" Content="Add" MinWidth="140"
                         Style="{ThemeResource AccentButtonStyle}" Click="Add_Click" />
             </StackPanel>
         </Grid>

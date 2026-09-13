@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/SwiftX.png" alt="SwiftX logo" width="140" height="140">
+  <img src="img/SwiftX.png" alt="SwiftX logo" width="140" height="140">
 </p>
 
 <h1 align="center">SwiftX</h1>
@@ -11,6 +11,15 @@ and links from it; pop groups open into an outer ring; and reach a set of built-
 (JSON/XML formatter, local secure values, Base64, certificate inspector) without leaving it.
 
 Everything runs on your own machine. There is no account, no telemetry, and nothing is uploaded.
+
+<p align="center">
+  <img src="img/SxiftX_Full.png" alt="The ring open on the desktop" width="49%">
+  <img src="img/SwiftX_HotCorner.png" alt="The hot corner quadrant" width="49%">
+</p>
+<p align="center">
+  <img src="img/SwiftX_Settings_Home.png" alt="Settings — Home, the live ring customizer" width="49%">
+  <img src="img/SwiftX_Settings_General.png" alt="Settings — General" width="49%">
+</p>
 
 ---
 
@@ -37,7 +46,9 @@ Everything runs on your own machine. There is no account, no telemetry, and noth
 - [How it works](#how-it-works)
 - [Tests](#tests)
 - [Theme](#theme)
+- [Language](#language)
 - [Brand and assets](#brand-and-assets)
+- [Packaging for the Microsoft Store](#packaging-for-the-microsoft-store)
 - [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
 
@@ -74,7 +85,7 @@ cover the screen without getting in the way of it.
 
 | Piece | What it is |
 |-------|------------|
-| **Hub** | The app mark at the center. Not a button for launching — clicking it closes an open group, or dismisses the ring when none is open. Fixed size; no setting scales it. |
+| **Hub** | The app mark at the center, floating on a soft drop shadow rather than sitting flat on the wallpaper. Not a button for launching — clicking it closes an open group, or dismisses the ring when none is open. Fixed size; no setting scales it. It turns a quarter turn as the ring is summoned, its four petals unfurling clockwise a beat apart, and unwinds the same way on dismissal. |
 | **Slots** | Eight positions around the ring, 45° apart, slot 0 straight up and advancing clockwise. |
 | **User slots** | The first six. Filled from your items in order; empty ones are simply not drawn. |
 | **Settings** | Always slot 7. A group: hovering it pops out its **Add new** quick action; clicking it opens the Settings window. |
@@ -207,6 +218,10 @@ The live ring customizer — what it shows is what the ring draws, at the curren
   the group.
 - **Drag an item** to another slot to rearrange. A drop lands on the nearest slot, even out past
   the bubbles — the intent is the nearest place, not a pixel-perfect landing.
+- **Right-click an item** for **Replace…** and **Delete**. Replace opens the same form the `+`
+  does and puts what you add into that same slot; a group goes with its children either way. The
+  built-in tools are the Tools page's — right-clicking one offers nothing, since a tool leaves the
+  ring by being switched off there.
 - **Add item… / Reset defaults** sit on the canvas itself, centered under the ring.
 
 **Size** — Small / Medium / Large. Scales the items around the ring; the hub is unaffected.
@@ -226,8 +241,11 @@ view the corner is editable:
 
 - **Drag** one place onto another to reorder.
 - **Click the empty place** (the `+`) to add — the item belongs to the corner, not the ring.
-- **Click the ×** on an item's shoulder to take it off the corner. The ring keeps it. The last item
-  has no × — a corner with nothing on it would summon an empty screen.
+- **Right-click an item** for **Replace…** and **Remove from corner**. The ring keeps whatever you
+  take off. On the last item Remove is greyed out — a corner with nothing on it would summon an
+  empty screen.
+
+Nothing else is drawn: no guide arc through the places, and no remove badge pinned to every item.
 
 "Reset defaults" clears your corner arrangement along with the ring, putting the corner back to
 following it.
@@ -237,6 +255,7 @@ following it.
 | Setting | What it does |
 |---------|--------------|
 | **Theme** | Light, Dark, or System. Solid surfaces only. |
+| **Language** | 19 languages plus System (follows Windows). The tool windows (Data Formatter, Secure values, Base64, Certificate) and the tray menu pick it up the next time they open; everything else applies on restart. Right-to-left languages (Arabic, Hebrew) mirror the tool windows' layout. See [Language](#language) for the full list. |
 | **Hover style** | **Invert** (default) swaps an item's fill to the opposite theme color under the pointer, growing it slightly. **Zoom** keeps the item's resting color and just shrinks it slightly instead. Close is unaffected either way — it always goes red. |
 | **Invoke** | The summon shortcut, its capture button, and an on/off switch. Reports whether Windows accepted the combination. |
 | **Start with Windows** | Per-user autostart. Unpackaged builds use the `HKCU\...\Run` key (no elevation); the MSIX build uses a declared startup task, so Windows lists it in Task Manager's Startup tab and honors a user override there. |
@@ -260,7 +279,8 @@ open button, and a drag handle. Dragging reorders the tools inside that group.
 
 ### About
 
-The app mark, what the app is, and its version.
+The app mark, what the app is, and its version, with links to the terms and conditions (which open
+in the browser) and to the Privacy page of this same window.
 
 ### Privacy
 
@@ -321,6 +341,7 @@ parse falls back to defaults rather than taking the app down with it.
 | `Rings` | array | one profile | Ring profiles. Only the first is used today; it holds your items. |
 | `LaunchAtStartup` | bool | `false` | Mirrors the "Start with Windows" switch. |
 | `Theme` | `Light`/`Dark`/`System` | `Dark` | Window and ring theme. |
+| `Language` | `System`/`EnglishUS`/`EnglishUK`/`French`/`German`/`Spanish`/`Italian`/`PortugueseBR`/`PortuguesePT`/`Dutch`/`Polish`/`Turkish`/`Russian`/`Arabic`/`Hebrew`/`Hindi`/`Japanese`/`ChineseSimplified`/`ChineseTraditional`/`Korean` | `System` | UI language. `System` follows Windows' own UI language, falling back to English (US). |
 | `HoverStyle` | `Invert`/`Zoom` | `Invert` | How a ring item reacts to the pointer — swap to the opposite color, or keep color and shrink slightly. |
 | `Hotkey` | string | `"Ctrl+Shift+S"` | Summon shortcut, in readable form so a hand-edited file stays legible. |
 | `HotkeyEnabled` | bool | `true` | Whether the shortcut is registered at all. |
@@ -429,7 +450,9 @@ src/SwiftX/
   Assets/SwiftX.ico        Executable icon; also the shell and tray icon
   Images/                  MSIX tile set
 
-docs/SwiftX.png            Master art every raster asset is generated from
+img/SwiftX.png             Master art every raster asset is generated from
+TERMS.md                   Terms and conditions, linked from Settings > About
+notes/                     Internal design/review notes (not shipped, not linked from the app)
 tools/                     One-off maintenance scripts (brand asset generation)
 ```
 
@@ -495,6 +518,34 @@ content) so the two read as distinct panels rather than one seamless field.
 
 ---
 
+## Language
+
+Settings → General → Language, right below Theme. Ships 19 languages plus System (follows Windows'
+own UI language, falling back to English (US) when Windows is set to a language SwiftX doesn't
+carry):
+
+- **Latin script:** English (US), English (UK), French, German, Spanish, Italian, Dutch, Polish,
+  Portuguese (Brazil), Portuguese (Portugal), Turkish
+- **Cyrillic:** Russian
+- **Right-to-left:** Arabic, Hebrew
+- **Devanagari:** Hindi
+- **CJK:** Korean, Japanese, Chinese (Simplified), Chinese (Traditional)
+
+Every string lives in `Services/Loc.cs` and the per-language tables under
+`Services/Localization/` (one file per language), keyed by short dotted names (`"Tray.Show"`)
+rather than the English text itself. English (US) is the base table; any key a language hasn't
+translated falls back to it, so a partial translation degrades to English row by row instead of
+showing raw keys. Switching language takes effect immediately for the Data Formatter, Secure
+values, Base64, and Certificate tool windows and the tray menu — they read the string table fresh
+each time they build their UI. Windows built once from literal XAML text (Settings itself, Add
+item, the ring's own tooltips) still need a restart.
+
+Arabic and Hebrew are right-to-left: the tool windows flip their `FlowDirection` to mirror the
+layout for those languages. `LanguageCatalog` carries the direction flag and the culture tag used
+to resolve **System** against Windows' own UI language.
+
+---
+
 ## Brand and assets
 
 The SwiftX mark is four gradient petals pinwheeled around a cross-shaped gap. Each petal is a
@@ -502,7 +553,7 @@ square with two opposite corners left sharp and the other two rounded off hard; 
 always straddles the middle, so one corner points into the centre and its opposite forms an outer
 corner of the mark.
 
-`docs/SwiftX.png` (1000x1000 RGBA) is the master. Every raster asset is derived from it:
+`img/SwiftX.png` (1000x1000 RGBA) is the master. Every raster asset is derived from it:
 
 | Asset | Where it shows up |
 |-------|-------------------|
@@ -528,8 +579,20 @@ on the Settings home page, the Settings About card, and the title bar of SwiftX'
 (Settings, and Add to ring) — those extend content into the caption, so Windows never draws a
 window icon for them and without this they would carry no mark at all.
 
+It comes in two forms. `AppLogo.Create` is the flat mark, for the About card and the title bars,
+where it sits on a solid surface. `AppLogo.CreateFloating` adds a composition drop shadow — one per
+petal, masked by what the petal actually paints, so the shadow is the mark's own pinwheel outline
+rather than a box behind it — and that is what the ring's hub and its preview use, because there the
+mark is painted straight onto the desktop with nothing under it to give it any depth of its own.
+
+Either form can play itself in and out (`AppLogo.Mark.PlayEntrance` / `PlayExit`), which is what the
+hub does on a summon and a dismissal: the whole mark swings a quarter turn while each petal, going
+round clockwise from the top-left a beat apart, untwists and grows into its quadrant; the dismissal
+is that rewound, last petal in first out. Only the petal layer turns — the shadow stays put, the way
+one does when the thing above it spins rather than the light moving.
+
 Its geometry and palette were measured off the master, and the two are kept in step by hand — a
-brand change means re-exporting `docs/SwiftX.png`, re-running the script above, and updating the
+brand change means re-exporting `img/SwiftX.png`, re-running the script above, and updating the
 constants in `AppLogo.cs`. The gradients run from each petal's outer corner to the corner facing
 the centre:
 
@@ -543,6 +606,78 @@ the centre:
 These are hard-coded rather than theme resources on purpose. SwiftX themes are hard black and hard
 white, and the mark has to read as *coloured* against both rather than inverting with the theme.
 
+---
+
+## Packaging for the Microsoft Store
+
+SwiftX ships **unpackaged** for everyday development (`WindowsPackageType=None`), so `dotnet
+build`/`dotnet run` are exactly what [Build, test, run](#build-test-run) describes — nothing here
+changes that loop. [`src/SwiftX/Package.appxmanifest`](src/SwiftX/Package.appxmanifest) adds
+*single-project MSIX* packaging as an opt-in on top of it: no separate packaging project, just that
+manifest plus `-p:WindowsPackageType=MSIX` on the command line.
+
+The manifest's `Identity` is this app's actual Partner Center reservation — `Name` and `Publisher`
+have to match it exactly, character for character, or Store ingestion rejects the upload:
+
+| | |
+|---|---|
+| Package identity name | `44492ajaykontham.SwiftX` |
+| Publisher | `CN=93C75305-77D7-448E-B1C4-591A0E9665E1` |
+| Publisher display name | `ajaykontham` |
+
+The app declares `runFullTrust` — required, not a Store approval blocker, since SwiftX P/Invokes
+Win32 directly for its hit-test regions, global hotkey, hot-corner polling and tray icon (see
+[`Interop/NativeMethods.cs`](src/SwiftX/Interop/NativeMethods.cs)), which no restricted-capability
+package could do.
+
+### Building the package
+
+```bash
+dotnet build src/SwiftX/SwiftX.csproj -c Release -p:Platform=x64 -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=true -p:AppxBundle=Never
+```
+
+Produces `src/SwiftX/AppPackages/SwiftX_<version>_x64_Test/SwiftX_<version>_x64.msix` (repeat with
+`-p:Platform=ARM64` for the other architecture). `AppxBundle=Never` keeps this to one `.msix` per
+build; for a single upload covering both architectures, build both platforms first and then bundle
+them with `MakeAppx bundle` (ships with the Windows SDK), or drive both from Visual Studio's own
+"Create App Packages" wizard, which does the per-architecture build **and** the bundle step in one
+pass.
+
+`SelfContained`/`WindowsAppSDKSelfContained` are already `true` in the project, so the package
+carries its own .NET and Windows App SDK runtimes — nothing extra for a user (or Store ingestion)
+to resolve.
+
+### Local sideload testing
+
+The build above is unsigned. To install and run it on this machine before submitting anywhere,
+either:
+
+- Run the generated `Add-AppDevPackage.ps1` next to the `.msix` — it creates a throwaway
+  self-signed test certificate, trusts it, and installs the package in one step, or
+- Sign it yourself against a certificate whose Subject matches `Identity/Publisher` above exactly
+  (`New-SelfSignedCertificate -Subject "CN=93C75305-77D7-448E-B1C4-591A0E9665E1" -CertStoreLocation
+  Cert:\CurrentUser\My -Type CodeSigningCert`, then `signtool sign /fd SHA256 /a
+  /f <exported .pfx> ...` or `Add-AppxPackage` with a matching trusted cert already installed).
+
+Either way this is throwaway, dev-machine-only trust — it has no bearing on the certificate the
+Store uses for real distribution.
+
+### Submitting to Partner Center
+
+Partner Center **re-signs the package itself on ingestion**, so the certificate used for the
+sideload test above is irrelevant to submission — upload the `.msix` (or a `.msixbundle` covering
+both architectures) as-is. Before submitting:
+
+- **Bump `<Version>` / `<FileVersion>` / `<AssemblyVersion>`** in
+  [`SwiftX.csproj`](src/SwiftX/SwiftX.csproj) and `Identity/Version` in `Package.appxmanifest`
+  together — Store submissions must strictly increase, and the fourth (revision) segment must stay
+  `0` (Store-assigned).
+- **Run the Windows App Certification Kit** (bundled with the Windows SDK, also offered by Visual
+  Studio's packaging wizard) against the built package — it catches manifest/capability/performance
+  issues Partner Center's own automated review also checks for.
+- Partner Center's listing itself (screenshots, description, age rating, privacy policy URL) is
+  filled in on their site, not from anything in this repo; [Privacy](#privacy) and
+  [`TERMS.md`](TERMS.md) are the source material for that copy.
 
 ## Troubleshooting
 
@@ -571,12 +706,29 @@ at). The next launch reseeds the defaults.
 
 Not started; noted here as candidates.
 
+**Application**
+
+- Redesign the application layout as a formal application (beyond the current ring + settings-window
+  shell)
+
 **Ring**
 
 - A second ring when items outgrow the first
+- Multi-orbit support — more than one outer ring, for users who want more items than a single
+  flyout ring holds
 - Rotating the ring
 - Alternative layouts: pyramid, timer scroll
 - Configurable hot-corner dwell, and more than four places in a quadrant
+
+**Drag and drop**
+
+- Auto-add a dropped item to the nearest empty slot
+- Drag a dropped item straight onto the outer ring
+- Drag a dropped item into a shortcuts folder/group
+
+**Developer tools**
+
+- An add-on/extension model for third-party developer tools alongside the built-in four
 
 **Data Formatter** — commonly offered elsewhere, roughly in order of how well each fits the current
 sidebar-button architecture:
