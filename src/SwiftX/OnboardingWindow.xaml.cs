@@ -84,7 +84,7 @@ public sealed partial class OnboardingWindow : Window
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
         Title = "Set up SwiftX";
 
-        var titleBar = AppTitleBar.WithAppMark("Set up SwiftX");
+        var titleBar = AppTitleBar.WithAppMark();
         Grid.SetRow(titleBar, 0);
         Root.Children.Insert(0, titleBar);
         ExtendsContentIntoTitleBar = true;

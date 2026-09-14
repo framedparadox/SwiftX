@@ -134,7 +134,7 @@ public sealed partial class ShellWindow : Window
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
         Title = "SwiftX app";
 
-        var titleBar = AppTitleBar.WithAppMark("SwiftX app");
+        var titleBar = AppTitleBar.WithAppMark();
         Grid.SetRow(titleBar, 0);
         Root.Children.Insert(0, titleBar);
 

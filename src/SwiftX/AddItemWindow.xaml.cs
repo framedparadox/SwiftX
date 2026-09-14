@@ -92,7 +92,7 @@ public sealed partial class AddItemWindow : Window
         if (!allowGroups)
             GroupType.Visibility = Visibility.Collapsed;
 
-        var titleBar = AppTitleBar.WithAppMark(heading);
+        var titleBar = AppTitleBar.WithAppMark();
         Grid.SetRow(titleBar, 0);
         Root.Children.Insert(0, titleBar);
 

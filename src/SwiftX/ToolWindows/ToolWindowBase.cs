@@ -51,7 +51,7 @@ public sealed class ToolWindowBase : Window
             ? FlowDirection.RightToLeft
             : FlowDirection.LeftToRight;
 
-        var titleBar = new AppTitleBar(definition.Glyph, definition.DisplayName, page.HeaderActions);
+        var titleBar = new AppTitleBar(definition.Glyph, page.HeaderActions);
         Grid.SetRow(titleBar, 0);
         Grid.SetRow(page, 1);
         _root.Children.Add(titleBar);
