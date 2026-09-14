@@ -1175,8 +1175,7 @@ public sealed partial class OrbitWindow : Window
         bool dark = requested == ElementTheme.Default
             ? ThemeHelper.IsDark(Root)
             : requested == ElementTheme.Dark;
-        bool isBlack = _manager.Config.Theme == AppTheme.Black;
-        return ThemeHelper.ColorFor(dark, isBlack, key);
+        return ThemeHelper.ColorFor(dark, _manager.Config.Theme, key);
     }
 
     // ---- Hover name pill -----------------------------------------------------------------

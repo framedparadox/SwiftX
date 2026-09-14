@@ -20,11 +20,11 @@ public static class ThemeHelper
     public static ElementTheme Resolve(AppTheme theme) => theme switch
     {
         AppTheme.Light => ElementTheme.Light,
-        // Black is a SwiftX-only surface palette, not a native one — it rides on Dark's own
-        // ElementTheme (native chrome/title bar/controls stay dark-themed) and is told apart at
-        // the brush level instead, via the isBlack overloads below. There is no OS-level "Black"
-        // for System to ever resolve to.
-        AppTheme.Dark or AppTheme.Black => ElementTheme.Dark,
+        // Black and FrostedGlass are SwiftX-only surface palettes, not native ones — both ride on
+        // Dark's own ElementTheme (native chrome/title bar/controls stay dark-themed) and are told
+        // apart at the brush level instead, via the AppTheme overloads below. Neither has an
+        // OS-level counterpart for System to ever resolve to.
+        AppTheme.Dark or AppTheme.Black or AppTheme.FrostedGlass => ElementTheme.Dark,
         _ => ElementTheme.Default,
     };
 
@@ -40,29 +40,47 @@ public static class ThemeHelper
         new SolidColorBrush(ColorFor(IsDark(element), key));
 
     /// <summary>
-    /// Black-aware overload for callers that can tell Black apart from plain Dark directly (i.e.
-    /// they hold the live <see cref="AppTheme"/>, not just an ActualTheme that can't express it —
-    /// see the class doc's own warning about that gap). Used by Settings' own orbit/quadrant preview
-    /// bubbles so they match the real orbit's glass under Black the same way they already do under
-    /// Dark.
+    /// Theme-aware overload for callers that hold the live <see cref="AppTheme"/> rather than only
+    /// an ActualTheme, which cannot express Midnight or Frosted glass — both ride Dark's own
+    /// ElementTheme (see <see cref="Resolve"/>), so an element that has resolved to "dark" has no
+    /// way of saying which of the three it is. Used by Settings' own orbit/quadrant preview bubbles
+    /// so they match the real orbit's glass under every theme, and by everything that paints one of
+    /// the shell's surfaces straight onto an element.
     /// </summary>
-    public static Brush Brush(FrameworkElement element, bool isBlack, string key) =>
-        new SolidColorBrush(ColorFor(IsDark(element), isBlack, key));
+    public static Brush Brush(FrameworkElement element, AppTheme theme, string key) =>
+        new SolidColorBrush(ColorFor(IsDark(element), theme, key));
 
     public static Color ColorFor(FrameworkElement element, string key) =>
         ColorFor(IsDark(element), key);
 
     /// <summary>
-    /// Black-aware color lookup — see the <see cref="Brush(FrameworkElement, bool, string)"/>
-    /// overload's doc for why <paramref name="isBlack"/> has to be passed in rather than inferred.
-    /// Every key but the orbit bubbles' own glass tint behaves exactly like
-    /// <see cref="ColorFor(bool, string)"/> regardless of <paramref name="isBlack"/> — Black only
-    /// ever changes SwiftX's own surface fills (this key, and Settings' resource overrides in
-    /// ShellWindow.ApplyBlackOverrides), never foreground/border/muted/accent, which read the
-    /// same on any dark surface — with one exception since the app shell landed,
-    /// <c>ShellCardBorderBrush</c>, whose Midnight value is a step off Dark's.
+    /// Theme-aware colour lookup — see the <see cref="Brush(FrameworkElement, AppTheme, string)"/>
+    /// overload's doc for why <paramref name="theme"/> has to be passed in rather than inferred.
+    /// <para>
+    /// Both of the dark-riding palettes change only SwiftX's own surface fills, never
+    /// foreground/border/muted/accent, which read the same on any dark surface. So most keys behave
+    /// exactly like <see cref="ColorFor(bool, string)"/> whatever <paramref name="theme"/> is, and
+    /// only the surfaces below diverge.
+    /// </para>
     /// </summary>
-    public static Color ColorFor(bool dark, bool isBlack, string key) => key switch
+    public static Color ColorFor(bool dark, AppTheme theme, string key)
+    {
+        // Frosted glass first, and from one table rather than a switch of its own: its surfaces are
+        // computed from the opacity by FrostedGlassPalette, which is also what ShellWindow writes
+        // into the window's resources, so asking it here is what keeps a card painted in code the
+        // same colour as the card beside it painted from a {ThemeResource}. A key it has no opinion
+        // about falls through to Dark's, which is the whole design — see that class's own remarks.
+        if (theme == AppTheme.FrostedGlass && FrostedGlassPalette.TryColorFor(key, out var frosted))
+            return frosted;
+
+        return ColorForMidnight(dark, theme == AppTheme.Black, key);
+    }
+
+    /// <summary>
+    /// The Midnight half of <see cref="ColorFor(bool, AppTheme, string)"/>, split out only so the
+    /// pattern-matching switch below stays a single expression.
+    /// </summary>
+    private static Color ColorForMidnight(bool dark, bool isBlack, string key) => key switch
     {
         // Black's orbit bubbles read as a deeper, more opaque black glass than Dark's lighter 40%
         // tint — Dark's own tint is already pure black (there's no "grey orbit" to darken further),
@@ -74,6 +92,12 @@ public static class ThemeHelper
         // ShellWindow.BlackOverrides entry for entry — an element-local brush assignment cannot be
         // reached by that dictionary override, so the two have to agree by hand. Leave one out and
         // the card it paints stays on Dark's grey while the page behind it goes black.
+        // The older Settings-canvas keys, which Midnight flattens to one black rather than giving
+        // the narrow hierarchy the shell's four get — again matching BlackOverrides exactly.
+        "SettingsSurfaceBrush" or "SwiftXCanvasBrush" or "SwiftXNavPaneBrush"
+            or "SwiftXCardBackgroundBrush" or "SwiftXOrbitCanvasBrush" when isBlack =>
+            Color.FromArgb(0xE6, 0x00, 0x00, 0x00),
+
         "ShellBackgroundBrush" when isBlack => Color.FromArgb(0xE6, 0x00, 0x00, 0x00),
         "ShellCardBackgroundBrush" when isBlack => Color.FromArgb(0xE6, 0x12, 0x12, 0x12),
         "ShellMedallionBrush" when isBlack => Color.FromArgb(0xE6, 0x0A, 0x0A, 0x0A),
@@ -165,6 +189,29 @@ public static class ThemeHelper
 
         "SettingsNavInactiveBrush" =>
             dark ? Color.FromArgb(255, 0xA0, 0xA0, 0xA0) : Color.FromArgb(255, 0x44, 0x44, 0x44),
+
+        // The older Settings-canvas family. Nothing asks this class for them today — they are read
+        // from XAML as {ThemeResource} — but they are in both surface-override tables, so the
+        // moment one of them is painted in code the question gets asked, and the answer had better
+        // not be the default at the bottom. Same reasoning as the Shell* block above, applied before
+        // rather than after the fact.
+        "SwiftXCanvasBrush" or "SettingsSurfaceBrush" =>
+            dark ? Color.FromArgb(0xD9, 0x22, 0x22, 0x22) : Color.FromArgb(255, 0xFF, 0xFF, 0xFF),
+
+        "SwiftXNavPaneBrush" =>
+            dark ? Color.FromArgb(0xD9, 0x1A, 0x1A, 0x1A) : Color.FromArgb(255, 0xF0, 0xF4, 0xF8),
+
+        "SwiftXCardBackgroundBrush" =>
+            dark ? Color.FromArgb(0xD9, 0x2C, 0x2C, 0x2C) : Color.FromArgb(255, 0xF0, 0xF4, 0xF8),
+
+        "SwiftXCardStrokeBrush" =>
+            dark ? Color.FromArgb(255, 0x3A, 0x3A, 0x3A) : Color.FromArgb(255, 0xDD, 0xE4, 0xEC),
+
+        "SwiftXOrbitCanvasBrush" =>
+            dark ? Color.FromArgb(0xD9, 0x20, 0x20, 0x20) : Color.FromArgb(255, 0xE7, 0xED, 0xF3),
+
+        "SwiftXDialogSurfaceBrush" =>
+            dark ? Color.FromArgb(255, 0x22, 0x22, 0x22) : Color.FromArgb(255, 0xFF, 0xFF, 0xFF),
 
         // Deliberately last, and deliberately dull: an unrecognised key is a missing case above,
         // not a colour anyone chose. Black-on-dark / white-on-light is the least likely of the

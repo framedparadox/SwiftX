@@ -78,7 +78,7 @@ public sealed partial class OnboardingWindow : Window
         _manager = manager;
         InitializeComponent();
 
-        SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+        // Left to ApplyBackdrop (via ApplyTheme below), which picks Mica or acrylic by theme.
 
         _hwnd = WindowNative.GetWindowHandle(this);
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
@@ -103,7 +103,7 @@ public sealed partial class OnboardingWindow : Window
         ApplyTheme();
         Root.ActualThemeChanged += (_, _) =>
         {
-            ApplyBlackOverrides();
+            ApplySurfaceOverrides();
             ApplyAccentColorOverride();
             ApplyChromeTheme();
             UpdateStepDots();
@@ -155,7 +155,8 @@ public sealed partial class OnboardingWindow : Window
 
     public void ApplyTheme()
     {
-        ApplyBlackOverrides();
+        ApplyBackdrop();
+        ApplySurfaceOverrides();
         ApplyAccentColorOverride();
         ForceThemeResourceRefresh(ThemeHelper.Resolve(_manager.Config.Theme));
         ApplyChromeTheme();
@@ -184,17 +185,51 @@ public sealed partial class OnboardingWindow : Window
         ("ShellCardBorderBrush", 0xFF, 0x2A, 0x2A, 0x2A),
     };
 
-    private void ApplyBlackOverrides()
+    /// <summary>
+    /// The guide's own copy of <c>ShellWindow.ApplySurfaceOverrides</c>, over the four surfaces this
+    /// window actually has. Both palettes ride Dark's ElementTheme and so cannot be told apart by a
+    /// theme dictionary — see that method, and <see cref="ThemeHelper.Resolve"/>, for why.
+    /// </summary>
+    private void ApplySurfaceOverrides()
     {
-        if (_manager.Config.Theme != AppTheme.Black)
-        {
-            foreach (var (key, _, _, _, _) in BlackOverrides)
-                Root.Resources.Remove(key);
-            return;
-        }
+        foreach (var (key, _, _, _, _) in BlackOverrides)
+            Root.Resources.Remove(key);
 
-        foreach (var (key, a, r, g, b) in BlackOverrides)
-            Root.Resources[key] = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+        switch (_manager.Config.Theme)
+        {
+            case AppTheme.Black:
+                foreach (var (key, a, r, g, b) in BlackOverrides)
+                    Root.Resources[key] = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+                break;
+
+            case AppTheme.FrostedGlass:
+                // Only the keys this window has, asked for one at a time rather than by walking
+                // FrostedGlassPalette.Surfaces: the palette covers the whole app's surfaces and
+                // most of them have no element here to reach.
+                foreach (var (key, _, _, _, _) in BlackOverrides)
+                {
+                    if (FrostedGlassPalette.TryColorFor(key, out var frosted))
+                        Root.Resources[key] = new SolidColorBrush(frosted);
+                }
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Frosted glass wants a real thin acrylic where every other theme wants Mica. Guarded on the
+    /// attached type so a re-apply does not tear the composition target down and rebuild it.
+    /// </summary>
+    private void ApplyBackdrop()
+    {
+        if (_manager.Config.Theme == AppTheme.FrostedGlass)
+        {
+            if (SystemBackdrop is not FrostedGlassBackdrop)
+                SystemBackdrop = new FrostedGlassBackdrop();
+        }
+        else if (SystemBackdrop is not MicaBackdrop)
+        {
+            SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+        }
     }
 
     /// <summary>
@@ -240,9 +275,13 @@ public sealed partial class OnboardingWindow : Window
     {
         bool dark = ThemeHelper.IsDark(Root);
         WindowChrome.SetTitleBarTheme(_appWindow, dark);
-        int rim = _manager.Config.Theme == AppTheme.Black
-            ? 0x00000000
-            : dark ? 0x002B2B2B : 0x00F2F2F2;
+        int rim = _manager.Config.Theme switch
+        {
+            AppTheme.Black => 0x00000000,
+            // FrostedGlassBackdrop's tint colour #101016, byte-reversed into a COLORREF.
+            AppTheme.FrostedGlass => 0x00161010,
+            _ => dark ? 0x002B2B2B : 0x00F2F2F2,
+        };
         WindowChrome.HideWindowBorder(_hwnd, dark, rim);
     }
 
@@ -278,7 +317,7 @@ public sealed partial class OnboardingWindow : Window
     /// <summary>
     /// The three footer dots: the current step in the accent, the rest in the card border colour.
     /// Filled from code rather than bound because the accent is the user's to choose, and
-    /// <see cref="ThemeHelper.ColorFor(bool, bool, string)"/> is the only element-scoped way to read
+    /// <see cref="ThemeHelper.ColorFor(bool, AppTheme, string)"/> is the only element-scoped way to read
     /// the resting colour back (see that class's own warning about app-level lookups).
     /// </summary>
     private void UpdateStepDots()
@@ -286,7 +325,7 @@ public sealed partial class OnboardingWindow : Window
         var on = new SolidColorBrush(
             AccentPalette.Resolve(_manager.Config, AccentPalette.IsDark(_manager.Config, Root)));
         var off = new SolidColorBrush(ThemeHelper.ColorFor(
-            ThemeHelper.IsDark(Root), _manager.Config.Theme == AppTheme.Black, "ShellCardBorderBrush"));
+            ThemeHelper.IsDark(Root), _manager.Config.Theme, "ShellCardBorderBrush"));
 
         Dot1.Fill = _step >= 0 ? on : off;
         Dot2.Fill = _step >= 1 ? on : off;

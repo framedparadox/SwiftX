@@ -287,7 +287,7 @@ following it.
 
 | Setting | What it does |
 |---------|--------------|
-| **Theme** | Light, Dark, **Midnight**, or System — four preview cards in Logi's own 145x130 geometry, not a dropdown. Dark is layered dark plates over the window's Mica; Midnight replaces them with one flat near-black; Light is opaque. The orbit's own bubbles are live acrylic in every theme. See [Theme](#theme). |
+| **Theme** | Light, Dark, **Midnight**, **Frosted glass**, or System — five preview cards in Logi's own 145x130 geometry, not a dropdown. Dark is layered dark plates over the window's Mica; Midnight replaces them with one flat near-black; Frosted glass drops them to a low-alpha wash over a real acrylic so the desktop reads through the window; Light is opaque. The orbit's own bubbles are live acrylic in every theme. See [Theme](#theme). |
 | **Accent colour** | A swatch and colour picker, directly under Theme. Defaults to Logi's violet (`#8A67FF` dark / `#6C47FF` light) and colours the app window's toggles, radio buttons, the Radius slider, the rating stars, the Settings rail and the selected theme card, plus the Feedback links. **Reset to default** sits in the picker's flyout. |
 | **Language** | 19 languages plus System (follows Windows). The tool windows (Data Formatter, Secure values, Base64, Certificate) and the tray menu pick it up the next time they open; everything else applies on restart. Right-to-left languages (Arabic, Hebrew) mirror the tool windows' layout. See [Language](#language) for the full list. |
 | **Invoke** | The summon shortcut, its capture button, and an on/off switch. Reports whether Windows accepted the combination. |
@@ -418,7 +418,7 @@ pre-rename build is a file you can still pick.
 |-----|------|---------|---------|
 | `Orbits` | array | one profile | Orbit profiles. Only the first is used today; it holds your items. |
 | `LaunchAtStartup` | bool | `false` | Mirrors the "Start with Windows" switch. |
-| `Theme` | `Light`/`Dark`/`Black`/`System` | `Dark` | Window and orbit theme. `Black` is the one shown in Settings as **Midnight** — the enum member keeps its original name because it is persisted by name, and renaming it would strand configs that already carry `"Black"`. |
+| `Theme` | `Light`/`Dark`/`Black`/`FrostedGlass`/`System` | `Dark` | Window and orbit theme. `Black` is the one shown in Settings as **Midnight** — the enum member keeps its original name because it is persisted by name, and renaming it would strand configs that already carry `"Black"`. `FrostedGlass` is shown as **Frosted glass**. |
 | `AccentColorHex` | `"#RRGGBB"` or null | `null` | The app's accent colour. `null` means the built-in violet for the theme in play. Anything that doesn't parse falls back the same way. |
 | `Language` | `System`/`EnglishUS`/`EnglishUK`/`French`/`German`/`Spanish`/`Italian`/`PortugueseBR`/`PortuguesePT`/`Dutch`/`Polish`/`Turkish`/`Russian`/`Arabic`/`Hebrew`/`Hindi`/`Japanese`/`ChineseSimplified`/`ChineseTraditional`/`Korean` | `System` | UI language. `System` follows Windows' own UI language, falling back to English (US). |
 | `HoverStyle` | `Invert`/`Zoom` | `Invert` | How an orbit item reacts to the pointer — swap to the opposite color, or keep color and shrink slightly. |
@@ -595,7 +595,7 @@ without the redirect would replace the running user's real store outright, with 
 
 ## Theme
 
-**Settings → General → Theme**, with the accent colour directly beneath it. Four choices, not
+**Settings → General → Theme**, with the accent colour directly beneath it. Five choices, not
 three:
 
 | Choice | What it paints |
@@ -603,27 +603,44 @@ three:
 | **Dark** (default) | Logi's own `#2B2B2B` page under `#333333` cards on `#444444` edges, each carrying alpha (`#D9…`, ~85%) so the app window's Mica shows through them, plus a `#202020` "tray" for the Orbit Settings screen's preview canvas. |
 | **Light** | Logi's Light dictionary verbatim and fully opaque: an `#F2F2F2` page, `#FFFFFF` cards, `#E0E0E0` edges. Nothing shows through anything. |
 | **Midnight** | Dark's own native chrome with every SwiftX surface replaced by one flat, near-opaque black (`#E6000000`). No raised/recessed steps — once the anchor colour is already pure black there is no lighter tone left to graduate through, so the card strokes carry the structure instead. |
-| **System** | Follows Windows and re-themes open windows as it changes. Resolves to Light or Dark only: Midnight is not an OS theme, so System can never land on it. |
+| **Frosted glass** | Dark's native chrome again, but the page goes fully transparent and every plate drops to a low-alpha wash (a `#59181820` card, a `#5D0E0E14` nav pane) with thin white borders, over a real thin acrylic backdrop. The desktop reads *through* the window rather than around it. |
+| **System** | Follows Windows and re-themes open windows as it changes. Resolves to Light or Dark only: neither Midnight nor Frosted glass is an OS theme, so System can never land on one. |
 
-Midnight is the odd one out under the hood. `AppTheme` has a fourth member — `Black`, shown to
-users as **Midnight** — but WinUI only ever resolves `{ThemeResource}` against Light, Dark and
-Default, so Midnight cannot be a theme dictionary of its own. It rides **Dark's** `ElementTheme`
-(native chrome, title bar and stock controls stay dark-themed) and is told apart at the brush level
-instead: `ShellWindow.ApplyBlackOverrides` shadows the shell's surface keys with element-local
-entries in the window root's own resources, and `ThemeHelper.ColorFor`'s `isBlack` overload deepens
-the orbit bubbles' glass tint. The enum member keeps the name `Black` because
-`JsonStringEnumConverter` persists it by name — renaming it would strand every config that already
-has `"Black"` written into `orbit.json`.
+Midnight and Frosted glass are the odd ones out under the hood. WinUI only ever resolves
+`{ThemeResource}` against Light, Dark and Default, so neither can be a theme dictionary of its own.
+Both ride **Dark's** `ElementTheme` (native chrome, title bar and stock controls stay dark-themed)
+and are told apart at the brush level instead: `ShellWindow.ApplySurfaceOverrides` shadows the
+shell's surface keys with element-local entries in the window root's own resources, and
+`ThemeHelper.ColorFor`'s `AppTheme` overload answers for everything painted straight onto an element
+— which is the same set of values, and has to agree with that table by hand. The `Black` enum member
+keeps its name because `JsonStringEnumConverter` persists it by name, and renaming it would strand
+every config that already has `"Black"` written into `orbit.json`.
+
+Where Midnight's colours are a fixed table, Frosted glass's are computed: `FrostedGlassPalette`
+carries the source theme's own affine alpha curves (`opacity * slope + offset`, clamped) and both
+the resource override and `ThemeHelper` resolve from it, so a card painted in code and the card
+beside it painted from a `{ThemeResource}` cannot disagree. Both the palette and
+`FrostedGlassBackdrop` are ports of windows-app-mx's `logiApp/dotnet` branch, which is itself that
+repo's port of its own `add_acrylic_frosted_theme` work.
 
 That override is also why switching between Dark and Midnight needs a nudge. `RequestedTheme` never
 changes value between the two, and WinUI only re-walks `{ThemeResource}` lookups when it does, so
 `ForceThemeResourceRefresh` flips the window root to the other theme and straight back. Without it
 the swap looked like it did nothing until some unrelated theme change came along later.
 
+A `{ThemeResource}` re-resolution reaches only what is *bound*. A brush written straight onto an
+element — the Elements and Tools screens build every card that way — is a local value no dictionary
+can reach, so `ShellWindow.RepaintThemedContent` re-runs all of those builders on every theme change
+as well. Leaving it out is what once made a theme switch look dead on those two screens while the
+rest of the window moved.
+
 ### Mica — the app window, and nothing else
 
-`ShellWindow`'s constructor attaches a real `MicaBackdrop` (`MicaKind.BaseAlt`), regardless of
-theme. It is visible only where a surface above it is translucent, which in practice means Dark:
+`ShellWindow` attaches a real `MicaBackdrop` (`MicaKind.BaseAlt`) for every theme but Frosted
+glass, which gets a thin `DesktopAcrylicController` instead (`FrostedGlassBackdrop`); `ApplyBackdrop`
+swaps between the two and is guarded on the type already attached, since rebuilding a backdrop tears
+down its composition target and flickers. Mica is visible only where a surface above it is
+translucent, which in practice means Dark:
 Dark's plates are `#D9…`, so Mica's wallpaper-derived tint reads as a subtle wash through each of
 them while the four still differ enough to keep their raised/recessed hierarchy. Light's brushes are
 100% opaque, so Mica is attached there too and simply never shows through anything; Midnight's flat

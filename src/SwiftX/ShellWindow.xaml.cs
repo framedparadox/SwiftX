@@ -134,9 +134,11 @@ public sealed partial class ShellWindow : Window
         _offerDesktopShortcut = offerDesktopShortcut;
         InitializeComponent();
 
-        // Attached regardless of theme — see the class doc above for why that's fine: Light's own
-        // brushes stay fully opaque, so Mica never has anything translucent to show through there.
-        SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+        // No backdrop is attached here any more: ApplyTheme below attaches whichever one the theme
+        // calls for (see ApplyBackdrop). Mica is still what four of the five get, and still
+        // regardless of which — Light's own brushes stay fully opaque, so it never has anything
+        // translucent to show through there. Attaching it here as well would only have built one
+        // for Frosted glass to throw away a few lines later.
 
         _toolCards.CollectionChanged += ToolCards_CollectionChanged;
 
@@ -181,7 +183,7 @@ public sealed partial class ShellWindow : Window
             // Fires on an OS theme flip (relevant to AppTheme.System, which never resolves to
             // Black — see ThemeHelper.Resolve) — reapplying here is a no-op whenever Black isn't
             // selected, and keeps this in sync with ApplyTheme's own ordering if it ever isn't.
-            ApplyBlackOverrides();
+            ApplySurfaceOverrides();
             // System follows Windows, so an OS flip changes which built-in accent is the right one.
             ApplyAccentColorOverride();
             ApplyChromeTheme();
@@ -318,7 +320,8 @@ public sealed partial class ShellWindow : Window
 
     public void ApplyTheme()
     {
-        ApplyBlackOverrides();
+        ApplyBackdrop();
+        ApplySurfaceOverrides();
         ApplyAccentColorOverride();
         ForceThemeResourceRefresh(ThemeHelper.Resolve(_manager.Config.Theme));
         ApplyChromeTheme();
@@ -371,7 +374,7 @@ public sealed partial class ShellWindow : Window
     /// <para>
     /// WinUI only re-walks <c>{ThemeResource}</c> lookups when RequestedTheme/ActualTheme actually
     /// changes value — a plain edit to <see cref="Root"/>'s own Resources (see
-    /// <see cref="ApplyBlackOverrides"/>) is invisible to bindings that already resolved earlier.
+    /// <see cref="ApplySurfaceOverrides"/>) is invisible to bindings that already resolved earlier.
     /// Black rides on Dark's own ElementTheme and is told apart purely through that resource
     /// override, so switching Dark &lt;-&gt; Black never changes RequestedTheme's value at all —
     /// without the nudge below, SettingsSurfaceBrush and the rest of <see cref="BlackOverrideKeys"/>
@@ -430,24 +433,86 @@ public sealed partial class ShellWindow : Window
         ("ShellDividerBrush", 0xFF, 0x2A, 0x2A, 0x2A),
     };
 
-    private void ApplyBlackOverrides()
-    {
-        if (_manager.Config.Theme != AppTheme.Black)
-        {
-            foreach (var (key, _, _, _, _) in BlackOverrides)
-                Root.Resources.Remove(key);
-            return;
-        }
+    /// <summary>
+    /// Every key either of the two dark-riding palettes can shadow, so a switch between them — or
+    /// back to plain Dark — clears the one before it rather than leaving half of Midnight's black
+    /// under Frosted glass's wash. Derived from the two tables rather than listed a third time.
+    /// <para>
+    /// Brushes only. <see cref="FrostedGlassPalette"/> also answers for the <c>…Color</c> spelling of
+    /// the orbit bubble tint, because <see cref="ThemeHelper"/> is asked for colours as well as
+    /// brushes; a resource dictionary entry under that key has to actually be a <c>Color</c>, and
+    /// writing a brush there would be a type error waiting for the first XAML binding to it.
+    /// </para>
+    /// </summary>
+    private static readonly string[] OverridableSurfaceKeys =
+        BlackOverrides.Select(o => o.Key)
+            .Concat(FrostedGlassPalette.Surfaces.SelectMany(s => s.Keys))
+            .Where(k => k.EndsWith("Brush", StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 
-        foreach (var (key, a, r, g, b) in BlackOverrides)
-            Root.Resources[key] = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+    /// <summary>
+    /// Installs the selected theme's surface palette, or clears both when the theme has a dictionary
+    /// of its own. See the remarks above <see cref="BlackOverrides"/> for the mechanism, which is
+    /// the same for Frosted glass — the only difference is where the colours come from: Midnight's
+    /// are a fixed table, Frosted glass's are computed from its opacity by
+    /// <see cref="FrostedGlassPalette"/>, the same source <see cref="ThemeHelper"/> answers from, so
+    /// a card painted in code and a card painted from a {ThemeResource} cannot disagree.
+    /// </summary>
+    private void ApplySurfaceOverrides()
+    {
+        foreach (var key in OverridableSurfaceKeys)
+            Root.Resources.Remove(key);
+
+        switch (_manager.Config.Theme)
+        {
+            case AppTheme.Black:
+                foreach (var (key, a, r, g, b) in BlackOverrides)
+                    Root.Resources[key] = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+                break;
+
+            case AppTheme.FrostedGlass:
+                foreach (var surface in FrostedGlassPalette.Surfaces)
+                {
+                    var brush = new SolidColorBrush(surface.ColorFor(FrostedGlassBackdrop.Opacity));
+                    foreach (var key in surface.Keys)
+                    {
+                        if (key.EndsWith("Brush", StringComparison.Ordinal))
+                            Root.Resources[key] = brush;
+                    }
+                }
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Swaps the window's backdrop to match the theme. Mica for everything but Frosted glass, which
+    /// wants a real, thin acrylic instead — see <see cref="FrostedGlassBackdrop"/>.
+    /// <para>
+    /// Guarded on the type already attached rather than assigned unconditionally: rebuilding a
+    /// backdrop tears down and re-creates its composition target, which flickers, and this runs on
+    /// every theme apply — including the two that <see cref="ForceThemeResourceRefresh"/> triggers
+    /// as it nudges RequestedTheme back and forth.
+    /// </para>
+    /// </summary>
+    private void ApplyBackdrop()
+    {
+        if (_manager.Config.Theme == AppTheme.FrostedGlass)
+        {
+            if (SystemBackdrop is not FrostedGlassBackdrop)
+                SystemBackdrop = new FrostedGlassBackdrop();
+        }
+        else if (SystemBackdrop is not MicaBackdrop)
+        {
+            SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+        }
     }
 
     /// <summary>
     /// Paints every WinUI brush key, across the controls Settings actually uses, that a real
     /// "accent colour" has to reach — always, whether the colour is the user's own pick or the
     /// built-in teal default. Shadows them in <see cref="Root"/>'s own Resources, the same "closer
-    /// resource wins" mechanism <see cref="ApplyBlackOverrides"/> uses.
+    /// resource wins" mechanism <see cref="ApplySurfaceOverrides"/> uses.
     /// <para>
     /// It applies the default too, rather than removing the shadow and letting the keys fall
     /// through, because falling through does not reach SwiftX's teal at all: unset, these keys
@@ -592,9 +657,12 @@ public sealed partial class ShellWindow : Window
     {
         bool dark = ThemeHelper.IsDark(Root);
         WindowChrome.SetTitleBarTheme(_appWindow, dark);
-        int rim = _manager.Config.Theme == AppTheme.Black
-            ? ShellRimColorBlack
-            : dark ? ShellRimColorDark : ShellRimColorLight;
+        int rim = _manager.Config.Theme switch
+        {
+            AppTheme.Black => ShellRimColorBlack,
+            AppTheme.FrostedGlass => ShellRimColorFrosted,
+            _ => dark ? ShellRimColorDark : ShellRimColorLight,
+        };
         WindowChrome.HideWindowBorder(_hwnd, dark, rim);
     }
 
@@ -605,11 +673,16 @@ public sealed partial class ShellWindow : Window
     /// palette change and the window grows a visible hairline where the rim stops matching the
     /// surface behind it. All three are neutral greys, so channel order is moot.
     /// <see cref="ShellRimColorBlack"/> matches <see cref="BlackOverrides"/>' own page value rather
-    /// than Dark's.
+    /// than Dark's. <see cref="ShellRimColorFrosted"/> is the one that is not a neutral grey, so it
+    /// is the one where the BGR order matters: it is <see cref="FrostedGlassBackdrop"/>'s own tint
+    /// colour #101016, byte-reversed. The rim cannot be translucent the way that theme's surfaces
+    /// are — it is a solid COLORREF the compositor draws — so it takes the colour the glass settles
+    /// on rather than trying to disappear.
     /// </summary>
     private const int ShellRimColorDark = 0x002B2B2B;
     private const int ShellRimColorLight = 0x00F2F2F2;
     private const int ShellRimColorBlack = 0x00000000;
+    private const int ShellRimColorFrosted = 0x00161010;
 
     private Style SecondaryCaptionStyle => (Style)Root.Resources["SecondaryCaption"];
 
@@ -812,7 +885,8 @@ public sealed partial class ShellWindow : Window
         {
             AppTheme.Light => AppTheme.Dark,
             AppTheme.Dark => AppTheme.Black,
-            AppTheme.Black => AppTheme.System,
+            AppTheme.Black => AppTheme.FrostedGlass,
+            AppTheme.FrostedGlass => AppTheme.System,
             _ => AppTheme.Light,
         };
         ApplyThemeChoice(next);
@@ -830,6 +904,9 @@ public sealed partial class ShellWindow : Window
             AppTheme.Light => "\uE706",
             AppTheme.Dark => "\uE793",
             AppTheme.Black => "\uE708",
+            // Segoe MDL2 has no frosted-glass mark. MapLayers is the nearest honest stand-in —
+            // stacked translucent planes, which is what the theme actually is.
+            AppTheme.FrostedGlass => "\uE81E",
             _ => "\uE7E8",
         };
     }
@@ -912,7 +989,7 @@ public sealed partial class ShellWindow : Window
                 Width = bubble,
                 Height = bubble,
                 CornerRadius = new CornerRadius(bubble / 2),
-                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "OrbitBubbleGlassTint"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = item,
@@ -1012,7 +1089,7 @@ public sealed partial class ShellWindow : Window
                 Width = previewBubble,
                 Height = previewBubble,
                 CornerRadius = new CornerRadius(previewBubble / 2),
-                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "OrbitBubbleGlassTint"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = item,
@@ -1809,7 +1886,7 @@ public sealed partial class ShellWindow : Window
                 Width = GroupChildBubble,
                 Height = GroupChildBubble,
                 CornerRadius = new CornerRadius(GroupChildBubble / 2),
-                Background = ThemeHelper.Brush(Root, _manager.Config.Theme == AppTheme.Black, "OrbitBubbleGlassTint"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = child,
@@ -1992,7 +2069,7 @@ public sealed partial class ShellWindow : Window
     /// is a per-element assignment — which is also why <see cref="ApplyAccentColorOverride"/> and
     /// the <c>ActualThemeChanged</c> handler both re-run this: neither a user's accent pick nor an
     /// OS theme flip can reach a brush already written onto the element.
-    /// <see cref="ThemeHelper.ColorFor(bool, bool, string)"/> is what supplies the unselected
+    /// <see cref="ThemeHelper.ColorFor(bool, AppTheme, string)"/> is what supplies the unselected
     /// colours, since a window whose theme disagrees with Windows' cannot read them back out of the
     /// app's own resources (see that class's own warning).
     /// </para>
@@ -2000,10 +2077,14 @@ public sealed partial class ShellWindow : Window
     private void UpdateThemeCardSelection(AppTheme theme)
     {
         bool dark = ThemeHelper.IsDark(Root);
-        bool isBlack = _manager.Config.Theme == AppTheme.Black;
+        // Which card is ticked comes from the argument; what the *unticked* ones are painted with
+        // comes from the theme the window is actually wearing. Usually the same value — but
+        // ResetAll calls this with Dark before the config has been written back, and the unselected
+        // borders still have to match the surface they are sitting on.
+        var liveTheme = _manager.Config.Theme;
         var selectedBrush = new SolidColorBrush(CurrentAccentColor());
         var restingBrush = new SolidColorBrush(
-            ThemeHelper.ColorFor(dark, isBlack, "ShellCardBorderBrush"));
+            ThemeHelper.ColorFor(dark, liveTheme, "ShellCardBorderBrush"));
         var mutedBrush = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SettingsMutedBrush"));
 
         void Paint(Border card, FontIcon check, AppTheme cardTheme)
@@ -2018,6 +2099,7 @@ public sealed partial class ShellWindow : Window
         Paint(ThemeCardLight, ThemeCheckLight, AppTheme.Light);
         Paint(ThemeCardDark, ThemeCheckDark, AppTheme.Dark);
         Paint(ThemeCardBlack, ThemeCheckBlack, AppTheme.Black);
+        Paint(ThemeCardFrosted, ThemeCheckFrosted, AppTheme.FrostedGlass);
     }
 
     /// <summary>
@@ -2057,11 +2139,11 @@ public sealed partial class ShellWindow : Window
     private void SelectHoverStyle(OrbitHoverStyle style)
     {
         bool dark = ThemeHelper.IsDark(Root);
-        bool isBlack = _manager.Config.Theme == AppTheme.Black;
+        var theme = _manager.Config.Theme;
         var accent = CurrentAccentColor();
         var accentBrush = new SolidColorBrush(accent);
         var onAccentBrush = new SolidColorBrush(AccentPalette.OnAccent(accent));
-        var restingBorder = new SolidColorBrush(ThemeHelper.ColorFor(dark, isBlack, "ShellCardBorderBrush"));
+        var restingBorder = new SolidColorBrush(ThemeHelper.ColorFor(dark, theme, "ShellCardBorderBrush"));
         var mutedBrush = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SettingsMutedBrush"));
 
         Paint(HoverStyleInvertPill, HoverStyleInvertText, style == OrbitHoverStyle.Invert);
