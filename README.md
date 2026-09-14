@@ -447,6 +447,7 @@ pre-rename build is a file you can still pick.
 | `Orbits` | array | one profile | Orbit profiles. Only the first is used today; it holds your items. |
 | `LaunchAtStartup` | bool | `false` | Mirrors the "Start with Windows" switch. |
 | `Theme` | `Light`/`Dark`/`Black`/`FrostedGlass`/`System` | `Dark` | Window and orbit theme. `Black` is the one shown in Settings as **Midnight** — the enum member keeps its original name because it is persisted by name, and renaming it would strand configs that already carry `"Black"`. `FrostedGlass` is shown as **Frosted glass**. |
+| `FrostedGlass` | `Light`/`Medium`/`Dark` | `Light` | How much frost the **Frosted glass** theme uses. Read only while `Theme` is `FrostedGlass`, but kept either way so switching away and back returns the frost you had. |
 | `AccentColorHex` | `"#RRGGBB"` or null | `null` | The app's accent colour. `null` means the built-in violet for the theme in play. Anything that doesn't parse falls back the same way. |
 | `Language` | `System`/`EnglishUS`/`EnglishUK`/`French`/`German`/`Spanish`/`Italian`/`PortugueseBR`/`PortuguesePT`/`Dutch`/`Polish`/`Turkish`/`Russian`/`Arabic`/`Hebrew`/`Hindi`/`Japanese`/`ChineseSimplified`/`ChineseTraditional`/`Korean` | `System` | UI language. `System` follows Windows' own UI language, falling back to English (US). |
 | `HoverStyle` | `Invert`/`Zoom` | `Invert` | How an orbit item reacts to the pointer — swap to the opposite color, or keep color and shrink slightly. |
@@ -631,7 +632,7 @@ three:
 | **Dark** (default) | Logi's own `#2B2B2B` page under `#333333` cards on `#444444` edges, each carrying alpha (`#D9…`, ~85%) so the app window's Mica shows through them, plus a `#202020` "tray" for the Orbit Settings screen's preview canvas. |
 | **Light** | Logi's Light dictionary verbatim and fully opaque: an `#F2F2F2` page, `#FFFFFF` cards, `#E0E0E0` edges. Nothing shows through anything. |
 | **Midnight** | Dark's own native chrome with every SwiftX surface replaced by one flat, near-opaque black (`#E6000000`). No raised/recessed steps — once the anchor colour is already pure black there is no lighter tone left to graduate through, so the card strokes carry the structure instead. |
-| **Frosted glass** | Dark's native chrome again, but the page goes fully transparent and every plate drops to a low-alpha wash (a `#59181820` card, a `#5D0E0E14` nav pane) with thin white borders, over a real thin acrylic backdrop. The desktop reads *through* the window rather than around it. |
+| **Frosted glass** | Dark's native chrome again, but the page goes fully transparent and every plate drops to a low-alpha wash with thin white borders, over a real thin acrylic backdrop. The desktop reads *through* the window rather than around it. Comes in three frost levels — see below. |
 | **System** | Follows Windows and re-themes open windows as it changes. Resolves to Light or Dark only: neither Midnight nor Frosted glass is an OS theme, so System can never land on one. |
 
 Midnight and Frosted glass are the odd ones out under the hood. WinUI only ever resolves
@@ -643,6 +644,28 @@ shell's surface keys with element-local entries in the window root's own resourc
 — which is the same set of values, and has to agree with that table by hand. The `Black` enum member
 keeps its name because `JsonStringEnumConverter` persists it by name, and renaming it would strand
 every config that already has `"Black"` written into `orbit.json`.
+
+#### Frost level
+
+Frosted glass carries a **Frost** setting of its own — **Light**, **Medium**, **Dark** — shown in
+Settings → General directly under the theme cards, and only while that card is the one selected.
+Light is what the theme shipped as; the two above it put progressively more frost between the
+window and the desktop.
+
+| Level | Backdrop opacity | Card fill |
+|-------|------------------|-----------|
+| **Light** (default) | 0.65 | `#59181820` |
+| **Medium** | 0.80 | `#6B181820` |
+| **Dark** | 0.95 | `#7C181820` |
+
+It is a setting beside the theme rather than three more `AppTheme` members: the theme is persisted
+by name and already drawn as a card, so splitting it in three would strand every config carrying
+`"FrostedGlass"` and put three near-identical cards in a row. The level lives in
+`FrostedGlassBackdrop.Level` — static, app-wide state set by `OrbitManager`, the same shape
+`OrbitMetrics` holds the orbit's geometry in, and for the same reason: it is read from static
+colour lookups that have no config reference to carry. Changing it writes one float onto the live
+acrylic controller rather than rebuilding the backdrop, which would tear down its composition
+target and flicker the window.
 
 Where Midnight's colours are a fixed table, Frosted glass's are computed: `FrostedGlassPalette`
 carries the source theme's own affine alpha curves (`opacity * slope + offset`, clamped) and both

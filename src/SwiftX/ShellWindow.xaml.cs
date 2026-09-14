@@ -366,6 +366,7 @@ public sealed partial class ShellWindow : Window
         SelectHoverStyle(_manager.Config.HoverStyle);
         SelectSection(_currentSection);
         UpdateThemeCardSelection(_manager.Config.Theme);
+        UpdateFrostedLevelSelection(_manager.Config.FrostedGlass);
         RebuildItemsList();
         RebuildToolsList();
         if (_orbitEditBuilt) BuildOrbitEditSidebar();
@@ -516,8 +517,17 @@ public sealed partial class ShellWindow : Window
     {
         if (_manager.Config.Theme == AppTheme.FrostedGlass)
         {
-            if (SystemBackdrop is not FrostedGlassBackdrop)
+            if (SystemBackdrop is FrostedGlassBackdrop frosted)
+            {
+                // Already the right kind, so the level is the only thing that can have moved —
+                // and a float written onto the live controller is all that takes. Rebuilding to
+                // change it would tear the composition target down and flicker the window.
+                frosted.UpdateProperties();
+            }
+            else
+            {
                 SystemBackdrop = new FrostedGlassBackdrop();
+            }
         }
         else if (SystemBackdrop is not MicaBackdrop)
         {
@@ -2716,6 +2726,67 @@ public sealed partial class ShellWindow : Window
     /// other windows through the manager, this window through its own pass. Shared by the theme
     /// cards and the header's cycle button so the two can never diverge.
     /// </summary>
+    /// <summary>
+    /// Picks one of Frosted glass's three frost levels. Saves it, points every frosted surface at
+    /// it, and re-runs the same pass a theme change does — the surfaces are computed from the level
+    /// (see <see cref="FrostedGlassPalette"/>), so moving it is a repaint of exactly the same set
+    /// of keys, and the backdrop behind them has to move with them or the two disagree.
+    /// <para>
+    /// Guarded on the value actually changing rather than fired on every click: this is a
+    /// three-button group where two of the three presses are re-selecting what is already chosen,
+    /// and a full theme pass now rebuilds the Elements and Tools cards.
+    /// </para>
+    /// </summary>
+    private void FrostedLevel_Click(object sender, RoutedEventArgs e)
+    {
+        if (_loading || sender is not FrameworkElement source) return;
+        if (!Enum.TryParse<FrostedGlassLevel>(source.Tag as string, out var level)) return;
+
+        _manager.Config.FrostedGlass = level;
+        _manager.Save();
+        UpdateFrostedLevelSelection(level);
+
+        if (!FrostedGlassBackdrop.SetLevel(level)) return;
+        // Every window, not just this one: the guide carries the same surfaces and the orbit's
+        // bubble tint is computed from the same palette.
+        _manager.ApplyTheme();
+    }
+
+    /// <summary>
+    /// Shows which frost level is selected, and shows the group at all only under Frosted glass —
+    /// under any other theme it is a control for something not on screen.
+    /// <para>
+    /// Painted from code for the same reason the theme cards above it are: selection here is a
+    /// per-element assignment, which no dictionary swap can reach, which is also why
+    /// <see cref="RepaintThemedContent"/> re-runs it.
+    /// </para>
+    /// </summary>
+    private void UpdateFrostedLevelSelection(FrostedGlassLevel level)
+    {
+        FrostedLevelPanel.Visibility = _manager.Config.Theme == AppTheme.FrostedGlass
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        bool dark = ThemeHelper.IsDark(Root);
+        var accent = new SolidColorBrush(CurrentAccentColor());
+        var onAccent = new SolidColorBrush(AccentPalette.OnAccent(CurrentAccentColor()));
+        var resting = new SolidColorBrush(
+            ThemeHelper.ColorFor(dark, _manager.Config.Theme, "ShellCardBorderBrush"));
+        var muted = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SettingsMutedBrush"));
+
+        void Paint(Border pill, TextBlock label, FrostedGlassLevel pillLevel)
+        {
+            bool on = pillLevel == level;
+            pill.Background = on ? accent : new SolidColorBrush(Colors.Transparent);
+            pill.BorderBrush = on ? accent : resting;
+            label.Foreground = on ? onAccent : muted;
+        }
+
+        Paint(FrostedLevelLightPill, FrostedLevelLightText, FrostedGlassLevel.Light);
+        Paint(FrostedLevelMediumPill, FrostedLevelMediumText, FrostedGlassLevel.Medium);
+        Paint(FrostedLevelDarkPill, FrostedLevelDarkText, FrostedGlassLevel.Dark);
+    }
+
     private void ApplyThemeChoice(AppTheme theme)
     {
         _manager.Config.Theme = theme;
@@ -3023,6 +3094,7 @@ public sealed partial class ShellWindow : Window
         HideInfo();
         CollapseGroup();
         _manager.Config.Theme = AppTheme.Dark;
+        _manager.Config.FrostedGlass = FrostedGlassLevel.Light;
         _manager.Config.HoverStyle = OrbitHoverStyle.Invert;
         _manager.Config.Hotkey = HotkeyGesture.Default.ToString();
         _manager.Config.HotkeyEnabled = true;

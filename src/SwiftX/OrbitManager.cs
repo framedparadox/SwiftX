@@ -80,6 +80,9 @@ public sealed class OrbitManager
         Config.Seeded = true;
         OrbitMetrics.SetItemSize(Config.ItemSize);
         OrbitMetrics.SetRadius(Config.OrbitRadius);
+        // Same shape as the two above: a piece of app-wide drawing state read from static colour
+        // lookups that have no config reference of their own. See FrostedGlassBackdrop.Level.
+        FrostedGlassBackdrop.SetLevel(Config.FrostedGlass);
 
         bool repaired = false;
         if (firstRun && Config.Primary.Items.Count == 0)
@@ -456,6 +459,10 @@ public sealed class OrbitManager
 
     public void ApplyTheme()
     {
+        // Before any window repaints: every frosted surface resolves through this, so a theme pass
+        // that ran first would paint the level the app was wearing a moment ago.
+        FrostedGlassBackdrop.SetLevel(Config.FrostedGlass);
+
         // No app-wide theme push here: WinUI's Application has no RequestedTheme setter that
         // propagates to open windows, so each window resolves and applies its own theme via
         // ThemeHelper (see the doc comment on OrbitWindow.ThemeBrush).

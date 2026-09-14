@@ -35,6 +35,26 @@ public enum AppTheme
 }
 
 /// <summary>
+/// How much frost <see cref="AppTheme.FrostedGlass"/> puts between the window and the desktop —
+/// three fixed steps rather than a slider, because the theme picker has no room for one and three
+/// is enough to cover "I want to see my wallpaper" through "I want to read my text".
+/// <para>
+/// A setting of its own rather than three <see cref="AppTheme"/> members: the theme is persisted by
+/// name and is already drawn as a card in the picker, so splitting it in three would strand every
+/// config carrying <c>"FrostedGlass"</c> and put three near-identical cards in a row. This sits
+/// beside it the way the accent colour does — a property of the theme, shown only while that theme
+/// is the one selected.
+/// </para>
+/// </summary>
+public enum FrostedGlassLevel
+{
+    /// <summary>The thinnest frost, and what the theme shipped as.</summary>
+    Light,
+    Medium,
+    Dark,
+}
+
+/// <summary>
 /// How an orbit item reads as "under the pointer".
 /// </summary>
 public enum OrbitHoverStyle
@@ -67,6 +87,14 @@ public sealed class AppConfig
     public bool DesktopShortcut { get; set; }
 
     public AppTheme Theme { get; set; } = AppTheme.Dark;
+
+    /// <summary>
+    /// Which of <see cref="FrostedGlassLevel"/>'s three steps the Frosted glass theme uses. Read
+    /// only while <see cref="Theme"/> is <see cref="AppTheme.FrostedGlass"/>, but persisted
+    /// regardless, so switching away and back returns you to the frost you had rather than the
+    /// default.
+    /// </summary>
+    public FrostedGlassLevel FrostedGlass { get; set; } = FrostedGlassLevel.Light;
 
     /// <summary>The UI language — see <see cref="AppLanguage"/> and <see cref="Services.Loc"/>.</summary>
     public AppLanguage Language { get; set; } = AppLanguage.System;
@@ -193,6 +221,7 @@ public sealed class AppConfig
         LaunchAtStartup = other.LaunchAtStartup;
         DesktopShortcut = other.DesktopShortcut;
         Theme = other.Theme;
+        FrostedGlass = other.FrostedGlass;
         Language = other.Language;
         HoverStyle = other.HoverStyle;
         Hotkey = other.Hotkey;

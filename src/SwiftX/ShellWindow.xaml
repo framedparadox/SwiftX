@@ -1291,6 +1291,61 @@
                                 </Grid>
                             </StackPanel>
 
+                            <!-- Frosted glass's own frost level, directly under the cards and shown
+                                 only while that card is the one selected (UpdateFrostedLevelSelection) —
+                                 under any other theme it is a control for something not on screen.
+                                 Three fixed steps rather than a slider: the picker has no room for
+                                 one, and the difference between adjacent points on a continuous
+                                 opacity is not something anyone can aim at anyway. Painted from
+                                 code, like the theme cards above, because selection is a
+                                 per-element assignment no dictionary swap can reach. -->
+                            <StackPanel x:Name="FrostedLevelPanel" Spacing="10" Margin="0,0,0,18"
+                                        Visibility="Collapsed">
+                                <TextBlock Text="Frost" Style="{StaticResource SettingTitle}" />
+                                <TextBlock Text="How much the glass hides. Lighter shows more of what is behind the window; darker keeps text easier to read."
+                                           Style="{StaticResource SettingBody}" />
+                                <Grid ColumnSpacing="8" HorizontalAlignment="Left" Margin="0,2,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Padding="0" Background="Transparent"
+                                            BorderThickness="0" Tag="Light" Click="FrostedLevel_Click"
+                                            AutomationProperties.Name="Frost: Light"
+                                            AutomationProperties.AutomationId="SettingsFrostLight">
+                                        <Border x:Name="FrostedLevelLightPill" Width="104" CornerRadius="6"
+                                                BorderThickness="1" Padding="0,7">
+                                            <TextBlock x:Name="FrostedLevelLightText" Text="Light"
+                                                       HorizontalAlignment="Center" FontSize="12"
+                                                       FontWeight="SemiBold" />
+                                        </Border>
+                                    </Button>
+                                    <Button Grid.Column="1" Padding="0" Background="Transparent"
+                                            BorderThickness="0" Tag="Medium" Click="FrostedLevel_Click"
+                                            AutomationProperties.Name="Frost: Medium"
+                                            AutomationProperties.AutomationId="SettingsFrostMedium">
+                                        <Border x:Name="FrostedLevelMediumPill" Width="104" CornerRadius="6"
+                                                BorderThickness="1" Padding="0,7">
+                                            <TextBlock x:Name="FrostedLevelMediumText" Text="Medium"
+                                                       HorizontalAlignment="Center" FontSize="12"
+                                                       FontWeight="SemiBold" />
+                                        </Border>
+                                    </Button>
+                                    <Button Grid.Column="2" Padding="0" Background="Transparent"
+                                            BorderThickness="0" Tag="Dark" Click="FrostedLevel_Click"
+                                            AutomationProperties.Name="Frost: Dark"
+                                            AutomationProperties.AutomationId="SettingsFrostDark">
+                                        <Border x:Name="FrostedLevelDarkPill" Width="104" CornerRadius="6"
+                                                BorderThickness="1" Padding="0,7">
+                                            <TextBlock x:Name="FrostedLevelDarkText" Text="Dark"
+                                                       HorizontalAlignment="Center" FontSize="12"
+                                                       FontWeight="SemiBold" />
+                                        </Border>
+                                    </Button>
+                                </Grid>
+                            </StackPanel>
+
                             <!-- Sits right under Theme: both are how this window looks, not how it
                                  behaves. Picking a colour here overrides the built-in default via
                                  ShellWindow.ApplyAccentColorOverride, which is what makes it show up
