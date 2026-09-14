@@ -17,7 +17,14 @@ public sealed record ToolDefinition(
     string DisplayName,
     string Description,
     string Glyph,
-    Func<ToolPage> Factory)
+    // Takes the OrbitManager rather than building the page bare: a page's own constructor is
+    // where its panes, hover-accent buttons and privacy bubble all get built (see
+    // ToolPages.EditorToolPage), and every one of those now reads the live theme and accent
+    // straight off ToolPage.HostManager.Config — which means HostManager has to be real from the
+    // very first line of that constructor, not assigned afterwards by ToolWindowBase the way
+    // HostHwnd still is (that one really can't be: it needs a window handle that doesn't exist
+    // until ToolWindowBase's own constructor runs).
+    Func<OrbitManager, ToolPage> Factory)
 {
     /// <summary>
     /// The client-area size <see cref="ToolWindows.ToolWindowBase"/> opens this tool at, or null
@@ -38,23 +45,23 @@ public static class ToolCatalog
         // JSON/XML" in its Advanced sidebar, a fixed format was never more than "Auto, minus
         // the detection step", so they were merged into this one entry.
         new ToolDefinition(ToolKind.Data, "Data Formatter", "Auto-detect and format JSON or XML.", "\uE943",
-            () => new FormatterPage()),
+            m => new FormatterPage(m)),
         // The lightweight sibling of Data Formatter above: no editing, no command bar, no
         // Advanced sidebar. It reads the clipboard the moment it opens, auto-detects JSON, XML,
         // YAML or CSV, and shows the result formatted with a Copy and a Save button \u2014 see
         // QuickFormatPage's own doc comment for why this exists as a separate tool rather than a
         // mode of Data Formatter.
         new ToolDefinition(ToolKind.QuickFormat, "Quick Format", "Auto-format your last copied JSON, XML, YAML or CSV.", "\uE917",
-            () => new QuickFormatPage())
+            m => new QuickFormatPage(m))
         {
             WindowSize = (560, 460),
         },
         new ToolDefinition(ToolKind.SecureValues, "Secure values", "Store keys and secrets locally (masked).", "\uE72E",
-            () => new SecureValuesPage()),
+            m => new SecureValuesPage(m)),
         new ToolDefinition(ToolKind.Base64, "Base64", "Encode and decode Base64 text.", "B64",
-            () => new Base64Page()),
+            m => new Base64Page(m)),
         new ToolDefinition(ToolKind.Certificate, "Certificate", "Inspect certificate, PKCS#12, and Java KeyStore files.", "\uEB95",
-            () => new CertificatePage()),
+            m => new CertificatePage(m)),
     ];
 
     /// <summary>

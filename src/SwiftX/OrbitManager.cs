@@ -492,7 +492,11 @@ public sealed class OrbitManager
     /// exactly when this matters.
     /// </para>
     /// </summary>
-    public void ApplyAccentColour() => _addItemWindow?.ApplyAccent();
+    public void ApplyAccentColour()
+    {
+        _addItemWindow?.ApplyAccent();
+        ToolWindows.ApplyAccentToAll();
+    }
 
     /// <summary>
     /// Puts <see cref="Config"/>'s language choice into effect. Anything that reads

@@ -703,24 +703,27 @@ can reach, so `ShellWindow.RepaintThemedContent` re-runs all of those builders o
 as well. Leaving it out is what once made a theme switch look dead on those two screens while the
 rest of the window moved.
 
-### Mica — the app window, and nothing else
+### Mica — every window but the orbit overlay and the Add-item dialog
 
-`ShellWindow` attaches a real `MicaBackdrop` (`MicaKind.BaseAlt`) for every theme but Frosted
-glass, which gets a thin `DesktopAcrylicController` instead (`FrostedGlassBackdrop`); `ApplyBackdrop`
-swaps between the two and is guarded on the type already attached, since rebuilding a backdrop tears
-down its composition target and flickers. Mica is visible only where a surface above it is
-translucent, which in practice means Dark:
+`ShellWindow`, `OnboardingWindow` and every tool window (`ToolWindowBase.ApplyBackdrop`) each attach
+a real `MicaBackdrop` (`MicaKind.BaseAlt`) for every theme but Frosted glass, which gets a thin
+`DesktopAcrylicController` instead (`FrostedGlassBackdrop`); `ApplyBackdrop` swaps between the two
+and is guarded on the type already attached, since rebuilding a backdrop tears down its composition
+target and flickers. Mica is visible only where a surface above it is translucent, which in practice
+means Dark:
 Dark's plates are `#D9…`, so Mica's wallpaper-derived tint reads as a subtle wash through each of
 them while the four still differ enough to keep their raised/recessed hierarchy. Light's brushes are
 100% opaque, so Mica is attached there too and simply never shows through anything; Midnight's flat
-`#E6` black lets the barest hint through.
+`#E6` black lets the barest hint through. A tool window's own page paints onto that same four-brush
+family (`ShellCardBackgroundBrush`/`ShellPillBrush` for its panes, `ShellBackgroundBrush` for its
+root), so Mica reads through a tool window's content exactly the same way it does the app window's.
 
-It reaches **only** that window. The orbit overlay, the Add-item dialog and the four tool windows
-carry no Mica. The overlay's backdrop is `TransparentBackdrop`, which contributes no pixels of its
-own — attaching *a* backdrop is what stops WinUI clearing the window to an opaque plate, so an empty
-one is the whole point — and the dialog and tool windows are plain opaque surfaces. That split is
-deliberate: Settings follows a palette of its own, while everything else keeps the app's shared
-black/white identity.
+The orbit overlay and the Add-item dialog carry no Mica. The overlay's backdrop is
+`TransparentBackdrop`, which contributes no pixels of its own — attaching *a* backdrop is what stops
+WinUI clearing the window to an opaque plate, so an empty one is the whole point — and the dialog is
+a plain opaque surface. That split is deliberate: Settings follows a palette of its own, while
+everything else — the app window and every tool window alike — keeps the app's shared black/white
+identity.
 
 ### Acrylic — the orbit's own bubbles
 
@@ -786,13 +789,22 @@ everywhere it lands: the colour itself, an 18% lighter hover, and an 18% darker 
 It reaches the app window's toggle switches, radio buttons, the Radius slider (track and thumb), the
 Feedback section's rating stars, the Settings rail's 4px indicator and active label, the selected
 theme card's border, the Home screen's box glyphs and OPEN bars, the set-up guide's step dots and
-commit button, and the Feedback & Support links. It deliberately reaches nothing else:
+commit button, and the Feedback & Support links (`ShellWindow.ApplyAccentColorOverride`); the
+Add-item dialog's own accent-tinted controls (`AddItemWindow.ApplyAccentColorOverride`); and, in
+every tool window, whichever action button's hover tint isn't one of the two fixed colours below —
+Open file, Format, Encode/Decode, Save, Edit, Unlock and the rest
+(`EditorToolPage.ApplyHoverIconColor`, reading `AccentPalette.Resolve` directly rather than through a
+resource-dictionary override, since a page built entirely in code has no dictionary for
+`{ThemeResource}` bindings to shadow in the first place). It deliberately reaches nothing else:
 
-- The orbit, the Add-item dialog and the four tool windows have no accent concept at all.
-- Secure values' **Copy** stays a fixed communication blue (`#60CDFF` dark / `#0078D4` light). It
-  has to read as *blue* whatever the accent is set to, the same way a critical red never tracks the
-  accent either.
-- The orbit's Close item is always `#EF6F6F` under the pointer.
+- The orbit has no accent concept at all — its canvas keeps Logi's own fixed teal
+  (`OrbitCanvasAccentBrush`) regardless of what the user has picked.
+- Every tool page's own **Copy** stays a fixed communication blue (`#60CDFF` dark / `#0078D4` light,
+  `SwiftXCopyHoverBrush`). It has to read as *blue* whatever the accent is set to, the same way a
+  critical red never tracks the accent either.
+- The orbit's Close item is always `#EF6F6F` under the pointer, and every tool page's own
+  Delete/Clear is always `ToolCriticalBrush` (Fluent's usual critical red) under the pointer, for
+  the same reason.
 
 ### High contrast
 

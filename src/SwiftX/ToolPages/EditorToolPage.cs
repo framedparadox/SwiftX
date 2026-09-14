@@ -1,4 +1,5 @@
 using SwiftX.Controls;
+using SwiftX.Models;
 using SwiftX.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -64,12 +65,56 @@ public abstract class EditorToolPage : ToolPage
         VerticalAlignment = VerticalAlignment.Center,
     };
 
-    private readonly FrameworkElement _privacyIndicator = BuildPrivacyIndicator();
+    private readonly FrameworkElement _privacyIndicator;
+    private readonly FontIcon _privacyIcon = new()
+    {
+        // Built from the codepoint, not a literal character in source, so the glyph can't be
+        // silently swapped for a different (or invisible) private-use character by a stray
+        // copy/paste — see the memory note on this exact failure mode.
+        Glyph = char.ConvertFromUtf32(0xEA18),
+        FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
+        FontSize = 14,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
 
     private readonly Grid _root = new();
 
-    protected EditorToolPage()
+    /// <summary>
+    /// This page's own live theme — <see cref="ToolPage.HostManager"/>'s config, read fresh on
+    /// every call rather than captured once, so a value read from here is never one step behind a
+    /// change made in Settings while this window is open.
+    /// </summary>
+    protected AppTheme Theme => HostManager.Config.Theme;
+
+    /// <summary>
+    /// A SwiftX theme brush, resolved against this page's own <c>ActualTheme</c> and live
+    /// <see cref="Theme"/> — never <c>Application.Current.Resources</c>, which resolves against
+    /// the application's ambient theme and silently disagrees with what this specific window is
+    /// actually showing the moment a SwiftX theme pick and the OS/App theme diverge (see
+    /// <see cref="ThemeHelper"/>'s own warning on exactly this). Every brush this class and its
+    /// subclasses paint goes through here now, in place of the <c>Application.Current.Resources</c>
+    /// lookups (mostly stock WinUI system keys — <c>CardBackgroundFillColorDefaultBrush</c> and
+    /// its neighbours) each used to carry.
+    /// </summary>
+    protected Microsoft.UI.Xaml.Media.Brush ThemeBrush(string key) => ThemeHelper.Brush(this, Theme, key);
+
+    /// <summary>
+    /// The live accent colour: the user's own pick, or the theme's own built-in default when they
+    /// have not made one — computed fresh each call, the same way <c>ShellWindow</c>'s and
+    /// <c>AddItemWindow</c>'s own <c>CurrentAccentColor</c> are, so a colour read from here during
+    /// a live change in Settings is never stale. This is what the tool pages had no concept of at
+    /// all before this pass — the drag-over border and the "everything but Copy/Delete" hover tint
+    /// both used to read WinUI's own <c>AccentFillColorDefaultBrush</c>, the Windows system accent,
+    /// which is a different colour from SwiftX's own the moment a user picks one.
+    /// </summary>
+    protected Windows.UI.Color CurrentAccentColor() =>
+        AccentPalette.Resolve(HostManager.Config, AccentPalette.IsDark(HostManager.Config, this));
+
+    protected EditorToolPage(OrbitManager manager) : base(manager)
     {
+        _privacyIndicator = BuildPrivacyIndicator();
+
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -138,28 +183,39 @@ public abstract class EditorToolPage : ToolPage
         return OptionLabel(text);
     }
 
+    /// <summary>Every pane this page has built, paired with which side it is — so a theme change
+    /// can repaint each one without either the base class or the page having to keep any other
+    /// record of them.</summary>
+    private readonly List<(Border Border, bool Secondary)> _panes = new();
+
     /// <summary>
     /// Wraps a pane in its own surface. Input and output sit on slightly different backgrounds so
     /// the eye can tell at a glance which half it is reading — a one-step tint apart, not a
-    /// contrast jump, since both are still just text on the window's glass.
+    /// contrast jump, since both are still just text on the window's glass. The two backgrounds are
+    /// the app's own <c>ShellCardBackgroundBrush</c>/<c>ShellPillBrush</c> pair (the same one-step
+    /// relationship the Home screen's nav-box card and its inset pill already carry) rather than
+    /// WinUI's <c>CardBackgroundFillColorDefault/SecondaryBrush</c>, which is what these panes
+    /// actually were until this pass and is precisely the mechanism <see cref="ThemeBrush"/>'s own
+    /// remarks warn about.
     /// </summary>
     /// <param name="secondary">True for the output/derived side of a two-pane tool.</param>
-    protected static Border Pane(FrameworkElement content, bool secondary = false) => new()
+    protected Border Pane(FrameworkElement content, bool secondary = false)
     {
-        Child = content,
-        Background = ThemeBrush(secondary
-            ? "CardBackgroundFillColorSecondaryBrush"
-            : "CardBackgroundFillColorDefaultBrush"),
-        BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush"),
-        BorderThickness = secondary ? new Thickness(1, 0, 0, 0) : new Thickness(0),
-    };
+        var pane = new Border
+        {
+            Child = content,
+            BorderThickness = secondary ? new Thickness(1, 0, 0, 0) : new Thickness(0),
+        };
+        _panes.Add((pane, secondary));
+        PaintPane(pane, secondary);
+        return pane;
+    }
 
-    /// <summary>A theme resource brush, or null if this build's resource dictionary lacks it —
-    /// a missing tint is a pane that looks like the window, not a crash on startup.</summary>
-    private static Microsoft.UI.Xaml.Media.Brush? ThemeBrush(string key) =>
-        Application.Current.Resources.TryGetValue(key, out var value)
-            ? value as Microsoft.UI.Xaml.Media.Brush
-            : null;
+    private void PaintPane(Border pane, bool secondary)
+    {
+        pane.Background = ThemeBrush(secondary ? "ShellPillBrush" : "ShellCardBackgroundBrush");
+        pane.BorderBrush = ThemeBrush("ShellCardBorderBrush");
+    }
 
     /// <summary>
     /// Which hover tint a button's icon takes on pointer-over/pressed — shared across every tool
@@ -193,12 +249,16 @@ public abstract class EditorToolPage : ToolPage
     /// the ask is a coloured icon on hover, not a filled hover chip. A <see cref="FontIcon"/>
     /// content has no <c>Foreground</c> of its own set, so it inherits the Button's, the same way
     /// it already inherits the icon colour these buttons show at rest.
+    /// <para>
+    /// Instance, not static, now that the accent tint needs <see cref="CurrentAccentColor"/> —
+    /// re-run this against an already-built button (a concrete page's own <c>ApplyTheme</c>
+    /// override, or one it built once at construction and never rebuilds) to repaint it after a
+    /// live theme or accent change.
+    /// </para>
     /// </summary>
-    protected static void ApplyHoverIconColor(Button button, HoverAccent accent)
+    protected void ApplyHoverIconColor(Button button, HoverAccent accent)
     {
         var brush = HoverAccentBrush(accent);
-        if (brush is null)
-            return;
         button.Resources["ButtonForegroundPointerOver"] = brush;
         button.Resources["ButtonForegroundPressed"] = brush;
     }
@@ -209,11 +269,9 @@ public abstract class EditorToolPage : ToolPage
     /// any visible label to this same key, so a command whose label happens to be visible (Format,
     /// Encode/Decode — anything not <see cref="ToolCommand.IconOnly"/>) takes the tint on both,
     /// which reads as one coherent "this is now highlighted" rather than a mismatch.</summary>
-    private static void ApplyHoverIconColor(AppBarButton button, HoverAccent accent)
+    private void ApplyHoverIconColor(AppBarButton button, HoverAccent accent)
     {
         var brush = HoverAccentBrush(accent);
-        if (brush is null)
-            return;
         button.Resources["AppBarButtonForegroundPointerOver"] = brush;
         button.Resources["AppBarButtonForegroundPressed"] = brush;
     }
@@ -223,15 +281,17 @@ public abstract class EditorToolPage : ToolPage
     /// <c>SystemFillColorAttentionBrush</c> — that framework key is itself just a tint of the
     /// system accent colour, so on a machine whose Windows accent isn't blue, Copy's hover would
     /// have silently matched every other button's instead of standing apart from Delete's fixed
-    /// red. Critical red and the accent default are both already theme-tracking WinUI system
-    /// colours, independent of personalization (see <c>AccentFillColorDefaultBrush</c>'s existing
-    /// use as this app's "the accent colour" outside Settings, e.g. the drag-over border below).
+    /// red. Delete reads <c>ToolCriticalBrush</c> — <see cref="ThemeHelper"/>'s own copy of Fluent's
+    /// critical red, resolved against this page rather than the app-ambient theme (see
+    /// <see cref="ThemeBrush"/>) — and every other action takes <see cref="CurrentAccentColor"/>,
+    /// the app's own accent, in place of the Windows system accent
+    /// <c>AccentFillColorDefaultBrush</c> used to hand back.
     /// </summary>
-    private static Microsoft.UI.Xaml.Media.Brush? HoverAccentBrush(HoverAccent accent) => accent switch
+    private Microsoft.UI.Xaml.Media.Brush HoverAccentBrush(HoverAccent accent) => accent switch
     {
-        HoverAccent.Delete => ThemeBrush("SystemFillColorCriticalBrush"),
+        HoverAccent.Delete => ThemeBrush("ToolCriticalBrush"),
         HoverAccent.Copy => ThemeBrush("SwiftXCopyHoverBrush"),
-        _ => ThemeBrush("AccentFillColorDefaultBrush"),
+        _ => new Microsoft.UI.Xaml.Media.SolidColorBrush(CurrentAccentColor()),
     };
 
     /// <summary>Sets the page's own pane layout. Call once, from the derived constructor.</summary>
@@ -265,11 +325,6 @@ public abstract class EditorToolPage : ToolPage
         _footerRow.Visibility = Visibility.Visible;
     }
 
-    // Built from the codepoint, not a literal character in source, so the glyph can't be
-    // silently swapped for a different (or invisible) private-use character by a stray
-    // copy/paste — see the memory note on this exact failure mode.
-    private static readonly string ShieldGlyph = char.ConvertFromUtf32(0xEA18);
-
     /// <summary>The rounded corner every "chat bubble" hover tip and info popup shares, so the
     /// privacy tooltip and Secure values' info flyout read as the same affordance.</summary>
     private static readonly CornerRadius BubbleCornerRadius = new(12);
@@ -288,8 +343,8 @@ public abstract class EditorToolPage : ToolPage
     /// used the system tooltip background could land on a colour that doesn't track SwiftX's own
     /// light/dark switch (Settings ▸ General), since that background is a Windows setting, not
     /// this app's theme.</summary>
-    private static Microsoft.UI.Xaml.Media.Brush? BubbleBackground => ThemeBrush("CardBackgroundFillColorDefaultBrush");
-    private static Microsoft.UI.Xaml.Media.Brush? BubbleBorder => ThemeBrush("CardStrokeColorDefaultBrush");
+    private Microsoft.UI.Xaml.Media.Brush BubbleBackground => ThemeBrush("ShellCardBackgroundBrush");
+    private Microsoft.UI.Xaml.Media.Brush BubbleBorder => ThemeBrush("ShellCardBorderBrush");
 
     /// <summary>
     /// A hover-only tip styled as a rounded speech bubble in the app's own theme colours, rather
@@ -302,7 +357,7 @@ public abstract class EditorToolPage : ToolPage
     /// control precisely because programmatic open/close needs one, styled to be visually
     /// indistinguishable from this one.
     /// </summary>
-    protected static ToolTip BuildBubbleToolTip(string text) => new()
+    protected ToolTip BuildBubbleToolTip(string text) => new()
     {
         Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = BubbleMaxWidth },
         Background = BubbleBackground,
@@ -322,7 +377,7 @@ public abstract class EditorToolPage : ToolPage
     /// is off: a Flyout's default drop shadow is what would otherwise give it away as a different
     /// kind of popup than the flat tooltip bubble.
     /// </summary>
-    protected static Flyout BuildBubbleFlyout(string text)
+    protected Flyout BuildBubbleFlyout(string text)
     {
         var presenterStyle = new Style(typeof(FlyoutPresenter));
         presenterStyle.Setters.Add(new Setter(Control.BackgroundProperty, BubbleBackground));
@@ -349,29 +404,28 @@ public abstract class EditorToolPage : ToolPage
     /// click-only privacy indicator sitting in every tool's footer would take a click just to
     /// read a line that's the same on every page.)
     /// </summary>
-    private static FrameworkElement BuildPrivacyIndicator()
+    private FrameworkElement BuildPrivacyIndicator()
     {
-        var icon = new FontIcon
-        {
-            Glyph = ShieldGlyph,
-            FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
-            FontSize = 14,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = ThemeBrush("SystemFillColorSuccessBrush")
-                ?? new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Green),
-        };
-
         var indicator = new Border
         {
-            Child = icon,
+            Child = _privacyIcon,
             Padding = new Thickness(4),
             VerticalAlignment = VerticalAlignment.Center,
         };
         var text = Loc.Get("Tool.PrivacyFooter");
         ToolTipService.SetToolTip(indicator, BuildBubbleToolTip(text));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(indicator, text);
+        PaintPrivacyIndicator();
         return indicator;
+    }
+
+    private void PaintPrivacyIndicator()
+    {
+        _privacyIcon.Foreground = ThemeBrush("ToolSuccessBrush");
+        // The tooltip is a whole separate popup control, built once and handed to
+        // ToolTipService — rebuilding it here is what carries the new theme onto its own
+        // background/border, which a Foreground repaint on the icon above cannot reach.
+        ToolTipService.SetToolTip(_privacyIndicator, BuildBubbleToolTip(Loc.Get("Tool.PrivacyFooter")));
     }
 
     /// <summary>
@@ -484,6 +538,50 @@ public abstract class EditorToolPage : ToolPage
         {
             if (command.IsVisible is { } isVisible)
                 button.Visibility = isVisible() ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>
+    /// Repaints every piece of shared chrome this class owns a reference to: every pane
+    /// <see cref="Pane"/> ever built, every command-bar button's hover tint, and the privacy
+    /// indicator. Called by <c>ToolWindowBase.ApplyTheme</c> after it repaints its own window
+    /// chrome — and, just as importantly, once synchronously during this page's own construction
+    /// path (<c>ToolWindowBase</c>'s constructor calls it before the window is ever shown), which
+    /// is what makes the very first paint correct: a page's own constructor runs before it has a
+    /// <c>XamlRoot</c> at all, so anything computed from <c>ActualTheme</c> during that constructor
+    /// is a guess, not an answer — this is the first point at which it is safe to trust.
+    /// <para>
+    /// A page whose own content needs repainting too (<c>CertificatePage</c>'s cached certificate,
+    /// <c>SecureValuesPage</c>'s row list) overrides this, calls <c>base.ApplyTheme()</c>, and then
+    /// re-runs whatever already rebuilds that content from scratch — the same rebuild a data change
+    /// already triggers, not a second parallel repaint path.
+    /// </para>
+    /// </summary>
+    public override void ApplyTheme()
+    {
+        foreach (var (border, secondary) in _panes)
+            PaintPane(border, secondary);
+
+        foreach (var (command, button) in _commandButtons)
+            ApplyHoverIconColor(button, HoverAccentFor(command.Id));
+
+        PaintPrivacyIndicator();
+    }
+
+    /// <summary>
+    /// The lighter counterpart <see cref="ToolPage.ApplyAccent"/> asks for: only the command-bar
+    /// buttons whose hover tint actually <em>is</em> the accent (Copy and Delete/Clear are fixed
+    /// colours, untouched by an accent change) get repainted, and nothing here re-renders a page's
+    /// own content the way <see cref="ApplyTheme"/>'s overrides do — see that method's base class
+    /// remarks, and <c>ToolPage.ApplyAccent</c>'s, for why a per-frame cost during a colour-picker
+    /// drag is the thing this split exists to avoid.
+    /// </summary>
+    public override void ApplyAccent()
+    {
+        foreach (var (command, button) in _commandButtons)
+        {
+            if (HoverAccentFor(command.Id) == HoverAccent.Accent)
+                ApplyHoverIconColor(button, HoverAccent.Accent);
         }
     }
 

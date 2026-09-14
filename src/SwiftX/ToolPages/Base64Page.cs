@@ -47,7 +47,7 @@ public sealed class Base64Page : EditorToolPage
     private bool _replacing;
     private readonly DispatcherQueueTimer _detectTimer;
 
-    public Base64Page()
+    public Base64Page(OrbitManager manager) : base(manager)
     {
         _editor.PlaceholderText = Loc.Get("Base64.InputPlaceholder");
         _editor.AccessibleName = Loc.Get("Common.Input");
