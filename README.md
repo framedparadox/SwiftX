@@ -219,7 +219,7 @@ gear on the right, over three portrait boxes:
 
 | Box | Opens |
 |-----|-------|
-| **Orbit Settings** | The live orbit customizer: arrange the orbit, set its size, radius, hover style and hot corner |
+| **Orbit** | The live orbit customizer: arrange the orbit, set its size, radius, hover style and hot corner |
 | **Tools** | The built-in developer tools, and which of them show on the orbit |
 | **Elements** | The apps, files, folders, links and groups on the orbit |
 
@@ -239,9 +239,13 @@ because the default six items are seeded before the guide opens and the guide on
 them; its own tick-boxes start on that same six, so finishing without touching anything is a no-op.
 Re-run it any time from **Settings → General → Set-up guide**.
 
-### Orbit Settings
+### Orbit
 
-The live orbit customizer — what it shows is what the orbit draws, at the current size and radius.
+Logi's `ActionRingPage` layout view, built to [`docs/images/17-app-ring.svg`](docs/images/17-app-ring.svg):
+a canvas column — a 68px header, the ring, a 60px toolbar over a hairline — beside a fixed 320px
+sidebar, in the ring canvas's own darker palette rather than the app chrome's (see
+[`docs/full-app-mockups-logi-base.md`](docs/full-app-mockups-logi-base.md) for why those are two
+palettes and not one). What it shows is what the orbit draws, at the current size and radius.
 
 **The canvas**
 
@@ -255,7 +259,31 @@ The live orbit customizer — what it shows is what the orbit draws, at the curr
   does and puts what you add into that same slot; a group goes with its children either way. The
   built-in tools are the Tools page's — right-clicking one offers nothing, since a tool leaves the
   orbit by being switched off there.
-- **Add item… / Reset defaults** sit on the canvas itself, centered under the orbit.
+- **Add item… / Reset defaults** sit in the toolbar along the bottom, where Logi puts its own
+  tools bar.
+
+Each filled slot wears an outward **name pill** — Logi's own 30px, 6-corner, 12px SemiBold pill,
+placed by Logi's own rule rather than a polar formula: the top and bottom slots take theirs above
+and below, the other six out to the side. They are drawn on a second canvas behind the bubbles with
+hit-testing off, which is what lets a pill overlap a node without ever becoming a drag target; they
+hide for the duration of a drag, since they do not follow a bubble, and come back on the drop. The
+**guide circle** under them is not Logi's — Logi's wheel is eight fixed positions and its ring is
+implied — but SwiftX's radius is a setting, and the circle is what makes dragging that slider read
+as a circle growing rather than eight bubbles wandering.
+
+**The sidebar** has two modes, and the **Edit** button in the header swaps between them. This is
+where the screen departs from Logi deliberately: Logi's sidebar is only ever its drag-source
+accordion, and its ring settings are a separate screen behind a nav button. SwiftX has one screen
+for the orbit, so the sidebar is what changes.
+
+By default it is the orbit's own settings — Item size, Orbit radius, Hot corner, Hover style, and
+the read-only inspector for whatever is selected. Pressing **Edit** swaps it for **Apps /
+Shortcuts / Links / Tools**, an accordion of things that can go on the orbit: the apps, folders and
+links this machine actually has (the same existence-checked catalog the first-run guide offers
+from) and the built-in tools. Click a row to put it in the first free slot; anything already on the
+orbit is shown ticked and does nothing. **Add something else…** at the bottom opens the full add
+dialog. The swap is a visibility change between two panels, not a navigation, so the canvas keeps
+its selection and its drag state across it.
 
 **Size** — Small / Medium / Large. Scales the items around the orbit; the hub is unaffected.
 
@@ -496,7 +524,7 @@ src/SwiftX/
   App.xaml.cs              Startup, single-instance lock, unhandled-exception guard
   OrbitManager.cs           Owns config, tray, hotkey, hot corner, windows, activation
   OrbitWindow.xaml(.cs)     The orbit itself: layout, animation, hover, flyout, input
-  ShellWindow.xaml(.cs)    The SwiftX app window: Home, Orbit Settings, Tools, Elements, Settings
+  ShellWindow.xaml(.cs)    The SwiftX app window: Home, Orbit, Tools, Elements, Settings
   OnboardingWindow.xaml(.cs) The first-run set-up guide
   AddItemWindow.xaml(.cs)  "Add to orbit" / "Add item", including drag-and-drop from Explorer
 

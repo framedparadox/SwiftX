@@ -531,17 +531,27 @@
 
                     <!-- Logi's 60px tools bar. Its controls are Logi's; the commands are SwiftX's,
                          moved down here off the canvas card they used to sit inside. -->
-                    <Grid Grid.Row="3">
-                        <Border VerticalAlignment="Top" Height="1"
+                    <Grid Grid.Row="3" ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <!-- Spans both columns: the rule is the top edge of the whole bar, not of
+                             either half of it. -->
+                        <Border Grid.Column="0" Grid.ColumnSpan="2" VerticalAlignment="Top" Height="1"
                                 Background="{ThemeResource OrbitCanvasBorderBrush}" />
-                        <TextBlock x:Name="OrbitCanvasHint" Margin="24,0,0,0"
+                        <!-- In its own starred column rather than overlaid on the buttons: it
+                             trims, and a TextBlock with nothing bounding it has nothing to trim
+                             against — on a narrow window it would simply have run underneath
+                             them. -->
+                        <TextBlock x:Name="OrbitCanvasHint" Grid.Column="0" Margin="24,0,0,0"
                                    HorizontalAlignment="Left" VerticalAlignment="Center"
                                    FontSize="11" TextTrimming="CharacterEllipsis"
                                    Foreground="{ThemeResource SettingsMutedBrush}"
                                    Text="Drag to rearrange · click for details · right-click to replace"
                                    ToolTipService.ToolTip="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange; right-click an item to replace or delete it. The corner button switches to what the hot corner opens, which is arranged the same way." />
-                        <StackPanel x:Name="CanvasActions" Orientation="Horizontal" Spacing="8"
-                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                        <StackPanel x:Name="CanvasActions" Grid.Column="1" Orientation="Horizontal"
+                                    Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center"
                                     Margin="0,0,24,0">
                             <Button x:Name="AddItemButton" Content="Add item…" Height="30"
                                     CornerRadius="6" Click="AddItem_Click" />
