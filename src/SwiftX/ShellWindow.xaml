@@ -419,8 +419,9 @@
 
                 <ScrollViewer Grid.Row="1" Padding="24,8,24,24">
                     <StackPanel Spacing="12" MaxWidth="940" HorizontalAlignment="Left">
-                        <TextBlock Text="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange; right-click an item to replace or delete it. The corner button switches to what the hot corner opens, which is arranged the same way."
-                                   Style="{StaticResource SettingBody}" Margin="0,0,0,4" />
+                        <TextBlock Text="Click an item for details, drag to rearrange, right-click to replace or delete."
+                                   Style="{StaticResource SettingBody}" Margin="0,0,0,4"
+                                   ToolTipService.ToolTip="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange; right-click an item to replace or delete it. The corner button switches to what the hot corner opens, which is arranged the same way." />
                         <!-- An adaptive Grid rather than two fixed-width blocks in a horizontal
                              StackPanel: a horizontal StackPanel never constrains its children to
                              the space actually available, so if the orbit-preview card plus a fixed
@@ -435,18 +436,33 @@
                                 <ColumnDefinition Width="*" MaxWidth="336" />
                             </Grid.ColumnDefinitions>
 
-                            <!-- The two orbit-wide actions sit on the canvas itself, in the space
-                                 below the orbit: they act on what is drawn there, and the orbit's own
-                                 footprint never reaches the bottom of the canvas (it is scaled to
-                                 fit well inside), so nothing is covered. -->
+                            <!-- Stretched to the sidebar's own height (that column's content now
+                                 runs taller, five heading+caption+control sections rather than one
+                                 row per card) so the canvas reads as the mockup's near-full-height
+                                 orbit rather than a short box beside a tall one. The canvas itself
+                                 stays a fixed 360x360 — RenderPreview's geometry is untouched — it
+                                 just now sits inside a taller card, centred in the space above the
+                                 divider/action row instead of filling it. -->
                             <Border Grid.Column="0" Style="{StaticResource Card}"
                                     Background="{ThemeResource SwiftXOrbitCanvasBrush}"
-                                    HorizontalAlignment="Left" VerticalAlignment="Top" Padding="8">
+                                    HorizontalAlignment="Left" VerticalAlignment="Stretch" Padding="8">
                                 <Grid>
-                                    <Canvas x:Name="PreviewCanvas" Width="360" Height="360" />
-                                    <StackPanel x:Name="CanvasActions" Orientation="Horizontal" Spacing="8"
-                                                HorizontalAlignment="Center" VerticalAlignment="Bottom"
-                                                Margin="0,0,0,4">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Canvas x:Name="PreviewCanvas" Grid.Row="0" Width="360" Height="360"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    <!-- Thin divider then the action row, bottom-right — the mockup's
+                                         line-then-buttons treatment, replacing the old overlay-on-
+                                         the-canvas placement (which read fine at 360 tall but not in
+                                         a card now stretched well past that). -->
+                                    <Border Grid.Row="1" Height="1" Margin="0,10,0,10"
+                                            Background="{ThemeResource ShellDividerBrush}" />
+                                    <StackPanel x:Name="CanvasActions" Grid.Row="2" Orientation="Horizontal" Spacing="8"
+                                                HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                                Margin="0,0,4,4">
                                         <Button x:Name="AddItemButton" Content="Add item…" Click="AddItem_Click" />
                                         <Button Content="Reset defaults" Click="ResetDefaults_Click" />
                                     </StackPanel>
@@ -454,153 +470,164 @@
                             </Border>
 
                             <StackPanel Grid.Column="1" Spacing="12" MinWidth="0">
+                                <!-- Heading + one-line caption above the control, rather than the
+                                     old single-row icon/title/control layout — the mockup's pattern
+                                     for every sidebar section. -->
                                 <Border Style="{StaticResource Card}">
-                                    <Grid ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <FontIcon Grid.Column="0" Glyph="&#xE8A3;"
-                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
-                                                  VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Text="Size" Style="{StaticResource SettingTitle}"
-                                                   VerticalAlignment="Center" />
-                                        <ComboBox x:Name="ItemSizeBox" Grid.Column="2" MinWidth="0" Width="110"
-                                                  VerticalAlignment="Center" HorizontalAlignment="Right"
-                                                  CornerRadius="6"
-                                                  AutomationProperties.Name="Item size"
-                                                  SelectionChanged="ItemSizeBox_SelectionChanged">
-                                            <ComboBoxItem Content="Small" Tag="Small" />
-                                            <ComboBoxItem Content="Medium" Tag="Medium" />
-                                            <ComboBoxItem Content="Large" Tag="Large" />
-                                        </ComboBox>
-                                    </Grid>
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="Item size" Style="{StaticResource SettingTitle}" />
+                                        <TextBlock Text="How large orbit items are drawn."
+                                                   Style="{StaticResource SettingBody}" />
+                                        <StackPanel Spacing="8" Margin="0,2,0,0">
+                                            <RadioButton x:Name="ItemSizeSmallOption" Content="Small" Tag="Small"
+                                                         GroupName="ItemSize" MinWidth="0"
+                                                         AutomationProperties.Name="Item size: Small"
+                                                         Checked="ItemSize_Checked" />
+                                            <RadioButton x:Name="ItemSizeMediumOption" Content="Medium" Tag="Medium"
+                                                         GroupName="ItemSize" MinWidth="0"
+                                                         AutomationProperties.Name="Item size: Medium"
+                                                         Checked="ItemSize_Checked" />
+                                            <RadioButton x:Name="ItemSizeLargeOption" Content="Large" Tag="Large"
+                                                         GroupName="ItemSize" MinWidth="0"
+                                                         AutomationProperties.Name="Item size: Large"
+                                                         Checked="ItemSize_Checked" />
+                                        </StackPanel>
+                                    </StackPanel>
                                 </Border>
 
                                 <Border Style="{StaticResource Card}">
-                                    <Grid ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <FontIcon Grid.Column="0" Glyph="&#xE9E9;"
-                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
-                                                  VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Text="Radius" Style="{StaticResource SettingTitle}"
-                                                   VerticalAlignment="Center" />
-                                        <Slider x:Name="RadiusSlider" Grid.Column="2" MinWidth="130" Width="130"
-                                                VerticalAlignment="Center" HorizontalAlignment="Right"
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="Orbit radius" Style="{StaticResource SettingTitle}" />
+                                        <TextBlock Text="Distance from the hub to each item."
+                                                   Style="{StaticResource SettingBody}" />
+                                        <Slider x:Name="RadiusSlider" Margin="0,2,0,0"
                                                 AutomationProperties.Name="Orbit radius"
                                                 Minimum="80" Maximum="220" StepFrequency="5" TickFrequency="20"
                                                 ValueChanged="RadiusSlider_ValueChanged" />
-                                    </Grid>
+                                        <!-- Numeric readout, right-aligned under the track — kept in
+                                             sync from code (RadiusSlider_ValueChanged) rather than
+                                             bound, since the slider has no template part that exposes
+                                             its value as formatted text. -->
+                                        <TextBlock x:Name="RadiusReadout" HorizontalAlignment="Right"
+                                                   FontSize="12" FontWeight="SemiBold"
+                                                   Foreground="{ThemeResource SettingsTitleBrush}" />
+                                    </StackPanel>
                                 </Border>
 
                                 <!-- The pointer half of "Invoke", and an orbit setting rather than an
-                                     app-wide one, so it lives here beside size and radius. Two rows:
-                                     the switch, then — as part of the same section rather than a
-                                     card of its own — which corner and how much of the orbit it
-                                     opens. The second row means nothing while the corner is off, so
-                                     it is collapsed rather than merely disabled — no dead controls
-                                     left sitting in the card. Margin carries the gap between the two
-                                     rows instead of Grid.RowSpacing, which pads a collapsed row's
-                                     empty space too and would leave a bare gap when it disappears. -->
+                                     app-wide one, so it lives here beside size and radius. Heading
+                                     row carries the on/off switch inline (the one real feature the
+                                     mockup omits — it draws a static corner-picker with no toggle —
+                                     but Hot corner is a real on/off setting and has to stay
+                                     reachable); the corner + Orbit/Quadrant row beneath it means
+                                     nothing while the corner is off, so it is collapsed rather than
+                                     merely disabled — no dead controls left sitting in the card. -->
                                 <Border Style="{StaticResource Card}">
-                                    <Grid ColumnSpacing="10">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
+                                    <StackPanel Spacing="10">
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Spacing="2">
+                                                <TextBlock Text="Hot corner" Style="{StaticResource SettingTitle}" />
+                                                <TextBlock Text="Shove the pointer into a corner to summon the orbit."
+                                                           Style="{StaticResource SettingBody}" />
+                                            </StackPanel>
+                                            <ToggleSwitch x:Name="HotCornerEnabledToggle" Grid.Column="1"
+                                                          OnContent="" OffContent="" MinWidth="0"
+                                                          AutomationProperties.Name="Hot corner"
+                                                          VerticalAlignment="Center"
+                                                          AutomationProperties.AutomationId="SettingsHotCornerToggle"
+                                                          Toggled="HotCornerEnabled_Toggled" />
+                                        </Grid>
 
-                                        <!-- A right-angled triangle standing in for the corner
-                                             itself: the right angle is the corner, the hypotenuse
-                                             the diagonal you cut across to reach it. Drawn rather
-                                             than picked from the icon font because no Segoe glyph is
-                                             a bare right triangle, and because a drawn one can be
-                                             turned. The geometry points top-left as authored; the
-                                             RotateTransform below is set from the corner dropdown in
-                                             UpdateHotCornerIcon, so the icon always points at the
-                                             corner actually selected instead of a generic one. -->
-                                        <PathIcon x:Name="HotCornerIcon" Grid.Row="0" Grid.Column="0"
-                                                  Data="M 0,0 L 14,0 L 0,14 Z"
-                                                  VerticalAlignment="Center" HorizontalAlignment="Center"
-                                                  RenderTransformOrigin="0.5,0.5">
-                                            <PathIcon.RenderTransform>
-                                                <RotateTransform x:Name="HotCornerIconRotation" />
-                                            </PathIcon.RenderTransform>
-                                        </PathIcon>
-                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="Hot corner"
-                                                   Style="{StaticResource SettingTitle}"
-                                                   VerticalAlignment="Center" />
-                                        <ToggleSwitch x:Name="HotCornerEnabledToggle" Grid.Row="0" Grid.Column="2"
-                                                      OnContent="" OffContent="" MinWidth="0"
-                                                      AutomationProperties.Name="Hot corner"
-                                                      VerticalAlignment="Center" HorizontalAlignment="Right"
-                                                      AutomationProperties.AutomationId="SettingsHotCornerToggle"
-                                                      Toggled="HotCornerEnabled_Toggled" />
-
-                                        <StackPanel x:Name="HotCornerOptionsRow" Grid.Row="1" Grid.Column="0"
-                                                    Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="12"
-                                                    Margin="0,10,0,0">
-                                            <ComboBox x:Name="HotCornerBox" MinWidth="0" Width="112"
-                                                      VerticalAlignment="Center" CornerRadius="6"
-                                                      AutomationProperties.Name="Hot corner position"
-                                                      AutomationProperties.AutomationId="SettingsHotCornerBox"
-                                                      SelectionChanged="HotCornerBox_SelectionChanged">
-                                                <ComboBoxItem Content="Top left" Tag="TopLeft" />
-                                                <ComboBoxItem Content="Top right" Tag="TopRight" />
-                                                <ComboBoxItem Content="Bottom left" Tag="BottomLeft" />
-                                                <ComboBoxItem Content="Bottom right" Tag="BottomRight" />
-                                            </ComboBox>
-                                            <RadioButton x:Name="HotCornerLayoutOrbit" Content="Orbit"
-                                                         GroupName="HotCornerLayout" MinWidth="0"
-                                                         VerticalAlignment="Center"
-                                                         AutomationProperties.AutomationId="SettingsHotCornerLayoutOrbit"
-                                                         Checked="HotCornerLayout_Checked" />
-                                            <RadioButton x:Name="HotCornerLayoutQuadrant" Content="Quadrant"
-                                                         GroupName="HotCornerLayout" MinWidth="0"
-                                                         VerticalAlignment="Center"
-                                                         AutomationProperties.AutomationId="SettingsHotCornerLayoutQuadrant"
-                                                         Checked="HotCornerLayout_Checked" />
+                                        <StackPanel x:Name="HotCornerOptionsRow" Spacing="10" Margin="0,2,0,0">
+                                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                <!-- A right-angled triangle standing in for the corner
+                                                     itself: the right angle is the corner, the
+                                                     hypotenuse the diagonal you cut across to reach
+                                                     it. Drawn rather than picked from the icon font
+                                                     because no Segoe glyph is a bare right triangle,
+                                                     and because a drawn one can be turned. The
+                                                     geometry points top-left as authored; the
+                                                     RotateTransform below is set from the corner
+                                                     dropdown in UpdateHotCornerIcon, so the icon
+                                                     always points at the corner actually selected
+                                                     instead of a generic one. -->
+                                                <PathIcon x:Name="HotCornerIcon"
+                                                          Data="M 0,0 L 14,0 L 0,14 Z"
+                                                          VerticalAlignment="Center" HorizontalAlignment="Center"
+                                                          RenderTransformOrigin="0.5,0.5">
+                                                    <PathIcon.RenderTransform>
+                                                        <RotateTransform x:Name="HotCornerIconRotation" />
+                                                    </PathIcon.RenderTransform>
+                                                </PathIcon>
+                                                <ComboBox x:Name="HotCornerBox" MinWidth="0" Width="112"
+                                                          VerticalAlignment="Center" CornerRadius="6"
+                                                          AutomationProperties.Name="Hot corner position"
+                                                          AutomationProperties.AutomationId="SettingsHotCornerBox"
+                                                          SelectionChanged="HotCornerBox_SelectionChanged">
+                                                    <ComboBoxItem Content="Top left" Tag="TopLeft" />
+                                                    <ComboBoxItem Content="Top right" Tag="TopRight" />
+                                                    <ComboBoxItem Content="Bottom left" Tag="BottomLeft" />
+                                                    <ComboBoxItem Content="Bottom right" Tag="BottomRight" />
+                                                </ComboBox>
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                                <RadioButton x:Name="HotCornerLayoutOrbit" Content="Orbit"
+                                                             GroupName="HotCornerLayout" MinWidth="0"
+                                                             VerticalAlignment="Center"
+                                                             AutomationProperties.AutomationId="SettingsHotCornerLayoutOrbit"
+                                                             Checked="HotCornerLayout_Checked" />
+                                                <RadioButton x:Name="HotCornerLayoutQuadrant" Content="Quadrant"
+                                                             GroupName="HotCornerLayout" MinWidth="0"
+                                                             VerticalAlignment="Center"
+                                                             AutomationProperties.AutomationId="SettingsHotCornerLayoutQuadrant"
+                                                             Checked="HotCornerLayout_Checked" />
+                                            </StackPanel>
                                         </StackPanel>
-                                    </Grid>
+                                    </StackPanel>
                                 </Border>
 
                                 <!-- Moved here from the old General page: how an item reacts to the
                                      pointer is a property of the orbit, not of the app, so it
                                      belongs beside size, radius and the hot corner rather than
-                                     among theme and language. -->
+                                     among theme and language. A two-segment pill rather than a
+                                     ComboBox, matching the mockup's Invert/Zoom toggle — see
+                                     SelectHoverStyle for why the selected segment is painted from
+                                     code (the app's live accent colour, tracking a custom pick, with
+                                     a contrast-computed foreground) instead of from a Style. -->
                                 <Border Style="{StaticResource Card}">
-                                    <Grid ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <FontIcon Grid.Column="0" Glyph="&#xE962;"
-                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
-                                                  VerticalAlignment="Center" />
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="Hover style" Style="{StaticResource SettingTitle}" />
-                                            <TextBlock Text="Invert swaps an item's fill under the pointer. Zoom keeps its colour and shrinks it."
-                                                       Style="{StaticResource SettingBody}" />
-                                        </StackPanel>
-                                        <ComboBox x:Name="HoverStyleBox" Grid.Column="2" MinWidth="0" Width="110"
-                                                  VerticalAlignment="Center" HorizontalAlignment="Right"
-                                                  CornerRadius="6"
-                                                  AutomationProperties.Name="Hover style"
-                                                  SelectionChanged="HoverStyleBox_SelectionChanged">
-                                            <ComboBoxItem Content="Invert" Tag="Invert" />
-                                            <ComboBoxItem Content="Zoom" Tag="Zoom" />
-                                        </ComboBox>
-                                    </Grid>
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="Hover style" Style="{StaticResource SettingTitle}" />
+                                        <TextBlock Text="Invert swaps an item's fill under the pointer. Zoom keeps its colour and shrinks it."
+                                                   Style="{StaticResource SettingBody}" />
+                                        <Grid ColumnSpacing="8" Margin="0,2,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button Grid.Column="0" Padding="0" Background="Transparent" BorderThickness="0"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                                    Tag="Invert" Click="HoverStyleOption_Click"
+                                                    AutomationProperties.Name="Hover style: Invert">
+                                                <Border x:Name="HoverStyleInvertPill" CornerRadius="6" BorderThickness="1" Padding="0,7">
+                                                    <TextBlock x:Name="HoverStyleInvertText" Text="Invert"
+                                                               HorizontalAlignment="Center" FontSize="12" FontWeight="SemiBold" />
+                                                </Border>
+                                            </Button>
+                                            <Button Grid.Column="1" Padding="0" Background="Transparent" BorderThickness="0"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                                    Tag="Zoom" Click="HoverStyleOption_Click"
+                                                    AutomationProperties.Name="Hover style: Zoom">
+                                                <Border x:Name="HoverStyleZoomPill" CornerRadius="6" BorderThickness="1" Padding="0,7">
+                                                    <TextBlock x:Name="HoverStyleZoomText" Text="Zoom"
+                                                               HorizontalAlignment="Center" FontSize="12" FontWeight="SemiBold" />
+                                                </Border>
+                                            </Button>
+                                        </Grid>
+                                    </StackPanel>
                                 </Border>
 
                                 <!-- Read-only inspector for whatever item was last clicked, on the
@@ -658,27 +685,47 @@
                 </StackPanel>
 
                 <ScrollViewer Grid.Row="1" Padding="48,8,64,48">
-                    <StackPanel Spacing="6" MaxWidth="780" HorizontalAlignment="Left">
+                    <!-- Widened from the vertical list's 780 cap: four 224-wide card slots (see
+                         ToolsList's ItemsWrapGrid below) need 896px, and the window's own content
+                         budget here (1040 client width minus this ScrollViewer's 48+64 padding) is
+                         928 — 900 leaves a small margin inside that without being so wide it invites
+                         a 5th column if ItemWidth ever changes. -->
+                    <StackPanel Spacing="6" MaxWidth="900" HorizontalAlignment="Left">
                         <TextBlock Text="Every tool lives inside the Tools item on the orbit. Turn one off to take it out, or drag it by its handle to change where it sits inside."
                                    Style="{StaticResource SettingBody}" Margin="0,0,0,8" />
 
                         <!-- Rows are built in code-behind (RebuildToolsList) — one per entry in
-                             ToolCatalog.All, each shown once here regardless of how many orbit
-                             instances it has. CanReorderItems + AllowDrop is WinUI's own
-                             drag-to-reorder; it drives ToolCards directly (see
-                             ToolCards_CollectionChanged). Deliberately still a ListView rather than
-                             the GridView of cards the mockups draw: the card grid was the one part
-                             of that design that would have cost a behaviour — dragging a tool to
-                             reorder it inside the orbit's Tools group — and a working reorder is
-                             worth more here than the extra card chrome. -->
+                             ToolRows, each shown once here regardless of how many orbit instances
+                             it has. CanReorderItems + AllowDrop is WinUI's own drag-to-reorder; it
+                             drives _toolCards directly (see ToolCards_CollectionChanged). Still a
+                             ListView — CanReorderItems/AllowDrop are properties of the ListView
+                             control itself, not of whatever panel arranges its items (this is
+                             literally how GridView is implemented under the hood: a ListView with a
+                             GridView-flavoured ItemsPanel/ItemContainerStyle), so the mockups' card
+                             grid and a working drag-reorder were never actually in tension. Swapping
+                             the ItemsPanel below for an ItemsWrapGrid keeps the exact same
+                             ObservableCollection<Border> ItemsSource and its CollectionChanged
+                             wiring untouched — only how the same bound cards are arranged on screen
+                             changes, from a vertical stack to a wrapping grid.
+                             MaximumRowsOrColumns="4" caps the wrap at 4 columns outright (rather
+                             than leaving it to width math alone), so the 5th ToolRow simply wraps
+                             to its own row 2 instead of ever being dropped to match the mockup's
+                             4-card example. -->
                         <ListView x:Name="ToolsList" SelectionMode="None"
                                   CanReorderItems="True" AllowDrop="True"
                                   ScrollViewer.VerticalScrollBarVisibility="Disabled"
                                   ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <muxc:ItemsWrapGrid Orientation="Horizontal"
+                                                         MaximumRowsOrColumns="4"
+                                                         ItemWidth="224" />
+                                </ItemsPanelTemplate>
+                            </ListView.ItemsPanel>
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
                                     <Setter Property="Padding" Value="0" />
-                                    <Setter Property="Margin" Value="0,0,0,6" />
+                                    <Setter Property="Margin" Value="0,0,24,24" />
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                     <Setter Property="MinHeight" Value="0" />
                                 </Style>
@@ -721,8 +768,9 @@
                     <StackPanel Spacing="6">
                         <TextBlock Text="Elements are the apps, files, folders, links, and groups you've added to the orbit. Show, hide, or remove items on the orbit. Settings and Close are always on the orbit, so they are not listed here."
                                    Style="{StaticResource SettingBody}" Margin="0,0,0,8" />
-                        <Grid x:Name="ItemsList" ColumnSpacing="12" RowSpacing="6">
+                        <Grid x:Name="ItemsList" ColumnSpacing="20" RowSpacing="20">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>

@@ -1915,8 +1915,8 @@ public sealed partial class ShellWindow : Window
     /// <summary>
     /// Fills <c>LanguageBox</c> from <see cref="LanguageCatalog.Options"/> and selects whichever
     /// entry matches <see cref="AppConfig.Language"/>. Built in code-behind rather than as static
-    /// ComboBoxItems in XAML (unlike HoverStyleBox/ItemSizeBox) because each entry's Content is that
-    /// language's own native name — data, not markup.
+    /// ComboBoxItems in XAML (unlike HotCornerBox) because each entry's Content is that language's
+    /// own native name — data, not markup.
     /// </summary>
     private void PopulateLanguageBox()
     {
@@ -1930,28 +1930,48 @@ public sealed partial class ShellWindow : Window
         }
     }
 
+    /// <summary>
+    /// Paints the Hover style pill's two segments for <paramref name="style"/>: the selected
+    /// segment filled with the app's live accent colour (<see cref="CurrentAccentColor"/> — tracks
+    /// a custom pick, not just the built-in teal/purple) with a foreground computed for contrast
+    /// against it (<see cref="AccentPalette.OnAccent(Color)"/>), the other left as a plain outline.
+    /// <para>
+    /// Local Setters rather than a Style/ControlTemplate — the same choice
+    /// <see cref="UpdateThemeCardSelection"/> makes for the theme cards, and for the same reason:
+    /// this is a per-element paint driven by which of two Buttons was chosen, not something a Style
+    /// alone can express. As with the theme cards, a value painted here becomes a local value that
+    /// will not itself track a later theme or accent change made elsewhere — this call already runs
+    /// on load and on every selection, which covers ordinary use; only a theme/accent change made
+    /// while this exact screen is already open and already painted would need this re-run again,
+    /// which nothing outside the Orbit screen's own code currently does.
+    /// </para>
+    /// </summary>
     private void SelectHoverStyle(OrbitHoverStyle style)
     {
-        foreach (ComboBoxItem item in HoverStyleBox.Items)
+        bool dark = ThemeHelper.IsDark(Root);
+        bool isBlack = _manager.Config.Theme == AppTheme.Black;
+        var accent = CurrentAccentColor();
+        var accentBrush = new SolidColorBrush(accent);
+        var onAccentBrush = new SolidColorBrush(AccentPalette.OnAccent(accent));
+        var restingBorder = new SolidColorBrush(ThemeHelper.ColorFor(dark, isBlack, "ShellCardBorderBrush"));
+        var mutedBrush = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SettingsMutedBrush"));
+
+        Paint(HoverStyleInvertPill, HoverStyleInvertText, style == OrbitHoverStyle.Invert);
+        Paint(HoverStyleZoomPill, HoverStyleZoomText, style == OrbitHoverStyle.Zoom);
+
+        void Paint(Border pill, TextBlock label, bool selected)
         {
-            if ((item.Tag as string) == style.ToString())
-            {
-                HoverStyleBox.SelectedItem = item;
-                break;
-            }
+            pill.Background = selected ? accentBrush : null;
+            pill.BorderBrush = selected ? accentBrush : restingBorder;
+            label.Foreground = selected ? onAccentBrush : mutedBrush;
         }
     }
 
     private void SelectItemSize(OrbitItemSize size)
     {
-        foreach (ComboBoxItem item in ItemSizeBox.Items)
-        {
-            if ((item.Tag as string) == size.ToString())
-            {
-                ItemSizeBox.SelectedItem = item;
-                break;
-            }
-        }
+        ItemSizeSmallOption.IsChecked = size == OrbitItemSize.Small;
+        ItemSizeMediumOption.IsChecked = size == OrbitItemSize.Medium;
+        ItemSizeLargeOption.IsChecked = size == OrbitItemSize.Large;
     }
 
     private void ThemeCard_Click(object sender, RoutedEventArgs e)
@@ -2106,13 +2126,14 @@ public sealed partial class ShellWindow : Window
     }
 
 
-    private void HoverStyleBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void HoverStyleOption_Click(object sender, RoutedEventArgs e)
     {
-        if (_loading || HoverStyleBox.SelectedItem is not ComboBoxItem item) return;
-        if (Enum.TryParse<OrbitHoverStyle>(item.Tag as string, out var style))
+        if (_loading || sender is not FrameworkElement option) return;
+        if (Enum.TryParse<OrbitHoverStyle>(option.Tag as string, out var style))
         {
             _manager.Config.HoverStyle = style;
             _manager.Save();
+            SelectHoverStyle(style);
         }
     }
 
@@ -2311,15 +2332,28 @@ public sealed partial class ShellWindow : Window
         UpdateHotkeyStatus();
     }
 
-    private void ItemSizeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ItemSize_Checked(object sender, RoutedEventArgs e)
     {
-        if (_loading || ItemSizeBox.SelectedItem is not ComboBoxItem item) return;
-        if (Enum.TryParse<OrbitItemSize>(item.Tag as string, out var size))
+        if (_loading || sender is not RadioButton radio) return;
+        if (Enum.TryParse<OrbitItemSize>(radio.Tag as string, out var size))
             _manager.SetItemSize(size);
     }
 
     private void RadiusSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
+        // Connect() wires this handler the moment RadiusSlider itself is created, but applying
+        // this element's own Minimum="80" during that same XAML load coerces Value up from its
+        // 0 default and fires this handler immediately — before RadiusReadout, a later sibling
+        // in the markup, has been connected. Ignore that premature firing; Root.Loaded sets
+        // RadiusSlider.Value explicitly once everything is wired, which re-fires this with
+        // RadiusReadout in place.
+        if (RadiusReadout is null) return;
+
+        // Kept in sync even while _loading: the readout has nothing to guard against re-entrancy
+        // (unlike _manager.SetRadius below, which would otherwise re-save on every programmatic
+        // Value assignment during the load pass), and it needs to reflect whatever the slider was
+        // just set to either way.
+        RadiusReadout.Text = $"{(int)e.NewValue} px";
         if (_loading) return;
         _manager.SetRadius(e.NewValue);
     }
@@ -2464,8 +2498,8 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>
     /// Builds the Elements screen: every top-level item and every top-level group in one flat
-    /// two-column card grid, all cards the same width — a group's own card immediately followed by
-    /// a card for each of its children, in orbit order.
+    /// three-column card grid, all cards the same width — a group's own card immediately followed
+    /// by a card for each of its children, in orbit order.
     /// <para>
     /// A group used to be skipped entirely here — only its children were listed, folded into the
     /// flat grid under the group's name — which meant a group with nothing in it yet (exactly what
@@ -2475,8 +2509,8 @@ public sealed partial class ShellWindow : Window
     /// element's. This is the version that keeps the first fix without the second problem: a
     /// group gets exactly one card — same shape and width as <see cref="BuildItemRow"/>, via
     /// <see cref="BuildGroupRow"/> — and its children are just more cards in the same shared grid
-    /// right after it, distinguished from a top-level item only by the group's name already
-    /// appearing in their own caption (<c>BuildItemRow</c>'s <c>orbit</c> parameter).
+    /// right after it, distinguished from a top-level item only by their own caption text
+    /// (<c>BuildGroupRow</c>'s child-count line versus <c>BuildItemRow</c>'s kind/target lines).
     /// </para>
     /// </summary>
     private void RebuildItemsList()
@@ -2509,7 +2543,7 @@ public sealed partial class ShellWindow : Window
                     cards.Add(new Border
                     {
                         Style = (Style)Root.Resources["Card"],
-                        Child = BuildItemRow(child, item.DisplayName),
+                        Child = BuildItemRow(child),
                     });
             }
             else
@@ -2517,179 +2551,339 @@ public sealed partial class ShellWindow : Window
                 cards.Add(new Border
                 {
                     Style = (Style)Root.Resources["Card"],
-                    Child = BuildItemRow(item, "Home"),
+                    Child = BuildItemRow(item),
                 });
             }
         }
 
-        int rowCount = (cards.Count + 1) / 2;
+        int rowCount = (cards.Count + 2) / 3;
         for (int r = 0; r < rowCount; r++)
             ItemsList.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         for (int i = 0; i < cards.Count; i++)
         {
-            Grid.SetRow(cards[i], i / 2);
-            Grid.SetColumn(cards[i], i % 2);
+            Grid.SetRow(cards[i], i / 3);
+            Grid.SetColumn(cards[i], i % 3);
             ItemsList.Children.Add(cards[i]);
         }
     }
 
     /// <summary>
-    /// A top-level group's own row: the same shape <see cref="BuildItemRow"/> uses — icon, name,
-    /// a caption, a show/hide switch — so a group's card is never wider than an ungrouped item's.
-    /// Two icon buttons stand in for <c>BuildItemRow</c>'s one, an "Add item…" scoped to this
-    /// group's own children alongside the same delete every row carries — icon-only rather than a
-    /// labeled button, since a labeled "Add item…" button is what used to force this row onto its
-    /// own full-width section; a delete-sized icon button fits the same half-width card everything
-    /// else uses.
+    /// A top-level group's own card: the same vertical shape <see cref="BuildItemRow"/> builds —
+    /// icon, title, two caption lines, a type badge, a divider, a footer strip — so a group's card
+    /// is never a different size than an ungrouped item's. Two differences: a group isn't itself a
+    /// shell target, so there is nothing sensible for its footer to "Edit" — the footer instead
+    /// opens the same scoped "Add item…" flow the header's own add-child affordance used to be the
+    /// only way to reach, so that capability stays reachable rather than silently dropped when the
+    /// footer stopped being available for it. And its caption lines describe the group itself
+    /// (child count, then a static "opens a nested orbit") rather than a kind/target pair, since a
+    /// group has neither.
     /// </summary>
     private Grid BuildGroupRow(OrbitItem group)
     {
         var children = group.Children.Where(c => !c.IsTool).ToList();
 
-        var row = new Grid { ColumnSpacing = 12 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        var icon = BuildItemIcon(group);
-        Grid.SetColumn(icon, 0);
-        row.Children.Add(icon);
-
-        var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        labels.Children.Add(new TextBlock
+        string caption1 = children.Count switch
         {
-            Text = group.DisplayName,
-            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
-        });
-        labels.Children.Add(new TextBlock
-        {
-            Text = children.Count switch
+            0 => "No items yet",
+            1 => "Group · 1 item",
+            _ => $"Group · {children.Count} items",
+        };
+
+        var card = BuildCardShell(
+            BuildItemIcon(group),
+            group.DisplayName,
+            caption1,
+            "Opens a nested orbit",
+            "Group",
+            isHidden: group.Hidden,
+            onToggle: isOn =>
             {
-                0 => "No items yet",
-                1 => "Group · 1 item",
-                _ => $"Group · {children.Count} items",
+                group.Hidden = !isOn;
+                _manager.NotifyItemsChanged();
+                RenderPreview();
             },
-            Style = SecondaryCaptionStyle,
-        });
-        Grid.SetColumn(labels, 1);
-        row.Children.Add(labels);
+            onDelete: () =>
+            {
+                // The whole group goes, children and all — they only exist inside it.
+                _manager.Config.Primary.Items.Remove(group);
+                _manager.NotifyItemsChanged();
+                RebuildItemsList();
+                RenderPreview();
+            },
+            deleteAutomationName: "Delete " + group.DisplayName,
+            footerLabel: "ADD ITEM",
+            footerAutomationName: "Add item to " + group.DisplayName,
+            onFooter: () => _manager.OpenAddItem(added =>
+            {
+                // Into this group's own children, not the top-level orbit — and with the Group
+                // tile taken away, since the orbit has no third orbit to expand a group inside a
+                // group into.
+                group.Children.Add(added);
+                _manager.NotifyItemsChanged();
+                RenderPreview();
+                RebuildItemsList();
+            }, group.Children, isGenericAddItem: true, allowGroups: false));
 
-        // Same show/hide switch every other element's row carries — a group is hidden from the
-        // orbit the same way a plain item is, so it needs the same control, not just its children's.
-        var toggle = new ToggleSwitch
-        {
-            IsOn = !group.Hidden,
-            OnContent = "",
-            OffContent = "",
-            MinWidth = 0,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        toggle.Toggled += (_, _) =>
-        {
-            group.Hidden = !toggle.IsOn;
-            _manager.NotifyItemsChanged();
-            RenderPreview();
-        };
-        Grid.SetColumn(toggle, 2);
-        row.Children.Add(toggle);
-
-        // Into this group's own children, not the top-level orbit — and with the Group tile taken
-        // away, since the orbit has no third orbit to expand a group inside a group into.
-        var add = BuildRowIconButton(0xE710, "Add item…", "Add item to " + group.DisplayName);
-        add.Click += (_, _) => _manager.OpenAddItem(added =>
-        {
-            group.Children.Add(added);
-            _manager.NotifyItemsChanged();
-            RenderPreview();
-            RebuildItemsList();
-        }, group.Children, isGenericAddItem: true, allowGroups: false);
-        Grid.SetColumn(add, 3);
-        row.Children.Add(add);
-
-        var remove = BuildRowIconButton(0xE74D, "Delete", "Delete " + group.DisplayName);
-        remove.Click += (_, _) =>
-        {
-            // The whole group goes, children and all — they only exist inside it.
-            _manager.Config.Primary.Items.Remove(group);
-            _manager.NotifyItemsChanged();
-            RebuildItemsList();
-            RenderPreview();
-        };
-        Grid.SetColumn(remove, 4);
-        row.Children.Add(remove);
-
-        return row;
+        return card;
     }
 
     /// <summary>
-    /// One item's row — icon, name, where it lives and what kind it is, a show/hide switch, and a
-    /// delete. Shared by the top-level cards and by a group section's children, so both look and
-    /// behave the same.
+    /// One item's card — icon, title, two caption lines (its kind, then its target), a type-tag
+    /// badge, and a footer strip that opens the same Replace… flow the orbit's own right-click menu
+    /// uses, via <see cref="EditOrbitItem"/>. Shared by the top-level cards and by a group's own
+    /// children, so both look and behave the same — <see cref="EditOrbitItem"/> and this row's own
+    /// delete handler both check both locations for exactly that reason.
     /// </summary>
-    private Grid BuildItemRow(OrbitItem item, string orbit)
+    private Grid BuildItemRow(OrbitItem item)
     {
-        var row = new Grid { ColumnSpacing = 12 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        return BuildCardShell(
+            BuildItemIcon(item),
+            item.DisplayName,
+            item.Kind.ToString(),
+            item.Target,
+            KindBadgeLabel(item.Kind),
+            isHidden: item.Hidden,
+            onToggle: isOn =>
+            {
+                item.Hidden = !isOn;
+                _manager.NotifyItemsChanged();
+                RenderPreview();
+            },
+            onDelete: () =>
+            {
+                // Top level and inside a group both, since the same card builds for either.
+                _manager.Config.Primary.Items.Remove(item);
+                foreach (var group in _manager.Config.Primary.Items.Where(i => i.IsGroup))
+                    group.Children.Remove(item);
+                _manager.NotifyItemsChanged();
+                RebuildItemsList();
+                RenderPreview();
+            },
+            deleteAutomationName: "Delete " + item.DisplayName,
+            footerLabel: "EDIT",
+            footerAutomationName: "Edit " + item.DisplayName,
+            onFooter: () => EditOrbitItem(item));
+    }
 
-        var icon = BuildItemIcon(item);
-        Grid.SetColumn(icon, 0);
-        row.Children.Add(icon);
+    /// <summary>
+    /// Swaps one Elements-screen item for a newly added one in the same place — the Elements card's
+    /// own counterpart to <see cref="ReplaceOrbitItem"/>, which only ever looks in the top-level
+    /// list and so cannot be reused as-is here: a naive <c>IndexOf</c> against a group's child
+    /// returns -1 and would either silently do nothing or append a stray top-level copy instead of
+    /// writing back into the group the item actually lives in. This checks both locations the same
+    /// way <see cref="BuildItemRow"/>'s own delete handler already has to.
+    /// <para>
+    /// A group's child can never itself be a group (see <see cref="BuildGroupRow"/>'s own scoped
+    /// add), so editing a child keeps that same restriction; a top-level item may become anything,
+    /// same as <see cref="ReplaceOrbitItem"/>.
+    /// </para>
+    /// </summary>
+    private void EditOrbitItem(OrbitItem item)
+    {
+        var topLevel = _manager.Config.Primary.Items;
+        bool isTopLevel = topLevel.Contains(item);
 
-        var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        labels.Children.Add(new TextBlock
+        _manager.OpenAddItem(
+            added =>
+            {
+                int at = topLevel.IndexOf(item);
+                if (at >= 0)
+                {
+                    topLevel[at] = added;
+                }
+                else
+                {
+                    var group = topLevel.FirstOrDefault(g => g.IsGroup && g.Children.Contains(item));
+                    int childAt = group?.Children.IndexOf(item) ?? -1;
+                    if (group is not null && childAt >= 0)
+                        group.Children[childAt] = added;
+                    else
+                        topLevel.Add(added); // item moved out from under the dialog — don't drop the edit
+                }
+
+                _manager.NotifyItemsChanged();
+                RenderPreview();
+                RebuildItemsList();
+            },
+            topLevel,
+            allowGroups: isTopLevel,
+            heading: "Edit " + item.DisplayName,
+            confirmLabel: "Save");
+    }
+
+    /// <summary>
+    /// The shared vertical layout a plain item's card (<see cref="BuildItemRow"/>), a group's own
+    /// card (<see cref="BuildGroupRow"/>), and a tool card (<see cref="BuildToolCard"/>) all build:
+    /// icon top-left (optionally preceded by a <paramref name="leading"/> element — the Tools
+    /// screen's drag grip; Elements' two callers leave it null and get the original layout
+    /// unchanged) with an optional delete button and a show/hide toggle top-right, a bold title,
+    /// two muted caption lines, a small rounded type badge, a thin divider, and a footer strip that
+    /// is itself one click target end to end (the <c>BoxOpenLabel</c> pattern the Home screen's own
+    /// nav-box "OPEN" footer already uses, see <see cref="BuildCardFooterButton"/>).
+    /// <paramref name="onDelete"/>/<paramref name="deleteAutomationName"/> are nullable so a card
+    /// with nothing sensible to delete (a built-in tool can be hidden but never removed) can leave
+    /// the button out entirely rather than wiring it to a no-op — Elements' two callers always pass
+    /// a real delegate, so their cards are unaffected. <paramref name="wrapText"/> is similarly
+    /// opt-in: Elements' title/caption1 stay single-line-with-ellipsis (an item name or a path reads
+    /// better trimmed than reflowed), while Tools turns wrapping on for its 18pt title and
+    /// sentence-length description, both capped at two lines so a card's height stays predictable
+    /// inside the fixed-size grid slot <see cref="ToolsList"/>'s ItemsWrapGrid gives it.
+    /// </summary>
+    private Grid BuildCardShell(
+        FrameworkElement icon, string title, string caption1, string caption2, string badgeLabel,
+        bool isHidden, Action<bool> onToggle, Action? onDelete, string? deleteAutomationName,
+        string footerLabel, string footerAutomationName, Action onFooter,
+        FrameworkElement? leading = null, bool wrapText = false)
+    {
+        var card = new Grid { RowSpacing = 8 };
+        for (int i = 0; i < 7; i++)
+            card.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var head = new Grid { ColumnSpacing = 4 };
+        int offset = leading is null ? 0 : 1;
+        if (leading is not null)
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        if (leading is not null)
         {
-            Text = item.DisplayName,
-            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
-        });
-        labels.Children.Add(new TextBlock
+            Grid.SetColumn(leading, 0);
+            head.Children.Add(leading);
+        }
+
+        Grid.SetColumn(icon, offset + 0);
+        head.Children.Add(icon);
+
+        if (onDelete is not null)
         {
-            Text = $"{orbit} · {item.Kind}",
-            Style = SecondaryCaptionStyle,
-        });
-        Grid.SetColumn(labels, 1);
-        row.Children.Add(labels);
+            var remove = BuildRowIconButton(0xE74D, "Delete", deleteAutomationName ?? "Delete");
+            remove.Click += (_, _) => onDelete();
+            Grid.SetColumn(remove, offset + 2);
+            head.Children.Add(remove);
+        }
 
         var toggle = new ToggleSwitch
         {
-            IsOn = !item.Hidden,
+            IsOn = !isHidden,
             OnContent = "",
             OffContent = "",
             MinWidth = 0,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        toggle.Toggled += (_, _) =>
-        {
-            item.Hidden = !toggle.IsOn;
-            _manager.NotifyItemsChanged();
-            RenderPreview();
-        };
-        Grid.SetColumn(toggle, 2);
-        row.Children.Add(toggle);
+        toggle.Toggled += (_, _) => onToggle(toggle.IsOn);
+        Grid.SetColumn(toggle, offset + 3);
+        head.Children.Add(toggle);
 
-        var remove = BuildRowIconButton(0xE74D, "Delete", "Delete " + item.DisplayName);
-        remove.Click += (_, _) =>
-        {
-            // Top level and inside a group both, since the same row builds for either.
-            _manager.Config.Primary.Items.Remove(item);
-            foreach (var group in _manager.Config.Primary.Items.Where(i => i.IsGroup))
-                group.Children.Remove(item);
-            _manager.NotifyItemsChanged();
-            RebuildItemsList();
-            RenderPreview();
-        };
-        Grid.SetColumn(remove, 3);
-        row.Children.Add(remove);
+        Grid.SetRow(head, 0);
+        card.Children.Add(head);
 
-        return row;
+        var titleBlock = new TextBlock
+        {
+            Text = title,
+            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+            FontSize = 18,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextWrapping = wrapText ? TextWrapping.Wrap : TextWrapping.NoWrap,
+            MaxLines = wrapText ? 2 : 0,
+        };
+        Grid.SetRow(titleBlock, 1);
+        card.Children.Add(titleBlock);
+
+        var caption1Block = new TextBlock
+        {
+            Text = caption1,
+            Style = SecondaryCaptionStyle,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextWrapping = wrapText ? TextWrapping.Wrap : TextWrapping.NoWrap,
+            MaxLines = wrapText ? 2 : 0,
+        };
+        Grid.SetRow(caption1Block, 2);
+        card.Children.Add(caption1Block);
+
+        var caption2Block = new TextBlock
+        {
+            Text = caption2,
+            Style = SecondaryCaptionStyle,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Visibility = string.IsNullOrEmpty(caption2) ? Visibility.Collapsed : Visibility.Visible,
+        };
+        Grid.SetRow(caption2Block, 3);
+        card.Children.Add(caption2Block);
+
+        var badge = BuildKindBadge(badgeLabel);
+        Grid.SetRow(badge, 4);
+        card.Children.Add(badge);
+
+        var divider = BuildCardDivider();
+        Grid.SetRow(divider, 5);
+        card.Children.Add(divider);
+
+        var footer = BuildCardFooterButton(footerLabel, footerAutomationName);
+        footer.Click += (_, _) => onFooter();
+        Grid.SetRow(footer, 6);
+        card.Children.Add(footer);
+
+        return card;
     }
 
-    /// <summary>The borderless icon button an item row and a group row both carry — trash for
-    /// delete, "+" for a group's own scoped add.</summary>
+    /// <summary>Short label for a card's type-tag badge — the mockup's own "App/Folder/File/Link/
+    /// Shortcut/Group" short forms; the fuller word (e.g. "Application") is what the card's own
+    /// first caption line already spells out via <c>item.Kind</c>.</summary>
+    private static string KindBadgeLabel(OrbitItemKind kind) => kind switch
+    {
+        OrbitItemKind.Application => "App",
+        OrbitItemKind.File => "File",
+        OrbitItemKind.Folder => "Folder",
+        OrbitItemKind.WebLink => "Link",
+        OrbitItemKind.Shortcut => "Shortcut",
+        OrbitItemKind.Group => "Group",
+        _ => kind.ToString(),
+    };
+
+    /// <summary>The small rounded type-tag under a card's caption lines — background one step off
+    /// the card (<c>ShellPillBrush</c>, the same token the Home screen's own meta pill uses), text
+    /// in the same muted <see cref="SecondaryCaptionStyle"/> the caption lines above it use.</summary>
+    private Border BuildKindBadge(string label) => new()
+    {
+        Background = ThemeHelper.Brush(Root, "ShellPillBrush"),
+        CornerRadius = new CornerRadius(11),
+        Padding = new Thickness(10, 3, 10, 3),
+        HorizontalAlignment = HorizontalAlignment.Left,
+        Child = new TextBlock { Text = label, Style = SecondaryCaptionStyle },
+    };
+
+    /// <summary>The thin rule above a card's footer strip.</summary>
+    private Border BuildCardDivider() => new()
+    {
+        Height = 1,
+        Background = ThemeHelper.Brush(Root, "ShellDividerBrush"),
+    };
+
+    /// <summary>
+    /// A card's footer strip — bold, uppercase, centered, accent-colored, cloning the
+    /// <c>BoxOpenLabel</c> pattern the Home screen's own nav-box "OPEN" footer already uses — except
+    /// the whole strip is a <see cref="Button"/> here rather than a label under one, so the entire
+    /// footer is the click target and not just the text sitting inside it.
+    /// </summary>
+    private Button BuildCardFooterButton(string label, string automationName)
+    {
+        var button = new Button
+        {
+            Content = new TextBlock { Text = label, Style = (Style)Root.Resources["BoxOpenLabel"] },
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0, 10, 0, 0),
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, automationName);
+        return button;
+    }
+
+    /// <summary>The borderless icon button an item card and a group card both carry, for delete.</summary>
     private static Button BuildRowIconButton(int glyph, string tooltip, string automationName)
     {
         var button = new Button
@@ -2707,19 +2901,26 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// The small plate at the head of an item row: the item's own glyph to begin with, replaced by
-    /// its real shell / folder / favicon icon if <see cref="IconService"/> resolves one. The same
+    /// The medallion at the head of a card: the item's own glyph to begin with, replaced by its real
+    /// shell / folder / favicon icon if <see cref="IconService"/> resolves one. The same
     /// image-over-glyph pair the orbit itself draws, just built imperatively here rather than bound.
     /// A group resolves nothing (it has no target), so it simply keeps its group glyph.
+    /// <para>
+    /// Circular, filled with <c>ShellMedallionBrush</c> and stroked with <c>ShellCardBorderBrush</c>
+    /// — the same two tokens the Home screen's own nav-box icon medallion uses — rather than the
+    /// flat transparent 28px square this used to be: the vertical card design puts the icon on its
+    /// own line at the top of the card instead of a horizontal row, so it needs the same visual
+    /// weight a standalone medallion has, not a plate that only read right sitting flush beside text.
+    /// </para>
     /// </summary>
     private FrameworkElement BuildItemIcon(OrbitItem item)
     {
-        const double plate = 28;
+        const double plate = 44;
 
         var glyph = new FontIcon
         {
             Glyph = item.Glyph,
-            FontSize = 15,
+            FontSize = 20,
             Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
@@ -2731,8 +2932,8 @@ public sealed partial class ShellWindow : Window
 
         var image = new Image
         {
-            Width = plate - 6,
-            Height = plate - 6,
+            Width = plate - 16,
+            Height = plate - 16,
             Stretch = Stretch.Uniform,
             Visibility = Visibility.Collapsed,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -2745,18 +2946,14 @@ public sealed partial class ShellWindow : Window
 
         LoadRowIcon(item, image, glyph);
 
-        // Transparent, not a plate of its own: this row already sits inside a Card (background
-        // SwiftXCardBackgroundBrush), so the card's own fill shows straight through and the glyph
-        // just reads as part of the row. It used to paint OrbitBubbleBackground here — the orbit
-        // dock's own opaque bubble color (solid black in Dark) — which was a copy/paste of the
-        // preview bubble styling and had nothing to do with this list; sitting on top of the
-        // translucent acrylic card it read as a stray solid-black square on every row.
         return new Border
         {
             Width = plate,
             Height = plate,
-            CornerRadius = new CornerRadius(6),
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            CornerRadius = new CornerRadius(plate / 2),
+            Background = ThemeHelper.Brush(Root, "ShellMedallionBrush"),
+            BorderBrush = ThemeHelper.Brush(Root, "ShellCardBorderBrush"),
+            BorderThickness = new Thickness(1),
             VerticalAlignment = VerticalAlignment.Center,
             Child = content,
         };
@@ -2777,9 +2974,15 @@ public sealed partial class ShellWindow : Window
         glyph.Visibility = Visibility.Collapsed;
     }
 
+    /// <summary>
+    /// <paramref name="Badge"/> is the short category tag the card grid shows under a tool's
+    /// description (mockup: docs/images/6-swiftx-tools.svg) — purely cosmetic, no existing
+    /// data-model field backed it before, so it lives here alongside the rest of a row's static
+    /// content.
+    /// </summary>
     private sealed record ToolRow(
-        string Target, ToolKind Kind, string Title, string Description, string Glyph, bool TextGlyph,
-        Func<AppConfig, bool> GetShown, Action<AppConfig, bool> SetShown);
+        string Target, ToolKind Kind, string Title, string Description, string Badge, string Glyph,
+        bool TextGlyph, Func<AppConfig, bool> GetShown, Action<AppConfig, bool> SetShown);
 
     // Built from the codepoint, not a literal character in source, so the glyph can't be
     // silently swapped for a different (or invisible) private-use character by a stray
@@ -2791,15 +2994,15 @@ public sealed partial class ShellWindow : Window
 
     private static readonly ToolRow[] ToolRows =
     [
-        new("Data", ToolKind.Data, "Data formatter", "Auto-detect JSON or XML and format it.", DataGlyph, false,
+        new("Data", ToolKind.Data, "Data formatter", "Auto-detect JSON or XML and format it.", "Formatter", DataGlyph, false,
             c => c.ShowDataTool, (c, v) => c.ShowDataTool = v),
-        new("QuickFormat", ToolKind.QuickFormat, "Quick Format", "Auto-format your last copied JSON, XML, YAML or CSV.", QuickFormatGlyph, false,
+        new("QuickFormat", ToolKind.QuickFormat, "Quick Format", "Auto-format your last copied JSON, XML, YAML or CSV.", "Clipboard", QuickFormatGlyph, false,
             c => c.ShowQuickFormatTool, (c, v) => c.ShowQuickFormatTool = v),
-        new("SecureValues", ToolKind.SecureValues, "Secure values", "Local key/secret store with masked values.", SecureValuesGlyph, false,
+        new("SecureValues", ToolKind.SecureValues, "Secure values", "Local key/secret store with masked values.", "Vault", SecureValuesGlyph, false,
             c => c.ShowSecureValuesTool, (c, v) => c.ShowSecureValuesTool = v),
-        new("Base64", ToolKind.Base64, "Base64", "Encode and decode Base64 text.", "B64", true,
+        new("Base64", ToolKind.Base64, "Base64", "Encode and decode Base64 text.", "Codec", "B64", true,
             c => c.ShowBase64Tool, (c, v) => c.ShowBase64Tool = v),
-        new("Certificate", ToolKind.Certificate, "Certificate", "Inspect certificate, PKCS#12, and Java KeyStore files.", CertificateGlyph, false,
+        new("Certificate", ToolKind.Certificate, "Certificate", "Inspect certificate, PKCS#12, and Java KeyStore files.", "Inspector", CertificateGlyph, false,
             c => c.ShowCertificateTool, (c, v) => c.ShowCertificateTool = v),
     ];
 
@@ -2831,95 +3034,88 @@ public sealed partial class ShellWindow : Window
         ToolsList.ItemsSource = _toolCards;
     }
 
+    /// <summary>
+    /// One tool's card in the wrapping grid <see cref="ToolsList"/>'s ItemsWrapGrid lays out —
+    /// reuses <see cref="BuildCardShell"/> (the same icon/toggle/title/caption/badge/divider/footer
+    /// shape the Elements screen's own cards build) rather than a parallel set of near-identical
+    /// helpers, passing <see cref="BuildDragGrip"/>'s grip in as the shell's optional leading
+    /// element and leaving <c>onDelete</c> null — a built-in tool can be hidden but never removed,
+    /// so there is nothing for a delete button to do here. <see cref="Root"/>'s "Card" style still
+    /// wraps the result and still carries <c>row.Target</c> as its <c>Tag</c>: that Tag is exactly
+    /// what <see cref="ToolCards_CollectionChanged"/> reads back off <see cref="_toolCards"/> after
+    /// a drag, so nothing about how a reorder becomes a persisted order changes here.
+    /// </summary>
     private Border BuildToolCard(ToolRow row)
     {
         // The drag affordance — grabbing anywhere on the card works (this is WinUI's own
-        // CanReorderItems drag, not a hand-rolled one), but a dedicated grip at the leading edge
-        // is what tells the user this row moves at all, replacing the old per-row up/down
-        // buttons. Six dots rather than a font glyph: no Segoe Fluent Icons codepoint draws that
-        // pattern, and hand-placed dots can't silently turn into a different (or invisible)
-        // private-use character the way a glyph literal could (see the memory note on that
-        // failure mode).
+        // CanReorderItems drag, not a hand-rolled one), but a dedicated grip is what tells the user
+        // this card moves at all. Six dots rather than a font glyph: no Segoe Fluent Icons codepoint
+        // draws that pattern, and hand-placed dots can't silently turn into a different (or
+        // invisible) private-use character the way a glyph literal could (see the memory note on
+        // that failure mode).
         var grip = BuildDragGrip(row.Title, ThemeHelper.Brush(Root, "SwiftXForegroundBrush"));
-        Grid.SetColumn(grip, 0);
 
-        FrameworkElement icon = row.TextGlyph
+        // The medallion plate Elements' own BuildItemIcon puts a resolved app/file/folder icon
+        // into — a tool has no such resolvable icon, just its own fixed Fluent glyph (or, for
+        // Base64, the literal "B64" text glyph row.TextGlyph flags), so this is that same glyph
+        // relocated into an identical ⌀44 plate rather than new iconography.
+        const double plate = 44;
+        FrameworkElement glyph = row.TextGlyph
             ? new TextBlock
             {
                 Text = row.Glyph,
                 FontFamily = new FontFamily("Segoe UI"),
                 FontSize = 14,
-                Width = 28,
                 TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             }
             : new FontIcon
             {
                 Glyph = row.Glyph,
                 FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
-                FontSize = 18,
+                FontSize = 20,
+                Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+                HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-        Grid.SetColumn(icon, 1);
-
-        var labels = new StackPanel();
-        labels.Children.Add(new TextBlock
+        var icon = new Border
         {
-            Text = row.Title,
-            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
-        });
-        labels.Children.Add(new TextBlock
-        {
-            Text = row.Description,
-            Style = SecondaryCaptionStyle,
-            TextWrapping = TextWrapping.Wrap,
-        });
-        Grid.SetColumn(labels, 2);
-
-        var openButton = new Button
-        {
-            Content = new FontIcon { Glyph = char.ConvertFromUtf32(0xE8A7), FontSize = 14 },
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            BorderThickness = new Thickness(0),
-            Padding = new Thickness(6),
+            Width = plate,
+            Height = plate,
+            CornerRadius = new CornerRadius(plate / 2),
+            Background = ThemeHelper.Brush(Root, "ShellMedallionBrush"),
+            BorderBrush = ThemeHelper.Brush(Root, "ShellCardBorderBrush"),
+            BorderThickness = new Thickness(1),
             VerticalAlignment = VerticalAlignment.Center,
+            Child = glyph,
         };
-        ToolTipService.SetToolTip(openButton, "Open");
+
         var kind = row.Kind;
-        openButton.Click += (_, _) => _manager.OpenTool(kind);
-        Grid.SetColumn(openButton, 3);
+        var card = BuildCardShell(
+            icon,
+            row.Title,
+            row.Description,
+            caption2: "",
+            row.Badge,
+            isHidden: !row.GetShown(_manager.Config),
+            onToggle: isOn =>
+            {
+                if (_loading) return;
+                row.SetShown(_manager.Config, isOn);
+                ApplyToolVisibility();
+                _manager.NotifyItemsChanged();
+                RenderPreview();
+            },
+            onDelete: null,
+            deleteAutomationName: null,
+            footerLabel: "OPEN",
+            footerAutomationName: "Open " + row.Title,
+            onFooter: () => _manager.OpenTool(kind),
+            leading: grip,
+            wrapText: true);
 
-        var toggle = new ToggleSwitch
-        {
-            IsOn = row.GetShown(_manager.Config),
-            OnContent = "",
-            OffContent = "",
-            MinWidth = 0,
-            HorizontalAlignment = HorizontalAlignment.Right,
-        };
-        toggle.Toggled += (_, _) =>
-        {
-            if (_loading) return;
-            row.SetShown(_manager.Config, toggle.IsOn);
-            ApplyToolVisibility();
-            _manager.NotifyItemsChanged();
-            RenderPreview();
-        };
-        Grid.SetColumn(toggle, 4);
-
-        var grid = new Grid { ColumnSpacing = 12 };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.Children.Add(grip);
-        grid.Children.Add(icon);
-        grid.Children.Add(labels);
-        grid.Children.Add(openButton);
-        grid.Children.Add(toggle);
-
-        return new Border { Style = (Style)Root.Resources["Card"], Child = grid, Tag = row.Target };
+        return new Border { Style = (Style)Root.Resources["Card"], Child = card, Tag = row.Target };
     }
 
     /// <summary>
