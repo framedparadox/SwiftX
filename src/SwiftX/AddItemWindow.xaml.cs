@@ -94,7 +94,7 @@ public sealed partial class AddItemWindow : Window
             // be rewritten for it because the built-in default is theme-dependent (see
             // AccentPalette's two default constants) — a no-op when the user has picked their own
             // colour, but the colour they get by default is a different teal either side of the
-            // flip. Same reasoning, same call, as SettingsWindow's own handler.
+            // flip. Same reasoning, same call, as ShellWindow's own handler.
             ApplyAccentColorOverride();
             ApplyChromeTheme();
         };
@@ -160,7 +160,7 @@ public sealed partial class AddItemWindow : Window
     /// <c>{ThemeResource}</c> lookups that <see cref="ApplyBlackOverrides"/> has just shadowed.
     /// Nudging the property to the other theme and straight back is what forces that re-walk —
     /// without it, switching between Dark and Midnight looked like it did nothing at all. Same
-    /// trick, and the same reason, as SettingsWindow's.
+    /// trick, and the same reason, as ShellWindow's.
     /// </summary>
     private void ForceThemeResourceRefresh(ElementTheme target)
     {
@@ -203,7 +203,7 @@ public sealed partial class AddItemWindow : Window
     /// dictionary is parsed, and never looked up again; the leaf keys are the only reachable
     /// handle. So they are shadowed here in <see cref="Root"/>'s own Resources, where a nearer
     /// dictionary wins — the same mechanism <see cref="ApplyBlackOverrides"/> uses, and the same
-    /// list SettingsWindow keeps for the controls Settings happens to use.
+    /// list ShellWindow keeps for the controls Settings happens to use.
     /// </para>
     /// <para>
     /// Setting <c>Foreground</c> or <c>Background</c> on the controls themselves is not an

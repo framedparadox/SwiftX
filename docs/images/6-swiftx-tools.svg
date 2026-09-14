@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="506" viewBox="0 0 1040 506" font-family="'Segoe UI',Inter,system-ui,sans-serif" role="img" aria-label="SwiftX Tools screen">
+<title>SwiftX Tools screen</title>
+<defs><filter id="sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.35"/></filter></defs>
+<rect width="1040" height="506" fill="#141414"/>
+<rect x="0" y="0" width="1040" height="40" rx="0" fill="#0F0F0F"/>
+<text x="16" y="25" font-size="12" font-weight="600" fill="#FFFFFF">◉  SwiftX</text>
+<text x="1024" y="25" font-size="12" font-weight="400" fill="#888888" text-anchor="end">—  ☐  ✕</text>
+<circle cx="48" cy="88" r="18" fill="none" stroke="#2E2E2E" stroke-width="1"/>
+<text x="48" y="94" font-size="15" font-weight="400" fill="#FFFFFF" text-anchor="middle">←</text>
+<text x="78" y="94" font-size="20" font-weight="700" fill="#FFFFFF">Tools</text>
+<text x="78" y="116" font-size="12" font-weight="400" fill="#888888">Every built-in developer tool. Turn one off to take it off the ring.</text>
+<rect x="23.0" y="150" width="226" height="268" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1" filter="url(#sh)"/>
+<circle cx="63.0" cy="194" r="22" fill="#0F0F0F" stroke="#2E2E2E" stroke-width="1"/>
+<text x="63.0" y="199" font-size="11" font-weight="700" fill="#3DDCD3" text-anchor="middle">{ }</text>
+<rect x="189.0" y="184" width="40" height="20" rx="10.0" fill="#3DDCD3"/>
+<circle cx="223.0" cy="194" r="7.5" fill="#141414"/>
+<text x="41.0" y="254" font-size="18" font-weight="700" fill="#FFFFFF">Data</text>
+<text x="41.0" y="277" font-size="18" font-weight="700" fill="#FFFFFF">Formatter</text>
+<text x="41.0" y="308" font-size="11.5" font-weight="400" fill="#888888">Auto-detect and format</text>
+<text x="41.0" y="325" font-size="11.5" font-weight="400" fill="#888888">JSON or XML.</text>
+<rect x="41.0" y="342" width="94" height="22" rx="11" fill="#242424"/>
+<text x="88.0" y="357" font-size="10.5" font-weight="500" fill="#C8C8C8" text-anchor="middle">Formatter</text>
+<rect x="23.0" y="376" width="226" height="1" rx="0" fill="#2E2E2E"/>
+<text x="136.0" y="403" font-size="12" font-weight="700" fill="#3DDCD3" text-anchor="middle" letter-spacing="1.2">OPEN</text>
+<rect x="279.0" y="150" width="226" height="268" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1" filter="url(#sh)"/>
+<circle cx="319.0" cy="194" r="22" fill="#0F0F0F" stroke="#2E2E2E" stroke-width="1"/>
+<text x="319.0" y="199" font-size="11" font-weight="700" fill="#3DDCD3" text-anchor="middle">KEY</text>
+<rect x="445.0" y="184" width="40" height="20" rx="10.0" fill="#3DDCD3"/>
+<circle cx="479.0" cy="194" r="7.5" fill="#141414"/>
+<text x="297.0" y="254" font-size="18" font-weight="700" fill="#FFFFFF">Secure values</text>
+<text x="297.0" y="308" font-size="11.5" font-weight="400" fill="#888888">Store keys and secrets</text>
+<text x="297.0" y="325" font-size="11.5" font-weight="400" fill="#888888">locally (masked).</text>
+<rect x="297.0" y="342" width="62" height="22" rx="11" fill="#242424"/>
+<text x="328.0" y="357" font-size="10.5" font-weight="500" fill="#C8C8C8" text-anchor="middle">Vault</text>
+<rect x="279.0" y="376" width="226" height="1" rx="0" fill="#2E2E2E"/>
+<text x="392.0" y="403" font-size="12" font-weight="700" fill="#3DDCD3" text-anchor="middle" letter-spacing="1.2">OPEN</text>
+<rect x="535.0" y="150" width="226" height="268" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1" filter="url(#sh)"/>
+<circle cx="575.0" cy="194" r="22" fill="#0F0F0F" stroke="#2E2E2E" stroke-width="1"/>
+<text x="575.0" y="199" font-size="11" font-weight="700" fill="#3DDCD3" text-anchor="middle">B64</text>
+<rect x="701.0" y="184" width="40" height="20" rx="10.0" fill="#3DDCD3"/>
+<circle cx="735.0" cy="194" r="7.5" fill="#141414"/>
+<text x="553.0" y="254" font-size="18" font-weight="700" fill="#FFFFFF">Base64</text>
+<text x="553.0" y="308" font-size="11.5" font-weight="400" fill="#888888">Encode and decode</text>
+<text x="553.0" y="325" font-size="11.5" font-weight="400" fill="#888888">Base64 text.</text>
+<rect x="553.0" y="342" width="62" height="22" rx="11" fill="#242424"/>
+<text x="584.0" y="357" font-size="10.5" font-weight="500" fill="#C8C8C8" text-anchor="middle">Codec</text>
+<rect x="535.0" y="376" width="226" height="1" rx="0" fill="#2E2E2E"/>
+<text x="648.0" y="403" font-size="12" font-weight="700" fill="#3DDCD3" text-anchor="middle" letter-spacing="1.2">OPEN</text>
+<rect x="791.0" y="150" width="226" height="268" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1" filter="url(#sh)"/>
+<circle cx="831.0" cy="194" r="22" fill="#0F0F0F" stroke="#2E2E2E" stroke-width="1"/>
+<text x="831.0" y="199" font-size="11" font-weight="700" fill="#3DDCD3" text-anchor="middle">CRT</text>
+<rect x="957.0" y="184" width="40" height="20" rx="10.0" fill="#2E2E2E"/>
+<circle cx="967.0" cy="194" r="7.5" fill="#888888"/>
+<text x="809.0" y="254" font-size="18" font-weight="700" fill="#FFFFFF">Certificate</text>
+<text x="809.0" y="308" font-size="11.5" font-weight="400" fill="#888888">Inspect certificate, PKCS#12</text>
+<text x="809.0" y="325" font-size="11.5" font-weight="400" fill="#888888">and Java KeyStore files.</text>
+<rect x="809.0" y="342" width="94" height="22" rx="11" fill="#242424"/>
+<text x="856.0" y="357" font-size="10.5" font-weight="500" fill="#C8C8C8" text-anchor="middle">Inspector</text>
+<rect x="791.0" y="376" width="226" height="1" rx="0" fill="#2E2E2E"/>
+<text x="904.0" y="403" font-size="12" font-weight="700" fill="#3DDCD3" text-anchor="middle" letter-spacing="1.2">OPEN</text>
+<text x="23.0" y="468" font-size="10" font-weight="600" fill="#3DDCD3" letter-spacing="0.6">CARD 226×268 · r=8 · shadow · gutter 30/32 · 4 cols · toggle = show on ring</text>
+<text x="32" y="482" font-size="10" font-weight="400" fill="#5A5A5A">Target: Tools screen. Four tools — ToolCatalog.All. JSON and XML were merged into Data Formatter.</text>
+</svg>
