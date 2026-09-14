@@ -62,6 +62,13 @@ public sealed partial class ShellWindow : Window
     private readonly nint _hwnd;
     private readonly AppWindow _appWindow;
     private bool _loading = true;
+
+    /// <summary>
+    /// Re-reads the clock for the Home screen's greeting. Armed for the next boundary rather than
+    /// ticking on a fixed interval — see <see cref="StartGreetingClock"/>.
+    /// </summary>
+    private DispatcherTimer? _greetingTimer;
+
     private Border? _dragBorder;
     private OrbitItem? _dragItem;
     private Point _dragStart;
@@ -187,7 +194,21 @@ public sealed partial class ShellWindow : Window
             SelectSection(_currentSection);
             UpdateThemeCardSelection(_manager.Config.Theme);
         };
-        Activated += (_, _) => ApplyChromeTheme();
+        Activated += (_, _) =>
+        {
+            ApplyChromeTheme();
+            // The timer below covers the window sitting open across a boundary, but not a machine
+            // that was asleep through one, nor a clock or time zone the user moved while this
+            // window was in the background. Coming back to the foreground is the cheapest moment to
+            // re-read the clock, and the one where a stale greeting would actually be seen.
+            RefreshGreeting();
+        };
+
+        // A DispatcherTimer keeps its tick handler — and through it this window — alive on the
+        // dispatcher's own queue. OrbitManager drops its reference on Closed (see OpenSettings);
+        // without this, the timer would hold the window past that and keep firing at a tree that is
+        // no longer on screen.
+        Closed += (_, _) => StopGreetingClock();
 
         if (_appWindow.Presenter is OverlappedPresenter p)
             p.IsMaximizable = false;
@@ -207,11 +228,8 @@ public sealed partial class ShellWindow : Window
         Root.Loaded += async (_, _) =>
         {
             _loading = true;
-            // Logi's own header line, hour-for-hour — see Services/Greeting.cs. Set once at load
-            // rather than on a timer: this window is opened, used and closed, and a greeting that
-            // rewrites itself at noon while someone is reading Settings is a distraction, not a
-            // feature.
-            GreetingText.Text = Greeting.Current();
+            // Logi's own header line, hour-for-hour — see Services/Greeting.cs.
+            StartGreetingClock();
             SelectTheme(_manager.Config.Theme);
             UpdateThemeToggleIcon();
             PopulateLanguageBox();
@@ -659,6 +677,59 @@ public sealed partial class ShellWindow : Window
 
         int tools = ToolCatalog.All.Count;
         ToolsBoxMeta.Text = tools == 1 ? "1 tool" : $"{tools} tools";
+    }
+
+    /// <summary>
+    /// Paints the Home header's greeting for the current local time and keeps it there, so the line
+    /// reads Morning / Afternoon / Evening according to the clock rather than according to whenever
+    /// this window happened to be opened.
+    /// <para>
+    /// The timer is armed for the next boundary (<see cref="Greeting.TimeUntilNextChange"/>) and
+    /// re-armed on each tick, rather than ticking on a fixed interval: the greeting can only change
+    /// three times a day, so a one-minute poll would wake the dispatcher some fourteen hundred times
+    /// to do nothing between each pair of them. <c>DispatcherTimer</c> is not exact — it fires on
+    /// the UI queue, so a tick can land a beat late — which is why each tick re-reads the clock
+    /// rather than assuming the boundary it was armed for is the one it arrived at, and why
+    /// <see cref="Greeting.TimeUntilNextChange"/> floors the wait rather than trusting the interval
+    /// to be positive.
+    /// </para>
+    /// </summary>
+    private void StartGreetingClock()
+    {
+        StopGreetingClock();
+
+        _greetingTimer = new DispatcherTimer();
+        _greetingTimer.Tick += (_, _) =>
+        {
+            RefreshGreeting();
+            // Re-armed from the clock as it now reads, not by leaving a fixed interval running: a
+            // machine that slept through a boundary, or a user who moved the clock, lands here with
+            // a different next boundary than the one this tick was armed for.
+            if (_greetingTimer is not null)
+                _greetingTimer.Interval = Greeting.TimeUntilNextChange(DateTime.Now);
+        };
+        _greetingTimer.Interval = Greeting.TimeUntilNextChange(DateTime.Now);
+        _greetingTimer.Start();
+
+        RefreshGreeting();
+    }
+
+    private void StopGreetingClock()
+    {
+        _greetingTimer?.Stop();
+        _greetingTimer = null;
+    }
+
+    /// <summary>
+    /// Writes the greeting for right now. Safe to call at any time — it reads the clock and the
+    /// current string table and nothing else, so it is also what picks a new language up.
+    /// </summary>
+    private void RefreshGreeting()
+    {
+        if (GreetingText is null) return;
+        var greeting = Greeting.Current();
+        if (GreetingText.Text != greeting)
+            GreetingText.Text = greeting;
     }
 
     private void OrbitBox_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenOrbit);
@@ -2008,6 +2079,11 @@ public sealed partial class ShellWindow : Window
             _manager.Config.Language = language;
             _manager.Save();
             _manager.ApplyLanguage();
+            // The Home header is the one piece of this window's text that is built from the string
+            // table at runtime rather than written into XAML, so it is the one piece that can
+            // follow a language change without the restart the rest of the window needs. See
+            // Services/Loc.cs's own note on that split.
+            RefreshGreeting();
         }
     }
 
@@ -2267,6 +2343,7 @@ public sealed partial class ShellWindow : Window
         _manager.ApplyLanguage();
         _manager.ApplyHotCorner();
         ApplyTheme();
+        RefreshGreeting();
         _loading = true;
         PopulateLanguageBox();
         HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
