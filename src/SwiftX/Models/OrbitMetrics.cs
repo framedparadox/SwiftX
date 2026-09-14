@@ -9,6 +9,35 @@ public enum OrbitItemSize
 }
 
 /// <summary>
+/// The outline an orbit item is drawn with — a separate axis from <see cref="OrbitItemSize"/>,
+/// which says how much room an item takes rather than what fills it.
+/// <para>
+/// Persisted by name (see <see cref="AppConfig.ItemShape"/> and <c>OrbitStore</c>'s
+/// <c>JsonStringEnumConverter</c>), so these member names are part of the on-disk format and
+/// cannot be renamed without stranding every config that already carries one.
+/// </para>
+/// </summary>
+public enum OrbitItemShape
+{
+    /// <summary>A full disc — what every build before this one drew, and still what a fresh config gets.</summary>
+    Circle,
+
+    /// <summary>
+    /// A square whose corners are rounded far enough to read as soft without reading as round.
+    /// Named for the shape rather than described as one: "square with rounded edges" is a sentence,
+    /// and this is a value that has to survive being written into a config file.
+    /// </summary>
+    Squircle,
+
+    /// <summary>
+    /// A plain square. The corners are left genuinely sharp rather than nearly so — a square with
+    /// two pixels taken off its corners is just <see cref="Squircle"/> with a smaller number, and
+    /// then there is no shape on the list that is actually square.
+    /// </summary>
+    Square,
+}
+
+/// <summary>
 /// Orbit geometry. Two independent knobs, and only two:
 /// <list type="bullet">
 /// <item><see cref="ItemSize"/> — how big each item around the orbit is drawn.</item>
@@ -25,6 +54,7 @@ public enum OrbitItemSize
 public static class OrbitMetrics
 {
     public static OrbitItemSize ItemSize { get; private set; } = OrbitItemSize.Medium;
+    public static OrbitItemShape ItemShape { get; private set; } = OrbitItemShape.Circle;
     private static double? s_radiusOverride;
 
     public static event Action? Changed;
@@ -33,6 +63,19 @@ public static class OrbitMetrics
     {
         if (ItemSize == size) return;
         ItemSize = size;
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// The outline every bubble is drawn with. Lives here rather than being read out of
+    /// <see cref="AppConfig"/> at each draw site for the same reason <see cref="ItemSize"/> does:
+    /// the orbit, the hot-corner quadrant and the Orbit screen's preview all draw bubbles, and one
+    /// of them (the orbit) has no config reference of its own to read.
+    /// </summary>
+    public static void SetItemShape(OrbitItemShape shape)
+    {
+        if (ItemShape == shape) return;
+        ItemShape = shape;
         Changed?.Invoke();
     }
 
@@ -69,6 +112,27 @@ public static class OrbitMetrics
         OrbitItemSize.Small => 13,
         OrbitItemSize.Large => 20,
         _ => 16,
+    };
+
+    /// <summary>
+    /// The corner radius a bubble <paramref name="size"/> across is drawn with under the current
+    /// <see cref="ItemShape"/> — the single place that turns the shape setting into geometry, so
+    /// the orbit, the flyout band, the corner quadrant and the preview cannot drift into drawing
+    /// three different shapes from one setting.
+    /// <para>
+    /// Expressed as a fraction of the size rather than a constant because every one of those
+    /// callers draws at a different diameter — the preview scales the whole orbit down, the flyout
+    /// band runs at 88% of the inner one — and a fixed 14px corner would read as a barely-nicked
+    /// square on a large bubble and as a circle on a small one. <see cref="OrbitItemShape.Circle"/>
+    /// falls out of the same expression as half the size, which is the value every call site used
+    /// to hard-code.
+    /// </para>
+    /// </summary>
+    public static double CornerRadiusFor(double size) => ItemShape switch
+    {
+        OrbitItemShape.Squircle => Math.Round(size * 0.28),
+        OrbitItemShape.Square => 0,
+        _ => size / 2,
     };
 
     // ---- Hub: fixed, unaffected by every setting -------------------------------------------

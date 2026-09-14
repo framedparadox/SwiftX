@@ -250,34 +250,41 @@ palettes and not one). What it shows is what the orbit draws, at the current siz
 **The canvas**
 
 - **Click an empty slot** (or its `+`) to add an item there.
-- **Click an item** to see its name and target below the size/radius cards.
-- **Click a group** to reveal its children in a strip under the canvas; drag them to reorder inside
-  the group.
+- **Click an item** for a details card anchored where you clicked: its kind, its name, what it
+  points at, and its icon — with a pencil that opens a glyph picker, a **Use a picture…** entry for
+  your own image, and a **Reset** that hands the icon back to whatever the target resolves to.
+  Clicking the same item again closes the card.
+- **Click a group** and the canvas becomes that group: its own mark at the centre and its children
+  fanned on an arc around it, at the same bubble size and angular spacing the real orbit opens a
+  group with. The header changes to that group's name with a back arrow out of it, and a dashed
+  slot at each end of the arc adds to the group.
 - **Drag an item** to another slot to rearrange. A drop lands on the nearest slot, even out past
   the bubbles — the intent is the nearest place, not a pixel-perfect landing.
 - **Right-click an item** for **Replace…** and **Delete**. Replace opens the same form the `+`
   does and puts what you add into that same slot; a group goes with its children either way. The
   built-in tools are the Tools page's — right-clicking one offers nothing, since a tool leaves the
   orbit by being switched off there.
-- **Add item… / Reset defaults** sit in the toolbar along the bottom, where Logi puts its own
-  tools bar.
+- **Add item… / Reset defaults** sit at the right of the toolbar along the bottom, where Logi puts
+  its own tools bar. They are hidden inside a group: both act on the top-level orbit, and a Reset
+  that reads as scoped to the group you are looking at would be the wrong kind of surprise.
+- **A gear and a wrench** sit at the left of that toolbar — Settings, and a help menu. The menu is
+  the reference's How To / Support / What's New, re-pointed at things this app actually has: the
+  set-up guide, the Edit panel, the README, the issue tracker and the releases page.
 
 Each filled slot wears an outward **name pill** — Logi's own 30px, 6-corner, 12px SemiBold pill,
 placed by Logi's own rule rather than a polar formula: the top and bottom slots take theirs above
 and below, the other six out to the side. They are drawn on a second canvas behind the bubbles with
 hit-testing off, which is what lets a pill overlap a node without ever becoming a drag target; they
-hide for the duration of a drag, since they do not follow a bubble, and come back on the drop. The
-**guide circle** under them is not Logi's — Logi's wheel is eight fixed positions and its ring is
-implied — but SwiftX's radius is a setting, and the circle is what makes dragging that slider read
-as a circle growing rather than eight bubbles wandering.
+hide for the duration of a drag, since they do not follow a bubble, and come back on the drop.
+Nothing is drawn under them: like Logi's, the ring is implied by where its nodes sit.
 
 **The sidebar** has two modes, and the **Edit** button in the header swaps between them. This is
 where the screen departs from Logi deliberately: Logi's sidebar is only ever its drag-source
 accordion, and its ring settings are a separate screen behind a nav button. SwiftX has one screen
 for the orbit, so the sidebar is what changes.
 
-By default it is the orbit's own settings — Item size, Orbit radius, Hot corner, Hover style, and
-the read-only inspector for whatever is selected. Pressing **Edit** swaps it for **Apps /
+By default it is the orbit's own settings — Item size, Item shape, Orbit radius, Hot corner and
+Hover style. Pressing **Edit** swaps it for **Apps /
 Shortcuts / Links / Tools**, an accordion of things that can go on the orbit: the apps, folders and
 links this machine actually has (the same existence-checked catalog the first-run guide offers
 from) and the built-in tools. Click a row to put it in the first free slot; anything already on the
@@ -285,7 +292,14 @@ orbit is shown ticked and does nothing. **Add something else…** at the bottom 
 dialog. The swap is a visibility change between two panels, not a navigation, so the canvas keeps
 its selection and its drag state across it.
 
-**Size** — Small / Medium / Large. Scales the items around the orbit; the hub is unaffected.
+**Size** — Small / Medium / Large, on one row. Scales the items around the orbit; the hub is
+unaffected.
+
+**Shape** — Circle, Squircle or Square. A separate axis from size: how much room an item takes is
+one question, what fills it is another. One place turns the setting into geometry
+(`OrbitMetrics.CornerRadiusFor`), expressed as a fraction of the bubble rather than a fixed corner,
+so the orbit, its flyout band, the corner quadrant and this preview cannot drift into drawing three
+different shapes from one setting.
 
 **Radius** — 80–220 px from the hub to each item's center.
 
@@ -460,6 +474,7 @@ pre-rename build is a file you can still pick.
 | `HotCorner` | `TopLeft`/`TopRight`/`BottomLeft`/`BottomRight` | `TopLeft` | Which corner. |
 | `HotCornerLayout` | `Orbit`/`Quadrant` | `Orbit` | Whether that corner opens the whole orbit or the quarter circle. |
 | `HotCornerOrbit` | array | empty | Your corner arrangement. Empty means "follow the orbit" — see below. |
+| `ItemShape` | `Circle`/`Squircle`/`Square` | `Circle` | The outline orbit items are drawn with. |
 | `ItemSize` | `Small`/`Medium`/`Large` | `Medium` | How large orbit items are drawn. |
 | `OrbitRadius` | number or null | `null` (100) | Distance from hub to item centers, 80–220. |
 | `ShowDataTool` | bool | `true` | Data Formatter in the orbit's Tools item. |

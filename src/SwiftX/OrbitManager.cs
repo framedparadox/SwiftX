@@ -79,6 +79,7 @@ public sealed class OrbitManager
         bool firstRun = !Config.Seeded;
         Config.Seeded = true;
         OrbitMetrics.SetItemSize(Config.ItemSize);
+        OrbitMetrics.SetItemShape(Config.ItemShape);
         OrbitMetrics.SetRadius(Config.OrbitRadius);
         // Same shape as the two above: a piece of app-wide drawing state read from static colour
         // lookups that have no config reference of their own. See FrostedGlassBackdrop.Level.
@@ -512,6 +513,19 @@ public sealed class OrbitManager
     {
         Config.ItemSize = size;
         OrbitMetrics.SetItemSize(size);
+        Save();
+        _orbitWindow?.ReloadItems();
+    }
+
+    /// <summary>
+    /// The shape counterpart of <see cref="SetItemSize"/>, and deliberately the same three steps:
+    /// write it to the config, put it into <see cref="OrbitMetrics"/> (which is what every draw
+    /// site actually reads), persist, and rebuild whatever orbit is currently on screen.
+    /// </summary>
+    public void SetItemShape(OrbitItemShape shape)
+    {
+        Config.ItemShape = shape;
+        OrbitMetrics.SetItemShape(shape);
         Save();
         _orbitWindow?.ReloadItems();
     }

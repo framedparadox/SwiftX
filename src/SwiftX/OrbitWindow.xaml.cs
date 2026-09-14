@@ -998,7 +998,11 @@ public sealed partial class OrbitWindow : Window
         {
             Width = backdropSize,
             Height = backdropSize,
-            CornerRadius = new CornerRadius(backdropSize / 2),
+            // Its own size, not the tint's: the two are drawn a hair apart (BackdropInset above),
+            // and a corner radius derived from the larger of them would bow the inset backdrop's
+            // corners out past the tint's — reintroducing exactly the peeking aliased edge the
+            // inset exists to prevent, on whichever of the three shapes has corners at all.
+            CornerRadius = new CornerRadius(OrbitMetrics.CornerRadiusFor(backdropSize)),
             SystemBackdrop = new DesktopAcrylicBackdrop(),
         };
 
@@ -1015,7 +1019,9 @@ public sealed partial class OrbitWindow : Window
         {
             Width = diameter,
             Height = diameter,
-            CornerRadius = new CornerRadius(diameter / 2),
+            // The one element that draws a bubble's outline, so this is where the Orbit screen's
+            // Item shape setting actually lands on the real orbit (see OrbitMetrics.CornerRadiusFor).
+            CornerRadius = new CornerRadius(OrbitMetrics.CornerRadiusFor(diameter)),
             Background = tintBrush,
         };
 

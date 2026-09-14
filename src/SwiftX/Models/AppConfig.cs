@@ -126,6 +126,13 @@ public sealed class AppConfig
     /// <summary>How large the items around the orbit are drawn. The hub is fixed and unaffected.</summary>
     public OrbitItemSize ItemSize { get; set; } = OrbitItemSize.Medium;
 
+    /// <summary>
+    /// The outline those items are drawn with — see <see cref="OrbitItemShape"/>. Circle by
+    /// default, which is what the orbit has always drawn, so a config written before this setting
+    /// existed comes back looking exactly as it was left.
+    /// </summary>
+    public OrbitItemShape ItemShape { get; set; } = OrbitItemShape.Circle;
+
     public double? OrbitRadius { get; set; }
     public bool ShowDataTool { get; set; } = true;
     public bool ShowQuickFormatTool { get; set; } = true;
@@ -231,6 +238,7 @@ public sealed class AppConfig
         HotCornerLayout = other.HotCornerLayout;
         HotCornerOrbit = other.HotCornerOrbit;
         ItemSize = other.ItemSize;
+        ItemShape = other.ItemShape;
         OrbitRadius = other.OrbitRadius;
         ShowDataTool = other.ShowDataTool;
         ShowQuickFormatTool = other.ShowQuickFormatTool;

@@ -104,23 +104,13 @@ public sealed partial class ShellWindow : Window
     // what the corner actually summons is Config.HotCornerLayout.
     private bool _previewQuadrant;
 
-    // Selection state for the read-only inspector (InfoBox) and the group children row (GroupRow).
+    // What the details card is currently about, and which group the canvas has open.
     // Neither swaps out which list the orbit renders anymore — a click just picks what, if anything,
     // is shown below the orbit — so plain "currently selected / currently expanded" fields replace
     // the old _editing/_editList-swapping model entirely.
     private OrbitItem? _selectedItem;
     private OrbitItem? _expandedGroup;
 
-    // Geometry + drag state for GroupRow's horizontal children strip, mirroring _slotBorders /
-    // _dragBorder etc. above but for a 1-D layout instead of the orbit's circular one.
-    private const double GroupChildBubble = 44;
-    private const double GroupChildGap = 14;
-    private readonly List<Border> _groupSlotBorders = new();
-    private Border? _groupDragBorder;
-    private OrbitItem? _groupDragItem;
-    private Point _groupDragStart;
-    private bool _groupDragMoved;
-    private int _groupDragIndex = -1;
 
     /// <param name="offerDesktopShortcut">
     /// Opens this window on Settings › General with the desktop-shortcut prompt showing. Set only
@@ -166,11 +156,6 @@ public sealed partial class ShellWindow : Window
         PreviewCanvas.PointerCaptureLost += (_, _) => EndPreviewDrag();
         PreviewCanvas.RightTapped += Preview_RightTapped;
 
-        GroupChildrenCanvas.PointerPressed += GroupRow_PointerPressed;
-        GroupChildrenCanvas.PointerMoved += GroupRow_PointerMoved;
-        GroupChildrenCanvas.PointerReleased += GroupRow_PointerReleased;
-        GroupChildrenCanvas.PointerCaptureLost += (_, _) => EndGroupDrag();
-
         // See OnRatingValueChanged for why this is a DP callback and not the ValueChanged event.
         ExperienceRating.RegisterPropertyChangedCallback(
             RatingControl.ValueProperty, (_, _) => OnRatingValueChanged());
@@ -205,7 +190,20 @@ public sealed partial class ShellWindow : Window
         // dispatcher's own queue. OrbitManager drops its reference on Closed (see OpenSettings);
         // without this, the timer would hold the window past that and keep firing at a tree that is
         // no longer on screen.
-        Closed += (_, _) => StopGreetingClock();
+        // OrbitMetrics raises this when Item size or Item shape changes. Nothing in this window
+        // listened to it before, which is why picking a size wrote the setting and left the canvas
+        // showing the old one until some unrelated edit forced a render. It is a static event, so
+        // the handler it holds would keep this window alive past its Closed — hence the matching
+        // unsubscribe below, in the same place the greeting timer is stopped and for the same
+        // reason.
+        void OnMetricsChanged() => DispatcherQueue.TryEnqueue(RenderPreview);
+        OrbitMetrics.Changed += OnMetricsChanged;
+
+        Closed += (_, _) =>
+        {
+            StopGreetingClock();
+            OrbitMetrics.Changed -= OnMetricsChanged;
+        };
 
         if (_appWindow.Presenter is OverlappedPresenter p)
             p.IsMaximizable = false;
@@ -230,6 +228,7 @@ public sealed partial class ShellWindow : Window
             PopulateLanguageBox();
             SelectHoverStyle(_manager.Config.HoverStyle);
             SelectItemSize(_manager.Config.ItemSize);
+            SelectItemShape(_manager.Config.ItemShape);
             RadiusSlider.Value = _manager.Config.OrbitRadius ?? OrbitMetrics.DefaultRadius;
             HotkeyEnabledToggle.IsOn = _manager.Config.HotkeyEnabled;
             HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
@@ -295,9 +294,8 @@ public sealed partial class ShellWindow : Window
                 if (_expandedGroup is not null && !ItemExists(_manager.Config.Primary.Items, _expandedGroup))
                     CollapseGroup();
                 if (_selectedItem is not null && !ItemExists(_manager.Config.Primary.Items, _selectedItem))
-                    HideInfo();
+                    HideItemDetails();
                 RenderPreview();
-                if (_expandedGroup is not null) RenderGroupRow();
                 RebuildItemsList();
                 // The edit sidebar's rows say whether each thing is already on the orbit, which a
                 // delete or an add made anywhere else has just changed the answer to.
@@ -358,8 +356,6 @@ public sealed partial class ShellWindow : Window
     {
         SyncAccentControls();
         RenderPreview();
-        if (_expandedGroup is not null)
-            RenderGroupRow();
         SelectHoverStyle(_manager.Config.HoverStyle);
         SelectSection(_currentSection);
         UpdateThemeCardSelection(_manager.Config.Theme);
@@ -751,7 +747,10 @@ public sealed partial class ShellWindow : Window
         {
             // Editing is a mode you are in while arranging the orbit, not a preference — arriving
             // at the screen should always show what it is set to, not what you were last doing.
+            // An open group is the same: coming back should show the orbit, not whichever group
+            // you happened to be inside when you left.
             SetOrbitEditing(false);
+            CollapseGroup();
             RenderPreview();
         }
         if (screen == ScreenElements) RebuildItemsList();
@@ -1067,6 +1066,15 @@ public sealed partial class ShellWindow : Window
         // toolbar since the Logi layout landed, so the canvas is the ring's alone again.
         double cx = size / 2, cy = size / 2;
 
+        // A group takes the canvas over entirely — see OpenGroup. Checked before the corner
+        // preview because the two are mutually exclusive and a group is the nearer state: you get
+        // into one by clicking a bubble on whichever orbit was showing, corner preview included.
+        if (_expandedGroup is not null)
+        {
+            RenderGroupArc(size);
+            return;
+        }
+
         if (_previewQuadrant && _manager.Config.HotCornerEnabled)
         {
             // The orbit's own slots are not on screen, so drop them: a press must not reach a
@@ -1103,26 +1111,6 @@ public sealed partial class ShellWindow : Window
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
         var canvasAccent = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasAccentBrush");
 
-        // The guide circle the nodes sit on. Logi draws no such ring — its wheel is eight
-        // hard-coded positions and the ring is purely implied — but Logi's is a fixed arrangement
-        // and SwiftX's is not: radius is a setting here, and the circle is what makes a drag of the
-        // Orbit radius slider legible as a circle growing rather than eight bubbles wandering.
-        // Behind everything else, so a node always covers it rather than the other way round.
-        var guide = new Ellipse
-        {
-            Width = radius * 2,
-            Height = radius * 2,
-            Stroke = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush"),
-            StrokeThickness = 1,
-            // Decoration only. The canvas handles press/drag once for every slot (see
-            // Preview_PointerPressed) and derives the slot from geometry, so a stroke that could
-            // take a hit of its own has nothing to contribute and one more way to go wrong.
-            IsHitTestVisible = false,
-        };
-        Canvas.SetLeft(guide, cx - radius);
-        Canvas.SetTop(guide, cy - radius);
-        PreviewCanvas.Children.Add(guide);
-
         // Match the orbit: the center is the app mark alone, painted on nothing — floating form and
         // all, so the preview shows the same shadow the real hub has. A filled plate here read as a
         // big empty hole that does not exist on the real thing.
@@ -1158,7 +1146,7 @@ public sealed partial class ShellWindow : Window
             {
                 Width = bubble,
                 Height = bubble,
-                CornerRadius = new CornerRadius(bubble / 2),
+                CornerRadius = new CornerRadius(OrbitMetrics.CornerRadiusFor(bubble)),
                 Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
@@ -1269,7 +1257,7 @@ public sealed partial class ShellWindow : Window
             {
                 Width = previewBubble,
                 Height = previewBubble,
-                CornerRadius = new CornerRadius(previewBubble / 2),
+                CornerRadius = new CornerRadius(OrbitMetrics.CornerRadiusFor(previewBubble)),
                 Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitBubbleGlassTint"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
@@ -1315,6 +1303,8 @@ public sealed partial class ShellWindow : Window
             Width = diameter,
             Height = diameter,
             Padding = new Thickness(0),
+            // Stays a disc whatever Item shape is set to: this is the canvas's own chrome — the
+            // affordance that switches to the corner preview — not one of the orbit's items.
             CornerRadius = new CornerRadius(diameter / 2),
             Content = new PathIcon
             {
@@ -1372,6 +1362,17 @@ public sealed partial class ShellWindow : Window
         // leave the canvas holding a drag, and the release that ends it would read as a plain
         // click and open the inspector behind the menu.
         if (!current.Properties.IsLeftButtonPressed)
+        {
+            EndPreviewDrag();
+            return;
+        }
+
+        // Inside a group, every bubble on the canvas carries its own Tapped handler and none of
+        // them are in _slotBorders. PreviewSlotAt works off geometry alone, so without this it
+        // would still answer with a slot index, capture the pointer, and resolve the release as a
+        // drop into an empty top-level slot — an add the user never asked for, into an orbit they
+        // are not currently looking at.
+        if (_expandedGroup is not null)
         {
             EndPreviewDrag();
             return;
@@ -1587,7 +1588,7 @@ public sealed partial class ShellWindow : Window
             }
             else if (item is not null)
             {
-                ShowItemInfo(item);
+                ShowItemDetails(item, e.GetCurrentPoint(PreviewCanvas).Position);
             }
             else
             {
@@ -1606,9 +1607,9 @@ public sealed partial class ShellWindow : Window
         if (item is not null)
         {
             if (item.IsGroup)
-                ToggleGroup(item);
+                OpenGroup(item);
             else
-                ShowItemInfo(item);
+                ShowItemDetails(item, e.GetCurrentPoint(PreviewCanvas).Position);
         }
         else if (slot < OrbitMetrics.UserSlotCount)
         {
@@ -1629,6 +1630,10 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private void Preview_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
+        // Same reason Preview_PointerPressed bails: the menu is built from a slot index, and inside
+        // a group every slot index answers for a top-level item that is not on screen.
+        if (_expandedGroup is not null) return;
+
         var point = e.GetPosition(PreviewCanvas);
         var menu = _previewQuadrant ? BuildQuadrantItemMenu(point) : BuildOrbitItemMenu(point);
         if (menu is null)
@@ -1749,7 +1754,7 @@ public sealed partial class ShellWindow : Window
                     items[at] = added;
 
                 if (ReferenceEquals(_expandedGroup, item)) CollapseGroup();
-                if (ReferenceEquals(_selectedItem, item)) HideInfo();
+                if (ReferenceEquals(_selectedItem, item)) HideItemDetails();
                 _manager.NotifyItemsChanged();
                 RenderPreview();
                 RebuildItemsList();
@@ -1766,7 +1771,7 @@ public sealed partial class ShellWindow : Window
             return;
 
         if (ReferenceEquals(_expandedGroup, item)) CollapseGroup();
-        if (ReferenceEquals(_selectedItem, item)) HideInfo();
+        if (ReferenceEquals(_selectedItem, item)) HideItemDetails();
         _manager.NotifyItemsChanged();
         RenderPreview();
         RebuildItemsList();
@@ -1788,7 +1793,7 @@ public sealed partial class ShellWindow : Window
 
                 list[slot] = added;
                 _manager.Save();
-                HideInfo();
+                HideItemDetails();
                 RenderPreview();
             },
             _manager.Config.HotCornerOrbit,
@@ -1871,7 +1876,7 @@ public sealed partial class ShellWindow : Window
 
         list.RemoveAt(slot);
         _manager.Save();
-        HideInfo();
+        HideItemDetails();
         RenderPreview();
     }
 
@@ -1970,243 +1975,516 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// Shows <paramref name="item"/>'s name/target in the read-only <c>InfoBox</c>. Re-clicking the
-    /// item already shown hides it again — the simplest "close" affordance that doesn't need a
-    /// dedicated button. This is display-only: real edits happen on the Elements screen.
+    /// The details card currently on screen, so a second click can close it and so any teardown
+    /// path can take it down without hunting for it.
+    /// </summary>
+    private Flyout? _detailsFlyout;
+
+    /// <summary>The centre of a bubble, in the coordinates of the canvas it is placed on.</summary>
+    private static Point PointOf(FrameworkElement element) => new(
+        Canvas.GetLeft(element) + element.ActualWidth / 2,
+        Canvas.GetTop(element) + element.ActualHeight / 2);
+
+    /// <summary>
+    /// Shows what an item is, on a card anchored where it was clicked.
     /// <para>
-    /// A click on a plain main-orbit item is unrelated to whatever group row is currently expanded
-    /// (if any), so that row is collapsed first — otherwise it kept sitting there showing a group
-    /// that has nothing to do with the newly-selected item. A click on a child <em>inside</em> the
-    /// expanded group's own row is the one case that should leave the row open alongside the info
-    /// box, since the row is exactly what the user clicked into.
+    /// This used to fill a read-only panel at the bottom of the sidebar. A panel on the far side of
+    /// the screen made you look away from the thing you had just clicked in order to read its name
+    /// back, and it had nowhere sensible to put an icon editor — which is the one thing the card
+    /// can do that the panel could not. Clicking the same item again closes it, so the card is its
+    /// own toggle the way the panel was.
     /// </para>
     /// </summary>
-    private void ShowItemInfo(OrbitItem item)
+    private void ShowItemDetails(OrbitItem item, Point at)
     {
-        if (ReferenceEquals(_selectedItem, item) && InfoBox.Visibility == Visibility.Visible)
+        if (ReferenceEquals(_selectedItem, item) && _detailsFlyout is not null)
         {
-            HideInfo();
+            HideItemDetails();
             return;
         }
-        if (!IsChildOfExpandedGroup(item))
-            CollapseGroup();
+
+        HideItemDetails();
         _selectedItem = item;
-        InfoName.Text = item.DisplayName;
-        InfoTarget.Text = string.IsNullOrEmpty(item.Target) ? "—" : item.Target;
-        InfoBox.Visibility = Visibility.Visible;
+
+        var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
+        var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
+
+        var card = new Grid { RowSpacing = 12, Width = 264 };
+        for (int i = 0; i < 2; i++)
+            card.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        // Head: what kind of thing this is, its name, and a way out.
+        var head = new Grid { ColumnSpacing = 10 };
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var badge = new Border
+        {
+            Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
+            BorderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(5, 1, 5, 1),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock
+            {
+                Text = DetailBadgeLabel(item.Kind),
+                FontSize = 10,
+                FontWeight = FontWeights.Bold,
+                Foreground = foreground,
+            },
+        };
+        Grid.SetColumn(badge, 0);
+        head.Children.Add(badge);
+
+        var name = new TextBlock
+        {
+            Text = item.DisplayName,
+            FontSize = 14,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextWrapping = TextWrapping.NoWrap,
+            Foreground = foreground,
+        };
+        Grid.SetColumn(name, 1);
+        head.Children.Add(name);
+
+        var close = BuildRowIconButton(0xE711, "Close", "Close details");
+        close.Click += (_, _) => HideItemDetails();
+        Grid.SetColumn(close, 2);
+        head.Children.Add(close);
+
+        Grid.SetRow(head, 0);
+        card.Children.Add(head);
+
+        // Body: the icon, editable, beside what the item actually points at.
+        var body = new Grid { ColumnSpacing = 12 };
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var icon = BuildEditableIcon(item);
+        Grid.SetColumn(icon, 0);
+        body.Children.Add(icon);
+
+        var target = new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(item.Target) ? "\u2014" : item.Target,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = muted,
+        };
+        Grid.SetColumn(target, 1);
+        body.Children.Add(target);
+
+        Grid.SetRow(body, 1);
+        card.Children.Add(body);
+
+        _detailsFlyout = new Flyout { Content = card, Placement = FlyoutPlacementMode.Right };
+        // Closing by clicking away has to clear the selection too, or the next click on the same
+        // item would read as the second half of a toggle and open nothing.
+        _detailsFlyout.Closed += (_, _) =>
+        {
+            _detailsFlyout = null;
+            _selectedItem = null;
+        };
+        _detailsFlyout.ShowAt(PreviewCanvas, new FlyoutShowOptions { Position = at });
     }
 
-    private void HideInfo()
+    private void HideItemDetails()
     {
         _selectedItem = null;
-        InfoBox.Visibility = Visibility.Collapsed;
+        var flyout = _detailsFlyout;
+        _detailsFlyout = null;
+        flyout?.Hide();
     }
 
-    private bool IsChildOfExpandedGroup(OrbitItem item) =>
-        _expandedGroup is not null && _expandedGroup.Children.Any(c => ReferenceEquals(c, item));
+    /// <summary>
+    /// The short tag the details card wears, in the same vocabulary the Elements cards use. A small
+    /// duplicate of that screen's own mapping rather than a shared one: this list answers for the
+    /// two system items as well, which never reach an Elements card at all.
+    /// </summary>
+    private static string DetailBadgeLabel(OrbitItemKind kind) => kind switch
+    {
+        OrbitItemKind.Application => "APP",
+        OrbitItemKind.File => "FILE",
+        OrbitItemKind.Folder => "FOLDER",
+        OrbitItemKind.WebLink => "LINK",
+        OrbitItemKind.Shortcut => "SHORTCUT",
+        OrbitItemKind.Group => "GROUP",
+        OrbitItemKind.Tool => "TOOL",
+        _ => "ITEM",
+    };
 
     /// <summary>
-    /// Expands (or, on a second click of the same group, collapses) <c>GroupRow</c> — the
-    /// horizontal children strip that replaces the old full-orbit drill-down.
+    /// The item's icon, large, with a pencil badge that opens a picker — the one thing the old
+    /// sidebar inspector had no room for and the reason the card exists at all.
     /// <para>
-    /// Switching to a different group closes whatever was open first (via <see cref="CollapseGroup"/>)
-    /// rather than just overwriting <c>_expandedGroup</c> in place, and any info box left showing
-    /// from before is cleared too — both would otherwise linger, showing state for an item or
-    /// group the newly-opened row has nothing to do with.
+    /// The picker is built on <see cref="IconChoices.All"/>, a curated glyph set that had been
+    /// sitting in the tree unreferenced since it was written. Choosing one writes
+    /// <see cref="OrbitItem.CustomGlyph"/>; "Use a picture" writes
+    /// <see cref="OrbitItem.CustomIconPath"/>; "Reset" clears both and lets
+    /// <see cref="IconService"/> go back to resolving the target's own icon.
+    /// <see cref="OrbitItem.IconKey"/> covers all three fields, so any of them changing is enough
+    /// for a resolved icon to be re-resolved rather than served stale from the last render.
     /// </para>
     /// </summary>
-    private void ToggleGroup(OrbitItem group)
+    private FrameworkElement BuildEditableIcon(OrbitItem item)
     {
-        if (ReferenceEquals(_expandedGroup, group))
-        {
-            CollapseGroup();
-            return;
-        }
-        CollapseGroup();
-        HideInfo();
-        _expandedGroup = group;
-        GroupRowTitle.Text = group.DisplayName;
-        GroupRow.Visibility = Visibility.Visible;
-        RenderGroupRow();
-    }
+        const double plate = 56;
 
-    /// <summary>Also clears <c>InfoBox</c> when it's showing one of this group's own children —
-    /// otherwise closing the row left a child's name/target on screen with no row left to have
-    /// come from.</summary>
-    private void CollapseGroup()
-    {
-        if (_selectedItem is not null && IsChildOfExpandedGroup(_selectedItem))
-            HideInfo();
-        _expandedGroup = null;
-        GroupRow.Visibility = Visibility.Collapsed;
-        GroupChildrenCanvas.Children.Clear();
-        _groupSlotBorders.Clear();
+        var glyph = new FontIcon
+        {
+            Glyph = item.Glyph,
+            FontSize = 24,
+            Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        if (GlyphFonts.IsTextGlyph(item.Glyph))
+            glyph.FontFamily = new FontFamily("Segoe UI");
+
+        var image = new Image
+        {
+            Width = plate - 18,
+            Height = plate - 18,
+            Stretch = Stretch.Uniform,
+            Visibility = Visibility.Collapsed,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        LoadRowIcon(item, image, glyph);
+
+        var content = new Grid();
+        content.Children.Add(glyph);
+        content.Children.Add(image);
+
+        var plateBorder = new Border
+        {
+            Width = plate,
+            Height = plate,
+            CornerRadius = new CornerRadius(OrbitMetrics.CornerRadiusFor(plate)),
+            Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
+            BorderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush"),
+            BorderThickness = new Thickness(1),
+            Child = content,
+        };
+
+        var pencil = new Button
+        {
+            Width = 22,
+            Height = 22,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(11),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, -4, -4),
+            Content = new FontIcon
+            {
+                Glyph = "\uE70F",
+                FontSize = 10,
+                Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+            },
+            Flyout = BuildIconPicker(item),
+        };
+        ToolTipService.SetToolTip(pencil, "Change this item's icon");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(pencil, "Change icon");
+
+        return new Grid
+        {
+            Width = plate,
+            Height = plate,
+            VerticalAlignment = VerticalAlignment.Top,
+            Children = { plateBorder, pencil },
+        };
     }
 
     /// <summary>
-    /// Draws <see cref="_expandedGroup"/>'s children as a left-to-right strip of small bubbles,
-    /// mirroring <see cref="RenderPreview"/>'s bubble styling (same brushes, same <see cref="PreviewGlyph"/>
-    /// helper) at a smaller size. Hidden children are skipped, same as the main orbit.
+    /// The glyph grid behind the pencil. Six to a row, which is what fits the card's width without
+    /// the flyout growing wider than the card it hangs off.
     /// </summary>
-    private void RenderGroupRow()
+    private Flyout BuildIconPicker(OrbitItem item)
     {
-        GroupChildrenCanvas.Children.Clear();
-        _groupSlotBorders.Clear();
+        var grid = new Grid { ColumnSpacing = 4, RowSpacing = 4 };
+        for (int c = 0; c < 6; c++)
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var choices = IconChoices.All;
+        for (int r = 0; r <= (choices.Count - 1) / 6; r++)
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        for (int i = 0; i < choices.Count; i++)
+        {
+            var choice = choices[i];
+            var button = new Button
+            {
+                Width = 34,
+                Height = 34,
+                Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(6),
+                Content = new FontIcon
+                {
+                    Glyph = choice.Glyph,
+                    FontSize = 16,
+                    Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+                },
+            };
+            ToolTipService.SetToolTip(button, choice.Name);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, choice.Name);
+            button.Click += (_, _) => ApplyIconChoice(item, choice.Glyph, null);
+            Grid.SetRow(button, i / 6);
+            Grid.SetColumn(button, i % 6);
+            grid.Children.Add(button);
+        }
+
+        var picture = new Button { Content = "Use a picture\u2026", HorizontalAlignment = HorizontalAlignment.Stretch };
+        picture.Click += (_, _) => PickIconImage(item);
+
+        var reset = new Button { Content = "Reset", HorizontalAlignment = HorizontalAlignment.Stretch };
+        reset.Click += (_, _) => ApplyIconChoice(item, null, null);
+
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "CHOOSE AN ICON",
+            Style = (Style)Root.Resources["SidebarEyebrow"],
+        });
+        panel.Children.Add(grid);
+        panel.Children.Add(picture);
+        panel.Children.Add(reset);
+
+        return new Flyout
+        {
+            Content = new ScrollViewer
+            {
+                MaxHeight = 320,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = panel,
+            },
+        };
+    }
+
+    /// <summary>
+    /// Writes a chosen icon onto the item and pushes it everywhere. Clearing
+    /// <see cref="OrbitItem.IconSignature"/> is what actually forces a re-resolve: the render path
+    /// skips an item whose signature still matches its key, which after an icon change it no longer
+    /// should.
+    /// </summary>
+    private void ApplyIconChoice(OrbitItem item, string? glyph, string? imagePath)
+    {
+        item.CustomGlyph = glyph;
+        item.CustomIconPath = imagePath;
+        item.IconImage = null;
+        item.IconSignature = null;
+
+        _manager.NotifyItemsChanged();
+        RenderPreview();
+        RebuildItemsList();
+        HideItemDetails();
+    }
+
+    private async void PickIconImage(OrbitItem item)
+    {
+        var picker = new FileOpenPicker();
+        InitializeWithWindow.Initialize(picker, _hwnd);
+        foreach (var extension in new[] { ".png", ".jpg", ".jpeg", ".bmp", ".ico" })
+            picker.FileTypeFilter.Add(extension);
+
+        var file = await picker.PickSingleFileAsync();
+        if (file is null) return;
+
+        // The glyph goes with it: IconKey carries both, and an item holding a picture and a custom
+        // glyph at once would fall back to a glyph the user replaced the moment the file moved.
+        ApplyIconChoice(item, null, file.Path);
+    }
+
+    /// <summary>
+    /// Opens <paramref name="group"/> on the canvas: the whole orbit is replaced by that group's
+    /// own children, fanned on an arc, and the header changes to say where you are.
+    /// <para>
+    /// This used to reveal a horizontal strip below the canvas instead. A strip could show the
+    /// children but not where they sit relative to anything, and it left the orbit they came out of
+    /// still drawn above it — two arrangements on screen at once, only one of which the clicks were
+    /// going to. Taking the canvas over is what the real orbit already does when a group is
+    /// summoned, so the preview now previews that rather than a control of its own invention.
+    /// </para>
+    /// </summary>
+    private void OpenGroup(OrbitItem group)
+    {
+        HideItemDetails();
+        _expandedGroup = group;
+
+        OrbitTitleBar.Visibility = Visibility.Collapsed;
+        OrbitGroupHeader.Visibility = Visibility.Visible;
+        OrbitGroupIcon.Glyph = group.Glyph;
+        OrbitGroupName.Text = group.DisplayName;
+
+        RenderPreview();
+    }
+
+    /// <summary>
+    /// Back out to the whole orbit. Safe to call when no group is open — every teardown path
+    /// (an item deleted from elsewhere, a reset, leaving the screen) calls it blind.
+    /// </summary>
+    private void CollapseGroup()
+    {
         if (_expandedGroup is null) return;
 
-        var borderBrush = ThemeHelper.Brush(Root, "SwiftXBorderBrush");
+        _expandedGroup = null;
+        HideItemDetails();
+
+        OrbitGroupHeader.Visibility = Visibility.Collapsed;
+        OrbitTitleBar.Visibility = Visibility.Visible;
+
+        RenderPreview();
+    }
+
+    private void OrbitGroupBack_Click(object sender, RoutedEventArgs e) => CollapseGroup();
+
+    /// <summary>
+    /// Draws the open group: its own mark at the centre where the hub would be, and its children on
+    /// an arc to the right of it, each with the same outward name pill the full orbit's items get.
+    /// <para>
+    /// The arc is the real orbit's own flyout geometry — <see cref="OrbitMetrics.FlyoutBubble"/>
+    /// and <see cref="OrbitMetrics.FlyoutStepDegrees"/> — rather than a fan invented for this
+    /// screen, so what the preview shows is the shape a group actually opens into when it is
+    /// summoned for real, at the same bubble size and the same angular spacing.
+    /// </para>
+    /// <para>
+    /// A dashed slot sits at each end of the arc. Both open the same scoped add flow, targeted at
+    /// this group's children rather than the top level, which is the only way into a group from
+    /// this screen now that the strip's own footer button is gone.
+    /// </para>
+    /// </summary>
+    private void RenderGroupArc(double size)
+    {
+        var group = _expandedGroup;
+        if (group is null) return;
+
+        // No slot in _slotBorders belongs to a child: those are the top-level orbit's, and the drag
+        // and right-click paths read them. Cleared so a press inside a group cannot reach a bubble
+        // that is no longer drawn — the same reason the corner preview clears them.
+        Array.Clear(_slotBorders);
+        // Both of the canvas commands go: Add item adds to the top level, and Reset defaults
+        // rebuilds the whole orbit — neither is what "add" or "reset" means while you are looking
+        // at one group's contents, and a destructive button that reads as scoped to what is on
+        // screen when it is not is worse than no button. Adding to the group is the dashed slot at
+        // either end of the arc instead.
+        CanvasActions.Visibility = Visibility.Collapsed;
+
+        double cx = size / 2, cy = size / 2;
+        double scale = size * 0.65 / (2 * (OrbitMetrics.Radius + OrbitMetrics.Bubble / 2));
+        double parent = OrbitMetrics.Bubble * scale;
+        double bubble = OrbitMetrics.FlyoutBubble * scale;
+        double radius = OrbitMetrics.Radius * scale;
+        double glyphSize = Math.Max(10, OrbitMetrics.FlyoutGlyph * scale);
+
+        _previewCenter = new Point(cx, cy);
+        _previewRadius = radius;
+        _previewBubble = bubble;
+
+        var borderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush");
+        var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
-        double glyphSize = Math.Max(10, GroupChildBubble * 0.36);
+        var accent = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasAccentBrush");
 
-        var children = _expandedGroup.Children.Where(c => !c.Hidden).ToList();
-        GroupChildrenCanvas.Width = children.Count == 0
-            ? GroupChildBubble
-            : children.Count * GroupChildBubble + (children.Count - 1) * GroupChildGap;
-        GroupChildrenCanvas.Height = GroupChildBubble;
-
-        for (int i = 0; i < children.Count; i++)
+        var parentBubble = new Border
         {
-            var child = children[i];
-            double x = i * (GroupChildBubble + GroupChildGap);
+            Width = parent,
+            Height = parent,
+            CornerRadius = new CornerRadius(OrbitMetrics.CornerRadiusFor(parent)),
+            Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
+            BorderBrush = accent,
+            BorderThickness = new Thickness(1.5),
+            Child = PreviewGlyph(group.Glyph, glyphSize * 1.15, accent),
+        };
+        ToolTipService.SetToolTip(parentBubble, group.DisplayName);
+        Canvas.SetLeft(parentBubble, cx - parent / 2);
+        Canvas.SetTop(parentBubble, cy - parent / 2);
+        PreviewCanvas.Children.Add(parentBubble);
+
+        var children = group.Children.Where(c => !c.Hidden).ToList();
+
+        // One dashed slot either side of the children, so the arc always has at least the two.
+        int count = children.Count + 2;
+        double step = OrbitMetrics.FlyoutStepDegreesFor(radius) * Math.PI / 180.0;
+        double first = -((count - 1) / 2.0) * step;
+
+        for (int i = 0; i < count; i++)
+        {
+            double angle = first + i * step;
+            double x = cx + radius * Math.Cos(angle) - bubble / 2;
+            double y = cy + radius * Math.Sin(angle) - bubble / 2;
+
+            bool isAdd = i == 0 || i == count - 1;
+            var child = isAdd ? null : children[i - 1];
 
             var border = new Border
             {
-                Width = GroupChildBubble,
-                Height = GroupChildBubble,
-                CornerRadius = new CornerRadius(GroupChildBubble / 2),
-                Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitBubbleGlassTint"),
+                Width = bubble,
+                Height = bubble,
+                CornerRadius = new CornerRadius(OrbitMetrics.CornerRadiusFor(bubble)),
+                Background = isAdd
+                    ? new SolidColorBrush(Colors.Transparent)
+                    : ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = child,
-                Child = PreviewGlyph(child.Glyph, glyphSize, foreground),
             };
-            ToolTipService.SetToolTip(border, child.DisplayName);
+
+            if (isAdd)
+            {
+                // Dashed, like the reference's own "Add an action" ends, so an empty slot reads as
+                // an invitation rather than as an item that failed to draw.
+                border.Child = PreviewGlyph("\uE710", glyphSize, muted);
+                border.BorderThickness = new Thickness(1);
+                ToolTipService.SetToolTip(border, "Add something to " + group.DisplayName);
+                border.Tapped += (_, _) => AddToOpenGroup();
+            }
+            else
+            {
+                border.Child = PreviewGlyph(child!.Glyph, glyphSize, foreground);
+                ToolTipService.SetToolTip(border, child.DisplayName);
+                AddSlotLabel(child.DisplayName, cx, cy, angle, radius, bubble);
+                // Per-bubble rather than through the canvas's own press/drag path: that path reads
+                // _slotBorders and reorders the top-level orbit, neither of which a child belongs
+                // to. Preview_PointerPressed bails out entirely while a group is open, so there is
+                // nothing here for a tap to compete with.
+                var tapped = child;
+                border.Tapped += (sender, _) =>
+                    ShowItemDetails(tapped, PointOf((FrameworkElement)sender));
+            }
 
             Canvas.SetLeft(border, x);
-            Canvas.SetTop(border, 0);
-            GroupChildrenCanvas.Children.Add(border);
-            _groupSlotBorders.Add(border);
+            Canvas.SetTop(border, y);
+            PreviewCanvas.Children.Add(border);
         }
     }
 
     /// <summary>
-    /// Press/drag/release for the group children row, the same one-capture-on-the-canvas pattern
-    /// as <see cref="Preview_PointerPressed"/>/<see cref="Preview_PointerMoved"/>/
-    /// <see cref="Preview_PointerReleased"/>, just projected onto a single horizontal axis instead
-    /// of the orbit's circular one.
+    /// Adds to whichever group the canvas currently has open, through the same dialog the top-level
+    /// Add item button opens — scoped to the group's own children, and with the Group tile hidden,
+    /// because a group inside a group is a shape the orbit has no way to open.
     /// </summary>
-    private void GroupRow_PointerPressed(object sender, PointerRoutedEventArgs e)
+    private void AddToOpenGroup()
     {
-        var point = e.GetCurrentPoint(GroupChildrenCanvas).Position;
-        _groupDragIndex = GroupChildIndexAt(point);
-        _groupDragBorder = _groupDragIndex >= 0 ? _groupSlotBorders[_groupDragIndex] : null;
-        _groupDragItem = _groupDragBorder?.Tag as OrbitItem;
-        _groupDragStart = point;
-        _groupDragMoved = false;
-        if (_groupDragIndex >= 0)
-            GroupChildrenCanvas.CapturePointer(e.Pointer);
-    }
+        var group = _expandedGroup;
+        if (group is null) return;
 
-    private void GroupRow_PointerMoved(object sender, PointerRoutedEventArgs e)
-    {
-        if (_groupDragBorder is null) return;
-
-        var point = e.GetCurrentPoint(GroupChildrenCanvas).Position;
-        double dx = point.X - _groupDragStart.X;
-        if (!_groupDragMoved && Math.Abs(dx) > 4)
-            _groupDragMoved = true;
-        if (_groupDragMoved)
-            _groupDragBorder.RenderTransform = new TranslateTransform { X = dx, Y = 0 };
-    }
-
-    private void GroupRow_PointerReleased(object sender, PointerRoutedEventArgs e)
-    {
-        var point = e.GetCurrentPoint(GroupChildrenCanvas).Position;
-        int index = _groupDragIndex;
-        var item = _groupDragItem;
-        bool moved = _groupDragMoved;
-
-        GroupChildrenCanvas.ReleasePointerCapture(e.Pointer);
-        EndGroupDrag();
-
-        if (index < 0)
-            return;
-
-        if (moved)
-        {
-            if (item is not null)
-                ReorderGroupChild(item, GroupChildIndexAt(point, requireHit: false));
-            return;
-        }
-
-        if (item is not null)
-            ShowItemInfo(item);
-    }
-
-    private void EndGroupDrag()
-    {
-        if (_groupDragBorder is not null)
-            _groupDragBorder.RenderTransform = null;
-        _groupDragBorder = null;
-        _groupDragItem = null;
-        _groupDragIndex = -1;
-        _groupDragMoved = false;
-    }
-
-    /// <summary>
-    /// Which child bubble in the row a canvas point is in, or -1. Mirrors
-    /// <see cref="PreviewSlotAt"/>: with <paramref name="requireHit"/> the point must actually land
-    /// on that bubble, so a drop past the last child (or before the first) still resolves to a
-    /// slot for <see cref="ReorderGroupChild"/> without picking one up on a plain press.
-    /// </summary>
-    private int GroupChildIndexAt(Point point, bool requireHit = true)
-    {
-        if (_groupSlotBorders.Count == 0) return -1;
-
-        double step = GroupChildBubble + GroupChildGap;
-        int index = Math.Clamp((int)Math.Floor(point.X / step), 0, _groupSlotBorders.Count - 1);
-        if (!requireHit)
-            return index;
-
-        double slotX = index * step + GroupChildBubble / 2;
-        bool withinX = Math.Abs(point.X - slotX) <= GroupChildBubble / 2 + 4;
-        bool withinY = point.Y >= -4 && point.Y <= GroupChildBubble + 4;
-        return withinX && withinY ? index : -1;
-    }
-
-    /// <summary>
-    /// Reorders <see cref="_expandedGroup"/>'s children after a drag in the row, the same
-    /// position-preserving move <see cref="ReorderItem"/> does for the main orbit so hidden
-    /// siblings keep their place instead of being shuffled by an index from a filtered view.
-    /// </summary>
-    private void ReorderGroupChild(OrbitItem dragged, int targetIndex)
-    {
-        if (_expandedGroup is null || targetIndex < 0) return;
-
-        var list = _expandedGroup.Children;
-        var visible = list.Where(i => !i.Hidden).ToList();
-        int from = visible.IndexOf(dragged);
-        if (from < 0) return;
-
-        int to = Math.Min(targetIndex, visible.Count - 1);
-        if (to == from) return;
-
-        visible.RemoveAt(from);
-        visible.Insert(to, dragged);
-
-        var positions = new List<int>();
-        for (int i = 0; i < list.Count && positions.Count < visible.Count; i++)
-        {
-            if (!list[i].Hidden)
-                positions.Add(i);
-        }
-        for (int i = 0; i < positions.Count; i++)
-            list[positions[i]] = visible[i];
-
-        _manager.NotifyItemsChanged();
-        RenderGroupRow();
-        RenderPreview();
-        RebuildItemsList();
+        _manager.OpenAddItem(
+            added =>
+            {
+                group.Children.Add(added);
+                _manager.NotifyItemsChanged();
+                RenderPreview();
+                RebuildItemsList();
+            },
+            group.Children,
+            allowGroups: false,
+            heading: "Add to " + group.DisplayName);
     }
 
     private void AddItem_Click(object sender, RoutedEventArgs e) =>
@@ -2587,7 +2865,7 @@ public sealed partial class ShellWindow : Window
     private void ResetDefaults_Click(object sender, RoutedEventArgs e)
     {
         // Every item the selection/expansion state could be pointing at is about to be replaced.
-        HideInfo();
+        HideItemDetails();
         CollapseGroup();
         // The corner's own arrangement was built out of the items being replaced, so it goes back
         // to following the orbit rather than holding four copies of the old one.
@@ -2709,6 +2987,13 @@ public sealed partial class ShellWindow : Window
         ItemSizeLargeOption.IsChecked = size == OrbitItemSize.Large;
     }
 
+    private void SelectItemShape(OrbitItemShape shape)
+    {
+        ItemShapeCircleOption.IsChecked = shape == OrbitItemShape.Circle;
+        ItemShapeSquircleOption.IsChecked = shape == OrbitItemShape.Squircle;
+        ItemShapeSquareOption.IsChecked = shape == OrbitItemShape.Square;
+    }
+
     private void ThemeCard_Click(object sender, RoutedEventArgs e)
     {
         if (_loading || sender is not FrameworkElement card) return;
@@ -2783,6 +3068,45 @@ public sealed partial class ShellWindow : Window
         Paint(FrostedLevelMediumPill, FrostedLevelMediumText, FrostedGlassLevel.Medium);
         Paint(FrostedLevelDarkPill, FrostedLevelDarkText, FrostedGlassLevel.Dark);
     }
+
+    // ===================== the Orbit toolbar's two screen-wide affordances =====================
+
+    /// <summary>
+    /// The reference screen ends its toolbar with a gear and a wrench, opposite the commands that
+    /// act on the canvas. The split is worth keeping: Add item and Reset defaults apply to whatever
+    /// the canvas currently holds and go away with it (a corner preview, an open group), while a
+    /// way into Settings and a way into help are wanted from every state this screen has.
+    /// </summary>
+    private void OrbitOpenSettings_Click(object sender, RoutedEventArgs e) =>
+        ShowScreen(ScreenSettings);
+
+    // The wrench's menu mirrors the reference's How To / Support / What's New, re-pointed at
+    // things this app actually has. A menu entry that goes nowhere is worse than no menu, and
+    // SwiftX has no device features to introduce and no video library to link to, so each of the
+    // three below says which reference entry it stands in for rather than borrowing its label.
+
+    /// <summary>Stands in for the reference's "Customization tips": the fastest way to learn what
+    /// can go on the orbit is the panel that lists it, so this opens that rather than describing
+    /// it.</summary>
+    private void HowToArrange_Click(object sender, RoutedEventArgs e)
+    {
+        ShowScreen(ScreenOrbit);
+        SetOrbitEditing(true);
+    }
+
+    /// <summary>Stands in for the reference's "How To video library". SwiftX has no videos; it has
+    /// a README that documents every screen, which is the same thing in the medium this project
+    /// actually keeps up to date.</summary>
+    private void HowToHandbook_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(GitHubRepoUrl + "#readme");
+
+    /// <summary>The reference's "Support", pointed at where support actually happens.</summary>
+    private void OrbitSupport_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(GitHubRepoUrl + "/issues");
+
+    /// <summary>The reference's "What's New", pointed at the releases this is cut from.</summary>
+    private void WhatsNew_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(GitHubRepoUrl + "/releases");
 
     private void ApplyThemeChoice(AppTheme theme)
     {
@@ -3061,7 +3385,7 @@ public sealed partial class ShellWindow : Window
         if (imported is null) return;
         // The whole Orbits collection is being replaced, so nothing the selection/expansion state
         // could be pointing at survives.
-        HideInfo();
+        HideItemDetails();
         CollapseGroup();
         _manager.Config.CopyAppSettingsFrom(imported);
         _manager.Config.Orbits.Clear();
@@ -3088,7 +3412,7 @@ public sealed partial class ShellWindow : Window
     {
         // SeedDefaults below replaces every orbit item, so drop anything the selection/expansion
         // state was pointing at first.
-        HideInfo();
+        HideItemDetails();
         CollapseGroup();
         _manager.Config.Theme = AppTheme.Dark;
         _manager.Config.FrostedGlass = FrostedGlassLevel.Light;
@@ -3111,6 +3435,7 @@ public sealed partial class ShellWindow : Window
         // Through the manager, not a raw Config assignment: OrbitMetrics holds the geometry the
         // orbit actually draws with.
         _manager.SetItemSize(OrbitItemSize.Medium);
+        _manager.SetItemShape(OrbitItemShape.Circle);
         _manager.SetRadius(null);
         _manager.NotifyItemsChanged();
         _manager.ApplyTheme();
@@ -3122,6 +3447,7 @@ public sealed partial class ShellWindow : Window
         UpdateThemeToggleIcon();
         SelectHoverStyle(OrbitHoverStyle.Invert);
         SelectItemSize(OrbitItemSize.Medium);
+        SelectItemShape(OrbitItemShape.Circle);
         RadiusSlider.Value = OrbitMetrics.DefaultRadius;
         HotkeyEnabledToggle.IsOn = true;
         HotkeyCapture.Gesture = HotkeyGesture.Default;
@@ -3144,6 +3470,18 @@ public sealed partial class ShellWindow : Window
         if (_loading || sender is not RadioButton radio) return;
         if (Enum.TryParse<OrbitItemSize>(radio.Tag as string, out var size))
             _manager.SetItemSize(size);
+    }
+
+    /// <summary>
+    /// Size's own counterpart. Goes through the manager for the same reason
+    /// <see cref="ItemSize_Checked"/> does — the setting has to reach <see cref="OrbitMetrics"/>,
+    /// which is what every draw site reads, not just the config.
+    /// </summary>
+    private void ItemShape_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_loading || sender is not RadioButton radio) return;
+        if (Enum.TryParse<OrbitItemShape>(radio.Tag as string, out var shape))
+            _manager.SetItemShape(shape);
     }
 
     private void RadiusSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
