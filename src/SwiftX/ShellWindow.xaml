@@ -789,28 +789,20 @@
                          928 — 900 leaves a small margin inside that without being so wide it invites
                          a 5th column if ItemWidth ever changes. -->
                     <StackPanel Spacing="6" MaxWidth="900" HorizontalAlignment="Left">
-                        <TextBlock Text="Every tool lives inside the Tools item on the orbit. Turn one off to take it out, or drag it by its handle to change where it sits inside."
+                        <TextBlock Text="Every tool lives inside the Tools item on the orbit. Turn one off to take it out."
                                    Style="{StaticResource SettingBody}" Margin="0,0,0,8" />
 
-                        <!-- Rows are built in code-behind (RebuildToolsList) — one per entry in
+<!-- Rows are built in code-behind (RebuildToolsList) — one per entry in
                              ToolRows, each shown once here regardless of how many orbit instances
-                             it has. CanReorderItems + AllowDrop is WinUI's own drag-to-reorder; it
-                             drives _toolCards directly (see ToolCards_CollectionChanged). Still a
-                             ListView — CanReorderItems/AllowDrop are properties of the ListView
-                             control itself, not of whatever panel arranges its items (this is
-                             literally how GridView is implemented under the hood: a ListView with a
-                             GridView-flavoured ItemsPanel/ItemContainerStyle), so the mockups' card
-                             grid and a working drag-reorder were never actually in tension. Swapping
-                             the ItemsPanel below for an ItemsWrapGrid keeps the exact same
-                             ObservableCollection<Border> ItemsSource and its CollectionChanged
-                             wiring untouched — only how the same bound cards are arranged on screen
-                             changes, from a vertical stack to a wrapping grid.
-                             MaximumRowsOrColumns="4" caps the wrap at 4 columns outright (rather
-                             than leaving it to width math alone), so the 5th ToolRow simply wraps
-                             to its own row 2 instead of ever being dropped to match the mockup's
-                             4-card example. -->
+                             it has. Still a ListView rather than a GridView even now that nothing
+                             is reorderable: the mockups' card grid is an ItemsWrapGrid ItemsPanel,
+                             which a ListView takes as readily (a GridView is literally a ListView
+                             with a grid-flavoured panel and container style), and swapping the
+                             control would mean rebuilding the ItemsSource binding for no visible
+                             change. MaximumRowsOrColumns="4" caps the wrap at four columns outright
+                             rather than leaving it to width math, so the fifth ToolRow wraps to its
+                             own row instead of ever being dropped. -->
                         <ListView x:Name="ToolsList" SelectionMode="None"
-                                  CanReorderItems="True" AllowDrop="True"
                                   ScrollViewer.VerticalScrollBarVisibility="Disabled"
                                   ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListView.ItemsPanel>

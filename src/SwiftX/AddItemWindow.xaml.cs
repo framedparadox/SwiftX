@@ -30,6 +30,7 @@ public sealed partial class AddItemWindow : Window
     private readonly OrbitManager _manager;
     private readonly Action<OrbitItem>? _onAdded;
     private readonly List<OrbitItem> _targetList;
+    private readonly OrbitItem? _existing;
     private readonly nint _hwnd;
     private readonly AppWindow _appWindow;
     private AddKind _kind = AddKind.App;
@@ -53,14 +54,25 @@ public sealed partial class AddItemWindow : Window
     /// of them.
     /// </param>
     /// <param name="confirmLabel">The commit button's label, for the same reason.</param>
+    /// <param name="existing">
+    /// The item being edited, when this is an edit rather than an add. Everything below that
+    /// branches on it exists because this dialog had no way of being told about one: the Elements
+    /// screen's "EDIT" already reached the same form, but with nothing to prefill from it opened
+    /// blank — no type picked, no target, no name — and its Save wrote a brand new item over the
+    /// old one, so an edit silently discarded whatever the user had not retyped from memory.
+    /// Passing the item makes the form open on what it already is, and makes the commit carry the
+    /// item's identity and its off-form fields across (see <see cref="PrefillFrom"/> and
+    /// <see cref="Add_Click"/>). Null for every add, which is every other caller.
+    /// </param>
     public AddItemWindow(
         OrbitManager manager, Action<OrbitItem>? onAdded, List<OrbitItem> targetList,
         bool isGenericAddItem = false, bool allowGroups = true,
-        string? heading = null, string? confirmLabel = null)
+        string? heading = null, string? confirmLabel = null, OrbitItem? existing = null)
     {
         _manager = manager;
         _onAdded = onAdded;
         _targetList = targetList;
+        _existing = existing;
         InitializeComponent();
 
         _hwnd = WindowNative.GetWindowHandle(this);
@@ -128,7 +140,13 @@ public sealed partial class AddItemWindow : Window
                 _nameEdited = !string.IsNullOrEmpty(NameBox.Text);
         };
 
-        SelectType(AddKind.App);
+        // An add starts on the first tile; an edit starts on whatever the item already is. Both
+        // go through SelectType, so the form is in the same consistent state either way — it is
+        // what shows and hides the target row and the tool picker, and nothing else does.
+        if (existing is null)
+            SelectType(AddKind.App);
+        else
+            PrefillFrom(existing);
     }
 
     public void ApplyTheme()
@@ -487,6 +505,58 @@ public sealed partial class AddItemWindow : Window
         FitWindowToContent();
     }
 
+    /// <summary>
+    /// Puts an item that already exists back into the form, so an edit begins from what that item
+    /// is rather than from a blank add.
+    /// <para>
+    /// The order of the three steps is the whole of it. <see cref="SelectType"/> has to run first
+    /// because it is what decides which fields are even visible, and because it seeds "Group" into
+    /// an empty name box. The target goes in next, which re-enters
+    /// <see cref="TargetBox_TextChanged"/> and derives a name from the path. Only then is the real
+    /// name written, with <see cref="_nameEdited"/> latched by hand afterwards: the item's own
+    /// name is one the user already settled on, so it has to be treated as hand-typed and not
+    /// quietly re-derived out from under them the moment they correct the path it sits beside.
+    /// </para>
+    /// <para>
+    /// Arguments, a custom icon path and a custom glyph have no field on this form at all, so
+    /// there is nothing here to prefill them into; they ride across the commit instead (see
+    /// <see cref="Add_Click"/>), which is also the only way to keep them for the two kinds whose
+    /// glyph the commit re-derives from the picker.
+    /// </para>
+    /// </summary>
+    private void PrefillFrom(OrbitItem item)
+    {
+        SelectType(ToAddKind(item.Kind));
+
+        if (item.Kind == OrbitItemKind.Tool)
+            SelectTool(item.Target);
+        else
+            TargetBox.Text = item.Target;
+
+        NameBox.Text = item.DisplayName;
+        _nameEdited = !string.IsNullOrEmpty(item.DisplayName);
+    }
+
+    /// <summary>
+    /// Points <see cref="ToolBox"/> at the tool a given <see cref="OrbitItem.Target"/> names.
+    /// Matched on each entry's <c>Tag</c> rather than on its visible label, because the Tag is the
+    /// exact string <see cref="Add_Click"/> reads back out of the same combo — the two disagree
+    /// often enough to matter ("QuickFormat" the target against "Quick Format" the label), and
+    /// matching the label would quietly leave the picker on Data for half the catalog.
+    /// </summary>
+    private void SelectTool(string target)
+    {
+        foreach (var entry in ToolBox.Items)
+        {
+            if (entry is ComboBoxItem candidate &&
+                string.Equals(candidate.Tag as string, target, StringComparison.OrdinalIgnoreCase))
+            {
+                ToolBox.SelectedItem = candidate;
+                return;
+            }
+        }
+    }
+
     private void TargetBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_nameEdited || string.IsNullOrWhiteSpace(TargetBox.Text)) return;
@@ -775,12 +845,21 @@ public sealed partial class AddItemWindow : Window
         return false;
     }
 
+    /// <summary>
+    /// The tile that stands for a given item kind. Group and Tool are listed for
+    /// <see cref="PrefillFrom"/>'s sake, not the drop path's:
+    /// <see cref="OrbitItemFactory.Classify"/> only ever answers with the five kinds a dropped
+    /// path can be, so <see cref="Root_Drop"/> cannot reach either arm and keeps the behaviour it
+    /// had when they both fell through to App.
+    /// </summary>
     private static AddKind ToAddKind(OrbitItemKind kind) => kind switch
     {
         OrbitItemKind.Folder => AddKind.Folder,
         OrbitItemKind.WebLink => AddKind.Link,
         OrbitItemKind.Shortcut => AddKind.Shortcut,
         OrbitItemKind.File => AddKind.File,
+        OrbitItemKind.Group => AddKind.Group,
+        OrbitItemKind.Tool => AddKind.Tool,
         _ => AddKind.App,
     };
 
@@ -822,9 +901,33 @@ public sealed partial class AddItemWindow : Window
         }
     }
 
+    /// <summary>
+    /// Builds the item the form describes and hands it to whoever asked for one.
+    /// <para>
+    /// An edit builds a fresh <see cref="OrbitItem"/> too, rather than writing back into the one
+    /// it came from, because the caller's callback is what decides where the result lands and a
+    /// half-mutated original would already be on the orbit by the time the user pressed Cancel.
+    /// What an edit does instead is carry the parts of the old item this form cannot describe onto
+    /// the new one before the kind-specific branches run: its <see cref="OrbitItem.Id"/>, so
+    /// anything keyed by identity still points at the same element; its hidden state, so editing a
+    /// hidden item's name does not quietly put it back on the orbit; and the arguments, custom
+    /// icon path and custom glyph the form has no field for. The two branches that re-derive a
+    /// glyph then overwrite the carried one, which is correct for exactly those two — a tool's
+    /// mark follows the tool the picker is on, and a group's is the group mark.
+    /// </para>
+    /// </summary>
     private void Add_Click(object sender, RoutedEventArgs e)
     {
         var item = new OrbitItem();
+
+        if (_existing is not null)
+        {
+            item.Id = _existing.Id;
+            item.Hidden = _existing.Hidden;
+            item.Arguments = _existing.Arguments;
+            item.CustomIconPath = _existing.CustomIconPath;
+            item.CustomGlyph = _existing.CustomGlyph;
+        }
 
         if (_kind == AddKind.Tool)
         {
@@ -842,6 +945,14 @@ public sealed partial class AddItemWindow : Window
             item.Kind = OrbitItemKind.Group;
             item.DisplayName = string.IsNullOrWhiteSpace(NameBox.Text) ? "Group" : NameBox.Text.Trim();
             item.CustomGlyph = "\uE838";
+            // A group is the one kind with no target row and no field describing its contents, so
+            // an edit of one has to bring both across itself. Without this, renaming a group would
+            // empty it — which is the opposite of what anyone opens "Edit" on a group to do.
+            if (_existing is not null && _existing.IsGroup)
+            {
+                item.Target = _existing.Target;
+                item.Children.AddRange(_existing.Children);
+            }
         }
         else
         {
@@ -874,9 +985,14 @@ public sealed partial class AddItemWindow : Window
                 : NameBox.Text.Trim();
         }
 
+        // An edit must never append. The caller's callback writes the result back over the item it
+        // replaced, wherever in the tree that lives, so an added-to-the-list copy as well would
+        // leave the orbit holding both the old edit and the new one. The callback is the only exit
+        // an edit has: with none there is nowhere to write it back to, and dropping it is the only
+        // honest answer — appending would be an add the user never asked for.
         if (_onAdded is not null)
             _onAdded(item);
-        else
+        else if (_existing is null)
         {
             _targetList.Add(item);
             _manager.NotifyItemsChanged();

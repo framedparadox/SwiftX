@@ -329,8 +329,10 @@ property of the orbit, not of the app.
 
 ### Elements
 
-A flat list of your orbit items — show/hide each one, or delete it. Groups are listed with their
-children beneath them. Built-in tools are not listed here (the Tools page owns them), and neither
+A card per orbit item — show/hide each one, edit it, or delete it. Groups are listed with their
+children beneath them. **Edit** reopens the add dialog on the item as it already is, carrying its
+id, its hidden state and the fields the form has no box for (arguments, a custom icon) across the
+save, so an edit really does edit rather than replace. Built-in tools are not listed here (the Tools page owns them), and neither
 are Settings and Close, which the orbit always draws itself.
 
 Its own **Add item…** button opens the same dialog as the orbit's "Add to orbit" quick action, but
@@ -339,8 +341,9 @@ Tools page, so that tile only makes sense from an orbit or corner slot that can 
 
 ### Tools
 
-One row per built-in tool: a switch that puts it in the orbit's Tools item or takes it out, an
-open button, and a drag handle. Dragging reorders the tools inside that group.
+One card per built-in tool: a switch that puts it in the orbit's Tools item or takes it out, and
+an open button. The cards do not reorder — the order is the catalog's, and a tool's place inside
+the Tools group was never something worth dragging for.
 
 ### Settings → Feedback & Support
 

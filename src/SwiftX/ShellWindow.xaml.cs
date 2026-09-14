@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Composition.SystemBackdrops;
@@ -140,8 +139,6 @@ public sealed partial class ShellWindow : Window
         // regardless of which — Light's own brushes stay fully opaque, so it never has anything
         // translucent to show through there. Attaching it here as well would only have built one
         // for Frosted glass to throw away a few lines later.
-
-        _toolCards.CollectionChanged += ToolCards_CollectionChanged;
 
         _hwnd = WindowNative.GetWindowHandle(this);
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
@@ -3487,6 +3484,14 @@ public sealed partial class ShellWindow : Window
     /// add), so editing a child keeps that same restriction; a top-level item may become anything,
     /// same as <see cref="ReplaceOrbitItem"/>.
     /// </para>
+    /// <para>
+    /// The item itself goes to the dialog, not just a heading saying its name. Until it did, this
+    /// was an edit in label only: the form opened with no type picked, no target, no name and no
+    /// icon, so pressing Save replaced the item with whatever the user had managed to retype from
+    /// memory and dropped the rest. <see cref="AddItemWindow"/> fills its fields from what is
+    /// passed here and carries the item's id, hidden state and off-form fields across its own
+    /// commit, so what comes back through this callback really is the same element, edited.
+    /// </para>
     /// </summary>
     private void EditOrbitItem(OrbitItem item)
     {
@@ -3518,15 +3523,14 @@ public sealed partial class ShellWindow : Window
             topLevel,
             allowGroups: isTopLevel,
             heading: "Edit " + item.DisplayName,
-            confirmLabel: "Save");
+            confirmLabel: "Save",
+            existing: item);
     }
 
     /// <summary>
     /// The shared vertical layout a plain item's card (<see cref="BuildItemRow"/>), a group's own
     /// card (<see cref="BuildGroupRow"/>), and a tool card (<see cref="BuildToolCard"/>) all build:
-    /// icon top-left (optionally preceded by a <paramref name="leading"/> element — the Tools
-    /// screen's drag grip; Elements' two callers leave it null and get the original layout
-    /// unchanged) with an optional delete button and a show/hide toggle top-right, a bold title,
+    /// icon top-left, with an optional delete button and a show/hide toggle top-right, a bold title,
     /// two muted caption lines, a small rounded type badge, a thin divider, and a footer strip that
     /// is itself one click target end to end (the <c>BoxOpenLabel</c> pattern the Home screen's own
     /// nav-box "OPEN" footer already uses, see <see cref="BuildCardFooterButton"/>).
@@ -3543,35 +3547,28 @@ public sealed partial class ShellWindow : Window
         FrameworkElement icon, string title, string caption1, string caption2, string badgeLabel,
         bool isHidden, Action<bool> onToggle, Action? onDelete, string? deleteAutomationName,
         string footerLabel, string footerAutomationName, Action onFooter,
-        FrameworkElement? leading = null, bool wrapText = false)
+        bool wrapText = false)
     {
         var card = new Grid { RowSpacing = 8 };
         for (int i = 0; i < 7; i++)
             card.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
+        // Four columns, and no leading slot any more: the Tools screen's drag grip was the only
+        // thing that ever occupied one, and with reordering gone there is nothing left to grip.
         var head = new Grid { ColumnSpacing = 4 };
-        int offset = leading is null ? 0 : 1;
-        if (leading is not null)
-            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        if (leading is not null)
-        {
-            Grid.SetColumn(leading, 0);
-            head.Children.Add(leading);
-        }
-
-        Grid.SetColumn(icon, offset + 0);
+        Grid.SetColumn(icon, 0);
         head.Children.Add(icon);
 
         if (onDelete is not null)
         {
             var remove = BuildRowIconButton(0xE74D, "Delete", deleteAutomationName ?? "Delete");
             remove.Click += (_, _) => onDelete();
-            Grid.SetColumn(remove, offset + 2);
+            Grid.SetColumn(remove, 2);
             head.Children.Add(remove);
         }
 
@@ -3584,7 +3581,7 @@ public sealed partial class ShellWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
         };
         toggle.Toggled += (_, _) => onToggle(toggle.IsOn);
-        Grid.SetColumn(toggle, offset + 3);
+        Grid.SetColumn(toggle, 3);
         head.Children.Add(toggle);
 
         Grid.SetRow(head, 0);
@@ -3711,26 +3708,52 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// The medallion at the head of a card: the item's own glyph to begin with, replaced by its real
+    /// The square an Elements or a Tools card draws its icon in, and the two glyph sizes drawn
+    /// inside it. Shared by <see cref="BuildItemIcon"/> and <see cref="BuildToolCard"/> rather than
+    /// written out twice: the two screens build their cards from separate code but the cards are
+    /// meant to read as one family, and an icon a few pixels off between them is exactly the kind
+    /// of drift that is invisible while editing one screen and obvious with both open.
+    /// <para>
+    /// <see cref="CardTextGlyphSize"/> is for the glyphs that are not Fluent marks at all —
+    /// "B64" and friends, which <see cref="GlyphFonts.IsTextGlyph"/> picks out and which render in
+    /// Segoe UI. Those are measured in characters rather than in one em-wide mark, so at the size
+    /// a single-mark glyph wants they would run straight out of the box and past the title beside
+    /// them.
+    /// </para>
+    /// </summary>
+    private const double CardIconSize = 36;
+    private const double CardGlyphSize = 28;
+    private const double CardTextGlyphSize = 18;
+
+    /// <summary>
+    /// The icon at the head of a card: the item's own glyph to begin with, replaced by its real
     /// shell / folder / favicon icon if <see cref="IconService"/> resolves one. The same
     /// image-over-glyph pair the orbit itself draws, just built imperatively here rather than bound.
     /// A group resolves nothing (it has no target), so it simply keeps its group glyph.
     /// <para>
-    /// Circular, filled with <c>ShellMedallionBrush</c> and stroked with <c>ShellCardBorderBrush</c>
-    /// — the same two tokens the Home screen's own nav-box icon medallion uses — rather than the
-    /// flat transparent 28px square this used to be: the vertical card design puts the icon on its
-    /// own line at the top of the card instead of a horizontal row, so it needs the same visual
-    /// weight a standalone medallion has, not a plate that only read right sitting flush beside text.
+    /// Both sit straight on the card's own ground. They were inset in a ⌀44 medallion until now — a
+    /// <c>ShellMedallionBrush</c> fill rimmed in <c>ShellCardBorderBrush</c>, borrowed from the
+    /// Home screen's nav boxes — but a nav box is a flat panel and a card is already a raised
+    /// surface, so the same plate that gave the mark weight there read as a second card inside the
+    /// first here, and the app icons it framed are artwork with their own edges that gain nothing
+    /// from being circled. With the plate gone the mark is the only thing left to carry that
+    /// weight, which is why it is drawn a good deal larger than the 20pt it could get away with
+    /// while a 44px disc was doing the work: at the old size on bare ground it read as a stray
+    /// character adrift in the corner of the card.
+    /// </para>
+    /// <para>
+    /// The box the glyph and the picture share keeps a fixed size even though nothing paints it.
+    /// That is what holds every card's title at the same height whether its icon resolved to a
+    /// picture or stayed a glyph, and whether that glyph is one Fluent mark or the three characters
+    /// of "B64".
     /// </para>
     /// </summary>
     private FrameworkElement BuildItemIcon(OrbitItem item)
     {
-        const double plate = 44;
-
         var glyph = new FontIcon
         {
             Glyph = item.Glyph,
-            FontSize = 20,
+            FontSize = GlyphFonts.IsTextGlyph(item.Glyph) ? CardTextGlyphSize : CardGlyphSize,
             Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
@@ -3742,31 +3765,26 @@ public sealed partial class ShellWindow : Window
 
         var image = new Image
         {
-            Width = plate - 16,
-            Height = plate - 16,
+            Width = CardIconSize,
+            Height = CardIconSize,
             Stretch = Stretch.Uniform,
             Visibility = Visibility.Collapsed,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
 
-        var content = new Grid();
+        var content = new Grid
+        {
+            Width = CardIconSize,
+            Height = CardIconSize,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
         content.Children.Add(glyph);
         content.Children.Add(image);
 
         LoadRowIcon(item, image, glyph);
 
-        return new Border
-        {
-            Width = plate,
-            Height = plate,
-            CornerRadius = new CornerRadius(plate / 2),
-            Background = ThemeHelper.Brush(Root, "ShellMedallionBrush"),
-            BorderBrush = ThemeHelper.Brush(Root, "ShellCardBorderBrush"),
-            BorderThickness = new Thickness(1),
-            VerticalAlignment = VerticalAlignment.Center,
-            Child = content,
-        };
+        return content;
     }
 
     /// <summary>
@@ -3816,31 +3834,17 @@ public sealed partial class ShellWindow : Window
             c => c.ShowCertificateTool, (c, v) => c.ShowCertificateTool = v),
     ];
 
-    // Bound as ToolsList's ItemsSource: WinUI's CanReorderItems drag pipeline mutates whichever
-    // IList backs the list, so this is what actually moves when the user drags a card — observing
-    // it (see ToolCards_CollectionChanged, wired in the constructor) is how a drag becomes an orbit
-    // reorder.
+    // Bound as ToolsList's ItemsSource. An ObservableCollection rather than a plain list is what is
+    // left of the drag-to-reorder this used to back: nothing mutates it now but RebuildToolsList's
+    // own Clear-and-refill, and the notifications that once told a finished drag apart from that
+    // refill no longer have a listener. Kept as one because the ItemsSource binding is built on it.
     private readonly ObservableCollection<Border> _toolCards = new();
-
-    // Guards ToolCards_CollectionChanged against RebuildToolsList's own Clear+Add below — a
-    // reorder drag removes and reinserts a card (not a single Move — ObservableCollection only
-    // raises that action for an explicit Move() call), so a rebuild and a drag look identical
-    // from the event args alone; this flag is what tells them apart.
-    private bool _rebuildingToolCards;
 
     private void RebuildToolsList()
     {
-        _rebuildingToolCards = true;
-        try
-        {
-            _toolCards.Clear();
-            foreach (var row in ToolRows)
-                _toolCards.Add(BuildToolCard(row));
-        }
-        finally
-        {
-            _rebuildingToolCards = false;
-        }
+        _toolCards.Clear();
+        foreach (var row in ToolRows)
+            _toolCards.Add(BuildToolCard(row));
         ToolsList.ItemsSource = _toolCards;
     }
 
@@ -3848,34 +3852,25 @@ public sealed partial class ShellWindow : Window
     /// One tool's card in the wrapping grid <see cref="ToolsList"/>'s ItemsWrapGrid lays out —
     /// reuses <see cref="BuildCardShell"/> (the same icon/toggle/title/caption/badge/divider/footer
     /// shape the Elements screen's own cards build) rather than a parallel set of near-identical
-    /// helpers, passing <see cref="BuildDragGrip"/>'s grip in as the shell's optional leading
-    /// element and leaving <c>onDelete</c> null — a built-in tool can be hidden but never removed,
-    /// so there is nothing for a delete button to do here. <see cref="Root"/>'s "Card" style still
-    /// wraps the result and still carries <c>row.Target</c> as its <c>Tag</c>: that Tag is exactly
-    /// what <see cref="ToolCards_CollectionChanged"/> reads back off <see cref="_toolCards"/> after
-    /// a drag, so nothing about how a reorder becomes a persisted order changes here.
+    /// helpers, leaving <c>onDelete</c> null — a built-in tool can be hidden but never removed, so
+    /// there is nothing for a delete button to do here. <see cref="Root"/>'s "Card" style wraps the
+    /// result and carries <c>row.Target</c> as its <c>Tag</c>; the Tag outlived the drag-reorder
+    /// that used to read it back, and is left in place because it is the only thing identifying
+    /// which row a card came from.
     /// </summary>
     private Border BuildToolCard(ToolRow row)
     {
-        // The drag affordance — grabbing anywhere on the card works (this is WinUI's own
-        // CanReorderItems drag, not a hand-rolled one), but a dedicated grip is what tells the user
-        // this card moves at all. Six dots rather than a font glyph: no Segoe Fluent Icons codepoint
-        // draws that pattern, and hand-placed dots can't silently turn into a different (or
-        // invisible) private-use character the way a glyph literal could (see the memory note on
-        // that failure mode).
-        var grip = BuildDragGrip(row.Title, ThemeHelper.Brush(Root, "SwiftXForegroundBrush"));
-
-        // The medallion plate Elements' own BuildItemIcon puts a resolved app/file/folder icon
-        // into — a tool has no such resolvable icon, just its own fixed Fluent glyph (or, for
-        // Base64, the literal "B64" text glyph row.TextGlyph flags), so this is that same glyph
-        // relocated into an identical ⌀44 plate rather than new iconography.
-        const double plate = 44;
+        // A tool has no resolvable app/file/folder icon the way an Elements item does — just its own
+        // fixed Fluent mark, or for Base64 the literal "B64" text row.TextGlyph flags. Sized and
+        // boxed to match BuildItemIcon's exactly (CardIconSize and its two glyph sizes), because the
+        // two screens build their cards from separate code and are meant to read as one family.
         FrameworkElement glyph = row.TextGlyph
             ? new TextBlock
             {
                 Text = row.Glyph,
                 FontFamily = new FontFamily("Segoe UI"),
-                FontSize = 14,
+                FontSize = CardTextGlyphSize,
+                Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
                 TextAlignment = TextAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -3884,21 +3879,20 @@ public sealed partial class ShellWindow : Window
             {
                 Glyph = row.Glyph,
                 FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
-                FontSize = 20,
+                FontSize = CardGlyphSize,
                 Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-        var icon = new Border
+        // The box is kept, the plate is not — see BuildItemIcon, which lost the same ⌀44 medallion
+        // for the same reason. Sizing it holds every card's title at one height regardless of
+        // whether the mark inside is one Fluent glyph or three characters of Segoe UI.
+        var icon = new Grid
         {
-            Width = plate,
-            Height = plate,
-            CornerRadius = new CornerRadius(plate / 2),
-            Background = ThemeHelper.Brush(Root, "ShellMedallionBrush"),
-            BorderBrush = ThemeHelper.Brush(Root, "ShellCardBorderBrush"),
-            BorderThickness = new Thickness(1),
+            Width = CardIconSize,
+            Height = CardIconSize,
             VerticalAlignment = VerticalAlignment.Center,
-            Child = glyph,
+            Children = { glyph },
         };
 
         var kind = row.Kind;
@@ -3922,126 +3916,9 @@ public sealed partial class ShellWindow : Window
             footerLabel: "OPEN",
             footerAutomationName: "Open " + row.Title,
             onFooter: () => _manager.OpenTool(kind),
-            leading: grip,
             wrapText: true);
 
         return new Border { Style = (Style)Root.Resources["Card"], Child = card, Tag = row.Target };
-    }
-
-    /// <summary>
-    /// A <see cref="Grid"/> that exists solely to reach <see cref="UIElement.ProtectedCursor"/> —
-    /// WinUI only exposes that setter to subclasses, so a plain <see cref="Grid"/> field can't
-    /// change its own hover cursor without one.
-    /// </summary>
-    private sealed class CursorGrid : Grid
-    {
-        public void SetCursor(Microsoft.UI.Input.InputCursor? cursor) => ProtectedCursor = cursor;
-    }
-
-    /// <summary>
-    /// A six-dot grip (two columns of three) at the leading edge of a tool card — the same
-    /// affordance shape most reorderable lists use, so it reads as "drag me" without a tooltip
-    /// even before the cursor changes over it. The cursor itself becomes a hand on hover, the
-    /// closest built-in <see cref="Microsoft.UI.Input.InputSystemCursorShape"/> to a gripping hand.
-    /// </summary>
-    /// <param name="dotBrush">
-    /// Resolved by the caller against this window's own theme (<see cref="ThemeHelper.Brush"/>),
-    /// not looked up in here via <c>Application.Current.Resources</c> — this is a <c>static</c>
-    /// helper with no <c>Root</c> to resolve against, and the app-wide ambient theme can disagree
-    /// with this specific window's (Light Settings while Windows itself runs Dark, or vice versa),
-    /// which is exactly what made the dots render in the wrong theme's color.
-    /// </param>
-    private static FrameworkElement BuildDragGrip(string title, Brush dotBrush)
-    {
-        var grid = new CursorGrid
-        {
-            Width = 8,
-            Height = 16,
-            ColumnSpacing = 2,
-            RowSpacing = 2,
-            Opacity = 0.6,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-        for (int row = 0; row < 3; row++)
-        {
-            for (int column = 0; column < 2; column++)
-            {
-                var dot = new Ellipse
-                {
-                    Width = 2,
-                    Height = 2,
-                    Fill = dotBrush,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-                Grid.SetRow(dot, row);
-                Grid.SetColumn(dot, column);
-                grid.Children.Add(dot);
-            }
-        }
-
-        ToolTipService.SetToolTip(grid, "Drag to reorder");
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(grid, "Drag to reorder " + title);
-
-        var handCursor = Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Hand);
-        grid.PointerEntered += (_, _) => grid.SetCursor(handCursor);
-        grid.PointerExited += (_, _) => grid.SetCursor(null);
-
-        return grid;
-    }
-
-    /// <summary>
-    /// A reorder drag mutates <see cref="_toolCards"/> directly (WinUI's CanReorderItems drives
-    /// the bound ItemsSource itself — as a remove-then-reinsert, not a single Move, so the action
-    /// kind alone can't tell a drag apart from <see cref="RebuildToolsList"/>'s own Clear+Add;
-    /// <see cref="_rebuildingToolCards"/> is what actually distinguishes them). Any change that
-    /// gets here is therefore the user's own drag finishing.
-    /// </summary>
-    private void ToolCards_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        if (_rebuildingToolCards) return;
-        ApplyToolOrder(_toolCards.Select(c => (string)c.Tag).ToList());
-    }
-
-    /// <summary>
-    /// Wherever two or more tool-kind items share a list (the top level, or inside a group like
-    /// "Dev tools"), re-sorts just those items to match <paramref name="orderedTargets"/> — every
-    /// other item in the list keeps its position. A tool kind can have more than one orbit instance
-    /// at once (the default seed puts Data both inside "Dev tools" and at the top level, see
-    /// <see cref="SeedDefaults"/>), so this walks the whole tree rather than assuming one.
-    /// </summary>
-    private void ApplyToolOrder(List<string> orderedTargets)
-    {
-        void Walk(List<OrbitItem> list)
-        {
-            var toolPositions = new List<int>();
-            for (int i = 0; i < list.Count; i++)
-                if (list[i].IsTool) toolPositions.Add(i);
-
-            if (toolPositions.Count > 1)
-            {
-                var sorted = toolPositions
-                    .Select(i => list[i])
-                    .OrderBy(item => orderedTargets.FindIndex(
-                        t => string.Equals(t, item.Target, StringComparison.OrdinalIgnoreCase)))
-                    .ToList();
-                for (int k = 0; k < toolPositions.Count; k++)
-                    list[toolPositions[k]] = sorted[k];
-            }
-
-            foreach (var item in list.Where(x => x.IsGroup))
-                Walk(item.Children);
-        }
-        Walk(_manager.Config.Primary.Items);
-
-        _manager.NotifyItemsChanged();
-        RenderPreview();
     }
 
     private void ApplyToolVisibility() =>

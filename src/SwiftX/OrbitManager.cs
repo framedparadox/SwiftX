@@ -405,10 +405,16 @@ public sealed class OrbitManager
     /// has — so the window says what pressing its button will actually do.
     /// </param>
     /// <param name="confirmLabel">The commit button's label, for the same reason.</param>
+    /// <param name="existing">
+    /// The item an edit is editing, so the dialog can open on what it already is instead of blank
+    /// — see <see cref="AddItemWindow"/>'s own parameter of the same name. Last in the list and
+    /// defaulted so that every caller that was only ever adding, "Replace…" included, keeps the
+    /// behaviour it had: a null here is the old dialog exactly.
+    /// </param>
     public void OpenAddItem(
         Action<OrbitItem>? onAdded = null, List<OrbitItem>? targetList = null,
         bool isGenericAddItem = false, bool allowGroups = true,
-        string? heading = null, string? confirmLabel = null)
+        string? heading = null, string? confirmLabel = null, OrbitItem? existing = null)
     {
         if (_addItemWindow is not null)
         {
@@ -417,7 +423,7 @@ public sealed class OrbitManager
         }
         _addItemWindow = new AddItemWindow(
             this, onAdded, targetList ?? Config.Primary.Items, isGenericAddItem, allowGroups,
-            heading, confirmLabel);
+            heading, confirmLabel, existing);
         _addItemWindow.Closed += (_, _) => _addItemWindow = null;
         _addItemWindow.Activate();
     }
