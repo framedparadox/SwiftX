@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Composition.SystemBackdrops;
+using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -23,8 +24,8 @@ using WinRT.Interop;
 namespace SwiftX;
 
 /// <summary>
-/// The SwiftX app window: Home, Orbit Settings, Tools, Elements and Settings as five sibling
-/// screens in one Grid, switched by <see cref="ShowScreen"/>.
+/// The SwiftX app window: Home, Orbit, Tools, Elements and Settings as five sibling screens in one
+/// Grid, switched by <see cref="ShowScreen"/>.
 /// <para>
 /// Built on windows-app-mx's LogiApp (branch <c>logiApp/dotnet</c>) — Home is its <c>MainPage</c>
 /// header, Settings is its <c>SettingsPage</c> measured value for value (270px sidebar, two-line
@@ -214,12 +215,10 @@ public sealed partial class ShellWindow : Window
         _appWindow.IsShownInSwitchers = true;
 
         // 1040 x 700 is what the layout is measured for: the three Home nav boxes come to
-        // 3x268 + 2x34 = 872 with room to breathe either side, and the Orbit screen's 360px canvas
-        // plus its 336px-capped sidebar fits the same width with a real margin (1000 used to leave
-        // a couple of px, razor-thin enough that ordinary font-metric/DPI variance could tip it
-        // into visible clipping). The Orbit screen's sidebar column is Grid-adaptive rather than a
-        // fixed width (see ShellWindow.xaml), so it degrades gracefully if the window is later
-        // resized narrower still.
+        // 3x268 + 2x34 = 872 with room to breathe either side, and the Orbit screen splits the same
+        // width into Logi's fixed 320px sidebar and a 720px canvas column — which is exactly the
+        // split docs/images/17-app-ring.svg is drawn at, and enough for the 640px label canvas
+        // inside it with a 40px margin either side.
         WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 1040, 700);
         WindowChrome.SetRoundedCorners(_hwnd);
         WindowChrome.CenterOnCursor(_appWindow, _appWindow.Id);
@@ -303,6 +302,9 @@ public sealed partial class ShellWindow : Window
                 RenderPreview();
                 if (_expandedGroup is not null) RenderGroupRow();
                 RebuildItemsList();
+                // The edit sidebar's rows say whether each thing is already on the orbit, which a
+                // delete or an add made anywhere else has just changed the answer to.
+                if (_orbitEditBuilt) BuildOrbitEditSidebar();
                 if (_currentScreen == ScreenHome) UpdateHomeMeta();
             });
         };
@@ -366,6 +368,7 @@ public sealed partial class ShellWindow : Window
         UpdateThemeCardSelection(_manager.Config.Theme);
         RebuildItemsList();
         RebuildToolsList();
+        if (_orbitEditBuilt) BuildOrbitEditSidebar();
     }
 
     /// <summary>
@@ -431,6 +434,20 @@ public sealed partial class ShellWindow : Window
         ("ShellPillBrush", 0xE6, 0x1A, 0x1A, 0x1A),
         ("ShellCardBorderBrush", 0xFF, 0x2A, 0x2A, 0x2A),
         ("ShellDividerBrush", 0xFF, 0x2A, 0x2A, 0x2A),
+
+        // The Orbit screen's canvas family. It keeps a hierarchy under Midnight rather than
+        // flattening the way the Settings canvas above does: a ring of nodes over a hub over a
+        // ground is nothing at all when all three are the same black. Must stay in step with
+        // ThemeHelper.ColorForMidnight's cases for the same keys — the canvas is drawn in code and
+        // the sidebar in XAML, so both routes are live on this one screen.
+        ("OrbitCanvasBackgroundBrush", 0xFF, 0x00, 0x00, 0x00),
+        ("OrbitSidebarBackgroundBrush", 0xFF, 0x00, 0x00, 0x00),
+        ("OrbitNodeBackgroundBrush", 0xFF, 0x0A, 0x0A, 0x0A),
+        ("OrbitLabelPillBrush", 0xFF, 0x10, 0x10, 0x10),
+        ("OrbitHubBrush", 0xFF, 0x1A, 0x1A, 0x1A),
+        ("OrbitCanvasBorderBrush", 0xFF, 0x2A, 0x2A, 0x2A),
+        ("OrbitLabelPillBorderBrush", 0xFF, 0x24, 0x24, 0x24),
+        ("OrbitSidebarBorderBrush", 0xFF, 0x16, 0x16, 0x16),
     };
 
     /// <summary>
@@ -723,7 +740,13 @@ public sealed partial class ShellWindow : Window
         SettingsScreen.Visibility = screen == ScreenSettings ? Visibility.Visible : Visibility.Collapsed;
 
         if (screen == ScreenHome) UpdateHomeMeta();
-        if (screen == ScreenOrbit) RenderPreview();
+        if (screen == ScreenOrbit)
+        {
+            // Editing is a mode you are in while arranging the orbit, not a preference — arriving
+            // at the screen should always show what it is set to, not what you were last doing.
+            SetOrbitEditing(false);
+            RenderPreview();
+        }
         if (screen == ScreenElements) RebuildItemsList();
         if (screen == ScreenTools) RebuildToolsList();
     }
@@ -911,16 +934,122 @@ public sealed partial class ShellWindow : Window
         };
     }
 
+    /// <summary>
+    /// The orbit preview's own canvas, square because <see cref="RenderQuadrantPreview"/> and
+    /// <see cref="AddHotCornerButton"/> both place against <see cref="QuadrantLayout"/>, which
+    /// works in one dimension.
+    /// </summary>
+    private const double PreviewCanvasSize = 470;
+
+    /// <summary>
+    /// The label canvas behind it is wider, because a pill reaches further out sideways than the
+    /// ring ever does. The two are centred on each other (see ShellWindow.xaml), so converting a
+    /// point from the preview's coordinates to the label canvas's is this one constant.
+    /// </summary>
+    private const double PillCanvasWidth = 640;
+    private const double PillCanvasOffsetX = (PillCanvasWidth - PreviewCanvasSize) / 2;
+
+    /// <summary>
+    /// Logi's own label pill: 30 tall, 6px corners, 12,4 padding, 12px SemiBold. The gap out from
+    /// the node's edge and the width cap are SwiftX's — Logi hand-places eight pills for eight
+    /// fixed labels and can tune each one, while these are user-named items of any length placed
+    /// by formula. 136 is the widest pill the mockup this screen is built to draws.
+    /// </summary>
+    private const double PillHeight = 30;
+    private const double PillGap = 22;
+    private const double PillMaxWidth = 136;
+
+    /// <summary>
+    /// The outward name pill for one filled slot, on <c>PreviewLabelCanvas</c> rather than the
+    /// canvas the bubbles live on.
+    /// <para>
+    /// That separation is the whole reason none of the drag code had to learn about pills: the
+    /// label canvas has hit-testing off and is never read by <see cref="PreviewSlotAt"/>, so a
+    /// pill can overlap a node without ever becoming a drag target or swallowing a press. The
+    /// cost is that pills do not follow a bubble mid-drag, which is why
+    /// <see cref="Preview_PointerMoved"/> hides the whole canvas the moment a drag starts —
+    /// labels pointing at bubbles that have moved out from under them would be worse than no
+    /// labels at all, and the next <see cref="RenderPreview"/> brings them back.
+    /// </para>
+    /// <para>
+    /// Placement follows Logi's own table rather than a single polar formula: the top and bottom
+    /// slots take their pill above and below, centred on the node, and the other six take theirs
+    /// out to the side, vertically centred on the node. A pure radial placement instead pulls the
+    /// four diagonals in towards the ring, where they crowd their neighbours.
+    /// </para>
+    /// </summary>
+    private void AddSlotLabel(
+        string text, double cx, double cy, double angle, double radius, double bubble)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        var pill = new Border
+        {
+            Height = PillHeight,
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(12, 4, 12, 4),
+            Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitLabelPillBrush"),
+            BorderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitLabelPillBorderBrush"),
+            BorderThickness = new Thickness(1),
+            Child = new TextBlock
+            {
+                Text = text,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+            },
+        };
+
+        // A Canvas gives its children no alignment, so the pill has to be placed by a corner — and
+        // the six side pills are placed by whichever corner faces the hub, which for the left-hand
+        // three is the one a width has to be subtracted to reach. Measuring here rather than
+        // letting it size itself is what makes that width knowable before it is in the tree, and
+        // the measured value is then written back as an explicit Width so the rendered pill cannot
+        // come out a pixel wider than what was placed. Trimming handles the overflow that caps.
+        pill.Measure(new Size(PillMaxWidth, PillHeight));
+        double width = Math.Min(PillMaxWidth, Math.Ceiling(pill.DesiredSize.Width));
+        pill.Width = width;
+
+        double ux = Math.Cos(angle), uy = Math.Sin(angle);
+        double nodeCx = cx + radius * ux;
+        double nodeCy = cy + radius * uy;
+        double reach = bubble / 2 + PillGap;
+
+        double px, py;
+        // The two slots on the vertical axis. Compared against a small epsilon rather than zero
+        // because the angles come out of a cosine, and cos(-90 degrees in radians) is not exactly 0.
+        if (Math.Abs(ux) < 0.01)
+        {
+            px = nodeCx - width / 2;
+            py = uy < 0 ? nodeCy - reach - PillHeight : nodeCy + reach;
+        }
+        else
+        {
+            py = nodeCy - PillHeight / 2;
+            px = ux > 0 ? nodeCx + reach : nodeCx - reach - width;
+        }
+
+        Canvas.SetLeft(pill, Math.Clamp(px + PillCanvasOffsetX, 0, PillCanvasWidth - width));
+        Canvas.SetTop(pill, Math.Clamp(py, 0, PreviewCanvasSize - PillHeight));
+        PreviewLabelCanvas.Children.Add(pill);
+    }
+
     private void RenderPreview()
     {
         if (PreviewCanvas is null) return;
         PreviewCanvas.Children.Clear();
-        const double size = 360;
-        // Nudged up from dead center: the canvas now carries the Add item / Reset defaults row
-        // along its own bottom edge, so the orbit sits a little high of true center to keep clear
-        // breathing room under it instead of crowding those buttons.
-        const double verticalNudge = 24;
-        double cx = size / 2, cy = size / 2 - verticalNudge;
+        PreviewLabelCanvas.Children.Clear();
+        // Back on for every render. Preview_PointerMoved is the only thing that takes them away,
+        // and a render is what always follows the drop it was hiding them for.
+        PreviewLabelCanvas.Visibility = Visibility.Visible;
+        const double size = PreviewCanvasSize;
+        // Dead centre now. The nudge that used to lift the ring was making room for the Add item /
+        // Reset defaults row, which sat on the canvas itself; those live in the screen's own 60px
+        // toolbar since the Logi layout landed, so the canvas is the ring's alone again.
+        double cx = size / 2, cy = size / 2;
 
         if (_previewQuadrant && _manager.Config.HotCornerEnabled)
         {
@@ -938,7 +1067,11 @@ public sealed partial class ShellWindow : Window
 
         // Scale the live orbit geometry into the preview canvas rather than drawing one fixed
         // picture of it, so Orbit size / Item size / Orbit radius visibly change what this shows.
-        double scale = size * 0.74 / (2 * (OrbitMetrics.Radius + OrbitMetrics.Bubble / 2));
+        // 0.65 rather than the old 0.74 because the canvas grew: at SwiftX's default radius of 100
+        // and medium bubbles this puts the ring at r=122, which is exactly the radius the mockup
+        // this screen is built to draws (docs/images/17-app-ring.svg). The remaining 82px of
+        // half-canvas is what the label pills reach into.
+        double scale = size * 0.65 / (2 * (OrbitMetrics.Radius + OrbitMetrics.Bubble / 2));
         double radius = OrbitMetrics.Radius * scale;
         double bubble = OrbitMetrics.Bubble * scale;
         double glyphSize = Math.Max(10, OrbitMetrics.Glyph * scale);
@@ -949,9 +1082,26 @@ public sealed partial class ShellWindow : Window
         Array.Clear(_slotBorders);
 
         // Resolve against this window's theme — not Application.Current.Resources.
-        var borderBrush = ThemeHelper.Brush(Root, "SwiftXBorderBrush");
+        var borderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush");
         var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
+        var canvasAccent = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasAccentBrush");
+
+        // The guide circle the nodes sit on. Logi draws no such ring — its wheel is eight
+        // hard-coded positions and the ring is purely implied — but Logi's is a fixed arrangement
+        // and SwiftX's is not: radius is a setting here, and the circle is what makes a drag of the
+        // Orbit radius slider legible as a circle growing rather than eight bubbles wandering.
+        // Behind everything else, so a node always covers it rather than the other way round.
+        var guide = new Ellipse
+        {
+            Width = radius * 2,
+            Height = radius * 2,
+            Stroke = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush"),
+            StrokeThickness = 1,
+        };
+        Canvas.SetLeft(guide, cx - radius);
+        Canvas.SetTop(guide, cy - radius);
+        PreviewCanvas.Children.Add(guide);
 
         // Match the orbit: the center is the app mark alone, painted on nothing — floating form and
         // all, so the preview shows the same shadow the real hub has. A filled plate here read as a
@@ -989,7 +1139,7 @@ public sealed partial class ShellWindow : Window
                 Width = bubble,
                 Height = bubble,
                 CornerRadius = new CornerRadius(bubble / 2),
-                Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitBubbleGlassTint"),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = item,
@@ -997,7 +1147,13 @@ public sealed partial class ShellWindow : Window
 
             if (pinned)
             {
-                border.Child = PreviewGlyph(item!.Glyph, glyphSize, muted);
+                // Logi's own treatment for the one node it differentiates: the accent border at
+                // 1.5px and an accent glyph. Here it marks the two the orbit synthesizes rather
+                // than owns, which is the distinction that actually matters on this canvas — they
+                // cannot be moved, replaced or deleted, and nothing else about them says so.
+                border.Child = PreviewGlyph(item!.Glyph, glyphSize, canvasAccent);
+                border.BorderBrush = canvasAccent;
+                border.BorderThickness = new Thickness(1.5);
                 ToolTipService.SetToolTip(border, $"{item.DisplayName} — always on the orbit");
             }
             else if (item is null)
@@ -1014,6 +1170,11 @@ public sealed partial class ShellWindow : Window
             Canvas.SetLeft(border, x);
             Canvas.SetTop(border, y);
             PreviewCanvas.Children.Add(border);
+
+            // An empty slot gets no pill: "+" is its own label, and eight pills reading "Empty"
+            // would be the loudest thing on the canvas.
+            if (item is not null)
+                AddSlotLabel(item.DisplayName, cx, cy, angle, radius, bubble);
         }
 
         AddHotCornerButton(size);
@@ -1221,7 +1382,14 @@ public sealed partial class ShellWindow : Window
         double dx = point.X - _dragStart.X;
         double dy = point.Y - _dragStart.Y;
         if (!_dragMoved && (Math.Abs(dx) > 4 || Math.Abs(dy) > 4))
+        {
             _dragMoved = true;
+            // The pills live on their own canvas and do not follow a bubble (see AddSlotLabel for
+            // why that separation is what keeps the drag code free of them). A label still sitting
+            // where a bubble no longer is reads as a bug, so the whole layer goes for the duration;
+            // RenderPreview puts it back on the drop.
+            PreviewLabelCanvas.Visibility = Visibility.Collapsed;
+        }
         if (_dragMoved)
         {
             _dragBorder.RenderTransform = new TranslateTransform { X = dx, Y = dy };
@@ -2038,6 +2206,363 @@ public sealed partial class ShellWindow : Window
             RenderPreview();
             RebuildItemsList();
         }, _manager.Config.Primary.Items, isGenericAddItem: true);
+
+    // ===================== the Orbit screen's sidebar, and its two modes =====================
+
+    /// <summary>
+    /// Which panel the Orbit screen's sidebar is showing. Not persisted: it is a mode you are in
+    /// while arranging the orbit, not a preference, and coming back to the screen should show you
+    /// its settings again.
+    /// </summary>
+    private bool _orbitEditing;
+
+    /// <summary>
+    /// Built once, on first entry into edit mode, and again whenever the orbit changes under it —
+    /// the rows carry an "already on the orbit" state that goes stale the moment one is clicked.
+    /// </summary>
+    private bool _orbitEditBuilt;
+
+    private void OrbitEditToggle_Click(object sender, RoutedEventArgs e) =>
+        SetOrbitEditing(!_orbitEditing);
+
+    /// <summary>
+    /// Swaps the sidebar between the orbit's settings and the list of things that can go on it.
+    /// <para>
+    /// Logi puts these in two different places — its ring settings are a separate screen behind a
+    /// nav button, and its sidebar is only ever the drag-source accordion. SwiftX has one screen
+    /// for the orbit, so the sidebar is what changes instead: the canvas, the toolbar and the
+    /// header stay exactly where they are, and only the 320px column swaps. That is the whole
+    /// reason this is a Visibility swap between two siblings rather than a navigation — the canvas
+    /// keeps its live slot geometry, its selection and its drag state across the change, none of
+    /// which would survive being torn down and rebuilt.
+    /// </para>
+    /// </summary>
+    private void SetOrbitEditing(bool editing)
+    {
+        _orbitEditing = editing;
+
+        if (editing && !_orbitEditBuilt)
+            BuildOrbitEditSidebar();
+
+        OrbitSidebarSettings.Visibility = editing ? Visibility.Collapsed : Visibility.Visible;
+        OrbitSidebarEdit.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
+
+        OrbitEditLabel.Text = editing ? "Done" : "Edit";
+        OrbitEditIcon.Glyph = editing ? "\uE73E" : "\uE70F";
+        ToolTipService.SetToolTip(OrbitEditToggle, editing
+            ? "Back to the orbit's settings"
+            : "Show the things you can put on the orbit");
+    }
+
+    /// <summary>
+    /// Fills the edit sidebar: four categories of thing that can go on the orbit, each an
+    /// expandable list, modelled on LogiApp's own <c>AccordionCategoryItem</c>.
+    /// <para>
+    /// Where Logi's twelve categories are hard-coded XAML with placeholder rows, these are built
+    /// from what SwiftX actually has and this machine actually carries:
+    /// <see cref="OnboardingCatalog.Available"/> already existence-checks every app, folder and
+    /// link it offers — it is what the first-run guide proposes from — and
+    /// <see cref="ToolCatalog.All"/> is the built-in tools. Offering an app that is not installed
+    /// would produce a dead orbit item the moment it was clicked, which is the same reason that
+    /// catalog is a method rather than a static list.
+    /// </para>
+    /// <para>
+    /// Every category also ends in a row that opens the full add dialog, so the browse-for-anything
+    /// path is never more than one click further away than the suggestions are.
+    /// </para>
+    /// </summary>
+    private void BuildOrbitEditSidebar()
+    {
+        OrbitEditCategories.Children.Clear();
+
+        var suggestions = OnboardingCatalog.Available();
+
+        List<OrbitItem> OfKind(params OrbitItemKind[] kinds) =>
+            suggestions.Where(s => kinds.Contains(s.Item.Kind)).Select(s => s.Item).ToList();
+
+        OrbitEditCategories.Children.Add(BuildEditCategory(
+            "APPS", "\uE7C3", OfKind(OrbitItemKind.Application)));
+
+        OrbitEditCategories.Children.Add(BuildEditCategory(
+            "SHORTCUTS", "\uE71B", OfKind(OrbitItemKind.Folder, OrbitItemKind.File, OrbitItemKind.Shortcut)));
+
+        OrbitEditCategories.Children.Add(BuildEditCategory(
+            "LINKS", "\uE774", OfKind(OrbitItemKind.WebLink)));
+
+        // The tools are a catalog rather than a machine scan, so they are built here rather than
+        // filtered out of the suggestions: every one of them always exists.
+        OrbitEditCategories.Children.Add(BuildEditCategory(
+            "TOOLS", "\uE943",
+            ToolCatalog.All.Select(t => new OrbitItem
+            {
+                Kind = OrbitItemKind.Tool,
+                DisplayName = t.DisplayName,
+                Target = t.Kind.ToString(),
+                CustomGlyph = t.Glyph,
+            }).ToList()));
+
+        // One row for the full picker, below the four categories rather than repeated inside each
+        // of them: the dialog takes no starting kind, so a per-category "Browse for an app" would
+        // have promised a preselection it cannot make, four times over.
+        var browse = BuildEditRowShell("\uE710", "Add something else\u2026", null, null);
+        browse.Margin = new Thickness(0, 8, 0, 0);
+        browse.Click += AddItem_Click;
+        ToolTipService.SetToolTip(browse, "Open the full add dialog: apps, files, folders, links, groups and tools");
+        OrbitEditCategories.Children.Add(browse);
+
+        _orbitEditBuilt = true;
+        UpdateOrbitEditSummary();
+    }
+
+    /// <summary>
+    /// How many of the orbit's user slots are free, said in the sidebar rather than discovered by
+    /// clicking a row and having nothing happen.
+    /// </summary>
+    private void UpdateOrbitEditSummary()
+    {
+        int used = _manager.Config.Primary.Items.Count(i => !i.Hidden);
+        int free = Math.Max(0, OrbitMetrics.UserSlotCount - used);
+        OrbitEditSummary.Text = free switch
+        {
+            0 => "The orbit is full. Remove something to make room.",
+            1 => "One free slot. Click anything below to put it there.",
+            _ => $"{free} free slots. Click anything below to fill one.",
+        };
+    }
+
+    /// <summary>
+    /// One accordion category: a header that expands, over rows that add. Logi's own geometry —
+    /// a 36px header at CornerRadius 4 with a 20px icon column and a chevron that swaps
+    /// <c>E70D</c>/<c>E70E</c>, over 28px rows.
+    /// </summary>
+    private FrameworkElement BuildEditCategory(string name, string glyph, List<OrbitItem> items)
+    {
+        var rows = new StackPanel { Spacing = 2, Visibility = Visibility.Collapsed };
+        foreach (var item in items)
+            rows.Children.Add(BuildEditRow(item));
+        if (items.Count == 0)
+            rows.Children.Add(BuildEmptyCategoryRow());
+
+        var chevron = new FontIcon
+        {
+            Glyph = "\uE70D",
+            FontSize = 10,
+            Foreground = ThemeHelper.Brush(Root, "SwiftXMutedBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var header = new Grid { ColumnSpacing = 0 };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var icon = new FontIcon
+        {
+            Glyph = glyph,
+            FontSize = 13,
+            Foreground = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasAccentBrush"),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(icon, 0);
+        header.Children.Add(icon);
+
+        var label = new TextBlock
+        {
+            Text = name,
+            FontSize = 11,
+            FontWeight = FontWeights.Bold,
+            CharacterSpacing = 50,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+        };
+        Grid.SetColumn(label, 1);
+        header.Children.Add(label);
+
+        Grid.SetColumn(chevron, 2);
+        header.Children.Add(chevron);
+
+        var button = new Button
+        {
+            Height = 36,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(10, 0, 10, 0),
+            Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
+            BorderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush"),
+            BorderThickness = new Thickness(1),
+            Content = header,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, name);
+        button.Click += (_, _) =>
+        {
+            bool open = rows.Visibility == Visibility.Visible;
+            rows.Visibility = open ? Visibility.Collapsed : Visibility.Visible;
+            chevron.Glyph = open ? "\uE70D" : "\uE70E";
+        };
+
+        return new StackPanel
+        {
+            Spacing = 4,
+            Children = { button, rows },
+        };
+    }
+
+    /// <summary>
+    /// One addable thing. A row for something already on the orbit is shown ticked and does
+    /// nothing when clicked — dropping a second copy of Notepad into a six-slot orbit because the
+    /// list gave no sign the first one was there is not an edit anyone means to make.
+    /// </summary>
+    private FrameworkElement BuildEditRow(OrbitItem template)
+    {
+        bool present = OrbitHasTarget(_manager.Config.Primary.Items, template.Target);
+
+        var row = BuildEditRowShell(
+            template.Glyph, template.DisplayName,
+            present ? "\uE73E" : null,
+            present ? ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasAccentBrush") : null);
+
+        ToolTipService.SetToolTip(row, present
+            ? $"{template.DisplayName} is already on the orbit"
+            : $"Add {template.DisplayName} to the orbit");
+
+        if (!present)
+        {
+            row.Click += (_, _) => AddToOrbitFromSidebar(template);
+        }
+        else
+        {
+            row.IsEnabled = false;
+        }
+
+        return row;
+    }
+
+    /// <summary>
+    /// What a category with nothing in it says. Reachable in practice: the link suggestions are
+    /// unconditional but the app and folder ones are existence-checked against the machine, so a
+    /// stripped-down Windows can empty a category out. An accordion that opens onto nothing at all
+    /// reads as broken.
+    /// </summary>
+    private FrameworkElement BuildEmptyCategoryRow() => new TextBlock
+    {
+        Text = "Nothing to suggest here \u2014 use Add something else below.",
+        FontSize = 11,
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(10, 2, 10, 4),
+        Foreground = ThemeHelper.Brush(Root, "SwiftXMutedBrush"),
+    };
+
+    private Button BuildEditRowShell(string glyph, string text, string? badgeGlyph, Brush? badgeBrush)
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var icon = new FontIcon
+        {
+            Glyph = glyph,
+            FontSize = 12,
+            Foreground = ThemeHelper.Brush(Root, "SwiftXMutedBrush"),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(icon, 0);
+        grid.Children.Add(icon);
+
+        var label = new TextBlock
+        {
+            Text = text,
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+        };
+        Grid.SetColumn(label, 1);
+        grid.Children.Add(label);
+
+        if (badgeGlyph is not null)
+        {
+            var badge = new FontIcon
+            {
+                Glyph = badgeGlyph,
+                FontSize = 11,
+                Foreground = badgeBrush ?? ThemeHelper.Brush(Root, "SwiftXMutedBrush"),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            Grid.SetColumn(badge, 2);
+            grid.Children.Add(badge);
+        }
+
+        var button = new Button
+        {
+            Height = 28,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(10, 0, 10, 0),
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Content = grid,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, text);
+        return button;
+    }
+
+    /// <summary>
+    /// Puts one of the sidebar's suggestions on the orbit, or says why it cannot. A fresh copy of
+    /// the template every time: <see cref="OnboardingCatalog.Available"/> hands out live
+    /// <see cref="OrbitItem"/> instances, and adding the same instance twice would put one object
+    /// in two slots — rename it in one and it changes in the other.
+    /// </summary>
+    private void AddToOrbitFromSidebar(OrbitItem template)
+    {
+        var items = _manager.Config.Primary.Items;
+        if (items.Count(i => !i.Hidden) >= OrbitMetrics.UserSlotCount)
+        {
+            UpdateOrbitEditSummary();
+            return;
+        }
+
+        items.Add(new OrbitItem
+        {
+            Kind = template.Kind,
+            DisplayName = template.DisplayName,
+            Target = template.Target,
+            Arguments = template.Arguments,
+            CustomIconPath = template.CustomIconPath,
+            CustomGlyph = template.CustomGlyph,
+        });
+
+        // Through the manager, so the orbit overlay and anything else watching hear about it and
+        // the config is written — the same path AddItem_Click takes.
+        _manager.NotifyItemsChanged();
+
+        // The rows carry an "already there" state that this click just invalidated for one of
+        // them, so the list is rebuilt rather than patched.
+        BuildOrbitEditSidebar();
+        RenderPreview();
+        RebuildItemsList();
+    }
+
+    /// <summary>
+    /// Whether anything on the orbit — at the top level or inside a group — already points at
+    /// <paramref name="target"/>.
+    /// </summary>
+    private static bool OrbitHasTarget(List<OrbitItem> items, string target)
+    {
+        foreach (var item in items)
+        {
+            if (string.Equals(item.Target, target, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (item.Children.Count > 0 && OrbitHasTarget(item.Children, target))
+                return true;
+        }
+        return false;
+    }
 
     private void ResetDefaults_Click(object sender, RoutedEventArgs e)
     {

@@ -56,13 +56,14 @@ public static class FrostedGlassPalette
     public static IReadOnlyList<Surface> Surfaces { get; } =
     [
         new Surface(_ => Color.FromArgb(0, 0, 0, 0),
-            ["ShellBackgroundBrush", "SettingsSurfaceBrush", "ShellSeparatorBrush"]),
+            ["ShellBackgroundBrush", "SettingsSurfaceBrush", "ShellSeparatorBrush",
+             "OrbitCanvasBackgroundBrush"]),
 
         new Surface(o => Wash(o, 120, 15, 20, 160, 14, 14, 20),
-            ["SwiftXNavPaneBrush"]),
+            ["SwiftXNavPaneBrush", "OrbitSidebarBackgroundBrush"]),
 
         new Surface(o => Edge(o, 50, 15, 15, 75),
-            ["ShellDividerBrush"]),
+            ["ShellDividerBrush", "OrbitSidebarBorderBrush"]),
 
         new Surface(o => Wash(o, 115, 15, 20, 155, 24, 24, 32),
             // Deliberately not SwiftXDialogSurfaceBrush. The add-item dialog and the tool windows
@@ -72,10 +73,11 @@ public static class FrostedGlassPalette
             ["ShellCardBackgroundBrush", "SwiftXCardBackgroundBrush"]),
 
         new Surface(o => Edge(o, 60, 20, 20, 95),
-            ["ShellCardBorderBrush", "SwiftXCardStrokeBrush"]),
+            ["ShellCardBorderBrush", "SwiftXCardStrokeBrush",
+             "OrbitCanvasBorderBrush", "OrbitLabelPillBorderBrush"]),
 
         new Surface(o => Wash(o, 110, 15, 20, 150, 30, 30, 40),
-            ["ShellPillBrush", "ShellMedallionBrush"]),
+            ["ShellPillBrush", "ShellMedallionBrush", "OrbitLabelPillBrush"]),
 
         new Surface(o => Wash(o, 125, 20, 25, 170, 26, 26, 36),
             ["SwiftXOrbitCanvasBrush", "SwiftXCanvasBrush",
@@ -84,7 +86,8 @@ public static class FrostedGlassPalette
              // this is only the tint over it — and at ~0x65 it lands within a point of Dark's 0x66,
              // differing in hue rather than weight. That is the intent: under frosted glass the
              // orbit should read as the same glass as the window, not as a second, heavier one.
-             "OrbitBubbleGlassTint", "OrbitBubbleGlassTintColor"]),
+             "OrbitBubbleGlassTint", "OrbitBubbleGlassTintColor",
+             "OrbitNodeBackgroundBrush", "OrbitHubBrush"]),
     ];
 
     /// <summary>

@@ -175,6 +175,22 @@
             <SolidColorBrush x:Key="ShellToolbarIconBrush" Color="#BBBBBB"/>
             <SolidColorBrush x:Key="ShellSeparatorBrush" Color="#505050"/>
 
+            <!-- The Orbit screen's own canvas palette. Deliberately a different family from the
+                 Shell* tokens above: docs/full-app-mockups-logi-base.md records that Logi runs two
+                 accents of its own — app chrome violet, ring canvas teal — and keeps the ring's
+                 surfaces darker than the app's. The Orbit screen is built to that split (see
+                 docs/images/17-app-ring.svg, which is where every value here comes from), so the
+                 canvas reads as its own place rather than another page of Settings. -->
+            <SolidColorBrush x:Key="OrbitCanvasBackgroundBrush" Color="#121212"/>
+            <SolidColorBrush x:Key="OrbitCanvasBorderBrush" Color="#333333"/>
+            <SolidColorBrush x:Key="OrbitNodeBackgroundBrush" Color="#1A1A1A"/>
+            <SolidColorBrush x:Key="OrbitHubBrush" Color="#282828"/>
+            <SolidColorBrush x:Key="OrbitLabelPillBrush" Color="#181818"/>
+            <SolidColorBrush x:Key="OrbitLabelPillBorderBrush" Color="#2E2E2E"/>
+            <SolidColorBrush x:Key="OrbitSidebarBackgroundBrush" Color="#0B0B0B"/>
+            <SolidColorBrush x:Key="OrbitSidebarBorderBrush" Color="#1F1F1F"/>
+            <SolidColorBrush x:Key="OrbitCanvasAccentBrush" Color="#00DDB3"/>
+
             <!-- ==================== Logi Settings type/nav tokens ====================
                  The Settings screen's own text ramp and 4px rail, keyed exactly as Logi keys them
                  so the two files read against each other. The three accent-derived ones are
@@ -314,6 +330,24 @@
             <SolidColorBrush x:Key="ShellToolbarIconBrush" Color="#555555"/>
             <SolidColorBrush x:Key="ShellSeparatorBrush" Color="#CCCCCC"/>
 
+            <!-- The Orbit screen's own canvas palette. Deliberately a different family from the
+                 Shell* tokens above: docs/full-app-mockups-logi-base.md records that Logi runs two
+                 accents of its own — app chrome violet, ring canvas teal — and keeps the ring's
+                 surfaces darker than the app's. The Orbit screen is built to that split (see
+                 docs/images/17-app-ring.svg, which is where every value here comes from), so the
+                 canvas reads as its own place rather than another page of Settings. -->
+            <SolidColorBrush x:Key="OrbitCanvasBackgroundBrush" Color="#F7F9FB"/>
+            <SolidColorBrush x:Key="OrbitCanvasBorderBrush" Color="#D8DEE6"/>
+            <SolidColorBrush x:Key="OrbitNodeBackgroundBrush" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="OrbitHubBrush" Color="#E4E9EF"/>
+            <SolidColorBrush x:Key="OrbitLabelPillBrush" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="OrbitLabelPillBorderBrush" Color="#DDE4EC"/>
+            <SolidColorBrush x:Key="OrbitSidebarBackgroundBrush" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="OrbitSidebarBorderBrush" Color="#E4E9EF"/>
+            <!-- The canvas teal, darkened for contrast against a light ground: #00DDB3 on white
+                 falls well under 3:1, which is where a 2px ring on a node stops being visible. -->
+            <SolidColorBrush x:Key="OrbitCanvasAccentBrush" Color="#00A88A"/>
+
             <!-- See the matching comment in the Dark dictionary above. -->
             <SolidColorBrush x:Key="SettingsHeaderBrush" Color="#1A1A1A"/>
             <SolidColorBrush x:Key="SettingsTitleBrush" Color="#1A1A1A"/>
@@ -402,6 +436,22 @@
             <SolidColorBrush x:Key="ShellDividerBrush" Color="#444444"/>
             <SolidColorBrush x:Key="ShellToolbarIconBrush" Color="#BBBBBB"/>
             <SolidColorBrush x:Key="ShellSeparatorBrush" Color="#505050"/>
+
+            <!-- The Orbit screen's own canvas palette. Deliberately a different family from the
+                 Shell* tokens above: docs/full-app-mockups-logi-base.md records that Logi runs two
+                 accents of its own — app chrome violet, ring canvas teal — and keeps the ring's
+                 surfaces darker than the app's. The Orbit screen is built to that split (see
+                 docs/images/17-app-ring.svg, which is where every value here comes from), so the
+                 canvas reads as its own place rather than another page of Settings. -->
+            <SolidColorBrush x:Key="OrbitCanvasBackgroundBrush" Color="#121212"/>
+            <SolidColorBrush x:Key="OrbitCanvasBorderBrush" Color="#333333"/>
+            <SolidColorBrush x:Key="OrbitNodeBackgroundBrush" Color="#1A1A1A"/>
+            <SolidColorBrush x:Key="OrbitHubBrush" Color="#282828"/>
+            <SolidColorBrush x:Key="OrbitLabelPillBrush" Color="#181818"/>
+            <SolidColorBrush x:Key="OrbitLabelPillBorderBrush" Color="#2E2E2E"/>
+            <SolidColorBrush x:Key="OrbitSidebarBackgroundBrush" Color="#0B0B0B"/>
+            <SolidColorBrush x:Key="OrbitSidebarBorderBrush" Color="#1F1F1F"/>
+            <SolidColorBrush x:Key="OrbitCanvasAccentBrush" Color="#00DDB3"/>
 
             <SolidColorBrush x:Key="SettingsHeaderBrush" Color="#FFFFFF"/>
             <SolidColorBrush x:Key="SettingsTitleBrush" Color="#FFFFFF"/>

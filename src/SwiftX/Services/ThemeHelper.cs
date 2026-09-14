@@ -88,15 +88,29 @@ public static class ThemeHelper
         "OrbitBubbleGlassTint" or "OrbitBubbleGlassTintColor" when isBlack =>
             Color.FromArgb(0xCC, 0, 0, 0),
 
-        // Midnight's own values for the shell surfaces the window paints in code, matching
+        // Everything below is Midnight's own value for a surface the window paints in code, matching
         // ShellWindow.BlackOverrides entry for entry — an element-local brush assignment cannot be
         // reached by that dictionary override, so the two have to agree by hand. Leave one out and
         // the card it paints stays on Dark's grey while the page behind it goes black.
-        // The older Settings-canvas keys, which Midnight flattens to one black rather than giving
-        // the narrow hierarchy the shell's four get — again matching BlackOverrides exactly.
+        //
+        // First the older Settings-canvas keys, which Midnight flattens to a single black rather
+        // than giving them the narrow hierarchy the shell's four get further down.
         "SettingsSurfaceBrush" or "SwiftXCanvasBrush" or "SwiftXNavPaneBrush"
             or "SwiftXCardBackgroundBrush" or "SwiftXOrbitCanvasBrush" when isBlack =>
             Color.FromArgb(0xE6, 0x00, 0x00, 0x00),
+
+        // The Orbit canvas under Midnight. It keeps its hierarchy rather than flattening the way
+        // the Settings canvas does — a ring of nodes over a hub over a ground reads as nothing at
+        // all when all three are the same black, which is the same lesson the shell's four
+        // surfaces already carry above.
+        "OrbitCanvasBackgroundBrush" or "OrbitSidebarBackgroundBrush" when isBlack =>
+            Color.FromArgb(255, 0x00, 0x00, 0x00),
+        "OrbitNodeBackgroundBrush" when isBlack => Color.FromArgb(255, 0x0A, 0x0A, 0x0A),
+        "OrbitLabelPillBrush" when isBlack => Color.FromArgb(255, 0x10, 0x10, 0x10),
+        "OrbitHubBrush" when isBlack => Color.FromArgb(255, 0x1A, 0x1A, 0x1A),
+        "OrbitCanvasBorderBrush" when isBlack => Color.FromArgb(255, 0x2A, 0x2A, 0x2A),
+        "OrbitLabelPillBorderBrush" when isBlack => Color.FromArgb(255, 0x24, 0x24, 0x24),
+        "OrbitSidebarBorderBrush" when isBlack => Color.FromArgb(255, 0x16, 0x16, 0x16),
 
         "ShellBackgroundBrush" when isBlack => Color.FromArgb(0xE6, 0x00, 0x00, 0x00),
         "ShellCardBackgroundBrush" when isBlack => Color.FromArgb(0xE6, 0x12, 0x12, 0x12),
@@ -212,6 +226,40 @@ public static class ThemeHelper
 
         "SwiftXDialogSurfaceBrush" =>
             dark ? Color.FromArgb(255, 0x22, 0x22, 0x22) : Color.FromArgb(255, 0xFF, 0xFF, 0xFF),
+
+        // The Orbit screen's canvas family — see Themes/Colors.xaml, where the same values live for
+        // the XAML side, and docs/images/17-app-ring.svg, which is where they came from. The canvas
+        // is drawn in code (RenderPreview), so every one of these is asked for here rather than
+        // bound, which makes this the copy that matters.
+        "OrbitCanvasBackgroundBrush" =>
+            dark ? Color.FromArgb(255, 0x12, 0x12, 0x12) : Color.FromArgb(255, 0xF7, 0xF9, 0xFB),
+
+        "OrbitCanvasBorderBrush" =>
+            dark ? Color.FromArgb(255, 0x33, 0x33, 0x33) : Color.FromArgb(255, 0xD8, 0xDE, 0xE6),
+
+        "OrbitNodeBackgroundBrush" =>
+            dark ? Color.FromArgb(255, 0x1A, 0x1A, 0x1A) : Color.FromArgb(255, 0xFF, 0xFF, 0xFF),
+
+        "OrbitHubBrush" =>
+            dark ? Color.FromArgb(255, 0x28, 0x28, 0x28) : Color.FromArgb(255, 0xE4, 0xE9, 0xEF),
+
+        "OrbitLabelPillBrush" =>
+            dark ? Color.FromArgb(255, 0x18, 0x18, 0x18) : Color.FromArgb(255, 0xFF, 0xFF, 0xFF),
+
+        "OrbitLabelPillBorderBrush" =>
+            dark ? Color.FromArgb(255, 0x2E, 0x2E, 0x2E) : Color.FromArgb(255, 0xDD, 0xE4, 0xEC),
+
+        "OrbitSidebarBackgroundBrush" =>
+            dark ? Color.FromArgb(255, 0x0B, 0x0B, 0x0B) : Color.FromArgb(255, 0xFF, 0xFF, 0xFF),
+
+        "OrbitSidebarBorderBrush" =>
+            dark ? Color.FromArgb(255, 0x1F, 0x1F, 0x1F) : Color.FromArgb(255, 0xE4, 0xE9, 0xEF),
+
+        // Logi's ring-canvas teal, which is not the app chrome's violet and not the user's accent
+        // either — docs/full-app-mockups-logi-base.md explains why Logi keeps the two apart and why
+        // this screen gets this one. Darkened under Light, where #00DDB3 falls under 3:1 on white.
+        "OrbitCanvasAccentBrush" =>
+            dark ? Color.FromArgb(255, 0x00, 0xDD, 0xB3) : Color.FromArgb(255, 0x00, 0xA8, 0x8A),
 
         // Deliberately last, and deliberately dull: an unrecognised key is a missing case above,
         // not a colour anyone chose. Black-on-dark / white-on-light is the least likely of the
