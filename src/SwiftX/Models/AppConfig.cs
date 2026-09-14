@@ -17,6 +17,20 @@ public enum AppTheme
     /// </para>
     /// </summary>
     Black,
+
+    /// <summary>
+    /// Dark's native ElementTheme again, but with every SwiftX surface dropped to a low-alpha wash
+    /// over a real acrylic backdrop, so the desktop reads through the window rather than around it.
+    /// Shown to the user as "Frosted glass".
+    /// <para>
+    /// Told apart the same way <see cref="Black"/> is — see that member's note, and
+    /// <see cref="Services.FrostedGlassPalette"/> for the surfaces, <see cref="Services.FrostedGlassBackdrop"/>
+    /// for the blur behind them. Like Midnight, it is never reachable via <see cref="System"/>:
+    /// Windows has no such theme to follow.
+    /// </para>
+    /// </summary>
+    FrostedGlass,
+
     System,
 }
 
