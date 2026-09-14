@@ -1010,7 +1010,16 @@ public sealed partial class ShellWindow : Window
         // the measured value is then written back as an explicit Width so the rendered pill cannot
         // come out a pixel wider than what was placed. Trimming handles the overflow that caps.
         pill.Measure(new Size(PillMaxWidth, PillHeight));
-        double width = Math.Min(PillMaxWidth, Math.Ceiling(pill.DesiredSize.Width));
+        double measured = pill.DesiredSize.Width;
+        if (measured < 1)
+        {
+            // Measure is being asked of an element with no XamlRoot behind it yet, which is not
+            // guaranteed to come back with anything. A rough advance width for 12px Segoe UI plus
+            // the pill's own 12px-a-side padding is a bad label; a zero-width one is an invisible
+            // label, and every pill on the canvas at once.
+            measured = 24 + text.Length * 6.6;
+        }
+        double width = Math.Min(PillMaxWidth, Math.Ceiling(measured));
         pill.Width = width;
 
         double ux = Math.Cos(angle), uy = Math.Sin(angle);
@@ -1098,6 +1107,10 @@ public sealed partial class ShellWindow : Window
             Height = radius * 2,
             Stroke = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush"),
             StrokeThickness = 1,
+            // Decoration only. The canvas handles press/drag once for every slot (see
+            // Preview_PointerPressed) and derives the slot from geometry, so a stroke that could
+            // take a hit of its own has nothing to contribute and one more way to go wrong.
+            IsHitTestVisible = false,
         };
         Canvas.SetLeft(guide, cx - radius);
         Canvas.SetTop(guide, cy - radius);
