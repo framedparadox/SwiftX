@@ -184,15 +184,12 @@ public sealed partial class ShellWindow : Window
             ApplyBlackOverrides();
             // System follows Windows, so an OS flip changes which built-in accent is the right one.
             ApplyAccentColorOverride();
-            SyncAccentControls();
             ApplyChromeTheme();
-            RenderPreview();
-            // ApplyAccentColorOverride already re-runs both of these, but only ever with the accent
-            // it just computed. The inactive rail label and the unselected card border are theme
-            // colours rather than accent ones, and this is the one event that changes those without
-            // changing the accent.
-            SelectSection(_currentSection);
-            UpdateThemeCardSelection(_manager.Config.Theme);
+            // ApplyAccentColorOverride already re-runs the rail and the theme cards, but only ever
+            // with the accent it just computed. Every local brush in this window is a theme colour
+            // as well as, or instead of, an accent one — and this is the one event that changes
+            // those without changing the accent. See RepaintThemedContent.
+            RepaintThemedContent();
         };
         Activated += (_, _) =>
         {
@@ -325,7 +322,47 @@ public sealed partial class ShellWindow : Window
         ApplyAccentColorOverride();
         ForceThemeResourceRefresh(ThemeHelper.Resolve(_manager.Config.Theme));
         ApplyChromeTheme();
+        RepaintThemedContent();
+    }
+
+    /// <summary>
+    /// Re-runs every part of this window that paints a brush <em>onto an element</em> rather than
+    /// binding one, so a theme change reaches it.
+    /// <para>
+    /// <see cref="ForceThemeResourceRefresh"/> handles everything bound with <c>{ThemeResource}</c>
+    /// — which is most of the window, and is why the theme switch was never wholly dead. What it
+    /// cannot reach is a local value: a brush written to <c>element.Background</c> is a local value
+    /// in the dependency-property sense, and a local value beats any dictionary the framework might
+    /// later re-resolve. Everything below writes those.
+    /// </para>
+    /// <para>
+    /// Two of these were already re-run on a theme change and the rest were not, which is what
+    /// "the theme toggle does nothing" actually looked like: the page, the cards' own
+    /// <c>{ThemeResource}</c> chrome and the orbit preview all flipped, while the Elements screen's
+    /// item cards and the whole Tools screen — every icon medallion, kind badge, divider and footer
+    /// button on them, all built in code by <see cref="BuildCardShell"/> — kept the colours they
+    /// were built with. Switch the theme while either screen is open and nothing on it moved. The
+    /// Hover style pill and an expanded group's children row had the same gap; the doc comment on
+    /// <see cref="SelectHoverStyle"/> even called its own out, and this is what closes it.
+    /// </para>
+    /// <para>
+    /// A full rebuild of both lists is heavier than repainting in place would be, but a theme
+    /// change is a thing a person does seconds apart at most, and the two <c>Rebuild*</c> methods
+    /// are the only place that knows how those cards are assembled — a parallel "repaint an
+    /// existing card" path would be a second copy of that knowledge, and the copy that goes stale.
+    /// </para>
+    /// </summary>
+    private void RepaintThemedContent()
+    {
+        SyncAccentControls();
         RenderPreview();
+        if (_expandedGroup is not null)
+            RenderGroupRow();
+        SelectHoverStyle(_manager.Config.HoverStyle);
+        SelectSection(_currentSection);
+        UpdateThemeCardSelection(_manager.Config.Theme);
+        RebuildItemsList();
+        RebuildToolsList();
     }
 
     /// <summary>
@@ -2063,11 +2100,15 @@ public sealed partial class ShellWindow : Window
     {
         _manager.Config.Theme = theme;
         _manager.Save();
+        // Reaches every open window, this one included: OrbitManager.ApplyTheme fans out to the
+        // orbit, the tool windows, the add-item dialog and the guide, and back to this window's own
+        // ApplyTheme — which is what repaints the swatch and the theme cards for the new theme's
+        // built-in accent. This used to call ApplyTheme() again directly as belt and braces; now
+        // that the pass rebuilds the Elements and Tools cards too (see RepaintThemedContent) that
+        // second pass is a full rebuild for nothing, so the fan-out is left to do it once.
         _manager.ApplyTheme();
-        ApplyTheme();
-        // Light and Dark carry different built-in accents; the swatch and the cards both follow.
-        SyncAccentControls();
-        UpdateThemeCardSelection(theme);
+        // Not part of that pass: the header glyph says which theme is *selected*, which only
+        // changes here. An OS flip under System changes what is on screen without changing it.
         UpdateThemeToggleIcon();
     }
 
