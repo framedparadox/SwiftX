@@ -14,6 +14,16 @@ internal static partial class NativeMethods
     public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     public const int DWMWA_BORDER_COLOR = 34;
+    public const int DWMWA_CAPTION_COLOR = 35;
+
+    /// <summary>
+    /// DWM "no custom border color" sentinel for <see cref="DWMWA_BORDER_COLOR"/>.
+    /// Pass this instead of a solid COLORREF when a translucent window must not paint a custom rim.
+    /// </summary>
+    public const int DWMWA_COLOR_NONE = unchecked((int)0xFFFFFFFE);
+
+    /// <summary>DWM default border-color sentinel for <see cref="DWMWA_BORDER_COLOR"/>.</summary>
+    public const int DWMWA_COLOR_DEFAULT = unchecked((int)0xFFFFFFFF);
 
     // DWM_WINDOW_CORNER_PREFERENCE
     public const int DWMWCP_DONOTROUND = 1;

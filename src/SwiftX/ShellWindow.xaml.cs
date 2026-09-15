@@ -13,6 +13,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Shapes;
 using SwiftX.Controls;
+using SwiftX.Interop;
 using SwiftX.Models;
 using SwiftX.Services;
 using Windows.Foundation;
@@ -86,6 +87,9 @@ public sealed partial class ShellWindow : Window
     // Preview geometry and slot occupancy, recorded by RenderPreview so the canvas-level pointer
     // handlers can work out which slot an event landed in without walking the visual tree.
     private readonly Border?[] _slotBorders = new Border?[OrbitMetrics.SlotCount];
+    private Border? _hoveredPreviewItem;
+    private Brush? _hoveredPreviewRestingBrush;
+    private Thickness _hoveredPreviewRestingThickness;
     private Point _previewCenter;
     private double _previewRadius;
     private double _previewBubble;
@@ -248,7 +252,10 @@ public sealed partial class ShellWindow : Window
             // Previously unwired: without this, pressing an unregistrable combo (e.g. a bare "A")
             // during capture left the button silently armed with no feedback.
             HotkeyCapture.NeedsModifier += () =>
+            {
                 HotkeyStatus.Text = "Hold Ctrl, Alt, or Win with that key.";
+                HotkeyStatus.Visibility = Visibility.Visible;
+            };
             RebuildToolsList();
             ExperienceRating.Value = _manager.Config.FeedbackRating > 0
                 ? _manager.Config.FeedbackRating
@@ -367,6 +374,7 @@ public sealed partial class ShellWindow : Window
         SelectSection(_currentSection);
         UpdateThemeCardSelection(_manager.Config.Theme);
         UpdateFrostedLevelSelection(_manager.Config.FrostedGlass);
+        UpdateThemeToggleIcon();
         RebuildItemsList();
         RebuildToolsList();
         if (_orbitEditBuilt) BuildOrbitEditSidebar();
@@ -528,6 +536,7 @@ public sealed partial class ShellWindow : Window
             {
                 SystemBackdrop = new FrostedGlassBackdrop();
             }
+            WindowChrome.SuppressClientErase(_hwnd);
         }
         else if (SystemBackdrop is not MicaBackdrop)
         {
@@ -687,29 +696,26 @@ public sealed partial class ShellWindow : Window
         int rim = _manager.Config.Theme switch
         {
             AppTheme.Black => ShellRimColorBlack,
-            AppTheme.FrostedGlass => ShellRimColorFrosted,
+            // Solid dark COLORREF on acrylic reads as a black border; COLOR_NONE clears the custom rim.
+            AppTheme.FrostedGlass => NativeMethods.DWMWA_COLOR_NONE,
             _ => dark ? ShellRimColorDark : ShellRimColorLight,
         };
         WindowChrome.HideWindowBorder(_hwnd, dark, rim);
     }
 
     /// <summary>
-    /// Rim colors for the shell, as COLORREFs (0x00BBGGRR) — these must track
+    /// Rim colors for opaque shell themes, as COLORREFs (0x00BBGGRR) — these must track
     /// <c>ShellBackgroundBrush</c> in <c>Themes/Colors.xaml</c> (Logi's own #2B2B2B and #F2F2F2),
     /// not the shared black/white every other window's rim still uses. Leave one stale after a
     /// palette change and the window grows a visible hairline where the rim stops matching the
     /// surface behind it. All three are neutral greys, so channel order is moot.
     /// <see cref="ShellRimColorBlack"/> matches <see cref="BlackOverrides"/>' own page value rather
-    /// than Dark's. <see cref="ShellRimColorFrosted"/> is the one that is not a neutral grey, so it
-    /// is the one where the BGR order matters: it is <see cref="FrostedGlassBackdrop"/>'s own tint
-    /// colour #101016, byte-reversed. The rim cannot be translucent the way that theme's surfaces
-    /// are — it is a solid COLORREF the compositor draws — so it takes the colour the glass settles
-    /// on rather than trying to disappear.
+    /// than Dark's. Frosted Glass does not use a solid rim color — see
+    /// <see cref="ApplyChromeTheme"/>, which passes <see cref="NativeMethods.DWMWA_COLOR_NONE"/>.
     /// </summary>
     private const int ShellRimColorDark = 0x002B2B2B;
     private const int ShellRimColorLight = 0x00F2F2F2;
     private const int ShellRimColorBlack = 0x00000000;
-    private const int ShellRimColorFrosted = 0x00161010;
 
     private Style SecondaryCaptionStyle => (Style)Root.Resources["SecondaryCaption"];
 
@@ -823,6 +829,8 @@ public sealed partial class ShellWindow : Window
 
         int tools = ToolCatalog.All.Count;
         ToolsBoxMeta.Text = tools == 1 ? "1 tool" : $"{tools} tools";
+
+        ElementsBoxMeta.Text = used == 1 ? "1 item" : $"{used} items";
     }
 
     /// <summary>
@@ -882,6 +890,8 @@ public sealed partial class ShellWindow : Window
 
     private void ToolsBox_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenTools);
 
+    private void ElementsBox_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenElements);
+
     private void ElementsShortcutButton_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenElements);
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenSettings);
@@ -910,41 +920,56 @@ public sealed partial class ShellWindow : Window
     private void RunOnboarding_Click(object sender, RoutedEventArgs e) => _manager.OpenOnboarding();
 
     /// <summary>
-    /// Logi's header theme button cycles the app's themes in place rather than opening a picker.
-    /// SwiftX has four where Logi has three, and the fourth — System — is the one that has to come
-    /// last in the cycle: landing on it mid-cycle would make the next press's starting point depend
-    /// on what Windows is set to.
+    /// Header theme button. Light and Dark swap. Midnight hides the button entirely.
+    /// Frosted glass cycles Light → Medium → Dark frost levels without leaving the theme.
+    /// Follow OS uses the appearance currently on screen as Light/Dark.
     /// </summary>
     private void ThemeToggleButton_Click(object sender, RoutedEventArgs e)
     {
-        var next = _manager.Config.Theme switch
+        if (_manager.Config.Theme == AppTheme.Black)
+            return;
+
+        if (_manager.Config.Theme == AppTheme.FrostedGlass)
         {
-            AppTheme.Light => AppTheme.Dark,
-            AppTheme.Dark => AppTheme.Black,
-            AppTheme.Black => AppTheme.FrostedGlass,
-            AppTheme.FrostedGlass => AppTheme.System,
-            _ => AppTheme.Light,
-        };
-        ApplyThemeChoice(next);
+            var next = _manager.Config.FrostedGlass switch
+            {
+                FrostedGlassLevel.Light => FrostedGlassLevel.Medium,
+                FrostedGlassLevel.Medium => FrostedGlassLevel.Dark,
+                _ => FrostedGlassLevel.Light,
+            };
+            ApplyFrostedLevel(next);
+            return;
+        }
+
+        ApplyThemeChoice(ThemeHelper.IsDark(Root) ? AppTheme.Light : AppTheme.Dark);
     }
 
     /// <summary>
-    /// The glyph on the header's theme button, which has to say which theme is <em>in effect</em>,
-    /// not which one the next press picks. Logi's own three (sun / moon / glass) plus a settings-
-    /// brightness mark for System, which is the one choice that has no fixed appearance of its own.
+    /// Glyph on the header theme button: the theme (or frost level) in effect, not the next press.
+    /// Hidden under Midnight. Under Frosted glass it tracks Light/Medium/Dark frost.
     /// </summary>
     private void UpdateThemeToggleIcon()
     {
-        ThemeToggleIcon.Glyph = _manager.Config.Theme switch
+        var theme = _manager.Config.Theme;
+        ThemeToggleButton.Visibility = theme == AppTheme.Black
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+
+        ThemeToggleIcon.Glyph = theme switch
         {
-            AppTheme.Light => "\uE706",
-            AppTheme.Dark => "\uE793",
-            AppTheme.Black => "\uE708",
-            // Segoe MDL2 has no frosted-glass mark. MapLayers is the nearest honest stand-in —
-            // stacked translucent planes, which is what the theme actually is.
-            AppTheme.FrostedGlass => "\uE81E",
-            _ => "\uE7E8",
+            AppTheme.FrostedGlass => _manager.Config.FrostedGlass switch
+            {
+                FrostedGlassLevel.Dark => "\uE708",
+                FrostedGlassLevel.Medium => "\uE7E8",
+                _ => "\uE706",
+            },
+            _ when ThemeHelper.IsDark(Root) => "\uE708",
+            _ => "\uE706",
         };
+
+        ToolTipService.SetToolTip(ThemeToggleButton, theme == AppTheme.FrostedGlass
+            ? "Cycle frosted glass"
+            : "Toggle theme");
     }
 
     /// <summary>
@@ -976,13 +1001,9 @@ public sealed partial class ShellWindow : Window
     /// The outward name pill for one filled slot, on <c>PreviewLabelCanvas</c> rather than the
     /// canvas the bubbles live on.
     /// <para>
-    /// That separation is the whole reason none of the drag code had to learn about pills: the
-    /// label canvas has hit-testing off and is never read by <see cref="PreviewSlotAt"/>, so a
-    /// pill can overlap a node without ever becoming a drag target or swallowing a press. The
-    /// cost is that pills do not follow a bubble mid-drag, which is why
-    /// <see cref="Preview_PointerMoved"/> hides the whole canvas the moment a drag starts —
-    /// labels pointing at bubbles that have moved out from under them would be worse than no
-    /// labels at all, and the next <see cref="RenderPreview"/> brings them back.
+    /// Title pills sit on a canvas stacked above the bubbles and handle their own taps so clicking
+    /// a name opens the same details flyout as clicking the node. Empty canvas does not swallow
+    /// hits, so bubble drag still lands on PreviewCanvas.
     /// </para>
     /// <para>
     /// Placement follows Logi's own table rather than a single polar formula: the top and bottom
@@ -992,8 +1013,9 @@ public sealed partial class ShellWindow : Window
     /// </para>
     /// </summary>
     private void AddSlotLabel(
-        string text, double cx, double cy, double angle, double radius, double bubble)
+        OrbitItem item, double cx, double cy, double angle, double radius, double bubble)
     {
+        string text = item.DisplayName;
         if (string.IsNullOrWhiteSpace(text)) return;
 
         var pill = new Border
@@ -1004,6 +1026,7 @@ public sealed partial class ShellWindow : Window
             Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitLabelPillBrush"),
             BorderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitLabelPillBorderBrush"),
             BorderThickness = new Thickness(1),
+            Tag = item,
             Child = new TextBlock
             {
                 Text = text,
@@ -1013,8 +1036,17 @@ public sealed partial class ShellWindow : Window
                 TextWrapping = TextWrapping.NoWrap,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+                IsHitTestVisible = false,
             },
         };
+        ToolTipService.SetToolTip(pill, item.DisplayName);
+        pill.Tapped += (_, e) =>
+        {
+            e.Handled = true;
+            var origin = pill.TransformToVisual(PreviewCanvas).TransformPoint(new Point(0, 0));
+            ShowItemDetails(item, origin);
+        };
+        AttachPreviewHover(pill);
 
         // A Canvas gives its children no alignment, so the pill has to be placed by a corner — and
         // the six side pills are placed by whichever corner faces the hub, which for the left-hand
@@ -1064,6 +1096,7 @@ public sealed partial class ShellWindow : Window
         if (PreviewCanvas is null) return;
         PreviewCanvas.Children.Clear();
         PreviewLabelCanvas.Children.Clear();
+        ClearPreviewHover();
         // Back on for every render. Preview_PointerMoved is the only thing that takes them away,
         // and a render is what always follows the drop it was hiding them for.
         PreviewLabelCanvas.Visibility = Visibility.Visible;
@@ -1162,14 +1195,10 @@ public sealed partial class ShellWindow : Window
 
             if (pinned)
             {
-                // Logi's own treatment for the one node it differentiates: the accent border at
-                // 1.5px and an accent glyph. Here it marks the two the orbit synthesizes rather
-                // than owns, which is the distinction that actually matters on this canvas — they
-                // cannot be moved, replaced or deleted, and nothing else about them says so.
-                border.Child = PreviewGlyph(item!.Glyph, glyphSize, canvasAccent);
+                border.Child = PreviewBubbleContent(item!, glyphSize, canvasAccent, bubble, angle);
                 border.BorderBrush = canvasAccent;
                 border.BorderThickness = new Thickness(1.5);
-                ToolTipService.SetToolTip(border, $"{item.DisplayName} — always on the orbit");
+                ToolTipService.SetToolTip(border, $"{item!.DisplayName} — always on the orbit");
             }
             else if (item is null)
             {
@@ -1177,10 +1206,12 @@ public sealed partial class ShellWindow : Window
             }
             else
             {
-                border.Child = PreviewGlyph(item.Glyph, glyphSize, foreground);
+                border.Child = PreviewBubbleContent(item, glyphSize, foreground, bubble, angle);
                 ToolTipService.SetToolTip(border, $"{item.DisplayName} — right-click to replace or delete");
                 _slotBorders[i] = border;
             }
+
+            AttachPreviewHover(border);
 
             Canvas.SetLeft(border, x);
             Canvas.SetTop(border, y);
@@ -1189,7 +1220,7 @@ public sealed partial class ShellWindow : Window
             // An empty slot gets no pill: "+" is its own label, and eight pills reading "Empty"
             // would be the loudest thing on the canvas.
             if (item is not null)
-                AddSlotLabel(item.DisplayName, cx, cy, angle, radius, bubble);
+                AddSlotLabel(item, cx, cy, angle, radius, bubble);
         }
 
         AddHotCornerButton(size);
@@ -1269,12 +1300,15 @@ public sealed partial class ShellWindow : Window
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = item,
-                Child = PreviewGlyph(
-                    item?.Glyph ?? "\uE710", glyphSize, item is null || item.IsSystem ? muted : foreground),
+                Child = item is null
+                    ? PreviewGlyph("\uE710", glyphSize, muted)
+                    : PreviewBubbleContent(item, glyphSize,
+                        item.IsSystem ? muted : foreground, previewBubble, angle),
             };
             ToolTipService.SetToolTip(border, item is null
                 ? "Add to this corner"
                 : $"{item.DisplayName} — right-click to replace or remove");
+            AttachPreviewHover(border);
             Canvas.SetLeft(border, left);
             Canvas.SetTop(border, top);
             PreviewCanvas.Children.Add(border);
@@ -2052,6 +2086,101 @@ public sealed partial class ShellWindow : Window
         return icon;
     }
 
+    /// <summary>
+    /// Glyph plus, for a group or the Tools item that still has visible children, the same outward
+    /// arc bump the live orbit dock draws.
+    /// </summary>
+    private UIElement PreviewBubbleContent(
+        OrbitItem item, double glyphSize, Brush foreground, double diameter, double angleRad)
+    {
+        var glyph = PreviewGlyph(item.Glyph, glyphSize, foreground);
+        if (!ShowsGroupArc(item))
+            return glyph;
+
+        var grid = new Grid { Width = diameter, Height = diameter };
+        grid.Children.Add(glyph);
+        grid.Children.Add(BuildPreviewGroupArc(diameter, angleRad, foreground));
+        return grid;
+    }
+
+    private static bool ShowsGroupArc(OrbitItem item) =>
+        item.IsGroup && item.Children.Any(c => !c.Hidden);
+
+    /// <summary>
+    /// Copied from <c>OrbitWindow.BuildGroupArc</c>: a 30° stroke hugging the bubble's outer edge
+    /// in the direction the item already sits, so a group reads the same here as on the dock.
+    /// </summary>
+    private static Microsoft.UI.Xaml.Shapes.Path BuildPreviewGroupArc(double diameter, double angleRad, Brush stroke)
+    {
+        const double SweepDegrees = 30;
+        double sweep = SweepDegrees * Math.PI / 180.0;
+        double thickness = Math.Max(2, diameter * 0.08);
+        double radius = diameter / 2 - thickness / 2;
+        double center = diameter / 2;
+        double startAngle = angleRad - sweep / 2;
+        double endAngle = angleRad + sweep / 2;
+
+        var figure = new PathFigure
+        {
+            StartPoint = new Point(
+                center + radius * Math.Cos(startAngle),
+                center + radius * Math.Sin(startAngle)),
+            IsClosed = false,
+        };
+        figure.Segments.Add(new ArcSegment
+        {
+            Point = new Point(
+                center + radius * Math.Cos(endAngle),
+                center + radius * Math.Sin(endAngle)),
+            Size = new Size(radius, radius),
+            SweepDirection = SweepDirection.Clockwise,
+            IsLargeArc = false,
+        });
+
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+
+        return new Microsoft.UI.Xaml.Shapes.Path
+        {
+            Width = diameter,
+            Height = diameter,
+            Data = geometry,
+            Stroke = stroke,
+            StrokeThickness = thickness,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            IsHitTestVisible = false,
+        };
+    }
+
+    private void AttachPreviewHover(Border border)
+    {
+        border.PointerEntered += (_, _) =>
+        {
+            if (_dragMoved) return;
+            ClearPreviewHover();
+            _hoveredPreviewItem = border;
+            _hoveredPreviewRestingBrush = border.BorderBrush;
+            _hoveredPreviewRestingThickness = border.BorderThickness;
+            border.BorderBrush = new SolidColorBrush(CurrentAccentColor());
+            border.BorderThickness = new Thickness(2);
+        };
+        border.PointerExited += (_, _) =>
+        {
+            if (ReferenceEquals(_hoveredPreviewItem, border))
+                ClearPreviewHover();
+        };
+    }
+
+    private void ClearPreviewHover()
+    {
+        if (_hoveredPreviewItem is null) return;
+        _hoveredPreviewItem.BorderBrush = _hoveredPreviewRestingBrush;
+        _hoveredPreviewItem.BorderThickness = _hoveredPreviewRestingThickness;
+        _hoveredPreviewItem = null;
+        _hoveredPreviewRestingBrush = null;
+    }
+
     private void ReorderItem(OrbitItem dragged, int targetSlot)
     {
         // Slots past the user range hold the pinned Settings/Close bubbles; a drop there is
@@ -2144,10 +2273,7 @@ public sealed partial class ShellWindow : Window
     private void ShowItemDetails(OrbitItem item, Point at)
     {
         // Whatever put an item's details on screen — the main ring, the quadrant preview, a
-        // group's own arc, or the group header tap above — should also leave the sidebar on the
-        // elements list, since a details card is normally the prelude to changing what is there.
-        SetOrbitEditing(true);
-
+        // group's own arc, a title pill, or the group header tap above.
         if (ReferenceEquals(_selectedItem, item) && _detailsFlyout is not null)
         {
             HideItemDetails();
@@ -2562,9 +2688,10 @@ public sealed partial class ShellWindow : Window
             Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
             BorderBrush = accent,
             BorderThickness = new Thickness(1.5),
-            Child = PreviewGlyph(group.Glyph, glyphSize * 1.15, accent),
+            Child = PreviewBubbleContent(group, glyphSize * 1.15, accent, parent, 0),
         };
         ToolTipService.SetToolTip(parentBubble, group.DisplayName);
+        AttachPreviewHover(parentBubble);
         Canvas.SetLeft(parentBubble, cx - parent / 2);
         Canvas.SetTop(parentBubble, cy - parent / 2);
         PreviewCanvas.Children.Add(parentBubble);
@@ -2612,9 +2739,9 @@ public sealed partial class ShellWindow : Window
             }
             else
             {
-                border.Child = PreviewGlyph(child!.Glyph, glyphSize, foreground);
-                ToolTipService.SetToolTip(border, child.DisplayName);
-                AddSlotLabel(child.DisplayName, cx, cy, angle, radius, bubble);
+                border.Child = PreviewBubbleContent(child!, glyphSize, foreground, bubble, angle);
+                ToolTipService.SetToolTip(border, child!.DisplayName);
+                AddSlotLabel(child, cx, cy, angle, radius, bubble);
                 // No per-bubble Tapped handler: the canvas-level press/drag/release path (see
                 // Preview_PointerPressed's remarks on why the top-level orbit works this way)
                 // now reads _groupSlotBorders too, so a tap and a drag on a child settle in the
@@ -2622,6 +2749,8 @@ public sealed partial class ShellWindow : Window
                 // impossible.
                 _groupSlotBorders.Add(border);
             }
+
+            AttachPreviewHover(border);
 
             Canvas.SetLeft(border, x);
             Canvas.SetTop(border, y);
@@ -2685,13 +2814,8 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private bool _orbitEditBuilt;
 
-    private void OrbitEditToggle_Click(object sender, RoutedEventArgs e) =>
-        SetOrbitEditing(!_orbitEditing);
-
-    /// <summary>Same destination as <see cref="OrbitEditToggle_Click"/> — both reveal the
-    /// "ADD TO ORBIT" sidebar — kept as a separate header button so the header reads as three
-    /// parallel choices (Edit, Elements, Settings) rather than one toggle plus an afterthought.
-    /// </summary>
+    /// <summary>Reveals the "ADD TO ORBIT" sidebar — the Elements header button is the way into
+    /// arranging what sits on the ring.</summary>
     private void OrbitElementsButton_Click(object sender, RoutedEventArgs e) =>
         SetOrbitEditing(true);
 
@@ -2721,11 +2845,6 @@ public sealed partial class ShellWindow : Window
 
         OrbitSidebarSettings.Visibility = editing ? Visibility.Collapsed : Visibility.Visible;
         OrbitSidebarEdit.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
-
-        OrbitEditIcon.Glyph = editing ? "\uE73E" : "\uE70F";
-        ToolTipService.SetToolTip(OrbitEditToggle, editing
-            ? "Back to the orbit's settings"
-            : "Show the things you can put on the orbit");
     }
 
     /// <summary>
@@ -3059,46 +3178,28 @@ public sealed partial class ShellWindow : Window
     private void SelectTheme(AppTheme theme) => UpdateThemeCardSelection(theme);
 
     /// <summary>
-    /// Repaints all four theme cards for <paramref name="theme"/>: a 1.5px accent border and the
-    /// filled radio glyph (<c>E73E</c>) on the selected one, the card border and the hollow glyph
-    /// (<c>E73A</c>) in muted on the other three. Logi's own <c>UpdateThemeCardSelection</c>, with
-    /// a fourth card for Midnight.
-    /// <para>
-    /// The brushes are built here rather than bound with <c>{ThemeResource}</c> because selection
-    /// is a per-element assignment — which is also why <see cref="ApplyAccentColorOverride"/> and
-    /// the <c>ActualThemeChanged</c> handler both re-run this: neither a user's accent pick nor an
-    /// OS theme flip can reach a brush already written onto the element.
-    /// <see cref="ThemeHelper.ColorFor(bool, AppTheme, string)"/> is what supplies the unselected
-    /// colours, since a window whose theme disagrees with Windows' cannot read them back out of the
-    /// app's own resources (see that class's own warning).
-    /// </para>
+    /// Repaints all five theme cards for <paramref name="theme"/>: a 1.5px accent border on the
+    /// selected one, the card border on the others. Selection is the border alone — there is no
+    /// checkbox glyph.
     /// </summary>
     private void UpdateThemeCardSelection(AppTheme theme)
     {
         bool dark = ThemeHelper.IsDark(Root);
-        // Which card is ticked comes from the argument; what the *unticked* ones are painted with
-        // comes from the theme the window is actually wearing. Usually the same value — but
-        // ResetAll calls this with Dark before the config has been written back, and the unselected
-        // borders still have to match the surface they are sitting on.
         var liveTheme = _manager.Config.Theme;
         var selectedBrush = new SolidColorBrush(CurrentAccentColor());
         var restingBrush = new SolidColorBrush(
             ThemeHelper.ColorFor(dark, liveTheme, "ShellCardBorderBrush"));
-        var mutedBrush = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SettingsMutedBrush"));
 
-        void Paint(Border card, FontIcon check, AppTheme cardTheme)
+        void Paint(Border card, AppTheme cardTheme)
         {
-            bool on = cardTheme == theme;
-            card.BorderBrush = on ? selectedBrush : restingBrush;
-            check.Glyph = on ? "\uE73E" : "\uE73A";
-            check.Foreground = on ? selectedBrush : mutedBrush;
+            card.BorderBrush = cardTheme == theme ? selectedBrush : restingBrush;
         }
 
-        Paint(ThemeCardSystem, ThemeCheckSystem, AppTheme.System);
-        Paint(ThemeCardLight, ThemeCheckLight, AppTheme.Light);
-        Paint(ThemeCardDark, ThemeCheckDark, AppTheme.Dark);
-        Paint(ThemeCardBlack, ThemeCheckBlack, AppTheme.Black);
-        Paint(ThemeCardFrosted, ThemeCheckFrosted, AppTheme.FrostedGlass);
+        Paint(ThemeCardSystem, AppTheme.System);
+        Paint(ThemeCardLight, AppTheme.Light);
+        Paint(ThemeCardDark, AppTheme.Dark);
+        Paint(ThemeCardBlack, AppTheme.Black);
+        Paint(ThemeCardFrosted, AppTheme.FrostedGlass);
     }
 
     /// <summary>
@@ -3199,14 +3300,21 @@ public sealed partial class ShellWindow : Window
     {
         if (_loading || sender is not FrameworkElement source) return;
         if (!Enum.TryParse<FrostedGlassLevel>(source.Tag as string, out var level)) return;
+        ApplyFrostedLevel(level);
+    }
 
+    /// <summary>
+    /// Points every frosted surface at <paramref name="level"/> and re-runs the theme pass when
+    /// the value actually moved. Shared by the frost-level pills and the header toggle.
+    /// </summary>
+    private void ApplyFrostedLevel(FrostedGlassLevel level)
+    {
         _manager.Config.FrostedGlass = level;
         _manager.Save();
         UpdateFrostedLevelSelection(level);
+        UpdateThemeToggleIcon();
 
         if (!FrostedGlassBackdrop.SetLevel(level)) return;
-        // Every window, not just this one: the guide carries the same surfaces and the orbit's
-        // bubble tint is computed from the same palette.
         _manager.ApplyTheme();
     }
 
@@ -3224,6 +3332,13 @@ public sealed partial class ShellWindow : Window
         FrostedLevelPanel.Visibility = _manager.Config.Theme == AppTheme.FrostedGlass
             ? Visibility.Visible
             : Visibility.Collapsed;
+        bool rail = FrostedLevelPanel.Visibility == Visibility.Visible;
+        ThemeCardFrostedPreview.Margin = rail
+            ? new Thickness(12, 14, 28, 0)
+            : new Thickness(12, 14, 12, 0);
+        ThemeCardFrostedLabel.Margin = rail
+            ? new Thickness(0, 0, 22, 0)
+            : new Thickness(0);
 
         bool dark = ThemeHelper.IsDark(Root);
         var accent = new SolidColorBrush(CurrentAccentColor());
@@ -3419,7 +3534,7 @@ public sealed partial class ShellWindow : Window
         }
         RatingThanks.Text = rating >= 4
             ? "Thanks — glad it's working for you."
-            : "Thanks. If something's wrong, the support link below will reach us.";
+            : "Thanks. If something's wrong, Settings › Support will reach us.";
         RatingThanks.Visibility = Visibility.Visible;
     }
 
@@ -3805,9 +3920,14 @@ public sealed partial class ShellWindow : Window
     private void UpdateHotkeyStatus()
     {
         bool ok = _manager.ApplyHotkey();
-        HotkeyStatus.Text = ok
-            ? $"Registered: {_manager.Config.Hotkey}"
-            : "Could not register that hotkey (maybe another app owns it).";
+        if (ok)
+        {
+            HotkeyStatus.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        HotkeyStatus.Text = "Could not register that hotkey (maybe another app owns it).";
+        HotkeyStatus.Visibility = Visibility.Visible;
     }
 
     /// <summary>

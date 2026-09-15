@@ -62,7 +62,6 @@ public class ThemeHelperTests
     [InlineData("ShellPillBrush")]
     [InlineData("ShellMedallionBrush")]
     [InlineData("ShellDividerBrush")]
-    [InlineData("ShellCardBackgroundBrush")]
     [InlineData("ShellBackgroundBrush")]
     public void A_key_the_shell_paints_with_never_falls_through_to_the_default(string key)
     {

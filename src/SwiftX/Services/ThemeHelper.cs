@@ -227,12 +227,11 @@ public static class ThemeHelper
         "SwiftXDialogSurfaceBrush" =>
             dark ? Color.FromArgb(255, 0x22, 0x22, 0x22) : Color.FromArgb(255, 0xFF, 0xFF, 0xFF),
 
-        // The Orbit screen's canvas family — see Themes/Colors.xaml, where the same values live for
-        // the XAML side, and docs/images/17-app-ring.svg, which is where they came from. The canvas
-        // is drawn in code (RenderPreview), so every one of these is asked for here rather than
-        // bound, which makes this the copy that matters.
+        // Orbit Settings canvas / sidebar match ShellBackgroundBrush / ShellCardBackgroundBrush
+        // under Dark so the screen aligns with the app shell. Other Orbit* keys keep the ring
+        // palette. Painted in code (RenderPreview), so this table is the copy that matters.
         "OrbitCanvasBackgroundBrush" =>
-            dark ? Color.FromArgb(255, 0x12, 0x12, 0x12) : Color.FromArgb(255, 0xF7, 0xF9, 0xFB),
+            dark ? Color.FromArgb(0xD9, 0x2B, 0x2B, 0x2B) : Color.FromArgb(255, 0xF7, 0xF9, 0xFB),
 
         "OrbitCanvasBorderBrush" =>
             dark ? Color.FromArgb(255, 0x33, 0x33, 0x33) : Color.FromArgb(255, 0xD8, 0xDE, 0xE6),
@@ -250,7 +249,7 @@ public static class ThemeHelper
             dark ? Color.FromArgb(255, 0x2E, 0x2E, 0x2E) : Color.FromArgb(255, 0xDD, 0xE4, 0xEC),
 
         "OrbitSidebarBackgroundBrush" =>
-            dark ? Color.FromArgb(255, 0x0B, 0x0B, 0x0B) : Color.FromArgb(255, 0xFF, 0xFF, 0xFF),
+            dark ? Color.FromArgb(0xD9, 0x33, 0x33, 0x33) : Color.FromArgb(255, 0xFF, 0xFF, 0xFF),
 
         "OrbitSidebarBorderBrush" =>
             dark ? Color.FromArgb(255, 0x1F, 0x1F, 0x1F) : Color.FromArgb(255, 0xE4, 0xE9, 0xEF),

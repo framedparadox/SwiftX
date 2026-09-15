@@ -134,10 +134,10 @@ public static class WindowChrome
     private const int SurfaceDark = 0x00000000;
 
     /// <summary>
-    /// Makes the DWM window rim invisible by painting it the window's own surface color for the
-    /// current theme. The immersive-dark-mode flag is tracked to the theme too (see
-    /// <see cref="SetFrameTheme"/>) so DWM renders the window edge / corner anti-aliasing for the
-    /// right background.
+    /// Makes the DWM window rim invisible — for opaque themes by painting it the window's own
+    /// surface color, for Frosted Glass by asking DWM not to draw a custom rim. The
+    /// immersive-dark-mode flag is tracked to the theme too (see <see cref="SetFrameTheme"/>) so
+    /// DWM renders the window edge / corner anti-aliasing for the right background.
     /// <para>
     /// Used by every SwiftX window. On the orbit it hides a rim that would otherwise read as a
     /// rectangle drawn around the rounded glass strip. On the Mica dialogs it hides the one piece
@@ -146,43 +146,65 @@ public static class WindowChrome
     /// a stray line above the title bar.
     /// </para>
     /// <para>
-    /// Painting it is the only option — a rim of zero width is not something DWM offers.
-    /// <c>DWMWA_VISIBLE_FRAME_BORDER_THICKNESS</c> is retrieve-only and rejects a set with
-    /// <c>E_INVALIDARG</c>, and the <c>DWMWA_COLOR_NONE</c> sentinel does not mean "draw nothing"
-    /// here: on a window whose content is extended into the title bar it renders the top edge as
-    /// flat white or flat black, following the immersive-dark-mode flag. That is worse than the
-    /// default rim, and it is what put a hard white line above a light window and a hard black one
-    /// above a dark window — the "residual border" this replaces. Measured, not inferred: with the
-    /// sentinel the top row of the frame comes back <c>#FFFFFF</c> in light and <c>#000000</c> in
-    /// dark, against Mica surfaces of roughly <c>#F9F0F4</c> and <c>#271C22</c>.
+    /// Opaque themes (Black / Dark / Light) must paint a solid COLORREF that matches the surface.
+    /// A rim of zero width is not something DWM offers — <c>DWMWA_VISIBLE_FRAME_BORDER_THICKNESS</c>
+    /// is retrieve-only and rejects a set with <c>E_INVALIDARG</c>. On those windows,
+    /// <see cref="NativeMethods.DWMWA_COLOR_NONE"/> is the wrong tool: with content extended into
+    /// the title bar it renders the top edge as flat white or flat black, following the
+    /// immersive-dark-mode flag. That is worse than the default rim, and it is what put a hard
+    /// white line above a light window and a hard black one above a dark window — the "residual
+    /// border" surface-matching replaces. Measured, not inferred: with the sentinel the top row of
+    /// the frame comes back <c>#FFFFFF</c> in light and <c>#000000</c> in dark, against Mica
+    /// surfaces of roughly <c>#F9F0F4</c> and <c>#271C22</c>.
     /// </para>
     /// <para>
-    /// An explicit color is also the only one of the two that survives a theme switch: DWM
-    /// re-composes the frame for it immediately, with no move, resize or re-activation needed and
-    /// nothing left over from the previous theme.
+    /// Frosted Glass is the exception. Its acrylic / frosted surface is translucent, so any solid
+    /// dark COLORREF on the rim (even the theme's own tint) reads as a black border. Pass
+    /// <see cref="NativeMethods.DWMWA_COLOR_NONE"/> as <paramref name="surfaceOverride"/> —
+    /// that sentinel is how we ask DWM not to draw a custom rim on the frosted shell.
     /// </para>
     /// <para>
-    /// A flat COLORREF is all the attribute accepts, while Mica is a blur of the wallpaper and so
-    /// varies across the width of the window. The match is therefore very close rather than exact
-    /// — single digits per channel, against the tens-to-hundreds that made the old rim obvious.
+    /// An explicit color is also the only one of the two that survives a theme switch on opaque
+    /// windows: DWM re-composes the frame for it immediately, with no move, resize or re-activation
+    /// needed and nothing left over from the previous theme.
+    /// </para>
+    /// <para>
+    /// A flat COLORREF is all the attribute accepts for opaque themes, while Mica is a blur of the
+    /// wallpaper and so varies across the width of the window. The match is therefore very close
+    /// rather than exact — single digits per channel, against the tens-to-hundreds that made the
+    /// old rim obvious.
     /// </para>
     /// </summary>
     /// <param name="surfaceOverride">
     /// A COLORREF (0x00BBGGRR) to paint the rim instead of the theme's flat <see cref="SurfaceDark"/>/
-    /// <see cref="SurfaceLight"/>, for a window whose surface is not that flat color. Settings in
-    /// Dark is the one such window: its root now resolves to a lighter, design-colours.md-anchored
-    /// surface (#202020, see SettingsSurfaceBrush in Themes/Colors.xaml) rather than the shared
-    /// #000000 every other window still uses, so painting the rim pure black would draw a hard edge
-    /// around the window instead of disappearing into it.
+    /// <see cref="SurfaceLight"/>, for a window whose surface is not that flat color — or
+    /// <see cref="NativeMethods.DWMWA_COLOR_NONE"/> to clear a custom rim (Frosted Glass). Settings
+    /// in Dark is the one opaque such window: its root now resolves to a lighter,
+    /// design-colours.md-anchored surface (#202020, see SettingsSurfaceBrush in Themes/Colors.xaml)
+    /// rather than the shared #000000 every other window still uses, so painting the rim pure black
+    /// would draw a hard edge around the window instead of disappearing into it.
     /// </param>
     public static void HideWindowBorder(nint hwnd, bool dark, int? surfaceOverride = null)
     {
         SetFrameTheme(hwnd, dark);
 
+        // Pass-through: solid COLORREF for opaque themes, or DWMWA_COLOR_NONE for Frosted Glass.
         int surface = surfaceOverride ?? (dark ? SurfaceDark : SurfaceLight);
         NativeMethods.DwmSetWindowAttribute(
             hwnd, NativeMethods.DWMWA_BORDER_COLOR, ref surface, sizeof(int));
+        if (surfaceOverride == NativeMethods.DWMWA_COLOR_NONE)
+        {
+            NativeMethods.DwmSetWindowAttribute(
+                hwnd, NativeMethods.DWMWA_CAPTION_COLOR, ref surface, sizeof(int));
+        }
     }
+
+    /// <summary>
+    /// Stops Win32 from filling the client with the class background brush. On a frosted/acrylic
+    /// window that fill is opaque black, and it shows up as a rim around the rounded glass.
+    /// Idempotent — the subclass is installed once.
+    /// </summary>
+    public static void SuppressClientErase(nint hwnd) => InstallNoEraseSubclass(hwnd);
 
     /// <summary>
     /// Strips the non-client window frame (caption / resize border) so the client area — and
