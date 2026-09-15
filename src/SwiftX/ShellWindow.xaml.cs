@@ -882,7 +882,7 @@ public sealed partial class ShellWindow : Window
 
     private void ToolsBox_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenTools);
 
-    private void ElementsBox_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenElements);
+    private void ElementsShortcutButton_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenElements);
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenSettings);
 
@@ -1246,7 +1246,7 @@ public sealed partial class ShellWindow : Window
         _quadrantSlotCount = slots;
         Array.Clear(_quadrantSlotBorders);
 
-        var borderBrush = ThemeHelper.Brush(Root, "SwiftXBorderBrush");
+        var borderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush");
         var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
 
@@ -1313,14 +1313,24 @@ public sealed partial class ShellWindow : Window
             // Stays a disc whatever Item shape is set to: this is the canvas's own chrome — the
             // affordance that switches to the corner preview — not one of the orbit's items.
             CornerRadius = new CornerRadius(diameter / 2),
-            Content = new PathIcon
-            {
-                Data = CornerTriangleGeometry(),
-                Width = 14,
-                Height = 14,
-                RenderTransformOrigin = new Point(0.5, 0.5),
-                RenderTransform = new RotateTransform { Angle = CornerTriangleAngle(corner) },
-            },
+            // While the quadrant preview is up, the triangle would just be pointing at the corner
+            // it is already sitting in, which reads as decoration rather than a way out. Swap it
+            // for a plain back-chevron — the same glyph Back_Click's own button uses — and bring
+            // the corner triangle back once the preview closes.
+            Content = _previewQuadrant
+                ? new FontIcon
+                {
+                    Glyph = "\uE72B",
+                    FontSize = 14,
+                }
+                : new PathIcon
+                {
+                    Data = CornerTriangleGeometry(),
+                    Width = 14,
+                    Height = 14,
+                    RenderTransformOrigin = new Point(0.5, 0.5),
+                    RenderTransform = new RotateTransform { Angle = CornerTriangleAngle(corner) },
+                },
         };
         // No resting chrome: the triangle marks the corner on its own, and a filled plate around
         // it read as one more bubble sitting in the orbit rather than as the canvas's own corner.
@@ -2133,6 +2143,11 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private void ShowItemDetails(OrbitItem item, Point at)
     {
+        // Whatever put an item's details on screen — the main ring, the quadrant preview, a
+        // group's own arc, or the group header tap above — should also leave the sidebar on the
+        // elements list, since a details card is normally the prelude to changing what is there.
+        SetOrbitEditing(true);
+
         if (ReferenceEquals(_selectedItem, item) && _detailsFlyout is not null)
         {
             HideItemDetails();
@@ -2481,6 +2496,17 @@ public sealed partial class ShellWindow : Window
     private void OrbitGroupBack_Click(object sender, RoutedEventArgs e) => CollapseGroup();
 
     /// <summary>
+    /// The group header's own icon and title, made tappable so that reaching the open group's
+    /// details does not require finding it again on the arc — it is right there at the top of the
+    /// screen the whole time the group is open.
+    /// </summary>
+    private void OrbitGroupHeaderTitle_Tapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (_expandedGroup is not null)
+            ShowItemDetails(_expandedGroup, e.GetPosition(PreviewCanvas));
+    }
+
+    /// <summary>
     /// Draws the open group: its own mark at the centre where the hub would be, and its children on
     /// an arc to the right of it, each with the same outward name pill the full orbit's items get.
     /// <para>
@@ -2662,6 +2688,18 @@ public sealed partial class ShellWindow : Window
     private void OrbitEditToggle_Click(object sender, RoutedEventArgs e) =>
         SetOrbitEditing(!_orbitEditing);
 
+    /// <summary>Same destination as <see cref="OrbitEditToggle_Click"/> — both reveal the
+    /// "ADD TO ORBIT" sidebar — kept as a separate header button so the header reads as three
+    /// parallel choices (Edit, Elements, Settings) rather than one toggle plus an afterthought.
+    /// </summary>
+    private void OrbitElementsButton_Click(object sender, RoutedEventArgs e) =>
+        SetOrbitEditing(true);
+
+    /// <summary>Reveals the orbit's own settings sidebar in the same 320px column — not the app's
+    /// Settings screen.</summary>
+    private void OrbitSidebarSettingsButton_Click(object sender, RoutedEventArgs e) =>
+        SetOrbitEditing(false);
+
     /// <summary>
     /// Swaps the sidebar between the orbit's settings and the list of things that can go on it.
     /// <para>
@@ -2684,7 +2722,6 @@ public sealed partial class ShellWindow : Window
         OrbitSidebarSettings.Visibility = editing ? Visibility.Collapsed : Visibility.Visible;
         OrbitSidebarEdit.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
 
-        OrbitEditLabel.Text = editing ? "Done" : "Edit";
         OrbitEditIcon.Glyph = editing ? "\uE73E" : "\uE70F";
         ToolTipService.SetToolTip(OrbitEditToggle, editing
             ? "Back to the orbit's settings"
@@ -3190,34 +3227,27 @@ public sealed partial class ShellWindow : Window
 
         bool dark = ThemeHelper.IsDark(Root);
         var accent = new SolidColorBrush(CurrentAccentColor());
-        var onAccent = new SolidColorBrush(AccentPalette.OnAccent(CurrentAccentColor()));
         var resting = new SolidColorBrush(
             ThemeHelper.ColorFor(dark, _manager.Config.Theme, "ShellCardBorderBrush"));
-        var muted = new SolidColorBrush(ThemeHelper.ColorFor(dark, "SettingsMutedBrush"));
 
-        void Paint(Border pill, TextBlock label, FrostedGlassLevel pillLevel)
+        void Paint(Border pill, FrostedGlassLevel pillLevel)
         {
             bool on = pillLevel == level;
-            pill.Background = on ? accent : new SolidColorBrush(Colors.Transparent);
             pill.BorderBrush = on ? accent : resting;
-            label.Foreground = on ? onAccent : muted;
+            pill.BorderThickness = new Thickness(on ? 2.5 : 1.5);
         }
 
-        Paint(FrostedLevelLightPill, FrostedLevelLightText, FrostedGlassLevel.Light);
-        Paint(FrostedLevelMediumPill, FrostedLevelMediumText, FrostedGlassLevel.Medium);
-        Paint(FrostedLevelDarkPill, FrostedLevelDarkText, FrostedGlassLevel.Dark);
+        Paint(FrostedLevelLightPill, FrostedGlassLevel.Light);
+        Paint(FrostedLevelMediumPill, FrostedGlassLevel.Medium);
+        Paint(FrostedLevelDarkPill, FrostedGlassLevel.Dark);
     }
 
-    // ===================== the Orbit toolbar's two screen-wide affordances =====================
-
-    /// <summary>
-    /// The reference screen ends its toolbar with a gear and a wrench, opposite the commands that
-    /// act on the canvas. The split is worth keeping: Add item and Reset defaults apply to whatever
-    /// the canvas currently holds and go away with it (a corner preview, an open group), while a
-    /// way into Settings and a way into help are wanted from every state this screen has.
-    /// </summary>
-    private void OrbitOpenSettings_Click(object sender, RoutedEventArgs e) =>
-        ShowScreen(ScreenSettings);
+    // ========================== the Orbit toolbar's wrench menu ==========================
+    //
+    // The gear that used to sit beside the wrench here now lives in the header
+    // (OrbitSidebarSettingsButton, which just swaps the sidebar rather than navigating away), and
+    // the wrench itself moved down into CanvasActions next to Reset defaults. Only its menu's
+    // handlers are still here.
 
     // The wrench's menu mirrors the reference's How To / Support / What's New, re-pointed at
     // things this app actually has. A menu entry that goes nowhere is worse than no menu, and
