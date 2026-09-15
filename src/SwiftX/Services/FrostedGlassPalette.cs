@@ -1,3 +1,4 @@
+using SwiftX.Models;
 using Windows.UI;
 
 namespace SwiftX.Services;
@@ -91,24 +92,38 @@ public static class FrostedGlassPalette
     ];
 
     /// <summary>
-    /// Every key this palette repaints, resolved once at <see cref="FrostedGlassBackdrop.Opacity"/>.
+    /// Every key this palette repaints, resolved for each of the three levels.
     /// <para>
     /// Built eagerly from <see cref="Surfaces"/> rather than kept as a second hand-written list, so
-    /// the dictionary and the table can never disagree about which keys the theme owns — the way
+    /// the table and the lookup can never disagree about which keys the theme owns — the way
     /// <c>ThemeHelper.ColorFor</c>'s Midnight cases and <c>ShellWindow.BlackOverrides</c> can, and
-    /// have.
+    /// have. All three are computed up front rather than on demand for the level in play: there are
+    /// three of them, each a few dozen colours, and a table that is never rebuilt is a table with
+    /// no invalidation to get wrong when the level changes.
     /// </para>
     /// </summary>
-    private static readonly Dictionary<string, Color> Resolved = Surfaces
-        .SelectMany(s => s.Keys.Select(k => (Key: k, Color: s.ColorFor(FrostedGlassBackdrop.Opacity))))
-        .ToDictionary(e => e.Key, e => e.Color, StringComparer.Ordinal);
+    private static readonly Dictionary<FrostedGlassLevel, Dictionary<string, Color>> Resolved =
+        Enum.GetValues<FrostedGlassLevel>().ToDictionary(
+            level => level,
+            level => Surfaces
+                .SelectMany(s => s.Keys.Select(
+                    k => (Key: k, Color: s.ColorFor(FrostedGlassBackdrop.OpacityFor(level)))))
+                .ToDictionary(e => e.Key, e => e.Color, StringComparer.Ordinal));
 
     /// <summary>
-    /// The colour this theme paints <paramref name="key"/>, or false if the theme has no opinion
-    /// about it — foreground, muted, border and accent tokens all keep Dark's values, exactly as the
-    /// source theme leaves them.
+    /// The colour this theme paints <paramref name="key"/> at the level currently in play, or false
+    /// if the theme has no opinion about it — foreground, muted, border and accent tokens all keep
+    /// Dark's values, exactly as the source theme leaves them.
     /// </summary>
-    public static bool TryColorFor(string key, out Color color) => Resolved.TryGetValue(key, out color);
+    public static bool TryColorFor(string key, out Color color) =>
+        TryColorFor(FrostedGlassBackdrop.Level, key, out color);
+
+    /// <summary>
+    /// The same lookup against an explicit level, for the one caller that needs to paint a level it
+    /// is not currently wearing: the Settings picker's own three preview swatches.
+    /// </summary>
+    public static bool TryColorFor(FrostedGlassLevel level, string key, out Color color) =>
+        Resolved[level].TryGetValue(key, out color);
 
     /// <summary>
     /// A tinted plate: the source theme's own near-black base colour at an alpha that rises with the

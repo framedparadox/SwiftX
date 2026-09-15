@@ -11,7 +11,7 @@ public sealed class ToolWindowLauncher(OrbitManager manager)
             manager.ToolWindows.TryFocusMostRecent(definition.Kind))
             return null;
 
-        var page = definition.Factory();
+        var page = definition.Factory(manager);
         var window = new ToolWindowBase(manager, page, definition);
         window.Activate();
         window.BringToFront();

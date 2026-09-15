@@ -250,34 +250,41 @@ palettes and not one). What it shows is what the orbit draws, at the current siz
 **The canvas**
 
 - **Click an empty slot** (or its `+`) to add an item there.
-- **Click an item** to see its name and target below the size/radius cards.
-- **Click a group** to reveal its children in a strip under the canvas; drag them to reorder inside
-  the group.
+- **Click an item** for a details card anchored where you clicked: its kind, its name, what it
+  points at, and its icon — with a pencil that opens a glyph picker, a **Use a picture…** entry for
+  your own image, and a **Reset** that hands the icon back to whatever the target resolves to.
+  Clicking the same item again closes the card.
+- **Click a group** and the canvas becomes that group: its own mark at the centre and its children
+  fanned on an arc around it, at the same bubble size and angular spacing the real orbit opens a
+  group with. The header changes to that group's name with a back arrow out of it, and a dashed
+  slot at each end of the arc adds to the group.
 - **Drag an item** to another slot to rearrange. A drop lands on the nearest slot, even out past
   the bubbles — the intent is the nearest place, not a pixel-perfect landing.
 - **Right-click an item** for **Replace…** and **Delete**. Replace opens the same form the `+`
   does and puts what you add into that same slot; a group goes with its children either way. The
   built-in tools are the Tools page's — right-clicking one offers nothing, since a tool leaves the
   orbit by being switched off there.
-- **Add item… / Reset defaults** sit in the toolbar along the bottom, where Logi puts its own
-  tools bar.
+- **Add item… / Reset defaults** sit at the right of the toolbar along the bottom, where Logi puts
+  its own tools bar. They are hidden inside a group: both act on the top-level orbit, and a Reset
+  that reads as scoped to the group you are looking at would be the wrong kind of surprise.
+- **A gear and a wrench** sit at the left of that toolbar — Settings, and a help menu. The menu is
+  the reference's How To / Support / What's New, re-pointed at things this app actually has: the
+  set-up guide, the Edit panel, the README, the issue tracker and the releases page.
 
 Each filled slot wears an outward **name pill** — Logi's own 30px, 6-corner, 12px SemiBold pill,
 placed by Logi's own rule rather than a polar formula: the top and bottom slots take theirs above
 and below, the other six out to the side. They are drawn on a second canvas behind the bubbles with
 hit-testing off, which is what lets a pill overlap a node without ever becoming a drag target; they
-hide for the duration of a drag, since they do not follow a bubble, and come back on the drop. The
-**guide circle** under them is not Logi's — Logi's wheel is eight fixed positions and its ring is
-implied — but SwiftX's radius is a setting, and the circle is what makes dragging that slider read
-as a circle growing rather than eight bubbles wandering.
+hide for the duration of a drag, since they do not follow a bubble, and come back on the drop.
+Nothing is drawn under them: like Logi's, the ring is implied by where its nodes sit.
 
 **The sidebar** has two modes, and the **Edit** button in the header swaps between them. This is
 where the screen departs from Logi deliberately: Logi's sidebar is only ever its drag-source
 accordion, and its ring settings are a separate screen behind a nav button. SwiftX has one screen
 for the orbit, so the sidebar is what changes.
 
-By default it is the orbit's own settings — Item size, Orbit radius, Hot corner, Hover style, and
-the read-only inspector for whatever is selected. Pressing **Edit** swaps it for **Apps /
+By default it is the orbit's own settings — Item size, Item shape, Orbit radius, Hot corner and
+Hover style. Pressing **Edit** swaps it for **Apps /
 Shortcuts / Links / Tools**, an accordion of things that can go on the orbit: the apps, folders and
 links this machine actually has (the same existence-checked catalog the first-run guide offers
 from) and the built-in tools. Click a row to put it in the first free slot; anything already on the
@@ -285,7 +292,14 @@ orbit is shown ticked and does nothing. **Add something else…** at the bottom 
 dialog. The swap is a visibility change between two panels, not a navigation, so the canvas keeps
 its selection and its drag state across it.
 
-**Size** — Small / Medium / Large. Scales the items around the orbit; the hub is unaffected.
+**Size** — Small / Medium / Large, on one row. Scales the items around the orbit; the hub is
+unaffected.
+
+**Shape** — Circle, Squircle or Square. A separate axis from size: how much room an item takes is
+one question, what fills it is another. One place turns the setting into geometry
+(`OrbitMetrics.CornerRadiusFor`), expressed as a fraction of the bubble rather than a fixed corner,
+so the orbit, its flyout band, the corner quadrant and this preview cannot drift into drawing three
+different shapes from one setting.
 
 **Radius** — 80–220 px from the hub to each item's center.
 
@@ -329,8 +343,10 @@ property of the orbit, not of the app.
 
 ### Elements
 
-A flat list of your orbit items — show/hide each one, or delete it. Groups are listed with their
-children beneath them. Built-in tools are not listed here (the Tools page owns them), and neither
+A card per orbit item — show/hide each one, edit it, or delete it. Groups are listed with their
+children beneath them. **Edit** reopens the add dialog on the item as it already is, carrying its
+id, its hidden state and the fields the form has no box for (arguments, a custom icon) across the
+save, so an edit really does edit rather than replace. Built-in tools are not listed here (the Tools page owns them), and neither
 are Settings and Close, which the orbit always draws itself.
 
 Its own **Add item…** button opens the same dialog as the orbit's "Add to orbit" quick action, but
@@ -339,8 +355,9 @@ Tools page, so that tile only makes sense from an orbit or corner slot that can 
 
 ### Tools
 
-One row per built-in tool: a switch that puts it in the orbit's Tools item or takes it out, an
-open button, and a drag handle. Dragging reorders the tools inside that group.
+One card per built-in tool: a switch that puts it in the orbit's Tools item or takes it out, and
+an open button. The cards do not reorder — the order is the catalog's, and a tool's place inside
+the Tools group was never something worth dragging for.
 
 ### Settings → Feedback & Support
 
@@ -447,6 +464,7 @@ pre-rename build is a file you can still pick.
 | `Orbits` | array | one profile | Orbit profiles. Only the first is used today; it holds your items. |
 | `LaunchAtStartup` | bool | `false` | Mirrors the "Start with Windows" switch. |
 | `Theme` | `Light`/`Dark`/`Black`/`FrostedGlass`/`System` | `Dark` | Window and orbit theme. `Black` is the one shown in Settings as **Midnight** — the enum member keeps its original name because it is persisted by name, and renaming it would strand configs that already carry `"Black"`. `FrostedGlass` is shown as **Frosted glass**. |
+| `FrostedGlass` | `Light`/`Medium`/`Dark` | `Light` | How much frost the **Frosted glass** theme uses. Read only while `Theme` is `FrostedGlass`, but kept either way so switching away and back returns the frost you had. |
 | `AccentColorHex` | `"#RRGGBB"` or null | `null` | The app's accent colour. `null` means the built-in violet for the theme in play. Anything that doesn't parse falls back the same way. |
 | `Language` | `System`/`EnglishUS`/`EnglishUK`/`French`/`German`/`Spanish`/`Italian`/`PortugueseBR`/`PortuguesePT`/`Dutch`/`Polish`/`Turkish`/`Russian`/`Arabic`/`Hebrew`/`Hindi`/`Japanese`/`ChineseSimplified`/`ChineseTraditional`/`Korean` | `System` | UI language. `System` follows Windows' own UI language, falling back to English (US). |
 | `HoverStyle` | `Invert`/`Zoom` | `Invert` | How an orbit item reacts to the pointer — swap to the opposite color, or keep color and shrink slightly. |
@@ -456,6 +474,7 @@ pre-rename build is a file you can still pick.
 | `HotCorner` | `TopLeft`/`TopRight`/`BottomLeft`/`BottomRight` | `TopLeft` | Which corner. |
 | `HotCornerLayout` | `Orbit`/`Quadrant` | `Orbit` | Whether that corner opens the whole orbit or the quarter circle. |
 | `HotCornerOrbit` | array | empty | Your corner arrangement. Empty means "follow the orbit" — see below. |
+| `ItemShape` | `Circle`/`Squircle`/`Square` | `Circle` | The outline orbit items are drawn with. |
 | `ItemSize` | `Small`/`Medium`/`Large` | `Medium` | How large orbit items are drawn. |
 | `OrbitRadius` | number or null | `null` (100) | Distance from hub to item centers, 80–220. |
 | `ShowDataTool` | bool | `true` | Data Formatter in the orbit's Tools item. |
@@ -631,7 +650,7 @@ three:
 | **Dark** (default) | Logi's own `#2B2B2B` page under `#333333` cards on `#444444` edges, each carrying alpha (`#D9…`, ~85%) so the app window's Mica shows through them, plus a `#202020` "tray" for the Orbit Settings screen's preview canvas. |
 | **Light** | Logi's Light dictionary verbatim and fully opaque: an `#F2F2F2` page, `#FFFFFF` cards, `#E0E0E0` edges. Nothing shows through anything. |
 | **Midnight** | Dark's own native chrome with every SwiftX surface replaced by one flat, near-opaque black (`#E6000000`). No raised/recessed steps — once the anchor colour is already pure black there is no lighter tone left to graduate through, so the card strokes carry the structure instead. |
-| **Frosted glass** | Dark's native chrome again, but the page goes fully transparent and every plate drops to a low-alpha wash (a `#59181820` card, a `#5D0E0E14` nav pane) with thin white borders, over a real thin acrylic backdrop. The desktop reads *through* the window rather than around it. |
+| **Frosted glass** | Dark's native chrome again, but the page goes fully transparent and every plate drops to a low-alpha wash with thin white borders, over a real thin acrylic backdrop. The desktop reads *through* the window rather than around it. Comes in three frost levels — see below. |
 | **System** | Follows Windows and re-themes open windows as it changes. Resolves to Light or Dark only: neither Midnight nor Frosted glass is an OS theme, so System can never land on one. |
 
 Midnight and Frosted glass are the odd ones out under the hood. WinUI only ever resolves
@@ -643,6 +662,28 @@ shell's surface keys with element-local entries in the window root's own resourc
 — which is the same set of values, and has to agree with that table by hand. The `Black` enum member
 keeps its name because `JsonStringEnumConverter` persists it by name, and renaming it would strand
 every config that already has `"Black"` written into `orbit.json`.
+
+#### Frost level
+
+Frosted glass carries a **Frost** setting of its own — **Light**, **Medium**, **Dark** — shown in
+Settings → General directly under the theme cards, and only while that card is the one selected.
+Light is what the theme shipped as; the two above it put progressively more frost between the
+window and the desktop.
+
+| Level | Backdrop opacity | Card fill |
+|-------|------------------|-----------|
+| **Light** (default) | 0.65 | `#59181820` |
+| **Medium** | 0.80 | `#6B181820` |
+| **Dark** | 0.95 | `#7C181820` |
+
+It is a setting beside the theme rather than three more `AppTheme` members: the theme is persisted
+by name and already drawn as a card, so splitting it in three would strand every config carrying
+`"FrostedGlass"` and put three near-identical cards in a row. The level lives in
+`FrostedGlassBackdrop.Level` — static, app-wide state set by `OrbitManager`, the same shape
+`OrbitMetrics` holds the orbit's geometry in, and for the same reason: it is read from static
+colour lookups that have no config reference to carry. Changing it writes one float onto the live
+acrylic controller rather than rebuilding the backdrop, which would tear down its composition
+target and flicker the window.
 
 Where Midnight's colours are a fixed table, Frosted glass's are computed: `FrostedGlassPalette`
 carries the source theme's own affine alpha curves (`opacity * slope + offset`, clamped) and both
@@ -662,24 +703,27 @@ can reach, so `ShellWindow.RepaintThemedContent` re-runs all of those builders o
 as well. Leaving it out is what once made a theme switch look dead on those two screens while the
 rest of the window moved.
 
-### Mica — the app window, and nothing else
+### Mica — every window but the orbit overlay and the Add-item dialog
 
-`ShellWindow` attaches a real `MicaBackdrop` (`MicaKind.BaseAlt`) for every theme but Frosted
-glass, which gets a thin `DesktopAcrylicController` instead (`FrostedGlassBackdrop`); `ApplyBackdrop`
-swaps between the two and is guarded on the type already attached, since rebuilding a backdrop tears
-down its composition target and flickers. Mica is visible only where a surface above it is
-translucent, which in practice means Dark:
+`ShellWindow`, `OnboardingWindow` and every tool window (`ToolWindowBase.ApplyBackdrop`) each attach
+a real `MicaBackdrop` (`MicaKind.BaseAlt`) for every theme but Frosted glass, which gets a thin
+`DesktopAcrylicController` instead (`FrostedGlassBackdrop`); `ApplyBackdrop` swaps between the two
+and is guarded on the type already attached, since rebuilding a backdrop tears down its composition
+target and flickers. Mica is visible only where a surface above it is translucent, which in practice
+means Dark:
 Dark's plates are `#D9…`, so Mica's wallpaper-derived tint reads as a subtle wash through each of
 them while the four still differ enough to keep their raised/recessed hierarchy. Light's brushes are
 100% opaque, so Mica is attached there too and simply never shows through anything; Midnight's flat
-`#E6` black lets the barest hint through.
+`#E6` black lets the barest hint through. A tool window's own page paints onto that same four-brush
+family (`ShellCardBackgroundBrush`/`ShellPillBrush` for its panes, `ShellBackgroundBrush` for its
+root), so Mica reads through a tool window's content exactly the same way it does the app window's.
 
-It reaches **only** that window. The orbit overlay, the Add-item dialog and the four tool windows
-carry no Mica. The overlay's backdrop is `TransparentBackdrop`, which contributes no pixels of its
-own — attaching *a* backdrop is what stops WinUI clearing the window to an opaque plate, so an empty
-one is the whole point — and the dialog and tool windows are plain opaque surfaces. That split is
-deliberate: Settings follows a palette of its own, while everything else keeps the app's shared
-black/white identity.
+The orbit overlay and the Add-item dialog carry no Mica. The overlay's backdrop is
+`TransparentBackdrop`, which contributes no pixels of its own — attaching *a* backdrop is what stops
+WinUI clearing the window to an opaque plate, so an empty one is the whole point — and the dialog is
+a plain opaque surface. That split is deliberate: Settings follows a palette of its own, while
+everything else — the app window and every tool window alike — keeps the app's shared black/white
+identity.
 
 ### Acrylic — the orbit's own bubbles
 
@@ -745,13 +789,22 @@ everywhere it lands: the colour itself, an 18% lighter hover, and an 18% darker 
 It reaches the app window's toggle switches, radio buttons, the Radius slider (track and thumb), the
 Feedback section's rating stars, the Settings rail's 4px indicator and active label, the selected
 theme card's border, the Home screen's box glyphs and OPEN bars, the set-up guide's step dots and
-commit button, and the Feedback & Support links. It deliberately reaches nothing else:
+commit button, and the Feedback & Support links (`ShellWindow.ApplyAccentColorOverride`); the
+Add-item dialog's own accent-tinted controls (`AddItemWindow.ApplyAccentColorOverride`); and, in
+every tool window, whichever action button's hover tint isn't one of the two fixed colours below —
+Open file, Format, Encode/Decode, Save, Edit, Unlock and the rest
+(`EditorToolPage.ApplyHoverIconColor`, reading `AccentPalette.Resolve` directly rather than through a
+resource-dictionary override, since a page built entirely in code has no dictionary for
+`{ThemeResource}` bindings to shadow in the first place). It deliberately reaches nothing else:
 
-- The orbit, the Add-item dialog and the four tool windows have no accent concept at all.
-- Secure values' **Copy** stays a fixed communication blue (`#60CDFF` dark / `#0078D4` light). It
-  has to read as *blue* whatever the accent is set to, the same way a critical red never tracks the
-  accent either.
-- The orbit's Close item is always `#EF6F6F` under the pointer.
+- The orbit has no accent concept at all — its canvas keeps Logi's own fixed teal
+  (`OrbitCanvasAccentBrush`) regardless of what the user has picked.
+- Every tool page's own **Copy** stays a fixed communication blue (`#60CDFF` dark / `#0078D4` light,
+  `SwiftXCopyHoverBrush`). It has to read as *blue* whatever the accent is set to, the same way a
+  critical red never tracks the accent either.
+- The orbit's Close item is always `#EF6F6F` under the pointer, and every tool page's own
+  Delete/Clear is always `ToolCriticalBrush` (Fluent's usual critical red) under the pointer, for
+  the same reason.
 
 ### High contrast
 

@@ -54,10 +54,23 @@ public sealed class SecureValuesPage : EditorToolPage
     /// no-op — see <see cref="CreateTableRow"/>, which deliberately doesn't add itself.</summary>
     private readonly List<(RowState State, Func<bool> Commit)> _rowActions = [];
     private readonly FrameworkElement _headerActions;
+
+    // Save and the info button are built once and never rebuilt (unlike the row buttons below),
+    // so ApplyTheme/ApplyAccent repaint them directly rather than through a rebuild.
+    private Button _saveButton = null!;
+    private Button _infoButton = null!;
+
+    // Every row-level button built with HoverAccent.Accent (Refresh on the input row, Edit on a
+    // saved row) — Copy and Delete are fixed colours untouched by an accent change, so tracking
+    // them here would just mean repainting them with the value they already have. Cleared and
+    // repopulated by RebuildRows every time it tears down and rebuilds the row set, so this never
+    // holds a reference to a control that has since been discarded.
+    private readonly List<Button> _rowAccentButtons = [];
+
     private bool _isDirty;
     private bool _loading;
 
-    public SecureValuesPage()
+    public SecureValuesPage(OrbitManager manager) : base(manager)
     {
         var scroller = new ScrollViewer
         {
@@ -76,6 +89,34 @@ public sealed class SecureValuesPage : EditorToolPage
     }
 
     /// <summary>
+    /// Repaints the shared chrome via <see cref="EditorToolPage.ApplyTheme"/>, then rebuilds every
+    /// row from scratch via <see cref="RebuildRows"/> — the same mechanism a commit or a delete
+    /// already uses to redraw with fresh brushes, rather than a second parallel repaint path
+    /// walking every row's <c>Border</c>/<c>TextBlock</c> by hand. This does mean a row that is
+    /// mid-Edit loses its uncommitted keystrokes if the live theme changes while it is open — an
+    /// edge case not worth threading a page-wide "is anything being edited" flag through to
+    /// preserve, since nothing here commits that half-typed text on its own either way (see
+    /// <see cref="CreateTableRow"/>'s own Commit-on-Enter-only contract).
+    /// </summary>
+    public override void ApplyTheme()
+    {
+        base.ApplyTheme();
+        RebuildRows();
+        ApplyHoverIconColor(_saveButton, HoverAccent.Accent);
+        ApplyHoverIconColor(_infoButton, HoverAccent.Accent);
+    }
+
+    /// <summary>The cheap counterpart: repaints only the Accent-tinted buttons, without the full
+    /// <see cref="RebuildRows"/> a live colour-picker drag would otherwise pay on every frame.</summary>
+    public override void ApplyAccent()
+    {
+        ApplyHoverIconColor(_saveButton, HoverAccent.Accent);
+        ApplyHoverIconColor(_infoButton, HoverAccent.Accent);
+        foreach (var button in _rowAccentButtons)
+            ApplyHoverIconColor(button, HoverAccent.Accent);
+    }
+
+    /// <summary>
     /// The blurb explaining DPAPI, behind an info button in the footer rather than sitting in the
     /// page as a sentence of always-visible text. Styled like the privacy indicator's own bubble
     /// popup, but click-only rather than hover-only: a plain
@@ -87,7 +128,7 @@ public sealed class SecureValuesPage : EditorToolPage
     /// </summary>
     private FrameworkElement BuildInfoButton()
     {
-        var button = new Button
+        _infoButton = new Button
         {
             Content = new FontIcon { Glyph = char.ConvertFromUtf32(InfoGlyph), FontSize = 14 },
             Width = 32,
@@ -98,10 +139,10 @@ public sealed class SecureValuesPage : EditorToolPage
             BorderThickness = new Thickness(0),
         };
         var flyout = BuildBubbleFlyout(Loc.Get("SecureValues.Blurb"));
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, Loc.Get("SecureValues.InfoLabel"));
-        button.Click += (_, _) => flyout.ShowAt(button);
-        ApplyHoverIconColor(button, HoverAccent.Accent);
-        return button;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_infoButton, Loc.Get("SecureValues.InfoLabel"));
+        _infoButton.Click += (_, _) => flyout.ShowAt(_infoButton);
+        ApplyHoverIconColor(_infoButton, HoverAccent.Accent);
+        return _infoButton;
     }
 
     public override ToolKind Kind => ToolKind.SecureValues;
@@ -171,6 +212,7 @@ public sealed class SecureValuesPage : EditorToolPage
     {
         _rows.Children.Clear();
         _rowActions.Clear();
+        _rowAccentButtons.Clear();
         _rows.Children.Add(CreateInputRow(_inputEntry));
         _rows.Children.Add(CreateInputDivider());
         if (_entries.Count > 0)
@@ -198,7 +240,7 @@ public sealed class SecureValuesPage : EditorToolPage
         {
             Text = Loc.Get("SecureValues.Key"),
             Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
-            Foreground = ThemeBrush("TextFillColorSecondaryBrush"),
+            Foreground = ThemeBrush("SwiftXMutedBrush"),
             TextAlignment = TextAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
@@ -206,7 +248,7 @@ public sealed class SecureValuesPage : EditorToolPage
         {
             Text = Loc.Get("SecureValues.ValueHeader"),
             Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
-            Foreground = ThemeBrush("TextFillColorSecondaryBrush"),
+            Foreground = ThemeBrush("SwiftXMutedBrush"),
             TextAlignment = TextAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
@@ -220,7 +262,7 @@ public sealed class SecureValuesPage : EditorToolPage
             Child = grid,
             Padding = new Thickness(12, 0, 12, 6),
             Margin = new Thickness(0, 0, 0, 4),
-            BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush"),
+            BorderBrush = ThemeBrush("ShellDividerBrush"),
             BorderThickness = new Thickness(0, 0, 0, 1),
         };
     }
@@ -340,11 +382,11 @@ public sealed class SecureValuesPage : EditorToolPage
 
     /// <summary>The rule marking the end of the input section, always present regardless of
     /// whether there are any saved entries yet — it demarcates the input row, not the table.</summary>
-    private static Border CreateInputDivider() => new()
+    private Border CreateInputDivider() => new()
     {
         Height = 1,
         Margin = new Thickness(0, 0, 0, 12),
-        Background = ThemeBrush("CardStrokeColorDefaultBrush"),
+        Background = ThemeBrush("ShellDividerBrush"),
     };
 
     /// <summary>
@@ -479,7 +521,7 @@ public sealed class SecureValuesPage : EditorToolPage
         {
             Child = grid,
             Padding = new Thickness(12, 8, 12, 8),
-            BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush"),
+            BorderBrush = ThemeBrush("ShellDividerBrush"),
             BorderThickness = new Thickness(0, 0, 0, 1),
         };
     }
@@ -487,11 +529,12 @@ public sealed class SecureValuesPage : EditorToolPage
     private FrameworkElement BuildHeaderActions()
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-        panel.Children.Add(HeaderIconButton(SaveGlyph, Loc.Get("SecureValues.Save"), SaveAll));
+        _saveButton = HeaderIconButton(SaveGlyph, Loc.Get("SecureValues.Save"), SaveAll);
+        panel.Children.Add(_saveButton);
         return panel;
     }
 
-    private static Button HeaderIconButton(int codepoint, string label, Action action)
+    private Button HeaderIconButton(int codepoint, string label, Action action)
     {
         var button = new Button
         {
@@ -510,7 +553,7 @@ public sealed class SecureValuesPage : EditorToolPage
         return button;
     }
 
-    private static Button IconButton(int codepoint, string label, HoverAccent hover = HoverAccent.Accent)
+    private Button IconButton(int codepoint, string label, HoverAccent hover = HoverAccent.Accent)
     {
         var button = new Button
         {
@@ -523,13 +566,10 @@ public sealed class SecureValuesPage : EditorToolPage
         ToolTipService.SetToolTip(button, label);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
         ApplyHoverIconColor(button, hover);
+        if (hover == HoverAccent.Accent)
+            _rowAccentButtons.Add(button);
         return button;
     }
-
-    private static Brush? ThemeBrush(string key) =>
-        Application.Current.Resources.TryGetValue(key, out var value)
-            ? value as Brush
-            : null;
 
     private sealed class RowState
     {

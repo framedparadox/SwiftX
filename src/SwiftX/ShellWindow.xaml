@@ -462,8 +462,8 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12"
-                                    VerticalAlignment="Center">
+                        <StackPanel x:Name="OrbitTitleBar" Grid.Column="0" Orientation="Horizontal"
+                                    Spacing="12" VerticalAlignment="Center">
                             <Button Style="{StaticResource ChromeIconButton}" Click="Back_Click"
                                     AutomationProperties.Name="Back to home"
                                     ToolTipService.ToolTip="Back to home">
@@ -472,6 +472,34 @@
                                           Foreground="{ThemeResource SettingsHeaderBrush}" />
                             </Button>
                             <TextBlock Text="Orbit" Style="{StaticResource ScreenTitle}" />
+                        </StackPanel>
+
+                        <!-- The same cell, holding the header a group's own view wears instead
+                             (ShowGroupHeader / HideGroupHeader). Opening a group no longer reveals
+                             a strip under the canvas — the canvas itself becomes that group's
+                             children — so with an unchanged header the two views would be
+                             indistinguishable at a glance, and the only way back out would be the
+                             bubble you no longer have on screen. The back arrow here returns to
+                             the whole orbit rather than to Home, which is what the one above it
+                             still does. -->
+                        <StackPanel x:Name="OrbitGroupHeader" Grid.Column="0" Visibility="Collapsed"
+                                    Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                            <Button Style="{StaticResource ChromeIconButton}"
+                                    Click="OrbitGroupBack_Click"
+                                    AutomationProperties.Name="Back to the whole orbit"
+                                    ToolTipService.ToolTip="Back to the whole orbit">
+                                <FontIcon Glyph="&#xE72B;" FontSize="18"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                          Foreground="{ThemeResource SettingsHeaderBrush}" />
+                            </Button>
+                            <FontIcon x:Name="OrbitGroupIcon" FontSize="18" VerticalAlignment="Center"
+                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                      Foreground="{ThemeResource OrbitCanvasAccentBrush}" />
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="GROUP" Style="{StaticResource SidebarEyebrow}" />
+                                <TextBlock x:Name="OrbitGroupName" Style="{StaticResource ScreenTitle}"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="320" />
+                            </StackPanel>
                         </StackPanel>
 
                         <Button x:Name="OrbitEditToggle" Grid.Column="2" Height="34" Padding="14,0"
@@ -513,21 +541,12 @@
                                 Background="Transparent" />
                     </Grid>
 
-                    <!-- Revealed in place of a group bubble's own slot when it's clicked. Sits
-                         between the canvas and the toolbar now rather than below a scrolling page:
-                         it is part of the canvas, not a section under it. -->
-                    <Border x:Name="GroupRow" Grid.Row="2" Visibility="Collapsed"
-                            Margin="24,0,24,8" CornerRadius="8" BorderThickness="1"
-                            Background="{ThemeResource OrbitNodeBackgroundBrush}"
-                            BorderBrush="{ThemeResource OrbitCanvasBorderBrush}" Padding="16,14">
-                        <StackPanel Spacing="8">
-                            <TextBlock x:Name="GroupRowTitle" Style="{StaticResource SettingTitle}" />
-                            <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                                          VerticalScrollBarVisibility="Disabled">
-                                <Canvas x:Name="GroupChildrenCanvas" Height="52" />
-                            </ScrollViewer>
-                        </StackPanel>
-                    </Border>
+                    <!-- Row 2 is deliberately empty and deliberately still here. It used to carry
+                         GroupRow, the horizontal strip a clicked group expanded into; a group now
+                         takes over the canvas itself (see RenderGroupArc), so there is nothing left
+                         to put between the canvas and the toolbar. The Auto row costs nothing while
+                         empty and keeps the toolbar's row index where the rest of this screen
+                         already expects it. -->
 
                     <!-- Logi's 60px tools bar. Its controls are Logi's; the commands are SwiftX's,
                          moved down here off the canvas card they used to sit inside. -->
@@ -540,16 +559,66 @@
                              either half of it. -->
                         <Border Grid.Column="0" Grid.ColumnSpan="2" VerticalAlignment="Top" Height="1"
                                 Background="{ThemeResource OrbitCanvasBorderBrush}" />
-                        <!-- In its own starred column rather than overlaid on the buttons: it
-                             trims, and a TextBlock with nothing bounding it has nothing to trim
-                             against — on a narrow window it would simply have run underneath
-                             them. -->
-                        <TextBlock x:Name="OrbitCanvasHint" Grid.Column="0" Margin="24,0,0,0"
-                                   HorizontalAlignment="Left" VerticalAlignment="Center"
-                                   FontSize="11" TextTrimming="CharacterEllipsis"
-                                   Foreground="{ThemeResource SettingsMutedBrush}"
-                                   Text="Drag to rearrange · click for details · right-click to replace"
-                                   ToolTipService.ToolTip="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange; right-click an item to replace or delete it. The corner button switches to what the hot corner opens, which is arranged the same way." />
+                        <!-- The bar's left half: the two screen-wide affordances, then what is
+                             left of the column for the hint. They sit opposite Add item / Reset
+                             defaults rather than beside them because those two act on the orbit's
+                             contents and go away with it (a corner preview, a group's children),
+                             while a way into Settings and a way into help are wanted from every
+                             state this canvas has. Still a Grid rather than one StackPanel so the
+                             hint keeps something to trim against — a StackPanel measures its
+                             children unbounded along its own axis, and an untrimmed hint on a
+                             narrow window would simply run underneath the buttons opposite. -->
+                        <Grid Grid.Column="0" Margin="16,0,0,0" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2"
+                                        VerticalAlignment="Center">
+                                <Button Style="{StaticResource ChromeIconButton}"
+                                        Click="OrbitOpenSettings_Click"
+                                        AutomationProperties.Name="Open settings"
+                                        ToolTipService.ToolTip="Open settings">
+                                    <FontIcon Glyph="&#xE713;" FontSize="16"
+                                              FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                              Foreground="{ThemeResource SettingsHeaderBrush}" />
+                                </Button>
+                                <!-- E90F (Repair) is the wrench in Segoe Fluent Icons. The menu
+                                     under it is the reference's How To / Support / What's New,
+                                     re-pointed at things SwiftX actually has — see each item's
+                                     handler for which reference entry it stands in for. -->
+                                <Button x:Name="OrbitHelpButton"
+                                        Style="{StaticResource ChromeIconButton}"
+                                        AutomationProperties.Name="Help and support"
+                                        ToolTipService.ToolTip="Help and support">
+                                    <FontIcon Glyph="&#xE90F;" FontSize="16"
+                                              FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                              Foreground="{ThemeResource SettingsHeaderBrush}" />
+                                    <Button.Flyout>
+                                        <MenuFlyout Placement="Top">
+                                            <MenuFlyoutSubItem Text="How to">
+                                                <MenuFlyoutItem Text="Run the set-up guide"
+                                                                Click="RunOnboarding_Click" />
+                                                <MenuFlyoutItem Text="Choose what goes on the orbit"
+                                                                Click="HowToArrange_Click" />
+                                                <MenuFlyoutItem Text="Read the handbook"
+                                                                Click="HowToHandbook_Click" />
+                                            </MenuFlyoutSubItem>
+                                            <MenuFlyoutItem Text="Support" Click="OrbitSupport_Click" />
+                                            <MenuFlyoutItem Text="What's new" Click="WhatsNew_Click" />
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </StackPanel>
+
+                            <TextBlock x:Name="OrbitCanvasHint" Grid.Column="1"
+                                       VerticalAlignment="Center"
+                                       FontSize="11" TextTrimming="CharacterEllipsis"
+                                       Foreground="{ThemeResource SettingsMutedBrush}"
+                                       Text="Drag to rearrange · click for details"
+                                       ToolTipService.ToolTip="Click an empty slot or + to add; click an item to see its details; click a group to see what's inside; drag an item to rearrange; right-click an item to replace or delete it. The corner button switches to what the hot corner opens, which is arranged the same way." />
+                        </Grid>
                         <StackPanel x:Name="CanvasActions" Grid.Column="1" Orientation="Horizontal"
                                     Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center"
                                     Margin="0,0,24,0">
@@ -577,7 +646,15 @@
                                     <TextBlock Text="Item size" Style="{StaticResource SidebarHeading}" />
                                     <TextBlock Text="How large orbit items are drawn."
                                                Style="{StaticResource SidebarCaption}" />
-                                    <StackPanel Spacing="6" Margin="0,2,0,0">
+                                    <!-- One row, not three stacked. Three choices of one word each
+                                         stacked vertically spend sixty pixels of a fixed 320px
+                                         column saying what fits comfortably in one line of it, and
+                                         the column has a slider, a corner picker and a second
+                                         three-way row below competing for the same height.
+                                         MinWidth="0" on each is what makes that fit at all —
+                                         RadioButton's default style carries a 120px minimum, which
+                                         would push the third option off the edge on its own. -->
+                                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,2,0,0">
                                         <RadioButton x:Name="ItemSizeSmallOption" Content="Small" Tag="Small"
                                                      GroupName="ItemSize" MinWidth="0"
                                                      AutomationProperties.Name="Item size: Small"
@@ -590,6 +667,37 @@
                                                      GroupName="ItemSize" MinWidth="0"
                                                      AutomationProperties.Name="Item size: Large"
                                                      Checked="ItemSize_Checked" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <Border Height="1" Background="{ThemeResource OrbitSidebarBorderBrush}" />
+
+                                <!-- Size's own axis: how much room an item takes is one question,
+                                     what fills that room is another. Built in the same visual
+                                     language as the row above rather than as a pill pair or a
+                                     dropdown, because it is the same kind of choice — three named
+                                     alternatives, exactly one of them true — and two adjacent
+                                     settings that read as one thing should not be operated two
+                                     different ways. Tag is the OrbitItemShape member name verbatim,
+                                     the same contract ItemSize's own Tags carry. -->
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Item shape" Style="{StaticResource SidebarHeading}" />
+                                    <TextBlock Text="The outline each orbit item is drawn with."
+                                               Style="{StaticResource SidebarCaption}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,2,0,0">
+                                        <RadioButton x:Name="ItemShapeCircleOption" Content="Circle" Tag="Circle"
+                                                     GroupName="ItemShape" MinWidth="0"
+                                                     AutomationProperties.Name="Item shape: Circle"
+                                                     Checked="ItemShape_Checked" />
+                                        <RadioButton x:Name="ItemShapeSquircleOption" Content="Squircle" Tag="Squircle"
+                                                     GroupName="ItemShape" MinWidth="0"
+                                                     AutomationProperties.Name="Item shape: Squircle"
+                                                     ToolTipService.ToolTip="A square with its corners rounded off"
+                                                     Checked="ItemShape_Checked" />
+                                        <RadioButton x:Name="ItemShapeSquareOption" Content="Square" Tag="Square"
+                                                     GroupName="ItemShape" MinWidth="0"
+                                                     AutomationProperties.Name="Item shape: Square"
+                                                     Checked="ItemShape_Checked" />
                                     </StackPanel>
                                 </StackPanel>
 
@@ -722,23 +830,13 @@
                                     </Grid>
                                 </StackPanel>
 
-                                <!-- Read-only inspector for whatever item was last clicked, on the
-                                     orbit or inside an expanded group's children row. No edit/save
-                                     controls — real edits happen on Elements. Hidden until
-                                     something is selected. -->
-                                <Border x:Name="InfoBox" Visibility="Collapsed" CornerRadius="8"
-                                        BorderThickness="1" Padding="14,12"
-                                        Background="{ThemeResource OrbitNodeBackgroundBrush}"
-                                        BorderBrush="{ThemeResource OrbitCanvasBorderBrush}">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="Name" Style="{StaticResource SecondaryCaption}" />
-                                        <TextBlock x:Name="InfoName" Style="{StaticResource SidebarHeading}"
-                                                   TextWrapping="Wrap" />
-                                        <TextBlock Text="Target" Style="{StaticResource SecondaryCaption}"
-                                                   Margin="0,6,0,0" />
-                                        <TextBlock x:Name="InfoTarget" TextWrapping="Wrap" FontSize="12" />
-                                    </StackPanel>
-                                </Border>
+                                <!-- The read-only InfoBox inspector that used to close this panel is
+                                     gone. An item's details are shown on a card anchored to the
+                                     item itself now (ShowItemInfo), where the icon it is about is
+                                     under the pointer — a panel on the far side of the screen made
+                                     you look away from the thing you had just clicked to read its
+                                     name back, and had nowhere sensible to put the icon editor the
+                                     card carries. -->
                             </StackPanel>
                         </ScrollViewer>
 
@@ -789,28 +887,20 @@
                          928 — 900 leaves a small margin inside that without being so wide it invites
                          a 5th column if ItemWidth ever changes. -->
                     <StackPanel Spacing="6" MaxWidth="900" HorizontalAlignment="Left">
-                        <TextBlock Text="Every tool lives inside the Tools item on the orbit. Turn one off to take it out, or drag it by its handle to change where it sits inside."
+                        <TextBlock Text="Every tool lives inside the Tools item on the orbit. Turn one off to take it out."
                                    Style="{StaticResource SettingBody}" Margin="0,0,0,8" />
 
-                        <!-- Rows are built in code-behind (RebuildToolsList) — one per entry in
+<!-- Rows are built in code-behind (RebuildToolsList) — one per entry in
                              ToolRows, each shown once here regardless of how many orbit instances
-                             it has. CanReorderItems + AllowDrop is WinUI's own drag-to-reorder; it
-                             drives _toolCards directly (see ToolCards_CollectionChanged). Still a
-                             ListView — CanReorderItems/AllowDrop are properties of the ListView
-                             control itself, not of whatever panel arranges its items (this is
-                             literally how GridView is implemented under the hood: a ListView with a
-                             GridView-flavoured ItemsPanel/ItemContainerStyle), so the mockups' card
-                             grid and a working drag-reorder were never actually in tension. Swapping
-                             the ItemsPanel below for an ItemsWrapGrid keeps the exact same
-                             ObservableCollection<Border> ItemsSource and its CollectionChanged
-                             wiring untouched — only how the same bound cards are arranged on screen
-                             changes, from a vertical stack to a wrapping grid.
-                             MaximumRowsOrColumns="4" caps the wrap at 4 columns outright (rather
-                             than leaving it to width math alone), so the 5th ToolRow simply wraps
-                             to its own row 2 instead of ever being dropped to match the mockup's
-                             4-card example. -->
+                             it has. Still a ListView rather than a GridView even now that nothing
+                             is reorderable: the mockups' card grid is an ItemsWrapGrid ItemsPanel,
+                             which a ListView takes as readily (a GridView is literally a ListView
+                             with a grid-flavoured panel and container style), and swapping the
+                             control would mean rebuilding the ItemsSource binding for no visible
+                             change. MaximumRowsOrColumns="4" caps the wrap at four columns outright
+                             rather than leaving it to width math, so the fifth ToolRow wraps to its
+                             own row instead of ever being dropped. -->
                         <ListView x:Name="ToolsList" SelectionMode="None"
-                                  CanReorderItems="True" AllowDrop="True"
                                   ScrollViewer.VerticalScrollBarVisibility="Disabled"
                                   ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListView.ItemsPanel>
@@ -1286,6 +1376,61 @@
                                                     </StackPanel>
                                                 </Grid>
                                             </Grid>
+                                        </Border>
+                                    </Button>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Frosted glass's own frost level, directly under the cards and shown
+                                 only while that card is the one selected (UpdateFrostedLevelSelection) —
+                                 under any other theme it is a control for something not on screen.
+                                 Three fixed steps rather than a slider: the picker has no room for
+                                 one, and the difference between adjacent points on a continuous
+                                 opacity is not something anyone can aim at anyway. Painted from
+                                 code, like the theme cards above, because selection is a
+                                 per-element assignment no dictionary swap can reach. -->
+                            <StackPanel x:Name="FrostedLevelPanel" Spacing="10" Margin="0,0,0,18"
+                                        Visibility="Collapsed">
+                                <TextBlock Text="Frost" Style="{StaticResource SettingTitle}" />
+                                <TextBlock Text="How much the glass hides. Lighter shows more of what is behind the window; darker keeps text easier to read."
+                                           Style="{StaticResource SettingBody}" />
+                                <Grid ColumnSpacing="8" HorizontalAlignment="Left" Margin="0,2,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Padding="0" Background="Transparent"
+                                            BorderThickness="0" Tag="Light" Click="FrostedLevel_Click"
+                                            AutomationProperties.Name="Frost: Light"
+                                            AutomationProperties.AutomationId="SettingsFrostLight">
+                                        <Border x:Name="FrostedLevelLightPill" Width="104" CornerRadius="6"
+                                                BorderThickness="1" Padding="0,7">
+                                            <TextBlock x:Name="FrostedLevelLightText" Text="Light"
+                                                       HorizontalAlignment="Center" FontSize="12"
+                                                       FontWeight="SemiBold" />
+                                        </Border>
+                                    </Button>
+                                    <Button Grid.Column="1" Padding="0" Background="Transparent"
+                                            BorderThickness="0" Tag="Medium" Click="FrostedLevel_Click"
+                                            AutomationProperties.Name="Frost: Medium"
+                                            AutomationProperties.AutomationId="SettingsFrostMedium">
+                                        <Border x:Name="FrostedLevelMediumPill" Width="104" CornerRadius="6"
+                                                BorderThickness="1" Padding="0,7">
+                                            <TextBlock x:Name="FrostedLevelMediumText" Text="Medium"
+                                                       HorizontalAlignment="Center" FontSize="12"
+                                                       FontWeight="SemiBold" />
+                                        </Border>
+                                    </Button>
+                                    <Button Grid.Column="2" Padding="0" Background="Transparent"
+                                            BorderThickness="0" Tag="Dark" Click="FrostedLevel_Click"
+                                            AutomationProperties.Name="Frost: Dark"
+                                            AutomationProperties.AutomationId="SettingsFrostDark">
+                                        <Border x:Name="FrostedLevelDarkPill" Width="104" CornerRadius="6"
+                                                BorderThickness="1" Padding="0,7">
+                                            <TextBlock x:Name="FrostedLevelDarkText" Text="Dark"
+                                                       HorizontalAlignment="Center" FontSize="12"
+                                                       FontWeight="SemiBold" />
                                         </Border>
                                     </Button>
                                 </Grid>

@@ -261,6 +261,41 @@ public static class ThemeHelper
         "OrbitCanvasAccentBrush" =>
             dark ? Color.FromArgb(255, 0x00, 0xDD, 0xB3) : Color.FromArgb(255, 0x00, 0xA8, 0x8A),
 
+        // The two semantic colours the tool pages paint in code — a certificate's valid/invalid
+        // badge, the privacy shield, a parse-error chip. These used to be read from the framework's
+        // own SystemFillColorSuccess/CriticalBrush via Application.Current.Resources, which resolves
+        // against the app-ambient theme rather than the window this control is actually in — the
+        // exact bug this class's own doc comment warns about, and the one live example of it in the
+        // whole app (a SwiftX window can run Light while Windows itself runs Dark). Fixed the same
+        // way every other code-painted brush here is: a value tied to this element's own ActualTheme.
+        // Critical's pair is ToolStatusBar's own — already tuned there for exactly this problem (see
+        // that class's remarks on the hard-coded #C42B1C that used to be the only shade available);
+        // Success is Fluent's usual green pair, at the same brightness step.
+        "ToolSuccessBrush" =>
+            dark ? Color.FromArgb(255, 0x6C, 0xCB, 0x5F) : Color.FromArgb(255, 0x0F, 0x7B, 0x0F),
+
+        "ToolCriticalBrush" =>
+            dark ? Color.FromArgb(255, 0xFF, 0x99, 0xA4) : Color.FromArgb(255, 0xC4, 0x2B, 0x1C),
+
+        // The pale wash a badge sits on behind its success/critical icon — the same colour at low
+        // alpha rather than a separate hue, so the badge and the mark inside it read as one signal
+        // at two strengths instead of two different colours that happen to be nearby.
+        "ToolSuccessBackgroundBrush" =>
+            dark ? Color.FromArgb(0x33, 0x6C, 0xCB, 0x5F) : Color.FromArgb(0x22, 0x0F, 0x7B, 0x0F),
+
+        "ToolCriticalBackgroundBrush" =>
+            dark ? Color.FromArgb(0x33, 0xFF, 0x99, 0xA4) : Color.FromArgb(0x22, 0xC4, 0x2B, 0x1C),
+
+        // Copy's fixed communication blue (Themes/Colors.xaml) — has to read as *blue* whatever the
+        // app's accent is set to, the same way Delete/Clear's ToolCriticalBrush never tracks it
+        // either. Was reached via Application.Current.Resources before this pass (which is how the
+        // gap survived unnoticed: that path resolves the XAML dictionary directly, so it never fell
+        // through to this switch's own default at all), so unlike SwiftXMutedBrush and the Tool*
+        // pair above, this key has no other caller yet to have already forced it in here — see
+        // EditorToolPage.HoverAccentBrush, its first.
+        "SwiftXCopyHoverBrush" =>
+            dark ? Color.FromArgb(255, 0x60, 0xCD, 0xFF) : Color.FromArgb(255, 0x00, 0x78, 0xD4),
+
         // Deliberately last, and deliberately dull: an unrecognised key is a missing case above,
         // not a colour anyone chose. Black-on-dark / white-on-light is the least likely of the
         // wrong answers to be mistaken for a right one.

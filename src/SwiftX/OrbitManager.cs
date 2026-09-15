@@ -79,7 +79,11 @@ public sealed class OrbitManager
         bool firstRun = !Config.Seeded;
         Config.Seeded = true;
         OrbitMetrics.SetItemSize(Config.ItemSize);
+        OrbitMetrics.SetItemShape(Config.ItemShape);
         OrbitMetrics.SetRadius(Config.OrbitRadius);
+        // Same shape as the two above: a piece of app-wide drawing state read from static colour
+        // lookups that have no config reference of their own. See FrostedGlassBackdrop.Level.
+        FrostedGlassBackdrop.SetLevel(Config.FrostedGlass);
 
         bool repaired = false;
         if (firstRun && Config.Primary.Items.Count == 0)
@@ -402,10 +406,16 @@ public sealed class OrbitManager
     /// has — so the window says what pressing its button will actually do.
     /// </param>
     /// <param name="confirmLabel">The commit button's label, for the same reason.</param>
+    /// <param name="existing">
+    /// The item an edit is editing, so the dialog can open on what it already is instead of blank
+    /// — see <see cref="AddItemWindow"/>'s own parameter of the same name. Last in the list and
+    /// defaulted so that every caller that was only ever adding, "Replace…" included, keeps the
+    /// behaviour it had: a null here is the old dialog exactly.
+    /// </param>
     public void OpenAddItem(
         Action<OrbitItem>? onAdded = null, List<OrbitItem>? targetList = null,
         bool isGenericAddItem = false, bool allowGroups = true,
-        string? heading = null, string? confirmLabel = null)
+        string? heading = null, string? confirmLabel = null, OrbitItem? existing = null)
     {
         if (_addItemWindow is not null)
         {
@@ -414,7 +424,7 @@ public sealed class OrbitManager
         }
         _addItemWindow = new AddItemWindow(
             this, onAdded, targetList ?? Config.Primary.Items, isGenericAddItem, allowGroups,
-            heading, confirmLabel);
+            heading, confirmLabel, existing);
         _addItemWindow.Closed += (_, _) => _addItemWindow = null;
         _addItemWindow.Activate();
     }
@@ -456,6 +466,10 @@ public sealed class OrbitManager
 
     public void ApplyTheme()
     {
+        // Before any window repaints: every frosted surface resolves through this, so a theme pass
+        // that ran first would paint the level the app was wearing a moment ago.
+        FrostedGlassBackdrop.SetLevel(Config.FrostedGlass);
+
         // No app-wide theme push here: WinUI's Application has no RequestedTheme setter that
         // propagates to open windows, so each window resolves and applies its own theme via
         // ThemeHelper (see the doc comment on OrbitWindow.ThemeBrush).
@@ -478,7 +492,11 @@ public sealed class OrbitManager
     /// exactly when this matters.
     /// </para>
     /// </summary>
-    public void ApplyAccentColour() => _addItemWindow?.ApplyAccent();
+    public void ApplyAccentColour()
+    {
+        _addItemWindow?.ApplyAccent();
+        ToolWindows.ApplyAccentToAll();
+    }
 
     /// <summary>
     /// Puts <see cref="Config"/>'s language choice into effect. Anything that reads
@@ -499,6 +517,19 @@ public sealed class OrbitManager
     {
         Config.ItemSize = size;
         OrbitMetrics.SetItemSize(size);
+        Save();
+        _orbitWindow?.ReloadItems();
+    }
+
+    /// <summary>
+    /// The shape counterpart of <see cref="SetItemSize"/>, and deliberately the same three steps:
+    /// write it to the config, put it into <see cref="OrbitMetrics"/> (which is what every draw
+    /// site actually reads), persist, and rebuild whatever orbit is currently on screen.
+    /// </summary>
+    public void SetItemShape(OrbitItemShape shape)
+    {
+        Config.ItemShape = shape;
+        OrbitMetrics.SetItemShape(shape);
         Save();
         _orbitWindow?.ReloadItems();
     }

@@ -54,4 +54,13 @@ public sealed class ToolWindowManager
         foreach (var window in AllWindows)
             window.ApplyTheme();
     }
+
+    /// <summary>The lighter counterpart, called by <c>OrbitManager.ApplyAccentColour</c> on every
+    /// frame of a live colour-picker drag — see <see cref="ToolWindowBase.ApplyAccent"/> for why
+    /// this is safe to call that often where <see cref="ApplyThemeToAll"/> would not be.</summary>
+    public void ApplyAccentToAll()
+    {
+        foreach (var window in AllWindows)
+            window.ApplyAccent();
+    }
 }

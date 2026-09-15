@@ -51,8 +51,15 @@ public sealed class QuickFormatPage : EditorToolPage
 
     private readonly CodeEditor _editor = new();
     private readonly FrameworkElement _headerActions;
+    // Held as fields, not local constructor variables, so ApplyTheme (below) can repaint their
+    // hover tint after a live theme/accent change — the same reason every button EditorToolPage
+    // itself builds from ToolPage.Commands is tracked in _commandButtons, which this page's own
+    // empty Commands list leaves with nothing to track.
+    private readonly Button _openFormatterButton;
+    private readonly Button _saveButton;
     private readonly Button _copyButton;
     private readonly FrameworkElement _invalidIndicator;
+    private readonly FontIcon _invalidIcon = new() { Glyph = WarningGlyph, FontSize = 14 };
     private readonly TextBlock _detectedLabel = new()
     {
         Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
@@ -64,7 +71,7 @@ public sealed class QuickFormatPage : EditorToolPage
 
     private IDataFormat? _activeFormat;
 
-    public QuickFormatPage()
+    public QuickFormatPage(OrbitManager manager) : base(manager)
     {
         _editor.PlaceholderText = Loc.Get("QuickFormat.InputPlaceholder");
         _editor.AccessibleName = Loc.Get("Common.Input");
@@ -83,17 +90,17 @@ public sealed class QuickFormatPage : EditorToolPage
             }
         };
 
-        var openFormatterButton = IconButton(OpenFormatterGlyph, Loc.Get("QuickFormat.OpenDataFormatter"), HoverAccent.Accent);
-        openFormatterButton.Click += (_, _) => HostManager?.OpenTool(ToolKind.Data);
+        _openFormatterButton = IconButton(OpenFormatterGlyph, Loc.Get("QuickFormat.OpenDataFormatter"), HoverAccent.Accent);
+        _openFormatterButton.Click += (_, _) => HostManager.OpenTool(ToolKind.Data);
 
-        var saveButton = IconButton(SaveGlyph, Loc.Get("Tool.Save"), HoverAccent.Accent);
-        saveButton.Click += (_, _) => _ = SaveToFileAsync();
+        _saveButton = IconButton(SaveGlyph, Loc.Get("Tool.Save"), HoverAccent.Accent);
+        _saveButton.Click += (_, _) => _ = SaveToFileAsync();
 
         _headerActions = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 4,
-            Children = { openFormatterButton, saveButton },
+            Children = { _openFormatterButton, _saveButton },
         };
 
         _copyButton = IconButton(CopyGlyph, Loc.Get("Tool.CopyOutput"), HoverAccent.Copy);
@@ -126,6 +133,23 @@ public sealed class QuickFormatPage : EditorToolPage
         InitializeChrome();
 
         _ = LoadFromClipboardAsync();
+    }
+
+    /// <summary>
+    /// Repaints everything this page owns that <see cref="EditorToolPage.ApplyTheme"/>'s own
+    /// <c>_commandButtons</c> loop can't reach: <see cref="Commands"/> is empty here (see its own
+    /// doc comment), so Open Data Formatter, Save and Copy — all built by <see cref="IconButton"/>
+    /// directly rather than through <see cref="ToolPage.Commands"/> — need their hover tint
+    /// reapplied here instead, and the invalid-data warning glyph needs the same treatment
+    /// <see cref="EditorToolPage.ApplyTheme"/> gives <c>_privacyIcon</c>.
+    /// </summary>
+    public override void ApplyTheme()
+    {
+        base.ApplyTheme();
+        ApplyHoverIconColor(_openFormatterButton, HoverAccent.Accent);
+        ApplyHoverIconColor(_saveButton, HoverAccent.Accent);
+        ApplyHoverIconColor(_copyButton, HoverAccent.Copy);
+        PaintInvalidIndicator();
     }
 
     public override ToolKind Kind => ToolKind.QuickFormat;
@@ -292,22 +316,19 @@ public sealed class QuickFormatPage : EditorToolPage
 
     private FrameworkElement BuildInvalidIndicator()
     {
-        var icon = new FontIcon
-        {
-            Glyph = WarningGlyph,
-            FontSize = 14,
-            Foreground = ThemeBrush("SystemFillColorCriticalBrush"),
-        };
         var host = new Border
         {
-            Child = icon,
+            Child = _invalidIcon,
             Padding = new Thickness(8, 4, 8, 4),
             VerticalAlignment = VerticalAlignment.Center,
             Visibility = Visibility.Collapsed,
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(host, Loc.Get("QuickFormat.InvalidData"));
+        PaintInvalidIndicator();
         return host;
     }
+
+    private void PaintInvalidIndicator() => _invalidIcon.Foreground = ThemeBrush("ToolCriticalBrush");
 
     private void CopyOutput()
     {
@@ -352,7 +373,7 @@ public sealed class QuickFormatPage : EditorToolPage
         }
     }
 
-    private static Button IconButton(string glyph, string tooltip, HoverAccent accent)
+    private Button IconButton(string glyph, string tooltip, HoverAccent accent)
     {
         var button = new Button
         {
@@ -368,9 +389,4 @@ public sealed class QuickFormatPage : EditorToolPage
         return button;
     }
 
-    /// <summary>A theme resource brush, or null if this build's resource dictionary lacks it —
-    /// same fallback contract as FormatterPage's identically-named helper (each tool page keeps
-    /// its own copy rather than sharing one; EditorToolPage's is private).</summary>
-    private static Brush? ThemeBrush(string key) =>
-        Application.Current.Resources.TryGetValue(key, out var value) ? value as Brush : null;
 }

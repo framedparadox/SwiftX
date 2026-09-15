@@ -124,7 +124,7 @@ public sealed class FormatterPage : EditorToolPage
     private bool _replacing;
     private readonly DispatcherQueueTimer _detectTimer;
 
-    public FormatterPage()
+    public FormatterPage(OrbitManager manager) : base(manager)
     {
         _editor.PlaceholderText = Loc.Get("Formatter.InputPlaceholder");
         _editor.AccessibleName = Loc.Get("Common.Input");
@@ -225,6 +225,22 @@ public sealed class FormatterPage : EditorToolPage
         StatusBar.SetUntouched();
         InitializeChrome();
         RefreshDetection(autoValidate: false);
+    }
+
+    /// <summary>
+    /// Repaints the search panel and Advanced sidebar — both built once at construction and kept
+    /// around for the life of the page (shown and hidden by <c>Visibility</c>, never rebuilt), so
+    /// unlike a per-row or per-card view neither one is naturally revisited by anything else a
+    /// theme change already triggers.
+    /// </summary>
+    public override void ApplyTheme()
+    {
+        base.ApplyTheme();
+        _searchPanel.Background = ThemeBrush("ShellCardBackgroundBrush");
+        _searchPanel.BorderBrush = ThemeBrush("ShellCardBorderBrush");
+        _advancedPanel.Background = ThemeBrush("ShellPillBrush");
+        _advancedPanel.BorderBrush = ThemeBrush("ShellCardBorderBrush");
+        ApplyHoverIconColor(_saveButton, HoverAccent.Accent);
     }
 
     public override ToolKind Kind => ToolKind.Data;
@@ -592,8 +608,8 @@ public sealed class FormatterPage : EditorToolPage
         return new Border
         {
             Child = row,
-            Background = ThemeResourceBrush("CardBackgroundFillColorDefaultBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Black),
-            BorderBrush = ThemeResourceBrush("CardStrokeColorDefaultBrush"),
+            Background = ThemeBrush("ShellCardBackgroundBrush"),
+            BorderBrush = ThemeBrush("ShellCardBorderBrush"),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
             HorizontalAlignment = HorizontalAlignment.Right,
@@ -603,7 +619,7 @@ public sealed class FormatterPage : EditorToolPage
         };
     }
 
-    private static Button SearchIconButton(string glyph, string tooltip)
+    private Button SearchIconButton(string glyph, string tooltip)
     {
         var button = new Button
         {
@@ -940,14 +956,14 @@ public sealed class FormatterPage : EditorToolPage
                 Content = stack,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             },
-            Background = ThemeResourceBrush("CardBackgroundFillColorSecondaryBrush"),
-            BorderBrush = ThemeResourceBrush("CardStrokeColorDefaultBrush"),
+            Background = ThemeBrush("ShellPillBrush"),
+            BorderBrush = ThemeBrush("ShellCardBorderBrush"),
             BorderThickness = new Thickness(1, 0, 0, 0),
             Visibility = Visibility.Collapsed,
         };
     }
 
-    private static Button SidebarButton(string label, string glyph, Action action)
+    private Button SidebarButton(string label, string glyph, Action action)
     {
         var icon = new FontIcon
         {
@@ -990,8 +1006,4 @@ public sealed class FormatterPage : EditorToolPage
         return button;
     }
 
-    private static Brush? ThemeResourceBrush(string key) =>
-        Application.Current.Resources.TryGetValue(key, out var value)
-            ? value as Brush
-            : null;
 }
