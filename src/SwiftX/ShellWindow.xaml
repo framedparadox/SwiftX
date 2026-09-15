@@ -225,6 +225,18 @@
 
                         <Border Width="8" />
 
+                        <Button x:Name="ElementsShortcutButton" Style="{StaticResource ChromeIconButton}"
+                                Click="ElementsShortcutButton_Click"
+                                AutomationProperties.Name="Elements"
+                                AutomationProperties.AutomationId="ShellElementsShortcut"
+                                ToolTipService.ToolTip="Elements">
+                            <FontIcon Glyph="&#xE71D;" FontSize="18"
+                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                      Foreground="{ThemeResource ShellToolbarIconBrush}" />
+                        </Button>
+
+                        <Border Width="8" />
+
                         <Button x:Name="SettingsButton" Style="{StaticResource ChromeIconButton}"
                                 Click="SettingsButton_Click"
                                 AutomationProperties.Name="Settings"
@@ -360,59 +372,6 @@
                             </Grid>
                         </Border>
                     </Button>
-
-                    <Button x:Name="ElementsBox" Padding="0" Background="Transparent"
-                            BorderThickness="0" CornerRadius="8"
-                            Click="ElementsBox_Click"
-                            AutomationProperties.AutomationId="ShellBoxElements"
-                            AutomationProperties.Name="Elements">
-                        <Border Width="268" Height="340" CornerRadius="8" BorderThickness="1"
-                                Background="{ThemeResource ShellCardBackgroundBrush}"
-                                BorderBrush="{ThemeResource ShellCardBorderBrush}"
-                                Shadow="{StaticResource BoxShadow}" Translation="0,0,24">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="*" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <StackPanel Grid.Row="0" VerticalAlignment="Center" Spacing="0"
-                                            Padding="24,0,24,0">
-                                    <Grid Width="88" Height="88" HorizontalAlignment="Center"
-                                          Margin="0,0,0,24">
-                                        <Ellipse Width="88" Height="88"
-                                                 Fill="{ThemeResource ShellMedallionBrush}"
-                                                 Stroke="{ThemeResource ShellCardBorderBrush}"
-                                                 StrokeThickness="1" />
-                                        <FontIcon Glyph="&#xE71D;" FontSize="36"
-                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                                  Foreground="{ThemeResource SettingsAccentBrush}"
-                                                  HorizontalAlignment="Center"
-                                                  VerticalAlignment="Center" />
-                                    </Grid>
-                                    <TextBlock Text="Elements" FontSize="22" FontWeight="Bold"
-                                               TextAlignment="Center" HorizontalAlignment="Center"
-                                               Foreground="{ThemeResource SettingsTitleBrush}" />
-                                    <TextBlock Text="Apps, files, folders, links and groups on the orbit."
-                                               Style="{StaticResource SettingBody}"
-                                               TextAlignment="Center" Margin="0,10,0,0" />
-                                    <Border Height="22" CornerRadius="11"
-                                            Padding="12,0" Margin="0,16,0,0"
-                                            HorizontalAlignment="Center"
-                                            Background="{ThemeResource ShellPillBrush}">
-                                        <TextBlock x:Name="ElementsBoxMeta" FontSize="10"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{ThemeResource SettingsSecondaryTextBrush}"
-                                                   Text="add · hide · remove" />
-                                    </Border>
-                                </StackPanel>
-                                <StackPanel Grid.Row="1">
-                                    <Border Height="1" Background="{ThemeResource ShellDividerBrush}" />
-                                    <TextBlock Text="OPEN" Style="{StaticResource BoxOpenLabel}"
-                                               Margin="0,14,0,16" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-                    </Button>
                 </StackPanel>
                 </Grid>
             </Grid>
@@ -494,31 +453,48 @@
                             </Button>
                             <FontIcon x:Name="OrbitGroupIcon" FontSize="18" VerticalAlignment="Center"
                                       FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                      Foreground="{ThemeResource OrbitCanvasAccentBrush}" />
-                            <StackPanel VerticalAlignment="Center">
+                                      Foreground="{ThemeResource OrbitCanvasAccentBrush}"
+                                      Tapped="OrbitGroupHeaderTitle_Tapped" />
+                            <StackPanel VerticalAlignment="Center"
+                                        Tapped="OrbitGroupHeaderTitle_Tapped">
                                 <TextBlock Text="GROUP" Style="{StaticResource SidebarEyebrow}" />
                                 <TextBlock x:Name="OrbitGroupName" Style="{StaticResource ScreenTitle}"
                                            TextTrimming="CharacterEllipsis" MaxWidth="320" />
                             </StackPanel>
                         </StackPanel>
 
-                        <Button x:Name="OrbitEditToggle" Grid.Column="2" Height="34" Padding="14,0"
-                                CornerRadius="6" VerticalAlignment="Center"
-                                Background="{ThemeResource OrbitNodeBackgroundBrush}"
-                                BorderBrush="{ThemeResource OrbitCanvasBorderBrush}"
-                                BorderThickness="1"
-                                Click="OrbitEditToggle_Click"
-                                AutomationProperties.AutomationId="OrbitEditToggle"
-                                ToolTipService.ToolTip="Show the things you can put on the orbit">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon x:Name="OrbitEditIcon" Glyph="&#xE70F;" FontSize="14"
+                        <!-- Three chromeless icon buttons rather than the one bordered pill this
+                             used to be: Edit and Elements both just reveal the "ADD TO ORBIT"
+                             sidebar (SetOrbitEditing(true)) and Settings reveals the orbit's own
+                             settings sidebar (SetOrbitEditing(false)) — none of the three navigate
+                             away from this screen. -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4"
+                                    VerticalAlignment="Center">
+                            <Button x:Name="OrbitEditToggle" Style="{StaticResource ChromeIconButton}"
+                                    Click="OrbitEditToggle_Click"
+                                    AutomationProperties.AutomationId="OrbitEditToggle"
+                                    ToolTipService.ToolTip="Show the things you can put on the orbit">
+                                <FontIcon x:Name="OrbitEditIcon" Glyph="&#xE70F;" FontSize="18"
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}"
                                           Foreground="{ThemeResource SettingsHeaderBrush}" />
-                                <TextBlock x:Name="OrbitEditLabel" Text="Edit" FontSize="12"
-                                           FontWeight="SemiBold" VerticalAlignment="Center"
-                                           Foreground="{ThemeResource SettingsHeaderBrush}" />
-                            </StackPanel>
-                        </Button>
+                            </Button>
+                            <Button x:Name="OrbitElementsButton" Style="{StaticResource ChromeIconButton}"
+                                    Click="OrbitElementsButton_Click"
+                                    AutomationProperties.Name="Elements"
+                                    ToolTipService.ToolTip="Show the things you can put on the orbit">
+                                <FontIcon Glyph="&#xE71D;" FontSize="18"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                          Foreground="{ThemeResource SettingsHeaderBrush}" />
+                            </Button>
+                            <Button x:Name="OrbitSidebarSettingsButton" Style="{StaticResource ChromeIconButton}"
+                                    Click="OrbitSidebarSettingsButton_Click"
+                                    AutomationProperties.Name="Orbit settings"
+                                    ToolTipService.ToolTip="Show the orbit's settings">
+                                <FontIcon Glyph="&#xE713;" FontSize="18"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                          Foreground="{ThemeResource SettingsHeaderBrush}" />
+                            </Button>
+                        </StackPanel>
                     </Grid>
 
                     <!-- Two stacked canvases of the same size. PreviewCanvas is the one that has
@@ -574,43 +550,12 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
+                            <!-- The gear that used to live here now lives in the header (see
+                                 OrbitSidebarSettingsButton) and the wrench moved down to
+                                 CanvasActions, next to Reset defaults — this StackPanel is left
+                                 empty rather than restructuring the Grid around the hint text. -->
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2"
-                                        VerticalAlignment="Center">
-                                <Button Style="{StaticResource ChromeIconButton}"
-                                        Click="OrbitOpenSettings_Click"
-                                        AutomationProperties.Name="Open settings"
-                                        ToolTipService.ToolTip="Open settings">
-                                    <FontIcon Glyph="&#xE713;" FontSize="16"
-                                              FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                              Foreground="{ThemeResource SettingsHeaderBrush}" />
-                                </Button>
-                                <!-- E90F (Repair) is the wrench in Segoe Fluent Icons. The menu
-                                     under it is the reference's How To / Support / What's New,
-                                     re-pointed at things SwiftX actually has — see each item's
-                                     handler for which reference entry it stands in for. -->
-                                <Button x:Name="OrbitHelpButton"
-                                        Style="{StaticResource ChromeIconButton}"
-                                        AutomationProperties.Name="Help and support"
-                                        ToolTipService.ToolTip="Help and support">
-                                    <FontIcon Glyph="&#xE90F;" FontSize="16"
-                                              FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                              Foreground="{ThemeResource SettingsHeaderBrush}" />
-                                    <Button.Flyout>
-                                        <MenuFlyout Placement="Top">
-                                            <MenuFlyoutSubItem Text="How to">
-                                                <MenuFlyoutItem Text="Run the set-up guide"
-                                                                Click="RunOnboarding_Click" />
-                                                <MenuFlyoutItem Text="Choose what goes on the orbit"
-                                                                Click="HowToArrange_Click" />
-                                                <MenuFlyoutItem Text="Read the handbook"
-                                                                Click="HowToHandbook_Click" />
-                                            </MenuFlyoutSubItem>
-                                            <MenuFlyoutItem Text="Support" Click="OrbitSupport_Click" />
-                                            <MenuFlyoutItem Text="What's new" Click="WhatsNew_Click" />
-                                        </MenuFlyout>
-                                    </Button.Flyout>
-                                </Button>
-                            </StackPanel>
+                                        VerticalAlignment="Center" />
 
                             <TextBlock x:Name="OrbitCanvasHint" Grid.Column="1"
                                        VerticalAlignment="Center"
@@ -626,6 +571,32 @@
                                     CornerRadius="6" Click="AddItem_Click" />
                             <Button Content="Reset defaults" Height="30" CornerRadius="6"
                                     Click="ResetDefaults_Click" />
+                            <!-- E90F (Repair) is the wrench in Segoe Fluent Icons. The menu under
+                                 it is the reference's How To / Support / What's New, re-pointed at
+                                 things SwiftX actually has — see each item's handler for which
+                                 reference entry it stands in for. -->
+                            <Button x:Name="OrbitHelpButton"
+                                    Style="{StaticResource ChromeIconButton}"
+                                    AutomationProperties.Name="Help and support"
+                                    ToolTipService.ToolTip="Help and support">
+                                <FontIcon Glyph="&#xE90F;" FontSize="16"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                          Foreground="{ThemeResource SettingsHeaderBrush}" />
+                                <Button.Flyout>
+                                    <MenuFlyout Placement="Top">
+                                        <MenuFlyoutSubItem Text="How to">
+                                            <MenuFlyoutItem Text="Run the set-up guide"
+                                                            Click="RunOnboarding_Click" />
+                                            <MenuFlyoutItem Text="Choose what goes on the orbit"
+                                                            Click="HowToArrange_Click" />
+                                            <MenuFlyoutItem Text="Read the handbook"
+                                                            Click="HowToHandbook_Click" />
+                                        </MenuFlyoutSubItem>
+                                        <MenuFlyoutItem Text="Support" Click="OrbitSupport_Click" />
+                                        <MenuFlyoutItem Text="What's new" Click="WhatsNew_Click" />
+                                    </MenuFlyout>
+                                </Button.Flyout>
+                            </Button>
                         </StackPanel>
                     </Grid>
                 </Grid>
@@ -1117,19 +1088,21 @@
                                  and renaming it strands every config that already carries it. -->
                             <StackPanel Spacing="14" Margin="0,4,0,18">
                                 <TextBlock Text="Colour theme" Style="{StaticResource SettingTitle}" />
-                                <!-- A Grid rather than the horizontal StackPanel this was, because
-                                     a fifth card no longer fits on one line: five 145px cards and
-                                     their gutters come to 773, against roughly 658 of usable width
-                                     once the 270px rail and the 48/64 content padding are taken out
-                                     of the window's 1040. Four per row is what that width actually
-                                     allows, so the four that were here keep their row exactly as
-                                     they were and Frosted glass starts a second one. -->
-                                <Grid ColumnSpacing="12" RowSpacing="12" HorizontalAlignment="Left">
+                                <!-- A Grid rather than a horizontal StackPanel, with the five columns
+                                     starred rather than fixed-width: the settings pane's usable width
+                                     varies with the window's actual DPI scale, and a fixed per-card
+                                     pixel width that fit at one scale clipped the fifth card at
+                                     another. Star columns always divide whatever width is actually
+                                     available, so all five fit on one row unconditionally. Frosted
+                                     glass's own frost-level circles still need a row of their own —
+                                     Grid.Row="1" Grid.Column="4" below — under just that one card. -->
+                                <Grid ColumnSpacing="12" RowSpacing="12" HorizontalAlignment="Stretch">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -1141,14 +1114,14 @@
                                             Click="ThemeCard_Click"
                                             AutomationProperties.Name="Follow OS theme"
                                             AutomationProperties.AutomationId="SettingsThemeCardSystem">
-                                        <Border x:Name="ThemeCardSystem" Width="145" Height="130" CornerRadius="8"
+                                        <Border x:Name="ThemeCardSystem" HorizontalAlignment="Stretch" Height="108" CornerRadius="8"
                                                 Background="{ThemeResource ShellCardBackgroundBrush}"
                                                 BorderBrush="{ThemeResource ShellCardBorderBrush}"
                                                 BorderThickness="1.5">
                                             <Grid>
                                                 <Grid.RowDefinitions>
-                                                    <RowDefinition Height="82" />
-                                                    <RowDefinition Height="46" />
+                                                    <RowDefinition Height="66" />
+                                                    <RowDefinition Height="42" />
                                                 </Grid.RowDefinitions>
                                                 <Grid Grid.Row="0" CornerRadius="7,7,0,0">
                                                     <Grid.ColumnDefinitions>
@@ -1200,14 +1173,14 @@
                                             Click="ThemeCard_Click"
                                             AutomationProperties.Name="Light theme"
                                             AutomationProperties.AutomationId="SettingsThemeCardLight">
-                                        <Border x:Name="ThemeCardLight" Width="145" Height="130" CornerRadius="8"
+                                        <Border x:Name="ThemeCardLight" HorizontalAlignment="Stretch" Height="108" CornerRadius="8"
                                                 Background="{ThemeResource ShellCardBackgroundBrush}"
                                                 BorderBrush="{ThemeResource ShellCardBorderBrush}"
                                                 BorderThickness="1.5">
                                             <Grid>
                                                 <Grid.RowDefinitions>
-                                                    <RowDefinition Height="82" />
-                                                    <RowDefinition Height="46" />
+                                                    <RowDefinition Height="66" />
+                                                    <RowDefinition Height="42" />
                                                 </Grid.RowDefinitions>
                                                 <Border Grid.Row="0" Background="#CADDF3" CornerRadius="7,7,0,0">
                                                     <Border Margin="18,14,18,0" CornerRadius="4,4,0,0"
@@ -1241,14 +1214,14 @@
                                             Click="ThemeCard_Click"
                                             AutomationProperties.Name="Dark theme"
                                             AutomationProperties.AutomationId="SettingsThemeCardDark">
-                                        <Border x:Name="ThemeCardDark" Width="145" Height="130" CornerRadius="8"
+                                        <Border x:Name="ThemeCardDark" HorizontalAlignment="Stretch" Height="108" CornerRadius="8"
                                                 Background="{ThemeResource ShellCardBackgroundBrush}"
                                                 BorderBrush="{ThemeResource ShellCardBorderBrush}"
                                                 BorderThickness="1.5">
                                             <Grid>
                                                 <Grid.RowDefinitions>
-                                                    <RowDefinition Height="82" />
-                                                    <RowDefinition Height="46" />
+                                                    <RowDefinition Height="66" />
+                                                    <RowDefinition Height="42" />
                                                 </Grid.RowDefinitions>
                                                 <Border Grid.Row="0" Background="#1D2A3A" CornerRadius="7,7,0,0">
                                                     <Border Margin="18,14,18,0" CornerRadius="4,4,0,0"
@@ -1282,14 +1255,14 @@
                                             Click="ThemeCard_Click"
                                             AutomationProperties.Name="Midnight theme"
                                             AutomationProperties.AutomationId="SettingsThemeCardMidnight">
-                                        <Border x:Name="ThemeCardBlack" Width="145" Height="130" CornerRadius="8"
+                                        <Border x:Name="ThemeCardBlack" HorizontalAlignment="Stretch" Height="108" CornerRadius="8"
                                                 Background="{ThemeResource ShellCardBackgroundBrush}"
                                                 BorderBrush="{ThemeResource ShellCardBorderBrush}"
                                                 BorderThickness="1.5">
                                             <Grid>
                                                 <Grid.RowDefinitions>
-                                                    <RowDefinition Height="82" />
-                                                    <RowDefinition Height="46" />
+                                                    <RowDefinition Height="66" />
+                                                    <RowDefinition Height="42" />
                                                 </Grid.RowDefinitions>
                                                 <Border Grid.Row="0" Background="#0A0A0A" CornerRadius="7,7,0,0">
                                                     <Border Margin="18,14,18,0" CornerRadius="4,4,0,0"
@@ -1327,20 +1300,20 @@
                                          backdrop's own 0.65 opacity). Hard-coded here rather than
                                          bound, like every other card's swatch: a preview has to
                                          look like its theme whichever theme is currently on. -->
-                                    <Button Grid.Row="1" Grid.Column="0"
+                                    <Button Grid.Row="0" Grid.Column="4"
                                             x:Name="ThemeCardFrostedButton" Tag="FrostedGlass" Padding="0"
                                             Background="Transparent" BorderThickness="0" CornerRadius="8"
                                             Click="ThemeCard_Click"
                                             AutomationProperties.Name="Frosted glass theme"
                                             AutomationProperties.AutomationId="SettingsThemeCardFrosted">
-                                        <Border x:Name="ThemeCardFrosted" Width="145" Height="130" CornerRadius="8"
+                                        <Border x:Name="ThemeCardFrosted" HorizontalAlignment="Stretch" Height="108" CornerRadius="8"
                                                 Background="{ThemeResource ShellCardBackgroundBrush}"
                                                 BorderBrush="{ThemeResource ShellCardBorderBrush}"
                                                 BorderThickness="1.5">
                                             <Grid>
                                                 <Grid.RowDefinitions>
-                                                    <RowDefinition Height="82" />
-                                                    <RowDefinition Height="46" />
+                                                    <RowDefinition Height="66" />
+                                                    <RowDefinition Height="42" />
                                                 </Grid.RowDefinitions>
                                                 <Grid Grid.Row="0" CornerRadius="7,7,0,0">
                                                     <Grid.ColumnDefinitions>
@@ -1378,127 +1351,42 @@
                                             </Grid>
                                         </Border>
                                     </Button>
-                                </Grid>
-                            </StackPanel>
 
-                            <!-- Frosted glass's own frost level, directly under the cards and shown
-                                 only while that card is the one selected (UpdateFrostedLevelSelection) —
-                                 under any other theme it is a control for something not on screen.
-                                 Three fixed steps rather than a slider: the picker has no room for
-                                 one, and the difference between adjacent points on a continuous
-                                 opacity is not something anyone can aim at anyway. Painted from
-                                 code, like the theme cards above, because selection is a
-                                 per-element assignment no dictionary swap can reach. -->
-                            <StackPanel x:Name="FrostedLevelPanel" Spacing="10" Margin="0,0,0,18"
-                                        Visibility="Collapsed">
-                                <TextBlock Text="Frost" Style="{StaticResource SettingTitle}" />
-                                <TextBlock Text="How much the glass hides. Lighter shows more of what is behind the window; darker keeps text easier to read."
-                                           Style="{StaticResource SettingBody}" />
-                                <Grid ColumnSpacing="8" HorizontalAlignment="Left" Margin="0,2,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <Button Grid.Column="0" Padding="0" Background="Transparent"
-                                            BorderThickness="0" Tag="Light" Click="FrostedLevel_Click"
-                                            AutomationProperties.Name="Frost: Light"
-                                            AutomationProperties.AutomationId="SettingsFrostLight">
-                                        <Border x:Name="FrostedLevelLightPill" Width="104" CornerRadius="6"
-                                                BorderThickness="1" Padding="0,7">
-                                            <TextBlock x:Name="FrostedLevelLightText" Text="Light"
-                                                       HorizontalAlignment="Center" FontSize="12"
-                                                       FontWeight="SemiBold" />
-                                        </Border>
-                                    </Button>
-                                    <Button Grid.Column="1" Padding="0" Background="Transparent"
-                                            BorderThickness="0" Tag="Medium" Click="FrostedLevel_Click"
-                                            AutomationProperties.Name="Frost: Medium"
-                                            AutomationProperties.AutomationId="SettingsFrostMedium">
-                                        <Border x:Name="FrostedLevelMediumPill" Width="104" CornerRadius="6"
-                                                BorderThickness="1" Padding="0,7">
-                                            <TextBlock x:Name="FrostedLevelMediumText" Text="Medium"
-                                                       HorizontalAlignment="Center" FontSize="12"
-                                                       FontWeight="SemiBold" />
-                                        </Border>
-                                    </Button>
-                                    <Button Grid.Column="2" Padding="0" Background="Transparent"
-                                            BorderThickness="0" Tag="Dark" Click="FrostedLevel_Click"
-                                            AutomationProperties.Name="Frost: Dark"
-                                            AutomationProperties.AutomationId="SettingsFrostDark">
-                                        <Border x:Name="FrostedLevelDarkPill" Width="104" CornerRadius="6"
-                                                BorderThickness="1" Padding="0,7">
-                                            <TextBlock x:Name="FrostedLevelDarkText" Text="Dark"
-                                                       HorizontalAlignment="Center" FontSize="12"
-                                                       FontWeight="SemiBold" />
-                                        </Border>
-                                    </Button>
+                                    <!-- Frosted glass's own frost level: three fixed swatches (their
+                                         Background is a permanent light/medium/dark preview, not a
+                                         selection colour) with an accent ring on whichever is picked.
+                                         Shown only while Frosted glass is the selected theme
+                                         (UpdateFrostedLevelSelection); painted from code, like the
+                                         cards above, since selection is a per-element assignment no
+                                         dictionary swap can reach. -->
+                                    <StackPanel x:Name="FrostedLevelPanel" Grid.Row="1" Grid.Column="4" Orientation="Horizontal"
+                                            Spacing="6" Margin="0,8,0,0" Visibility="Collapsed">
+                                        <Button Padding="0" Background="Transparent" BorderThickness="0" Tag="Light" Click="FrostedLevel_Click"
+                                            AutomationProperties.Name="Frost: Light" AutomationProperties.AutomationId="SettingsFrostLight"
+                                            ToolTipService.ToolTip="Light">
+                                            <Border x:Name="FrostedLevelLightPill" Width="22" Height="22" CornerRadius="11"
+                                                Background="#E8E8E8" BorderThickness="1.5" />
+                                        </Button>
+                                        <Button Padding="0" Background="Transparent" BorderThickness="0" Tag="Medium" Click="FrostedLevel_Click"
+                                            AutomationProperties.Name="Frost: Medium" AutomationProperties.AutomationId="SettingsFrostMedium"
+                                            ToolTipService.ToolTip="Medium">
+                                            <Border x:Name="FrostedLevelMediumPill" Width="22" Height="22" CornerRadius="11"
+                                                Background="#9A9A9A" BorderThickness="1.5" />
+                                        </Button>
+                                        <Button Padding="0" Background="Transparent" BorderThickness="0" Tag="Dark" Click="FrostedLevel_Click"
+                                            AutomationProperties.Name="Frost: Dark" AutomationProperties.AutomationId="SettingsFrostDark"
+                                            ToolTipService.ToolTip="Dark">
+                                            <Border x:Name="FrostedLevelDarkPill" Width="22" Height="22" CornerRadius="11"
+                                                Background="#2A2A2A" BorderThickness="1.5" />
+                                        </Button>
+                                    </StackPanel>
                                 </Grid>
                             </StackPanel>
 
                             <!-- Sits right under Theme: both are how this window looks, not how it
-                                 behaves. Picking a colour here overrides the built-in default via
-                                 ShellWindow.ApplyAccentColorOverride, which is what makes it show up
-                                 on every toggle, radio button, the Radius slider, the rating stars,
-                                 the Settings rail and the selected theme card — not just the swatch. -->
-                            <Border Style="{StaticResource Card}">
-                                <Grid ColumnSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <FontIcon Grid.Column="0" Glyph="&#xE790;"
-                                              FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="Accent colour" Style="{StaticResource SettingTitle}" />
-                                        <TextBlock Text="Used for links, toggles, and other highlights across the app."
-                                                   Style="{StaticResource SettingBody}" />
-                                    </StackPanel>
-                                    <Button Grid.Column="2" x:Name="AccentColorSwatch"
-                                            Width="32" Height="32" Padding="0" CornerRadius="16"
-                                            VerticalAlignment="Center" HorizontalAlignment="Right"
-                                            AutomationProperties.Name="Accent colour"
-                                            AutomationProperties.AutomationId="SettingsAccentColorSwatch">
-                                        <Button.Flyout>
-                                            <Flyout Placement="Bottom">
-                                                <StackPanel Spacing="10" MinWidth="260">
-                                                    <ColorPicker x:Name="AccentColorPicker"
-                                                                 IsAlphaEnabled="False"
-                                                                 AutomationProperties.Name="Accent colour picker"
-                                                                 ColorChanged="AccentColorPicker_ColorChanged" />
-                                                    <Button Content="Reset to default" HorizontalAlignment="Stretch"
-                                                            AutomationProperties.AutomationId="SettingsAccentColorReset"
-                                                            Click="ResetAccentColor_Click" />
-                                                </StackPanel>
-                                            </Flyout>
-                                        </Button.Flyout>
-                                    </Button>
-                                </Grid>
-                            </Border>
-
-                            <Border Style="{StaticResource Card}">
-                                <Grid ColumnSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <FontIcon Grid.Column="0" Glyph="&#xE774;"
-                                              FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="Language" Style="{StaticResource SettingTitle}" />
-                                        <TextBlock Text="The language SwiftX's tools and menus use. System follows Windows. Some text updates immediately; the rest applies the next time you start SwiftX."
-                                                   Style="{StaticResource SettingBody}" />
-                                    </StackPanel>
-                                    <ComboBox x:Name="LanguageBox" Grid.Column="2" MinWidth="170" Width="170"
-                                              Height="38" CornerRadius="6"
-                                              VerticalAlignment="Center" HorizontalAlignment="Right"
-                                              AutomationProperties.AutomationId="SettingsLanguageBox"
-                                              SelectionChanged="LanguageBox_SelectionChanged" />
-                                </Grid>
-                            </Border>
-
+                                 behaves. Show or hide the orbit from the keyboard — the first thing
+                                 under Theme because, next to how the window looks, it's how you
+                                 summon it at all. -->
                             <Border Style="{StaticResource Card}">
                                 <Grid ColumnSpacing="12">
                                     <Grid.ColumnDefinitions>
@@ -1527,6 +1415,90 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
+
+                            <!-- Accent colour and Language share a row now that neither needs the
+                                 full width. Picking a colour here overrides the built-in default via
+                                 ShellWindow.ApplyAccentColorOverride, which is what makes it show up
+                                 on every toggle, radio button, the Radius slider, the rating stars,
+                                 the Settings rail and the selected theme card — not just the swatch. -->
+                            <Grid ColumnSpacing="14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Style="{StaticResource Card}">
+                                    <!-- Stacked rather than the old single-row icon|text|control
+                                         layout: a 170px control and a sentence of body text no
+                                         longer share one line once the card is half the window's
+                                         width instead of all of it — the middle column had almost
+                                         nothing left to wrap into. The control now sits on its own
+                                         row under the text, with the room it actually needs. -->
+                                    <Grid RowSpacing="12">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <FontIcon Grid.Column="0" Glyph="&#xE790;"
+                                                      FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="Accent colour" Style="{StaticResource SettingTitle}" />
+                                                <TextBlock Text="Used for links, toggles, and other highlights across the app."
+                                                           Style="{StaticResource SettingBody}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Button Grid.Row="1" x:Name="AccentColorSwatch"
+                                                Width="32" Height="32" Padding="0" CornerRadius="16"
+                                                HorizontalAlignment="Left"
+                                                AutomationProperties.Name="Accent colour"
+                                                AutomationProperties.AutomationId="SettingsAccentColorSwatch">
+                                            <Button.Flyout>
+                                                <Flyout Placement="Bottom">
+                                                    <StackPanel Spacing="10" MinWidth="260">
+                                                        <ColorPicker x:Name="AccentColorPicker"
+                                                                     IsAlphaEnabled="False"
+                                                                     AutomationProperties.Name="Accent colour picker"
+                                                                     ColorChanged="AccentColorPicker_ColorChanged" />
+                                                        <Button Content="Reset to default" HorizontalAlignment="Stretch"
+                                                                AutomationProperties.AutomationId="SettingsAccentColorReset"
+                                                                Click="ResetAccentColor_Click" />
+                                                    </StackPanel>
+                                                </Flyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Column="1" Style="{StaticResource Card}">
+                                    <Grid RowSpacing="12">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <FontIcon Grid.Column="0" Glyph="&#xE774;"
+                                                      FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="Language" Style="{StaticResource SettingTitle}" />
+                                                <TextBlock Text="The language SwiftX's tools and menus use. System follows Windows. Some text updates immediately; the rest applies the next time you start SwiftX."
+                                                           Style="{StaticResource SettingBody}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <ComboBox x:Name="LanguageBox" Grid.Row="1" MinWidth="170" Width="170"
+                                                  Height="38" CornerRadius="6"
+                                                  HorizontalAlignment="Left"
+                                                  AutomationProperties.AutomationId="SettingsLanguageBox"
+                                                  SelectionChanged="LanguageBox_SelectionChanged" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
 
                             <Border Style="{StaticResource Card}">
                                 <Grid ColumnSpacing="12">
