@@ -81,6 +81,7 @@ public sealed partial class ShellWindow : Window
     // whatever the live preview last showed.
     private int _dragTentativeSlot = -1;
     private int _dragTentativeQuadrantSlot = -1;
+    private int _dragTentativeGroupSlot = -1;
 
     // Preview geometry and slot occupancy, recorded by RenderPreview so the canvas-level pointer
     // handlers can work out which slot an event landed in without walking the visual tree.
@@ -103,6 +104,12 @@ public sealed partial class ShellWindow : Window
     // Purely a preview: toggled by the corner button RenderPreview draws, and never persisted —
     // what the corner actually summons is Config.HotCornerLayout.
     private bool _previewQuadrant;
+
+    // Group-arc geometry and slot occupancy, RenderGroupArc's counterpart to _slotBorders. A
+    // List rather than a fixed array because the slot count is however many children the group
+    // has plus its two "add" ends, not a fixed layout — the leading and trailing add slots hold
+    // a null border here so a real child's index in this list lines up with its index on the arc.
+    private readonly List<Border?> _groupSlotBorders = new();
 
     // What the details card is currently about, and which group the canvas has open.
     // Neither swaps out which list the orbit renders anymore — a click just picks what, if anything,
@@ -1367,21 +1374,14 @@ public sealed partial class ShellWindow : Window
             return;
         }
 
-        // Inside a group, every bubble on the canvas carries its own Tapped handler and none of
-        // them are in _slotBorders. PreviewSlotAt works off geometry alone, so without this it
-        // would still answer with a slot index, capture the pointer, and resolve the release as a
-        // drop into an empty top-level slot — an add the user never asked for, into an orbit they
-        // are not currently looking at.
-        if (_expandedGroup is not null)
-        {
-            EndPreviewDrag();
-            return;
-        }
-
         var point = current.Position;
-        _dragSlot = _previewQuadrant ? QuadrantSlotAt(point) : PreviewSlotAt(point);
+        _dragSlot = _expandedGroup is not null
+            ? GroupSlotAt(point)
+            : (_previewQuadrant ? QuadrantSlotAt(point) : PreviewSlotAt(point));
         _dragBorder = _dragSlot >= 0
-            ? (_previewQuadrant ? _quadrantSlotBorders[_dragSlot] : _slotBorders[_dragSlot])
+            ? (_expandedGroup is not null
+                ? _groupSlotBorders[_dragSlot]
+                : (_previewQuadrant ? _quadrantSlotBorders[_dragSlot] : _slotBorders[_dragSlot]))
             : null;
         _dragItem = _dragBorder?.Tag as OrbitItem;
         _dragStart = point;
@@ -1391,6 +1391,7 @@ public sealed partial class ShellWindow : Window
         // movement resolves as a no-op the same way it always did.
         _dragTentativeSlot = _dragSlot;
         _dragTentativeQuadrantSlot = _dragSlot;
+        _dragTentativeGroupSlot = _dragSlot;
         if (_dragSlot >= 0)
             PreviewCanvas.CapturePointer(e.Pointer);
     }
@@ -1441,6 +1442,30 @@ public sealed partial class ShellWindow : Window
     private void UpdateDragReflow(Point point)
     {
         if (_dragItem is null) return;
+
+        if (_expandedGroup is not null)
+        {
+            int target = GroupSlotAt(point, requireHit: false);
+            if (target == _dragTentativeGroupSlot) return;
+            _dragTentativeGroupSlot = target;
+            if (target < 0) return;
+
+            var children = _expandedGroup.Children.Where(c => !c.Hidden).ToList();
+            int from = children.IndexOf(_dragItem);
+            if (from < 0) return;
+            // The leading add slot is index 0 on the arc but position 0 among children, so the
+            // slot index is one ahead of the child index it targets; the trailing add slot clamps
+            // down to the last child the same way dropping past the end of the top-level orbit
+            // clamps to its last occupied slot.
+            int to = Math.Clamp(target - 1, 0, children.Count - 1);
+            if (to != from)
+            {
+                children.RemoveAt(from);
+                children.Insert(to, _dragItem);
+            }
+            ReflowGroupBorders(children);
+            return;
+        }
 
         if (_previewQuadrant)
         {
@@ -1517,7 +1542,31 @@ public sealed partial class ShellWindow : Window
         }
     }
 
-    private static Border? FindSlotBorder(Border?[] borders, OrbitItem item)
+    /// <summary>Group-arc counterpart of <see cref="ReflowOrbitBorders"/>. <paramref name="tentativeOrder"/>
+    /// is indexed by child position; the arc slot for child <c>i</c> is <c>i + 1</c>, since slot 0
+    /// is always the leading "add" end (see <see cref="GroupSlotAt"/>).</summary>
+    private void ReflowGroupBorders(List<OrbitItem> tentativeOrder)
+    {
+        int count = _groupSlotBorders.Count;
+        if (count == 0) return;
+
+        double step = OrbitMetrics.FlyoutStepDegreesFor(_previewRadius) * Math.PI / 180.0;
+        double first = -((count - 1) / 2.0) * step;
+
+        for (int i = 0; i < tentativeOrder.Count; i++)
+        {
+            var item = tentativeOrder[i];
+            if (ReferenceEquals(item, _dragItem)) continue;
+            var border = FindSlotBorder(_groupSlotBorders, item);
+            if (border is null) continue;
+            double angle = first + (i + 1) * step;
+            double x = _previewCenter.X + _previewRadius * Math.Cos(angle) - _previewBubble / 2;
+            double y = _previewCenter.Y + _previewRadius * Math.Sin(angle) - _previewBubble / 2;
+            AnimateBubbleTo(border, x, y);
+        }
+    }
+
+    private static Border? FindSlotBorder(IReadOnlyList<Border?> borders, OrbitItem item)
     {
         foreach (var border in borders)
         {
@@ -1571,12 +1620,33 @@ public sealed partial class ShellWindow : Window
         // UpdateDragReflow last showed on screen.
         int tentativeSlot = _dragTentativeSlot;
         int tentativeQuadrantSlot = _dragTentativeQuadrantSlot;
+        int tentativeGroupSlot = _dragTentativeGroupSlot;
+        var group = _expandedGroup;
 
         PreviewCanvas.ReleasePointerCapture(e.Pointer);
         EndPreviewDrag();
 
         if (slot < 0)
             return;
+
+        if (group is not null)
+        {
+            if (moved)
+            {
+                // A drag out of an add slot is not an add — it is a drag of nothing.
+                if (item is not null)
+                    ReorderGroupChild(item, tentativeGroupSlot);
+            }
+            else if (item is not null)
+            {
+                ShowItemDetails(item, e.GetCurrentPoint(PreviewCanvas).Position);
+            }
+            else
+            {
+                AddToOpenGroup();
+            }
+            return;
+        }
 
         if (_previewQuadrant)
         {
@@ -1811,6 +1881,43 @@ public sealed partial class ShellWindow : Window
         _dragMoved = false;
         _dragTentativeSlot = -1;
         _dragTentativeQuadrantSlot = -1;
+        _dragTentativeGroupSlot = -1;
+    }
+
+    /// <summary>
+    /// Which place on an open group's arc <paramref name="point"/> is nearest to, by proximity —
+    /// <see cref="QuadrantSlotAt"/>'s approach, not <see cref="PreviewSlotAt"/>'s, because the arc's
+    /// slot count varies with how many children the group has and its slots don't sit at the fixed
+    /// angles a full orbit's do. Includes the leading and trailing "add" ends, so dragging a child
+    /// toward either one targets the front or back of the list rather than only the slots between
+    /// them.
+    /// </summary>
+    private int GroupSlotAt(Point point, bool requireHit = true)
+    {
+        int count = _groupSlotBorders.Count;
+        if (count == 0) return -1;
+
+        double step = OrbitMetrics.FlyoutStepDegreesFor(_previewRadius) * Math.PI / 180.0;
+        double first = -((count - 1) / 2.0) * step;
+
+        int best = -1;
+        double bestGap = double.MaxValue;
+        for (int i = 0; i < count; i++)
+        {
+            double angle = first + i * step;
+            double x = _previewCenter.X + _previewRadius * Math.Cos(angle);
+            double y = _previewCenter.Y + _previewRadius * Math.Sin(angle);
+            double gap = Math.Sqrt((point.X - x) * (point.X - x) + (point.Y - y) * (point.Y - y));
+            if (gap < bestGap)
+            {
+                bestGap = gap;
+                best = i;
+            }
+        }
+
+        if (!requireHit)
+            return best;
+        return bestGap <= _previewBubble / 2 + 4 ? best : -1;
     }
 
     /// <summary>
@@ -1974,16 +2081,45 @@ public sealed partial class ShellWindow : Window
         RebuildItemsList();
     }
 
+    /// <summary>Group-arc counterpart of <see cref="ReorderItem"/>: moves one of the open group's
+    /// own children instead of a top-level orbit item. <paramref name="targetSlot"/> is an arc
+    /// slot index (see <see cref="GroupSlotAt"/>), one ahead of the child index it targets since
+    /// slot 0 is always the leading add end.</summary>
+    private void ReorderGroupChild(OrbitItem dragged, int targetSlot)
+    {
+        var group = _expandedGroup;
+        if (group is null || targetSlot < 0) return;
+
+        var visible = group.Children.Where(c => !c.Hidden).ToList();
+        int from = visible.IndexOf(dragged);
+        if (from < 0) return;
+
+        int to = Math.Clamp(targetSlot - 1, 0, visible.Count - 1);
+        if (to == from) return;
+
+        visible.RemoveAt(from);
+        visible.Insert(to, dragged);
+
+        var items = group.Children;
+        var positions = new List<int>();
+        for (int i = 0; i < items.Count && positions.Count < visible.Count; i++)
+        {
+            if (!items[i].Hidden)
+                positions.Add(i);
+        }
+        for (int i = 0; i < positions.Count; i++)
+            items[positions[i]] = visible[i];
+
+        _manager.NotifyItemsChanged();
+        RenderPreview();
+        RebuildItemsList();
+    }
+
     /// <summary>
     /// The details card currently on screen, so a second click can close it and so any teardown
     /// path can take it down without hunting for it.
     /// </summary>
     private Flyout? _detailsFlyout;
-
-    /// <summary>The centre of a bubble, in the coordinates of the canvas it is placed on.</summary>
-    private static Point PointOf(FrameworkElement element) => new(
-        Canvas.GetLeft(element) + element.ActualWidth / 2,
-        Canvas.GetTop(element) + element.ActualHeight / 2);
 
     /// <summary>
     /// Shows what an item is, on a card anchored where it was clicked.
@@ -2368,6 +2504,7 @@ public sealed partial class ShellWindow : Window
         // and right-click paths read them. Cleared so a press inside a group cannot reach a bubble
         // that is no longer drawn — the same reason the corner preview clears them.
         Array.Clear(_slotBorders);
+        _groupSlotBorders.Clear();
         // Both of the canvas commands go: Add item adds to the top level, and Reset defaults
         // rebuilds the whole orbit — neither is what "add" or "reset" means while you are looking
         // at one group's contents, and a destructive button that reads as scoped to what is on
@@ -2442,20 +2579,22 @@ public sealed partial class ShellWindow : Window
                 border.Child = PreviewGlyph("\uE710", glyphSize, muted);
                 border.BorderThickness = new Thickness(1);
                 ToolTipService.SetToolTip(border, "Add something to " + group.DisplayName);
-                border.Tapped += (_, _) => AddToOpenGroup();
+                // No Tapped handler: an add slot has no OrbitItem to drag, so
+                // Preview_PointerReleased's own "no item at this slot" branch calls
+                // AddToOpenGroup for it, the same way the canvas-level path already does.
+                _groupSlotBorders.Add(null);
             }
             else
             {
                 border.Child = PreviewGlyph(child!.Glyph, glyphSize, foreground);
                 ToolTipService.SetToolTip(border, child.DisplayName);
                 AddSlotLabel(child.DisplayName, cx, cy, angle, radius, bubble);
-                // Per-bubble rather than through the canvas's own press/drag path: that path reads
-                // _slotBorders and reorders the top-level orbit, neither of which a child belongs
-                // to. Preview_PointerPressed bails out entirely while a group is open, so there is
-                // nothing here for a tap to compete with.
-                var tapped = child;
-                border.Tapped += (sender, _) =>
-                    ShowItemDetails(tapped, PointOf((FrameworkElement)sender));
+                // No per-bubble Tapped handler: the canvas-level press/drag/release path (see
+                // Preview_PointerPressed's remarks on why the top-level orbit works this way)
+                // now reads _groupSlotBorders too, so a tap and a drag on a child settle in the
+                // same place instead of the per-item capture that used to make dragging children
+                // impossible.
+                _groupSlotBorders.Add(border);
             }
 
             Canvas.SetLeft(border, x);

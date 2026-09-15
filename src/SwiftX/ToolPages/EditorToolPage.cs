@@ -415,7 +415,6 @@ public abstract class EditorToolPage : ToolPage
         var text = Loc.Get("Tool.PrivacyFooter");
         ToolTipService.SetToolTip(indicator, BuildBubbleToolTip(text));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(indicator, text);
-        PaintPrivacyIndicator();
         return indicator;
     }
 
