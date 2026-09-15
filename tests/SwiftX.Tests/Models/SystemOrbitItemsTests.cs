@@ -139,6 +139,8 @@ public class SystemOrbitItemsTests
         Assert.Equal(SystemOrbitItems.SettingsTarget, item.Target);
         Assert.True(SystemOrbitItems.IsSystemTarget(item.Target));
         Assert.True(item.IsSystem);
+        Assert.False(item.IsGroup);
+        Assert.Empty(item.Children);
         Assert.False(string.IsNullOrWhiteSpace(item.DisplayName));
     }
 

@@ -38,8 +38,8 @@ public sealed class OrbitManager
     /// activation away from it.</summary>
     public bool IsSettingsOpen => _shellWindow is not null;
 
-    /// <summary>Same idea as <see cref="IsSettingsOpen"/>, for the "Add new" quick action's own
-    /// window (a Settings orbit item flyout child — see SystemOrbitItems.CreateAddNew).</summary>
+    /// <summary>Same idea as <see cref="IsSettingsOpen"/>, for the "Add new" window (empty orbit
+    /// slots and the tray's Add entry — see SystemOrbitItems.CreateAddNew).</summary>
     public bool IsAddItemOpen => _addItemWindow is not null;
 
     /// <summary>

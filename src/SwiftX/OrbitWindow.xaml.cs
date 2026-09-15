@@ -486,26 +486,6 @@ public sealed partial class OrbitWindow : Window
             bubble.Detach?.Invoke();
     }
 
-    /// <summary>
-    /// Keeps the Settings bubble's "Add new" child (see <see cref="SystemOrbitItems.CreateAddNew"/>)
-    /// in sync with whether there is anywhere left to add into. The full orbit never needs this
-    /// fallback — <see cref="CurrentItems"/> already puts an "Add new" placeholder directly on
-    /// every empty user slot, which is reachable without opening Settings at all — so this only
-    /// ever fires for the quadrant, whose four places (Settings among them) have no such per-slot
-    /// placeholder of their own. Recomputed on every render since which shape is showing — orbit or
-    /// quadrant — is itself part of what "room to add" means.
-    /// </summary>
-    private void UpdateSettingsAddNew()
-    {
-        _settingsItem.Children.Clear();
-        if (_quadrant is not { } corner)
-            return;
-
-        bool full = HotCornerItems.Resolve(_manager.Config, _settingsItem).Count >= QuadrantLayout.ItemCount;
-        if (!full)
-            _settingsItem.Children.Add(SystemOrbitItems.CreateAddNew());
-    }
-
     private IReadOnlyList<(OrbitItem Item, int Slot)> CurrentItems()
     {
         var slots = new List<(OrbitItem, int)>();
@@ -565,7 +545,6 @@ public sealed partial class OrbitWindow : Window
         _flyout.Clear();
         _flyoutParent = null;
         _hovered = null;
-        UpdateSettingsAddNew();
 
         // The hub is the orbit's center mark. A quarter circle's center is the screen corner, so
         // three quarters of a full-sized one would be off the screen — AttachHub draws a smaller
@@ -1039,12 +1018,8 @@ public sealed partial class OrbitWindow : Window
         //
         // Only drawn when the group actually has something to expand into — the same
         // Where(!Hidden) filter ExpandFlyout itself uses, since that is what decides whether
-        // hovering this bubble opens a flyout at all. Settings is the item this matters for: it is
-        // always Kind.Group, but its one child — "Add new" — only exists on the quadrant, where it
-        // drops out once that's full too (see UpdateSettingsAddNew); on the full orbit it never has
-        // one at all, since every empty user slot already carries its own "Add new" placeholder.
-        // Either way, a Settings bubble wearing an arc that promises a flyout it can no longer open
-        // would be a lie the moment you hovered it.
+        // hovering this bubble opens a flyout at all. Settings is a plain launch item and never
+        // wears an arc.
         if (item.IsGroup && !isFlyout && item.Children.Any(c => !c.Hidden))
             content.Children.Add(BuildGroupArc(diameter, angle, glyphBrush));
 
@@ -2033,12 +2008,7 @@ public sealed partial class OrbitWindow : Window
             return;
         }
 
-        // Settings is a group now too (it owns the Add new quick action below), but unlike a
-        // user-created group it still has a job of its own to do on click — open Settings
-        // — so it deliberately skips the generic group-click branch, which only ever toggles a
-        // flyout and never activates anything. Hovering it still opens that flyout regardless (see
-        // ScheduleFlyoutForHover, which checks Item.IsGroup independently of this method).
-        if (item.IsGroup && !IsSettingsItem(item))
+        if (item.IsGroup)
         {
             // Nested groups inside a flyout would need a third orbit to land in; there isn't one,
             // so they simply don't expand.

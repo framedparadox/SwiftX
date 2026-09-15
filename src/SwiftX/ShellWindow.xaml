@@ -157,14 +157,23 @@
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
 
-            <!-- The nav boxes' drop shadow, explicitly asked for. WinUI has no CSS box-shadow;
+            <!-- The Home tiles' drop shadow, explicitly asked for. WinUI has no CSS box-shadow;
                  ThemeShadow on a Translation-lifted element is the framework's own answer and,
                  unlike a Composition DropShadow, it re-renders itself for the theme.
-                 One shadow shared by all three boxes rather than one each: ThemeShadow is designed
-                 to be shared between casters, and outside a popup it only draws onto elements in
-                 its Receivers collection — which is a collection this window has to populate in
-                 code (see the Loaded handler), so there is exactly one of them to populate. -->
+                 One shadow shared by the casters rather than one each: ThemeShadow is designed
+                 to be shared, and outside a popup it only draws onto elements in its Receivers
+                 collection — which is a collection this window has to populate in code (see the
+                 Loaded handler), so there is exactly one of them to populate. -->
             <ThemeShadow x:Key="BoxShadow" />
+
+            <!-- Hairline between Home header actions: Elements | theme | Settings. -->
+            <Style x:Key="HeaderToolbarDivider" TargetType="Border">
+                <Setter Property="Width" Value="1" />
+                <Setter Property="Height" Value="16" />
+                <Setter Property="Margin" Value="8,0" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Background" Value="{ThemeResource ShellDividerBrush}" />
+            </Style>
 
             <!-- The footer strip at the bottom of a Home nav box — Logi's own "ADD" bar. -->
             <Style x:Key="BoxOpenLabel" TargetType="TextBlock">
@@ -188,9 +197,8 @@
         <Grid Grid.Row="1">
 
             <!-- ==================================================================
-                 HOME — Logi's MainPage: greeting header + right-aligned round
-                 toolbar, then three portrait nav boxes where Logi's device grid
-                 (product art, not source) would be.
+                 HOME — brand wordmark + right-aligned toolbar, then the Orbit
+                 mark and the Tools nav box.
                  ================================================================== -->
             <Grid x:Name="HomeScreen">
                 <Grid.RowDefinitions>
@@ -198,26 +206,39 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!-- Logi's own header padding and column split, verbatim. -->
                 <Grid Grid.Row="0" Padding="40,20,20,20">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock x:Name="GreetingText" Grid.Column="0"
-                               VerticalAlignment="Center"
-                               FontFamily="Segoe UI, Cambria, Georgia, 'Times New Roman'"
-                               FontSize="30" FontWeight="Bold"
-                               Foreground="{ThemeResource SettingsHeaderBrush}"
-                               Text="Good Evening" />
-
-                    <!-- Logi's toolbar holds five controls; two of them have no SwiftX counterpart
-                         (ADD DEVICE — no device pairing; the profile avatar — no account) and its
-                         Action Ring button is now a nav box of its own below, so what is left is
-                         Logi's theme toggle and its gear, in Logi's own order and geometry. -->
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2"
+                    <!-- "SwiftX" with the app mark standing in for the X. -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2"
                                 VerticalAlignment="Center">
+                        <TextBlock Text="Swift"
+                                   VerticalAlignment="Center"
+                                   FontFamily="Segoe UI, Cambria, Georgia, 'Times New Roman'"
+                                   FontSize="30" FontWeight="Bold"
+                                   Foreground="{ThemeResource SettingsHeaderBrush}" />
+                        <ContentControl x:Name="HomeBrandMark" Width="30" Height="30"
+                                        VerticalAlignment="Center" Margin="2,2,0,0"
+                                        IsTabStop="False" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0"
+                                VerticalAlignment="Center">
+                        <Button x:Name="ElementsShortcutButton" Style="{StaticResource ChromeIconButton}"
+                                Click="ElementsShortcutButton_Click"
+                                AutomationProperties.Name="Elements"
+                                AutomationProperties.AutomationId="ShellElementsShortcut"
+                                ToolTipService.ToolTip="Elements">
+                            <PathIcon Width="16" Height="14"
+                                      Data="M 8,0 L 16,14 L 0,14 Z"
+                                      Foreground="{ThemeResource SettingsAccentBrush}" />
+                        </Button>
+
+                        <Border Style="{StaticResource HeaderToolbarDivider}" />
+
                         <Button x:Name="ThemeToggleButton" Style="{StaticResource ChromeIconButton}"
                                 Click="ThemeToggleButton_Click"
                                 AutomationProperties.Name="Toggle theme"
@@ -228,19 +249,7 @@
                                       Foreground="{ThemeResource ShellToolbarIconBrush}" />
                         </Button>
 
-                        <Border Width="8" />
-
-                        <Button x:Name="ElementsShortcutButton" Style="{StaticResource ChromeIconButton}"
-                                Click="ElementsShortcutButton_Click"
-                                AutomationProperties.Name="Elements"
-                                AutomationProperties.AutomationId="ShellElementsShortcut"
-                                ToolTipService.ToolTip="Elements">
-                            <FontIcon Glyph="&#xE71D;" FontSize="18"
-                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                      Foreground="{ThemeResource ShellToolbarIconBrush}" />
-                        </Button>
-
-                        <Border Width="8" />
+                        <Border Style="{StaticResource HeaderToolbarDivider}" />
 
                         <Button x:Name="SettingsButton" Style="{StaticResource ChromeIconButton}"
                                 Click="SettingsButton_Click"
@@ -254,14 +263,12 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- Three 268x340 portrait boxes, 34px gutters, centred in what is left of the
-                     window. Each is a Button wrapping the card rather than a Border with a Tapped
-                     handler: the whole box is the click target either way, but a Button is
-                     keyboard-reachable and announces itself to Narrator, which a tapped Border does
-                     not (docs/windows-app-design-standards.md §7.3). The Button itself is stripped
-                     to nothing — the card inside carries all the chrome. -->
+                <!-- Tools stays a 268x340 portrait card. Orbit Settings is the animated hub mark
+                     with its title underneath — no plate, only the shared ThemeShadow. Each is a
+                     Button so the whole target is keyboard-reachable and announced to Narrator
+                     (docs/windows-app-design-standards.md §7.3). -->
                 <Grid Grid.Row="1">
-                    <!-- What the boxes' ThemeShadow is cast onto. Outside a popup a ThemeShadow
+                    <!-- What the tiles' ThemeShadow is cast onto. Outside a popup a ThemeShadow
                          draws only onto the elements in its Receivers collection, so a caster with
                          an empty one simply renders no shadow at all. A transparent plate behind
                          the row is the framework's own documented pattern for this; it is
@@ -273,55 +280,20 @@
                             Margin="0,0,0,24">
 
                     <Button x:Name="OrbitBox" Padding="0" Background="Transparent"
-                            BorderThickness="0" CornerRadius="8"
+                            BorderThickness="0" CornerRadius="16"
                             Click="OrbitBox_Click"
                             AutomationProperties.AutomationId="ShellBoxOrbit"
                             AutomationProperties.Name="Orbit Settings">
-                        <Border Width="268" Height="340" CornerRadius="8" BorderThickness="1"
-                                Background="{ThemeResource ShellCardBackgroundBrush}"
-                                BorderBrush="{ThemeResource ShellCardBorderBrush}"
+                        <Border Padding="28,24,28,20" CornerRadius="16" BorderThickness="0"
+                                Background="Transparent"
                                 Shadow="{StaticResource BoxShadow}" Translation="0,0,24">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="*" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <StackPanel Grid.Row="0" VerticalAlignment="Center" Spacing="0"
-                                            Padding="24,0,24,0">
-                                    <Grid Width="88" Height="88" HorizontalAlignment="Center"
-                                          Margin="0,0,0,24">
-                                        <Ellipse Width="88" Height="88"
-                                                 Fill="{ThemeResource ShellMedallionBrush}"
-                                                 Stroke="{ThemeResource ShellCardBorderBrush}"
-                                                 StrokeThickness="1" />
-                                        <FontIcon Glyph="&#xE9D9;" FontSize="36"
-                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                                  Foreground="{ThemeResource SettingsAccentBrush}"
-                                                  HorizontalAlignment="Center"
-                                                  VerticalAlignment="Center" />
-                                    </Grid>
-                                    <TextBlock Text="Orbit Settings" FontSize="22" FontWeight="Bold"
-                                               TextAlignment="Center" HorizontalAlignment="Center"
-                                               Foreground="{ThemeResource SettingsTitleBrush}" />
-                                    <TextBlock Text="Arrange the orbit and set its size, radius and hot corner."
-                                               Style="{StaticResource SettingBody}"
-                                               TextAlignment="Center" Margin="0,10,0,0" />
-                                    <Border x:Name="OrbitBoxPill" Height="22" CornerRadius="11"
-                                            Padding="12,0" Margin="0,16,0,0"
-                                            HorizontalAlignment="Center"
-                                            Background="{ThemeResource ShellPillBrush}">
-                                        <TextBlock x:Name="OrbitBoxMeta" FontSize="10"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{ThemeResource SettingsSecondaryTextBrush}"
-                                                   Text="8 slots · 6 user" />
-                                    </Border>
-                                </StackPanel>
-                                <StackPanel Grid.Row="1">
-                                    <Border Height="1" Background="{ThemeResource ShellDividerBrush}" />
-                                    <TextBlock Text="OPEN" Style="{StaticResource BoxOpenLabel}"
-                                               Margin="0,14,0,16" />
-                                </StackPanel>
-                            </Grid>
+                            <StackPanel Spacing="16" HorizontalAlignment="Center">
+                                <ContentControl x:Name="HomeOrbitMarkHost" Width="160" Height="160"
+                                                HorizontalAlignment="Center" IsTabStop="False" />
+                                <TextBlock Text="Orbit Settings" FontSize="22" FontWeight="Bold"
+                                           TextAlignment="Center" HorizontalAlignment="Center"
+                                           Foreground="{ThemeResource SettingsTitleBrush}" />
+                            </StackPanel>
                         </Border>
                     </Button>
 
@@ -356,7 +328,7 @@
                                     <TextBlock Text="Tools" FontSize="22" FontWeight="Bold"
                                                TextAlignment="Center" HorizontalAlignment="Center"
                                                Foreground="{ThemeResource SettingsTitleBrush}" />
-                                    <TextBlock Text="Open the built-in developer tools and choose which ones show."
+                                    <TextBlock Text="Open the built-in developer tools."
                                                Style="{StaticResource SettingBody}"
                                                TextAlignment="Center" Margin="0,10,0,0" />
                                     <Border Height="22" CornerRadius="11"
@@ -367,58 +339,6 @@
                                                    VerticalAlignment="Center"
                                                    Foreground="{ThemeResource SettingsSecondaryTextBrush}"
                                                    Text="5 tools" />
-                                    </Border>
-                                </StackPanel>
-                                <StackPanel Grid.Row="1">
-                                    <Border Height="1" Background="{ThemeResource ShellDividerBrush}" />
-                                    <TextBlock Text="OPEN" Style="{StaticResource BoxOpenLabel}"
-                                               Margin="0,14,0,16" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-                    </Button>
-
-                    <Button x:Name="ElementsBox" Padding="0" Background="Transparent"
-                            BorderThickness="0" CornerRadius="8"
-                            Click="ElementsBox_Click"
-                            AutomationProperties.AutomationId="ShellBoxElements"
-                            AutomationProperties.Name="Elements">
-                        <Border Width="268" Height="340" CornerRadius="8" BorderThickness="1"
-                                Background="{ThemeResource ShellCardBackgroundBrush}"
-                                BorderBrush="{ThemeResource ShellCardBorderBrush}"
-                                Shadow="{StaticResource BoxShadow}" Translation="0,0,24">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="*" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <StackPanel Grid.Row="0" VerticalAlignment="Center" Spacing="0"
-                                            Padding="24,0,24,0">
-                                    <Grid Width="88" Height="88" HorizontalAlignment="Center"
-                                          Margin="0,0,0,24">
-                                        <Ellipse Width="88" Height="88"
-                                                 Fill="{ThemeResource ShellMedallionBrush}"
-                                                 Stroke="{ThemeResource ShellCardBorderBrush}"
-                                                 StrokeThickness="1" />
-                                        <PathIcon Width="40" Height="36"
-                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                  Foreground="{ThemeResource SettingsAccentBrush}"
-                                                  Data="M 20,0 L 40,36 L 0,36 Z" />
-                                    </Grid>
-                                    <TextBlock Text="Elements" FontSize="22" FontWeight="Bold"
-                                               TextAlignment="Center" HorizontalAlignment="Center"
-                                               Foreground="{ThemeResource SettingsTitleBrush}" />
-                                    <TextBlock Text="Show, hide, or remove the apps, files, folders, links, and groups on the orbit."
-                                               Style="{StaticResource SettingBody}"
-                                               TextAlignment="Center" Margin="0,10,0,0" />
-                                    <Border Height="22" CornerRadius="11"
-                                            Padding="12,0" Margin="0,16,0,0"
-                                            HorizontalAlignment="Center"
-                                            Background="{ThemeResource ShellPillBrush}">
-                                        <TextBlock x:Name="ElementsBoxMeta" FontSize="10"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{ThemeResource SettingsSecondaryTextBrush}"
-                                                   Text="0 items" />
                                     </Border>
                                 </StackPanel>
                                 <StackPanel Grid.Row="1">
@@ -528,9 +448,9 @@
                                     Click="OrbitElementsButton_Click"
                                     AutomationProperties.Name="Elements"
                                     ToolTipService.ToolTip="Show the things you can put on the orbit">
-                                <FontIcon Glyph="&#xE71D;" FontSize="18"
-                                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                          Foreground="{ThemeResource SettingsHeaderBrush}" />
+                                <PathIcon Width="16" Height="14"
+                                          Data="M 8,0 L 16,14 L 0,14 Z"
+                                          Foreground="{ThemeResource SettingsAccentBrush}" />
                             </Button>
                             <Button x:Name="OrbitSidebarSettingsButton" Style="{StaticResource ChromeIconButton}"
                                     Click="OrbitSidebarSettingsButton_Click"
@@ -896,7 +816,7 @@
                          928 — 900 leaves a small margin inside that without being so wide it invites
                          a 5th column if ItemWidth ever changes. -->
                     <StackPanel Spacing="6" MaxWidth="900" HorizontalAlignment="Left">
-                        <TextBlock Text="Every tool lives inside the Tools item on the orbit. Turn one off to take it out."
+                        <TextBlock Text="Every tool lives inside the Tools item on the orbit. Open one from here or from the dock."
                                    Style="{StaticResource SettingBody}" Margin="0,0,0,8" />
 
 <!-- Rows are built in code-behind (RebuildToolsList) — one per entry in
@@ -1063,7 +983,7 @@
                                         Background="{ThemeResource SettingsNavIndicatorBrush}"
                                         Visibility="Collapsed" />
                                 <TextBlock x:Name="NavPrivacyText" Grid.Column="2"
-                                           Text="PRIVACY &amp; DATA"
+                                           Text="PRIVACY"
                                            Style="{StaticResource RailLabel}"
                                            Foreground="{ThemeResource SettingsNavInactiveBrush}" />
                             </Grid>
@@ -1538,99 +1458,89 @@
                                 </Border>
                             </Grid>
 
-                            <Border Style="{StaticResource Card}">
-                                <Grid ColumnSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <FontIcon Grid.Column="0" Glyph="&#xE8C8;"
-                                              FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="Backup &amp; restore" Style="{StaticResource SettingTitle}" />
-                                        <TextBlock Text="Export or import your orbit configuration as JSON."
-                                                   Style="{StaticResource SettingBody}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
-                                                VerticalAlignment="Center">
-                                        <Button Content="Export…" CornerRadius="6" Click="Export_Click" />
-                                        <Button Content="Import…" CornerRadius="6" Click="Import_Click" />
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-
-                            <Border Style="{StaticResource Card}">
-                                <Grid ColumnSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <FontIcon Grid.Column="0" Glyph="&#xE777;"
-                                              FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18" />
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="Reset" Style="{StaticResource SettingTitle}" />
-                                        <TextBlock Text="Restore default theme, accent colour, hover style, item size, radius, hotkey, tools, and orbit items."
-                                                   Style="{StaticResource SettingBody}" />
-                                    </StackPanel>
-                                    <Button Grid.Column="2" Content="Reset" VerticalAlignment="Center"
-                                            CornerRadius="6" Click="ResetAll_Click" />
-                                </Grid>
-                            </Border>
+                            <Grid ColumnSpacing="14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Style="{StaticResource Card}">
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon Grid.Column="0" Glyph="&#xE8C8;"
+                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                                  VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="Backup" Style="{StaticResource SettingTitle}" />
+                                            <TextBlock Text="Export or import your orbit as JSON."
+                                                       Style="{StaticResource SettingBody}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
+                                                    VerticalAlignment="Center">
+                                            <Button Content="Export…" CornerRadius="6" Click="Export_Click" />
+                                            <Button Content="Import…" CornerRadius="6" Click="Import_Click" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Column="1" Style="{StaticResource Card}">
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon Grid.Column="0" Glyph="&#xE777;"
+                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                                  VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="Reset" Style="{StaticResource SettingTitle}" />
+                                            <TextBlock Text="Restore default theme, accent, orbit and tools."
+                                                       Style="{StaticResource SettingBody}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Content="Reset" VerticalAlignment="Center"
+                                                CornerRadius="6" Click="ResetAll_Click" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
                         </StackPanel>
 
                         <!-- ==================== SUPPORT ==================== -->
-                        <StackPanel x:Name="FeedbackSection" Spacing="6" Visibility="Collapsed"
+                        <StackPanel x:Name="FeedbackSection" Spacing="20" Visibility="Collapsed"
                                     AutomationProperties.AutomationId="SettingsFeedbackPanel">
                             <TextBlock Text="Support" Style="{StaticResource SectionHeader}" />
 
-                            <Border Style="{StaticResource Card}">
-                                <Grid ColumnSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <FontIcon Grid.Column="0" Glyph="&#xE8B0;"
-                                              FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
-                                              VerticalAlignment="Center" />
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="Set-up guide" Style="{StaticResource SettingTitle}" />
-                                        <TextBlock Text="Run the first-run guide again to pick what sits on the orbit and which keys summon it."
-                                                   Style="{StaticResource SettingBody}" />
-                                    </StackPanel>
-                                    <Button Grid.Column="2" Content="Open guide" VerticalAlignment="Center"
-                                            CornerRadius="6"
-                                            AutomationProperties.AutomationId="SettingsRunOnboarding"
-                                            Click="RunOnboarding_Click" />
-                                </Grid>
-                            </Border>
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Set-up guide" Style="{StaticResource PrivacyHeading}" />
+                                <TextBlock Style="{StaticResource SettingBody}"
+                                           Text="The same three steps the first launch walks through:" />
+                                <TextBlock Style="{StaticResource SettingBody}"
+                                           Text="1. Welcome — SwiftX is a quick-access orbit for the apps, folders, links and tools you reach for most." />
+                                <TextBlock Style="{StaticResource SettingBody}"
+                                           Text="2. Pick what sits on the orbit. You can change this later from Orbit Settings." />
+                                <TextBlock Style="{StaticResource SettingBody}"
+                                           Text="3. Choose the keyboard shortcut that summons it, and whether a screen corner should do it too." />
+                                <Button Content="Open guide" HorizontalAlignment="Left" Margin="0,8,0,0"
+                                        CornerRadius="6"
+                                        AutomationProperties.AutomationId="SettingsRunOnboarding"
+                                        Click="RunOnboarding_Click" />
+                            </StackPanel>
 
-                            <Border Style="{StaticResource Card}">
-                                <Grid ColumnSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <FontIcon Grid.Column="0" Glyph="&#xE897;"
-                                              FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
-                                              VerticalAlignment="Top" Margin="0,2,0,0" />
-                                    <StackPanel Grid.Column="1" Spacing="2">
-                                        <TextBlock Text="Troubleshooting and Support" Style="{StaticResource SettingTitle}" />
-                                        <TextBlock Text="Report issues or request support."
-                                                   Style="{StaticResource SettingBody}" />
-                                        <HyperlinkButton Content="REPORT ISSUES / REQUEST SUPPORT"
-                                                         Style="{StaticResource AccentLink}"
-                                                         Margin="0,8,0,0" HorizontalAlignment="Left"
-                                                         AutomationProperties.AutomationId="SettingsFeedbackSupport"
-                                                         Click="ReportIssue_Click" />
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Troubleshooting and Support" Style="{StaticResource PrivacyHeading}" />
+                                <TextBlock Text="Report issues or request support."
+                                           Style="{StaticResource SettingBody}" />
+                                <HyperlinkButton Content="REPORT ISSUES / REQUEST SUPPORT"
+                                                 Style="{StaticResource AccentLink}"
+                                                 Margin="0,4,0,0" HorizontalAlignment="Left"
+                                                 AutomationProperties.AutomationId="SettingsFeedbackSupport"
+                                                 Click="ReportIssue_Click" />
+                            </StackPanel>
 
                             <TextBlock Style="{StaticResource SettingBody}" FontStyle="Italic"
-                                       Margin="0,12,0,0">
+                                       Margin="0,4,0,0">
                                 <Run Text="Links open in your browser, SwiftX sends nothing on its own." />
                                 <Hyperlink x:Name="ReadPrivacyLink"
                                            Click="OpenPrivacyFromFeedback_Click"
@@ -1638,14 +1548,14 @@
                             </TextBlock>
                         </StackPanel>
 
-                        <!-- ==================== PRIVACY & DATA ==================== -->
+                        <!-- ==================== PRIVACY ==================== -->
                         <!-- Written to say what happens to the user's data, not where the bytes sit.
                              Logi's own Privacy section is two telemetry toggles and an EULA link;
                              SwiftX has no telemetry to toggle, and a switch here would contradict
                              the copy below, so the section keeps SwiftX's content in Logi's shape. -->
                         <StackPanel x:Name="PrivacySection" Spacing="20" Visibility="Collapsed"
                                     AutomationProperties.AutomationId="SettingsPrivacyPanel">
-                            <TextBlock Text="Privacy &amp; Data" Style="{StaticResource SectionHeader}"
+                            <TextBlock Text="Privacy" Style="{StaticResource SectionHeader}"
                                        Margin="0,0,0,4" />
 
                             <StackPanel Spacing="4">
@@ -1725,7 +1635,7 @@
                                         <TextBlock Style="{StaticResource SettingBody}"
                                                    Text="A quick-access orbit for Windows. Summon it with a shortcut, a screen corner, or the tray icon, and launch the apps, folders, links, and built-in tools you reach for most." />
                                         <TextBlock Style="{StaticResource SettingBody}"
-                                                   Text="SwiftX runs entirely on your own device — see Privacy &amp; Data for what that means." />
+                                                   Text="SwiftX runs entirely on your own device — see Privacy for what that means." />
                                         <StackPanel Orientation="Horizontal" Spacing="20" Margin="0,4,0,0">
                                             <HyperlinkButton Content="TERMS AND CONDITIONS"
                                                              Style="{StaticResource AccentLink}"

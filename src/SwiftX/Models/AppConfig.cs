@@ -172,9 +172,9 @@ public sealed class AppConfig
     public string? AccentColorHex { get; set; }
 
     /// <summary>
-    /// Whether <paramref name="kind"/> is one of the tools the orbit is currently set to show —
-    /// the read side of the Tools page's switches, which <see cref="ToolCatalog.ApplyVisibility"/>
-    /// turns into the <see cref="OrbitItem.Hidden"/> flag on the orbit's own tool items.
+    /// Whether <paramref name="kind"/> is one of the tools the orbit is currently set to show.
+    /// <see cref="ToolCatalog.ApplyVisibility"/> turns this into the
+    /// <see cref="OrbitItem.Hidden"/> flag on the orbit's own tool items.
     /// </summary>
     public bool IsToolShown(ToolKind kind) => kind switch
     {

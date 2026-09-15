@@ -65,10 +65,11 @@ public sealed partial class ShellWindow : Window
     private bool _loading = true;
 
     /// <summary>
-    /// Re-reads the clock for the Home screen's greeting. Armed for the next boundary rather than
-    /// ticking on a fixed interval — see <see cref="StartGreetingClock"/>.
+    /// Replays the Home Orbit Settings mark — the same pinwheel the dock hub plays on summon —
+    /// every five seconds while Home is showing.
     /// </summary>
-    private DispatcherTimer? _greetingTimer;
+    private DispatcherTimer? _homeOrbitMarkTimer;
+    private AppLogo.Mark? _homeOrbitMark;
 
     private Border? _dragBorder;
     private OrbitItem? _dragItem;
@@ -87,9 +88,9 @@ public sealed partial class ShellWindow : Window
     // Preview geometry and slot occupancy, recorded by RenderPreview so the canvas-level pointer
     // handlers can work out which slot an event landed in without walking the visual tree.
     private readonly Border?[] _slotBorders = new Border?[OrbitMetrics.SlotCount];
-    private Border? _hoveredPreviewItem;
-    private Brush? _hoveredPreviewRestingBrush;
-    private Thickness _hoveredPreviewRestingThickness;
+    private Border? _hoveredPreviewOrigin;
+    private readonly Dictionary<Border, Border> _previewHoverPartners = new();
+    private readonly List<(Border Element, Brush? Brush, Thickness Thickness)> _hoveredPreviewRestores = new();
     private Point _previewCenter;
     private double _previewRadius;
     private double _previewBubble;
@@ -160,6 +161,9 @@ public sealed partial class ShellWindow : Window
         // card: Loaded can fire again if the tree is ever re-parented, and the mark has nothing to
         // wait for — unlike the version string and the toggles, it reads no state.
         AboutMark.Content = AppLogo.Create(72);
+        HomeBrandMark.Content = AppLogo.Create(30);
+        _homeOrbitMark = AppLogo.CreateFloating(160);
+        HomeOrbitMarkHost.Content = _homeOrbitMark;
 
         PreviewCanvas.PointerPressed += Preview_PointerPressed;
         PreviewCanvas.PointerMoved += Preview_PointerMoved;
@@ -187,15 +191,7 @@ public sealed partial class ShellWindow : Window
             // those without changing the accent. See RepaintThemedContent.
             RepaintThemedContent();
         };
-        Activated += (_, _) =>
-        {
-            ApplyChromeTheme();
-            // The timer below covers the window sitting open across a boundary, but not a machine
-            // that was asleep through one, nor a clock or time zone the user moved while this
-            // window was in the background. Coming back to the foreground is the cheapest moment to
-            // re-read the clock, and the one where a stale greeting would actually be seen.
-            RefreshGreeting();
-        };
+        Activated += (_, _) => ApplyChromeTheme();
 
         // A DispatcherTimer keeps its tick handler — and through it this window — alive on the
         // dispatcher's own queue. OrbitManager drops its reference on Closed (see OpenSettings);
@@ -205,14 +201,14 @@ public sealed partial class ShellWindow : Window
         // listened to it before, which is why picking a size wrote the setting and left the canvas
         // showing the old one until some unrelated edit forced a render. It is a static event, so
         // the handler it holds would keep this window alive past its Closed — hence the matching
-        // unsubscribe below, in the same place the greeting timer is stopped and for the same
+        // unsubscribe below, in the same place the Home mark timer is stopped and for the same
         // reason.
         void OnMetricsChanged() => DispatcherQueue.TryEnqueue(RenderPreview);
         OrbitMetrics.Changed += OnMetricsChanged;
 
         Closed += (_, _) =>
         {
-            StopGreetingClock();
+            StopHomeOrbitMark();
             OrbitMetrics.Changed -= OnMetricsChanged;
         };
 
@@ -220,11 +216,10 @@ public sealed partial class ShellWindow : Window
             p.IsMaximizable = false;
         _appWindow.IsShownInSwitchers = true;
 
-        // 1040 x 700 is what the layout is measured for: the three Home nav boxes come to
-        // 3x268 + 2x34 = 872 with room to breathe either side, and the Orbit screen splits the same
-        // width into Logi's fixed 320px sidebar and a 720px canvas column — which is exactly the
-        // split docs/images/17-app-ring.svg is drawn at, and enough for the 640px label canvas
-        // inside it with a 40px margin either side.
+        // 1040 x 700 is what the layout is measured for: the Tools card is 268 wide and the Orbit
+        // screen splits the same width into Logi's fixed 320px sidebar and a 720px canvas column —
+        // which is exactly the split docs/images/17-app-ring.svg is drawn at, and enough for the
+        // 640px label canvas inside it with a 40px margin either side.
         WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 1040, 700);
         WindowChrome.SetRoundedCorners(_hwnd);
         WindowChrome.CenterOnCursor(_appWindow, _appWindow.Id);
@@ -232,8 +227,6 @@ public sealed partial class ShellWindow : Window
         Root.Loaded += async (_, _) =>
         {
             _loading = true;
-            // Logi's own header line, hour-for-hour — see Services/Greeting.cs.
-            StartGreetingClock();
             SelectTheme(_manager.Config.Theme);
             UpdateThemeToggleIcon();
             PopulateLanguageBox();
@@ -267,7 +260,7 @@ public sealed partial class ShellWindow : Window
             VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0");
             FillSpecCard();
             // Wired here rather than in XAML because ThemeShadow.Receivers is a collection with no
-            // XAML syntax of its own on a shared resource. Without a receiver the three nav boxes
+            // XAML syntax of its own on a shared resource. Without a receiver the Home tiles
             // cast no shadow at all (outside a popup a ThemeShadow draws only onto its receivers),
             // which is the whole point of lifting them with Translation. Guarded on the resource
             // lookup rather than assumed: an element that is not yet in the visual tree cannot be a
@@ -755,7 +748,15 @@ public sealed partial class ShellWindow : Window
         ElementsScreen.Visibility = screen == ScreenElements ? Visibility.Visible : Visibility.Collapsed;
         SettingsScreen.Visibility = screen == ScreenSettings ? Visibility.Visible : Visibility.Collapsed;
 
-        if (screen == ScreenHome) UpdateHomeMeta();
+        if (screen == ScreenHome)
+        {
+            UpdateHomeMeta();
+            StartHomeOrbitMark();
+        }
+        else
+        {
+            StopHomeOrbitMark();
+        }
         if (screen == ScreenOrbit)
         {
             // Editing is a mode you are in while arranging the orbit, not a preference — arriving
@@ -817,80 +818,40 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// The counts on the Home nav boxes' meta pills, read from live state rather than written into
+    /// The count on the Home Tools card's meta pill, read from live state rather than written into
     /// the XAML — a hard-coded "4 tools" is exactly the kind of label that goes quietly stale the
     /// next time the catalog changes (the old Tools panel carried a "six fixed built-in tools"
     /// comment against a catalog of five).
     /// </summary>
     private void UpdateHomeMeta()
     {
-        int used = _manager.Config.Primary.Items.Count(i => !i.Hidden);
-        OrbitBoxMeta.Text = $"{OrbitMetrics.SlotCount} slots · {Math.Min(used, OrbitMetrics.UserSlotCount)} used";
-
         int tools = ToolCatalog.All.Count;
         ToolsBoxMeta.Text = tools == 1 ? "1 tool" : $"{tools} tools";
-
-        ElementsBoxMeta.Text = used == 1 ? "1 item" : $"{used} items";
     }
 
     /// <summary>
-    /// Paints the Home header's greeting for the current local time and keeps it there, so the line
-    /// reads Morning / Afternoon / Evening according to the clock rather than according to whenever
-    /// this window happened to be opened.
-    /// <para>
-    /// The timer is armed for the next boundary (<see cref="Greeting.TimeUntilNextChange"/>) and
-    /// re-armed on each tick, rather than ticking on a fixed interval: the greeting can only change
-    /// three times a day, so a one-minute poll would wake the dispatcher some fourteen hundred times
-    /// to do nothing between each pair of them. <c>DispatcherTimer</c> is not exact — it fires on
-    /// the UI queue, so a tick can land a beat late — which is why each tick re-reads the clock
-    /// rather than assuming the boundary it was armed for is the one it arrived at, and why
-    /// <see cref="Greeting.TimeUntilNextChange"/> floors the wait rather than trusting the interval
-    /// to be positive.
-    /// </para>
+    /// Plays the Home Orbit Settings mark — the same pinwheel the dock hub plays when it is
+    /// summoned — and keeps replaying it every five seconds while Home is on screen.
     /// </summary>
-    private void StartGreetingClock()
+    private void StartHomeOrbitMark()
     {
-        StopGreetingClock();
-
-        _greetingTimer = new DispatcherTimer();
-        _greetingTimer.Tick += (_, _) =>
-        {
-            RefreshGreeting();
-            // Re-armed from the clock as it now reads, not by leaving a fixed interval running: a
-            // machine that slept through a boundary, or a user who moved the clock, lands here with
-            // a different next boundary than the one this tick was armed for.
-            if (_greetingTimer is not null)
-                _greetingTimer.Interval = Greeting.TimeUntilNextChange(DateTime.Now);
-        };
-        _greetingTimer.Interval = Greeting.TimeUntilNextChange(DateTime.Now);
-        _greetingTimer.Start();
-
-        RefreshGreeting();
+        StopHomeOrbitMark();
+        _homeOrbitMark?.PlayEntrance();
+        _homeOrbitMarkTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _homeOrbitMarkTimer.Tick += (_, _) => _homeOrbitMark?.PlayEntrance();
+        _homeOrbitMarkTimer.Start();
     }
 
-    private void StopGreetingClock()
+    private void StopHomeOrbitMark()
     {
-        _greetingTimer?.Stop();
-        _greetingTimer = null;
-    }
-
-    /// <summary>
-    /// Writes the greeting for right now. Safe to call at any time — it reads the clock and the
-    /// current string table and nothing else, so it is also what picks a new language up.
-    /// </summary>
-    private void RefreshGreeting()
-    {
-        if (GreetingText is null) return;
-        var greeting = Greeting.Current();
-        if (GreetingText.Text != greeting)
-            GreetingText.Text = greeting;
+        if (_homeOrbitMarkTimer is null) return;
+        _homeOrbitMarkTimer.Stop();
+        _homeOrbitMarkTimer = null;
     }
 
     private void OrbitBox_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenOrbit);
 
     private void ToolsBox_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenTools);
-
-    private void ElementsBox_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenElements);
 
     private void ElementsShortcutButton_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenElements);
 
@@ -989,13 +950,12 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>
     /// Logi's own label pill: 30 tall, 6px corners, 12,4 padding, 12px SemiBold. The gap out from
-    /// the node's edge and the width cap are SwiftX's — Logi hand-places eight pills for eight
-    /// fixed labels and can tune each one, while these are user-named items of any length placed
-    /// by formula. 136 is the widest pill the mockup this screen is built to draws.
+    /// the node's edge is SwiftX's — Logi hand-places eight pills for eight fixed labels and can
+    /// tune each one, while these are user-named items of any length placed by formula. Width is
+    /// the title itself: capping and ellipsis produced truncated names on hover ("To….").
     /// </summary>
     private const double PillHeight = 30;
     private const double PillGap = 22;
-    private const double PillMaxWidth = 136;
 
     /// <summary>
     /// The outward name pill for one filled slot, on <c>PreviewLabelCanvas</c> rather than the
@@ -1012,11 +972,11 @@ public sealed partial class ShellWindow : Window
     /// four diagonals in towards the ring, where they crowd their neighbours.
     /// </para>
     /// </summary>
-    private void AddSlotLabel(
+    private Border? AddSlotLabel(
         OrbitItem item, double cx, double cy, double angle, double radius, double bubble)
     {
         string text = item.DisplayName;
-        if (string.IsNullOrWhiteSpace(text)) return;
+        if (string.IsNullOrWhiteSpace(text)) return null;
 
         var pill = new Border
         {
@@ -1034,7 +994,6 @@ public sealed partial class ShellWindow : Window
                 FontWeight = FontWeights.SemiBold,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping = TextWrapping.NoWrap,
-                TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
                 IsHitTestVisible = false,
             },
@@ -1046,15 +1005,12 @@ public sealed partial class ShellWindow : Window
             var origin = pill.TransformToVisual(PreviewCanvas).TransformPoint(new Point(0, 0));
             ShowItemDetails(item, origin);
         };
-        AttachPreviewHover(pill);
 
         // A Canvas gives its children no alignment, so the pill has to be placed by a corner — and
         // the six side pills are placed by whichever corner faces the hub, which for the left-hand
         // three is the one a width has to be subtracted to reach. Measuring here rather than
-        // letting it size itself is what makes that width knowable before it is in the tree, and
-        // the measured value is then written back as an explicit Width so the rendered pill cannot
-        // come out a pixel wider than what was placed. Trimming handles the overflow that caps.
-        pill.Measure(new Size(PillMaxWidth, PillHeight));
+        // letting it size itself is what makes that width knowable before it is in the tree.
+        pill.Measure(new Size(double.PositiveInfinity, PillHeight));
         double measured = pill.DesiredSize.Width;
         if (measured < 1)
         {
@@ -1064,8 +1020,7 @@ public sealed partial class ShellWindow : Window
             // label, and every pill on the canvas at once.
             measured = 24 + text.Length * 6.6;
         }
-        double width = Math.Min(PillMaxWidth, Math.Ceiling(measured));
-        pill.Width = width;
+        double width = Math.Ceiling(measured);
 
         double ux = Math.Cos(angle), uy = Math.Sin(angle);
         double nodeCx = cx + radius * ux;
@@ -1086,9 +1041,10 @@ public sealed partial class ShellWindow : Window
             px = ux > 0 ? nodeCx + reach : nodeCx - reach - width;
         }
 
-        Canvas.SetLeft(pill, Math.Clamp(px + PillCanvasOffsetX, 0, PillCanvasWidth - width));
+        Canvas.SetLeft(pill, Math.Clamp(px + PillCanvasOffsetX, 0, Math.Max(0, PillCanvasWidth - width)));
         Canvas.SetTop(pill, Math.Clamp(py, 0, PreviewCanvasSize - PillHeight));
         PreviewLabelCanvas.Children.Add(pill);
+        return pill;
     }
 
     private void RenderPreview()
@@ -1097,6 +1053,7 @@ public sealed partial class ShellWindow : Window
         PreviewCanvas.Children.Clear();
         PreviewLabelCanvas.Children.Clear();
         ClearPreviewHover();
+        _previewHoverPartners.Clear();
         // Back on for every render. Preview_PointerMoved is the only thing that takes them away,
         // and a render is what always follows the drop it was hiding them for.
         PreviewLabelCanvas.Visibility = Visibility.Visible;
@@ -1211,16 +1168,14 @@ public sealed partial class ShellWindow : Window
                 _slotBorders[i] = border;
             }
 
-            AttachPreviewHover(border);
+            if (item is not null)
+                AttachPreviewHover(border, AddSlotLabel(item, cx, cy, angle, radius, bubble));
+            else
+                AttachPreviewHover(border);
 
             Canvas.SetLeft(border, x);
             Canvas.SetTop(border, y);
             PreviewCanvas.Children.Add(border);
-
-            // An empty slot gets no pill: "+" is its own label, and eight pills reading "Empty"
-            // would be the loudest thing on the canvas.
-            if (item is not null)
-                AddSlotLabel(item, cx, cy, angle, radius, bubble);
         }
 
         AddHotCornerButton(size);
@@ -2104,7 +2059,9 @@ public sealed partial class ShellWindow : Window
     }
 
     private static bool ShowsGroupArc(OrbitItem item) =>
-        item.IsGroup && item.Children.Any(c => !c.Hidden);
+        item.IsGroup &&
+        !string.Equals(item.Target, SystemOrbitItems.SettingsTarget, StringComparison.OrdinalIgnoreCase) &&
+        item.Children.Any(c => !c.Hidden);
 
     /// <summary>
     /// Copied from <c>OrbitWindow.BuildGroupArc</c>: a 30° stroke hugging the bubble's outer edge
@@ -2153,32 +2110,56 @@ public sealed partial class ShellWindow : Window
         };
     }
 
-    private void AttachPreviewHover(Border border)
+    private void AttachPreviewHover(Border border, Border? partner = null)
+    {
+        if (partner is not null)
+        {
+            _previewHoverPartners[border] = partner;
+            _previewHoverPartners[partner] = border;
+            WirePreviewHover(partner);
+        }
+        WirePreviewHover(border);
+    }
+
+    private void WirePreviewHover(Border border)
     {
         border.PointerEntered += (_, _) =>
         {
             if (_dragMoved) return;
-            ClearPreviewHover();
-            _hoveredPreviewItem = border;
-            _hoveredPreviewRestingBrush = border.BorderBrush;
-            _hoveredPreviewRestingThickness = border.BorderThickness;
-            border.BorderBrush = new SolidColorBrush(CurrentAccentColor());
-            border.BorderThickness = new Thickness(2);
+            HighlightPreviewPair(border);
         };
         border.PointerExited += (_, _) =>
         {
-            if (ReferenceEquals(_hoveredPreviewItem, border))
+            if (ReferenceEquals(_hoveredPreviewOrigin, border))
                 ClearPreviewHover();
         };
     }
 
+    private void HighlightPreviewPair(Border origin)
+    {
+        ClearPreviewHover();
+        _hoveredPreviewOrigin = origin;
+        HighlightPreviewBorder(origin);
+        if (_previewHoverPartners.TryGetValue(origin, out var partner))
+            HighlightPreviewBorder(partner);
+    }
+
+    private void HighlightPreviewBorder(Border border)
+    {
+        _hoveredPreviewRestores.Add((border, border.BorderBrush, border.BorderThickness));
+        border.BorderBrush = new SolidColorBrush(CurrentAccentColor());
+        border.BorderThickness = new Thickness(2);
+    }
+
     private void ClearPreviewHover()
     {
-        if (_hoveredPreviewItem is null) return;
-        _hoveredPreviewItem.BorderBrush = _hoveredPreviewRestingBrush;
-        _hoveredPreviewItem.BorderThickness = _hoveredPreviewRestingThickness;
-        _hoveredPreviewItem = null;
-        _hoveredPreviewRestingBrush = null;
+        foreach (var (element, brush, thickness) in _hoveredPreviewRestores)
+        {
+            element.BorderBrush = brush;
+            element.BorderThickness = thickness;
+        }
+        _hoveredPreviewRestores.Clear();
+        _hoveredPreviewOrigin = null;
     }
 
     private void ReorderItem(OrbitItem dragged, int targetSlot)
@@ -2736,21 +2717,21 @@ public sealed partial class ShellWindow : Window
                 // Preview_PointerReleased's own "no item at this slot" branch calls
                 // AddToOpenGroup for it, the same way the canvas-level path already does.
                 _groupSlotBorders.Add(null);
+                AttachPreviewHover(border);
             }
             else
             {
                 border.Child = PreviewBubbleContent(child!, glyphSize, foreground, bubble, angle);
                 ToolTipService.SetToolTip(border, child!.DisplayName);
-                AddSlotLabel(child, cx, cy, angle, radius, bubble);
+                var pill = AddSlotLabel(child, cx, cy, angle, radius, bubble);
                 // No per-bubble Tapped handler: the canvas-level press/drag/release path (see
                 // Preview_PointerPressed's remarks on why the top-level orbit works this way)
                 // now reads _groupSlotBorders too, so a tap and a drag on a child settle in the
                 // same place instead of the per-item capture that used to make dragging children
                 // impossible.
                 _groupSlotBorders.Add(border);
+                AttachPreviewHover(border, pill);
             }
-
-            AttachPreviewHover(border);
 
             Canvas.SetLeft(border, x);
             Canvas.SetTop(border, y);
@@ -3416,11 +3397,6 @@ public sealed partial class ShellWindow : Window
             _manager.Config.Language = language;
             _manager.Save();
             _manager.ApplyLanguage();
-            // The Home header is the one piece of this window's text that is built from the string
-            // table at runtime rather than written into XAML, so it is the one piece that can
-            // follow a language change without the restart the rest of the window needs. See
-            // Services/Loc.cs's own note on that split.
-            RefreshGreeting();
         }
     }
 
@@ -3483,7 +3459,7 @@ public sealed partial class ShellWindow : Window
         GoToPrivacyPage();
 
     /// <summary>
-    /// Moves to Settings › Privacy &amp; Data instead of opening anything — it is a section of this
+    /// Moves to Settings › Privacy instead of opening anything — it is a section of this
     /// window, not a page on the web. Goes through <see cref="ShowScreen"/> and
     /// <see cref="SelectSection"/> rather than flipping Visibility directly, so those two stay the
     /// only places that know which panel and which rail row belong together, and the rail lights up
@@ -3680,7 +3656,6 @@ public sealed partial class ShellWindow : Window
         _manager.ApplyLanguage();
         _manager.ApplyHotCorner();
         ApplyTheme();
-        RefreshGreeting();
         _loading = true;
         PopulateLanguageBox();
         HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
@@ -4172,7 +4147,7 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private Grid BuildCardShell(
         FrameworkElement icon, string title, string caption1, string caption2, string badgeLabel,
-        bool isHidden, Action<bool> onToggle, Action? onDelete, string? deleteAutomationName,
+        bool isHidden, Action<bool>? onToggle, Action? onDelete, string? deleteAutomationName,
         string footerLabel, string footerAutomationName, Action onFooter,
         bool wrapText = false)
     {
@@ -4199,17 +4174,20 @@ public sealed partial class ShellWindow : Window
             head.Children.Add(remove);
         }
 
-        var toggle = new ToggleSwitch
+        if (onToggle is not null)
         {
-            IsOn = !isHidden,
-            OnContent = "",
-            OffContent = "",
-            MinWidth = 0,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        toggle.Toggled += (_, _) => onToggle(toggle.IsOn);
-        Grid.SetColumn(toggle, 3);
-        head.Children.Add(toggle);
+            var toggle = new ToggleSwitch
+            {
+                IsOn = !isHidden,
+                OnContent = "",
+                OffContent = "",
+                MinWidth = 0,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            toggle.Toggled += (_, _) => onToggle(toggle.IsOn);
+            Grid.SetColumn(toggle, 3);
+            head.Children.Add(toggle);
+        }
 
         Grid.SetRow(head, 0);
         card.Children.Add(head);
@@ -4477,10 +4455,10 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>
     /// One tool's card in the wrapping grid <see cref="ToolsList"/>'s ItemsWrapGrid lays out —
-    /// reuses <see cref="BuildCardShell"/> (the same icon/toggle/title/caption/badge/divider/footer
+    /// reuses <see cref="BuildCardShell"/> (the same icon/title/caption/badge/divider/footer
     /// shape the Elements screen's own cards build) rather than a parallel set of near-identical
-    /// helpers, leaving <c>onDelete</c> null — a built-in tool can be hidden but never removed, so
-    /// there is nothing for a delete button to do here. <see cref="Root"/>'s "Card" style wraps the
+    /// helpers, leaving <c>onDelete</c> and <c>onToggle</c> null — a built-in tool is opened from
+    /// this page, not shown, hidden, or removed. <see cref="Root"/>'s "Card" style wraps the
     /// result and carries <c>row.Target</c> as its <c>Tag</c>; the Tag outlived the drag-reorder
     /// that used to read it back, and is left in place because it is the only thing identifying
     /// which row a card came from.
@@ -4529,15 +4507,8 @@ public sealed partial class ShellWindow : Window
             row.Description,
             caption2: "",
             row.Badge,
-            isHidden: !row.GetShown(_manager.Config),
-            onToggle: isOn =>
-            {
-                if (_loading) return;
-                row.SetShown(_manager.Config, isOn);
-                ApplyToolVisibility();
-                _manager.NotifyItemsChanged();
-                RenderPreview();
-            },
+            isHidden: false,
+            onToggle: null,
             onDelete: null,
             deleteAutomationName: null,
             footerLabel: "OPEN",
@@ -4547,7 +4518,4 @@ public sealed partial class ShellWindow : Window
 
         return new Border { Style = (Style)Root.Resources["Card"], Child = card, Tag = row.Target };
     }
-
-    private void ApplyToolVisibility() =>
-        ToolCatalog.ApplyVisibility(_manager.Config.Primary.Items, _manager.Config);
 }
