@@ -644,7 +644,7 @@ public sealed partial class AddItemWindow : Window
             bool usable;
             try
             {
-                usable = TryReadTextTarget(await data.GetTextAsync(), out _);
+                usable = OrbitItemFactory.TryReadTextTarget(await data.GetTextAsync(), out _);
             }
             finally
             {
@@ -735,7 +735,7 @@ public sealed partial class AddItemWindow : Window
         var deferral = e.GetDeferral();
         try
         {
-            var target = await ReadDroppedTargetAsync(e.DataView);
+            var target = await OrbitItemFactory.ReadDroppedTargetAsync(e.DataView);
             if (string.IsNullOrEmpty(target))
             {
                 // Nothing usable in there. Refuse it properly and leave the form exactly as the
@@ -758,91 +758,6 @@ public sealed partial class AddItemWindow : Window
         {
             deferral.Complete();
         }
-    }
-
-    /// <summary>
-    /// The target string a dropped payload should become, or null if it carries nothing usable.
-    /// Storage items first, then a web link, then plain text for the sources that offer only that.
-    /// <see cref="OrbitItemFactory.Classify"/> re-derives the kind from the string afterwards, so
-    /// every path here only has to produce the string.
-    /// <para>
-    /// A dropped <c>.lnk</c> keeps its own path and is deliberately <em>not</em> resolved through
-    /// <see cref="ShortcutResolver"/> to the executable behind it. The shortcut is the more useful
-    /// thing to keep: <c>ShellExecute</c> follows one by itself (see <see cref="Launcher"/>), and
-    /// the .lnk carries the arguments, working directory and icon its bare target does not — a
-    /// resolved "chrome.exe" would quietly drop the switches that made that particular shortcut
-    /// worth pinning, and <see cref="ShortcutResolver.Resolve"/> returns null outright for the
-    /// Store-app and control-panel shortcuts that have no file-system target at all. The user is
-    /// still shown a name and not a path, because <see cref="OrbitItemFactory.SuggestName"/> takes
-    /// the file name without its extension, which for a shortcut is exactly the human-friendly
-    /// label Explorer shows ("Visual Studio Code", not "C:\...\Visual Studio Code.lnk").
-    /// </para>
-    /// </summary>
-    private static async Task<string?> ReadDroppedTargetAsync(DataPackageView data)
-    {
-        if (data.Contains(StandardDataFormats.StorageItems))
-        {
-            var items = await data.GetStorageItemsAsync();
-            // The first item with a path, rather than flatly the first: a multi-select drop is
-            // legal and only one item can be filled in, and the leading item can be a virtual
-            // shell item carrying no file-system path at all (a packaged app's Start-menu entry),
-            // which nothing downstream could launch.
-            var path = items
-                .Select(item => item.Path)
-                .FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
-            if (!string.IsNullOrWhiteSpace(path))
-                return path;
-        }
-
-        if (data.Contains(StandardDataFormats.WebLink))
-        {
-            var uri = await data.GetWebLinkAsync();
-            if (uri is not null)
-                return uri.ToString();
-        }
-
-        if (data.Contains(StandardDataFormats.Text) &&
-            TryReadTextTarget(await data.GetTextAsync(), out var text))
-            return text;
-
-        return null;
-    }
-
-    /// <summary>
-    /// Whether a plain-text payload is something this form can actually use, and what of it.
-    /// <para>
-    /// Text is the last resort because it is the least specific: a browser's address bar offers a
-    /// web link, but a terminal, an editor or a chat window offers only text, and a word dragged
-    /// out of a document offers text too. So this accepts an http/https URL or a path that really
-    /// exists on disk, and refuses everything else rather than turning a stray fragment of prose
-    /// into a target the user never meant. Surrounding quotes come off first — copying a path from
-    /// a shell usually brings them along.
-    /// </para>
-    /// </summary>
-    private static bool TryReadTextTarget(string? text, out string target)
-    {
-        target = string.Empty;
-
-        var trimmed = text?.Trim().Trim('"');
-        if (string.IsNullOrEmpty(trimmed))
-            return false;
-
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) &&
-            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-        {
-            target = trimmed;
-            return true;
-        }
-
-        // File/Directory.Exists swallow their own failures and answer false for a malformed or
-        // over-long path, so there is nothing here to guard against.
-        if (File.Exists(trimmed) || Directory.Exists(trimmed))
-        {
-            target = trimmed;
-            return true;
-        }
-
-        return false;
     }
 
     /// <summary>

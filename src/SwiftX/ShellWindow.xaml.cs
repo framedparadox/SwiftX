@@ -16,6 +16,7 @@ using SwiftX.Controls;
 using SwiftX.Interop;
 using SwiftX.Models;
 using SwiftX.Services;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Windows.Storage.Pickers;
 using Windows.UI;
@@ -70,6 +71,9 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private DispatcherTimer? _homeOrbitMarkTimer;
     private AppLogo.Mark? _homeOrbitMark;
+    private readonly Dictionary<Button, List<(DependencyObject Target, Brush? Brush)>> _orbitGlyphRest = new();
+    private bool? _orbitEditDropUsable;
+    private int _orbitEditDragToken;
 
     private Border? _dragBorder;
     private OrbitItem? _dragItem;
@@ -171,6 +175,11 @@ public sealed partial class ShellWindow : Window
         PreviewCanvas.PointerCaptureLost += (_, _) => EndPreviewDrag();
         PreviewCanvas.RightTapped += Preview_RightTapped;
 
+        WireOrbitGlyphHover(OrbitElementsButton);
+        WireOrbitGlyphHover(OrbitSidebarSettingsButton);
+        WireOrbitGlyphHover(OrbitHelpButton);
+        WireOrbitGlyphHover(OrbitResetButton);
+
         // See OnRatingValueChanged for why this is a DP callback and not the ValueChanged event.
         ExperienceRating.RegisterPropertyChangedCallback(
             RatingControl.ValueProperty, (_, _) => OnRatingValueChanged());
@@ -258,7 +267,7 @@ public sealed partial class ShellWindow : Window
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             SyncDesktopShortcutToggle();
             VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0");
-            FillSpecCard();
+            FillAboutDetails();
             // Wired here rather than in XAML because ThemeShadow.Receivers is a collection with no
             // XAML syntax of its own on a shared resource. Without a receiver the Home tiles
             // cast no shadow at all (outside a popup a ThemeShadow draws only onto its receivers),
@@ -274,7 +283,6 @@ public sealed partial class ShellWindow : Window
             _loading = false;
             RenderPreview();
             RebuildItemsList();
-            UpdateHomeMeta();
             UpdateHotkeyStatus();
             // Home first, with Settings parked on its own default section so the rail is already
             // consistent the moment the gear is pressed.
@@ -307,7 +315,6 @@ public sealed partial class ShellWindow : Window
                 // The edit sidebar's rows say whether each thing is already on the orbit, which a
                 // delete or an add made anywhere else has just changed the answer to.
                 if (_orbitEditBuilt) BuildOrbitEditSidebar();
-                if (_currentScreen == ScreenHome) UpdateHomeMeta();
             });
         };
     }
@@ -689,8 +696,9 @@ public sealed partial class ShellWindow : Window
         int rim = _manager.Config.Theme switch
         {
             AppTheme.Black => ShellRimColorBlack,
-            // Solid dark COLORREF on acrylic reads as a black border; COLOR_NONE clears the custom rim.
-            AppTheme.FrostedGlass => NativeMethods.DWMWA_COLOR_NONE,
+            // FrostedGlassBackdrop tint #101016 as COLORREF. COLOR_NONE painted a white caption
+            // strip along the top of this extended-into-title-bar window.
+            AppTheme.FrostedGlass => ShellRimColorFrosted,
             _ => dark ? ShellRimColorDark : ShellRimColorLight,
         };
         WindowChrome.HideWindowBorder(_hwnd, dark, rim);
@@ -703,12 +711,13 @@ public sealed partial class ShellWindow : Window
     /// palette change and the window grows a visible hairline where the rim stops matching the
     /// surface behind it. All three are neutral greys, so channel order is moot.
     /// <see cref="ShellRimColorBlack"/> matches <see cref="BlackOverrides"/>' own page value rather
-    /// than Dark's. Frosted Glass does not use a solid rim color — see
-    /// <see cref="ApplyChromeTheme"/>, which passes <see cref="NativeMethods.DWMWA_COLOR_NONE"/>.
+    /// than Dark's. Frosted Glass uses the acrylic tint rather than
+    /// <see cref="NativeMethods.DWMWA_COLOR_NONE"/>, which painted a white caption along the top.
     /// </summary>
     private const int ShellRimColorDark = 0x002B2B2B;
     private const int ShellRimColorLight = 0x00F2F2F2;
     private const int ShellRimColorBlack = 0x00000000;
+    private const int ShellRimColorFrosted = 0x00161010;
 
     private Style SecondaryCaptionStyle => (Style)Root.Resources["SecondaryCaption"];
 
@@ -749,14 +758,9 @@ public sealed partial class ShellWindow : Window
         SettingsScreen.Visibility = screen == ScreenSettings ? Visibility.Visible : Visibility.Collapsed;
 
         if (screen == ScreenHome)
-        {
-            UpdateHomeMeta();
             StartHomeOrbitMark();
-        }
         else
-        {
             StopHomeOrbitMark();
-        }
         if (screen == ScreenOrbit)
         {
             // Editing is a mode you are in while arranging the orbit, not a preference — arriving
@@ -818,27 +822,20 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// The count on the Home Tools card's meta pill, read from live state rather than written into
-    /// the XAML — a hard-coded "4 tools" is exactly the kind of label that goes quietly stale the
-    /// next time the catalog changes (the old Tools panel carried a "six fixed built-in tools"
-    /// comment against a catalog of five).
-    /// </summary>
-    private void UpdateHomeMeta()
-    {
-        int tools = ToolCatalog.All.Count;
-        ToolsBoxMeta.Text = tools == 1 ? "1 tool" : $"{tools} tools";
-    }
-
-    /// <summary>
-    /// Plays the Home Orbit Settings mark — the same pinwheel the dock hub plays when it is
+    /// Plays the Home Customize mark — the same pinwheel the dock hub plays when it is
     /// summoned — and keeps replaying it every five seconds while Home is on screen.
     /// </summary>
     private void StartHomeOrbitMark()
     {
         StopHomeOrbitMark();
         _homeOrbitMark?.PlayEntrance();
+        AppLogo.PlayGlyphEntrance(HomeToolsGlyph);
         _homeOrbitMarkTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        _homeOrbitMarkTimer.Tick += (_, _) => _homeOrbitMark?.PlayEntrance();
+        _homeOrbitMarkTimer.Tick += (_, _) =>
+        {
+            _homeOrbitMark?.PlayEntrance();
+            AppLogo.PlayGlyphEntrance(HomeToolsGlyph);
+        };
         _homeOrbitMarkTimer.Start();
     }
 
@@ -915,6 +912,7 @@ public sealed partial class ShellWindow : Window
         ThemeToggleButton.Visibility = theme == AppTheme.Black
             ? Visibility.Collapsed
             : Visibility.Visible;
+        ThemeToggleLeadingDivider.Visibility = ThemeToggleButton.Visibility;
 
         ThemeToggleIcon.Glyph = theme switch
         {
@@ -1276,13 +1274,10 @@ public sealed partial class ShellWindow : Window
     /// canvas corner that matches the chosen screen one, and switching the canvas between the
     /// orbit and what that corner would actually show.
     /// <para>
-    /// The icon is the same corner-pointing triangle as the Hot corner row above (see
-    /// <see cref="CornerTriangleGeometry"/>/<see cref="CornerTriangleAngle"/>), always rotated to
-    /// the chosen corner regardless of which of the two states below the button is currently in —
-    /// this button sits physically in that corner of the canvas, so pointing at it is what marks
-    /// the button as "this corner" rather than any other one on the canvas. The two states (orbit
-    /// vs. quadrant preview) differ only in tooltip and automation name now; they used to swap in
-    /// a generic resize/back glyph that said nothing about which corner it was.
+    /// The mark is the four logo leaves, with the selected corner's leaf at full strength — the
+    /// same glyph the sidebar picker uses. While the quadrant preview is up, it swaps to a back
+    /// chevron so the button reads as a way out rather than as another pointer at the corner it
+    /// is already sitting in.
     /// </para>
     /// </summary>
     private void AddHotCornerButton(double size)
@@ -1290,7 +1285,7 @@ public sealed partial class ShellWindow : Window
         if (!_manager.Config.HotCornerEnabled)
             return;
 
-        const double diameter = 34;
+        const double diameter = 40;
         const double inset = 2;
         var corner = _manager.Config.HotCorner;
 
@@ -1299,40 +1294,16 @@ public sealed partial class ShellWindow : Window
             Width = diameter,
             Height = diameter,
             Padding = new Thickness(0),
-            // Stays a disc whatever Item shape is set to: this is the canvas's own chrome — the
-            // affordance that switches to the corner preview — not one of the orbit's items.
             CornerRadius = new CornerRadius(diameter / 2),
-            // While the quadrant preview is up, the triangle would just be pointing at the corner
-            // it is already sitting in, which reads as decoration rather than a way out. Swap it
-            // for a plain back-chevron — the same glyph Back_Click's own button uses — and bring
-            // the corner triangle back once the preview closes.
             Content = _previewQuadrant
                 ? new FontIcon
                 {
                     Glyph = "\uE72B",
                     FontSize = 14,
                 }
-                : new PathIcon
-                {
-                    Data = CornerTriangleGeometry(),
-                    Width = 14,
-                    Height = 14,
-                    RenderTransformOrigin = new Point(0.5, 0.5),
-                    RenderTransform = new RotateTransform { Angle = CornerTriangleAngle(corner) },
-                },
+                : AppLogo.CreateCornerGlyph(28, corner),
         };
-        // No resting chrome: the triangle marks the corner on its own, and a filled plate around
-        // it read as one more bubble sitting in the orbit rather than as the canvas's own corner.
-        // Shadowing the two keys the Button style resolves at rest (its Style sets Background and
-        // BorderBrush from ButtonBackground/ButtonBorderBrush) rather than assigning
-        // button.Background directly, so the change lands at the same layer the framework sets it
-        // and touches nothing else: the pointer-over and pressed states drive
-        // ContentPresenter.Background from ButtonBackgroundPointerOver/Pressed, which are left
-        // alone here, so the full 34px disc still lights up under the pointer and keeps reading as
-        // a button. Only the resting fill goes away.
-        var transparent = new SolidColorBrush(Colors.Transparent);
-        button.Resources["ButtonBackground"] = transparent;
-        button.Resources["ButtonBorderBrush"] = transparent;
+        WireOrbitGlyphHover(button);
 
         ToolTipService.SetToolTip(button, _previewQuadrant
             ? "Back to the full orbit"
@@ -1348,6 +1319,93 @@ public sealed partial class ShellWindow : Window
         Canvas.SetLeft(button, Math.Clamp(cx - diameter / 2, inset, size - diameter - inset));
         Canvas.SetTop(button, Math.Clamp(cy - diameter / 2, inset, size - diameter - inset));
         PreviewCanvas.Children.Add(button);
+    }
+
+    /// <summary>
+    /// Orbit canvas chrome (hot corner, Elements, Settings, info, reset): no disc on hover.
+    /// The glyph / logo tints to the accent instead.
+    /// </summary>
+    private void WireOrbitGlyphHover(Button button)
+    {
+        SuppressChromeFill(button);
+        button.PointerEntered += OrbitGlyph_PointerEntered;
+        button.PointerExited += OrbitGlyph_PointerExited;
+        button.PointerCanceled += OrbitGlyph_PointerExited;
+    }
+
+    private static void SuppressChromeFill(Button button)
+    {
+        var transparent = new SolidColorBrush(Colors.Transparent);
+        button.Resources["ButtonBackground"] = transparent;
+        button.Resources["ButtonBackgroundPointerOver"] = transparent;
+        button.Resources["ButtonBackgroundPressed"] = transparent;
+        button.Resources["ButtonBorderBrush"] = transparent;
+        button.Resources["ButtonBorderBrushPointerOver"] = transparent;
+        button.Resources["ButtonBorderBrushPressed"] = transparent;
+    }
+
+    private void OrbitGlyph_PointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is not Button button) return;
+        var accent = new SolidColorBrush(CurrentAccentColor());
+        var saved = new List<(DependencyObject Target, Brush? Brush)>();
+        foreach (var node in WalkContent(button))
+        {
+            if (node is IconElement icon)
+            {
+                saved.Add((icon, icon.Foreground));
+                icon.Foreground = accent;
+            }
+            else if (node is Shape shape)
+            {
+                saved.Add((shape, shape.Fill));
+                shape.Fill = accent;
+            }
+        }
+        _orbitGlyphRest[button] = saved;
+    }
+
+    private void OrbitGlyph_PointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is not Button button || !_orbitGlyphRest.Remove(button, out var saved))
+            return;
+        foreach (var (target, brush) in saved)
+        {
+            if (target is IconElement icon)
+                icon.Foreground = brush;
+            else if (target is Shape shape)
+                shape.Fill = brush;
+        }
+    }
+
+    private static IEnumerable<DependencyObject> WalkContent(DependencyObject node)
+    {
+        yield return node;
+        switch (node)
+        {
+            case Panel panel:
+                foreach (UIElement child in panel.Children)
+                {
+                    if (child is DependencyObject inner)
+                    {
+                        foreach (var x in WalkContent(inner))
+                            yield return x;
+                    }
+                }
+                break;
+            case Border border when border.Child is DependencyObject inner:
+                foreach (var x in WalkContent(inner))
+                    yield return x;
+                break;
+            case Viewbox viewbox when viewbox.Child is DependencyObject inner:
+                foreach (var x in WalkContent(inner))
+                    yield return x;
+                break;
+            case ContentControl control when control.Content is DependencyObject inner:
+                foreach (var x in WalkContent(inner))
+                    yield return x;
+                break;
+        }
     }
 
     /// <summary>
@@ -2904,6 +2962,131 @@ public sealed partial class ShellWindow : Window
         };
     }
 
+    private async void OrbitSidebarEdit_DragEnter(object sender, DragEventArgs e)
+    {
+        int token = ++_orbitEditDragToken;
+        try
+        {
+            var data = e.DataView;
+            if (OrbitItemFactory.LooksDroppable(data))
+            {
+                SetOrbitEditDropState(true, e);
+                return;
+            }
+
+            if (!data.Contains(StandardDataFormats.Text))
+            {
+                SetOrbitEditDropState(false, e);
+                return;
+            }
+
+            SetOrbitEditDropState(null, e);
+            var deferral = e.GetDeferral();
+            bool usable;
+            try
+            {
+                usable = OrbitItemFactory.TryReadTextTarget(await data.GetTextAsync(), out _);
+            }
+            finally
+            {
+                deferral.Complete();
+            }
+            if (token == _orbitEditDragToken)
+                SetOrbitEditDropState(usable, null);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("OrbitSidebarEdit_DragEnter failed: " + ex);
+            if (token == _orbitEditDragToken)
+                SetOrbitEditDropState(false, null);
+        }
+    }
+
+    private void OrbitSidebarEdit_DragOver(object sender, DragEventArgs e) =>
+        SetOrbitEditDropState(_orbitEditDropUsable, e);
+
+    private void OrbitSidebarEdit_DragLeave(object sender, DragEventArgs e)
+    {
+        _orbitEditDragToken++;
+        SetOrbitEditDropState(null, null);
+    }
+
+    private async void OrbitSidebarEdit_Drop(object sender, DragEventArgs e)
+    {
+        _orbitEditDragToken++;
+        SetOrbitEditDropState(null, null);
+
+        var deferral = e.GetDeferral();
+        try
+        {
+            var targets = await OrbitItemFactory.ReadDroppedTargetsAsync(e.DataView);
+            if (targets.Count == 0)
+            {
+                e.AcceptedOperation = DataPackageOperation.None;
+                return;
+            }
+
+            e.AcceptedOperation = DataPackageOperation.Copy;
+            AddDroppedTargetsToOrbit(targets);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("OrbitSidebarEdit_Drop failed: " + ex);
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+    }
+
+    private void SetOrbitEditDropState(bool? usable, DragEventArgs? e)
+    {
+        _orbitEditDropUsable = usable;
+        bool show = usable == true || (usable is null && e is not null);
+        OrbitEditDropOverlay.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (show)
+        {
+            var accent = CurrentAccentColor();
+            OrbitEditDropOverlay.BorderBrush = new SolidColorBrush(accent);
+            OrbitEditDropOverlay.Background = new SolidColorBrush(Color.FromArgb(48, accent.R, accent.G, accent.B));
+        }
+
+        if (e is null) return;
+        bool ok = usable != false;
+        e.AcceptedOperation = ok ? DataPackageOperation.Copy : DataPackageOperation.None;
+        if (!ok || e.DragUIOverride is not { } ui) return;
+        ui.Caption = "Add to orbit";
+        ui.IsCaptionVisible = true;
+        ui.IsGlyphVisible = true;
+    }
+
+    private void AddDroppedTargetsToOrbit(IReadOnlyList<string> targets)
+    {
+        var items = _manager.Config.Primary.Items;
+        bool added = false;
+        foreach (var target in targets)
+        {
+            if (items.Count(i => !i.Hidden) >= OrbitMetrics.UserSlotCount)
+                break;
+            if (OrbitHasTarget(items, target))
+                continue;
+            var item = OrbitItemFactory.FromTarget(target);
+            items.Add(item);
+            added = true;
+        }
+
+        if (!added)
+        {
+            UpdateOrbitEditSummary();
+            return;
+        }
+
+        _manager.NotifyItemsChanged();
+        BuildOrbitEditSidebar();
+        RenderPreview();
+        RebuildItemsList();
+    }
+
     /// <summary>
     /// One accordion category: a header that expands, over rows that add. Logi's own geometry —
     /// a 36px header at CornerRadius 4 with a 20px icon column and a chevron that swaps
@@ -3338,9 +3521,9 @@ public sealed partial class ShellWindow : Window
         Paint(FrostedLevelDarkPill, FrostedGlassLevel.Dark);
     }
 
-    // ========================== the Orbit toolbar's wrench menu ==========================
+    // ========================== the Orbit toolbar's help menu ==========================
     //
-    // The gear that used to sit beside the wrench here now lives in the header
+    // The gear that used to sit beside the help button here now lives in the header
     // (OrbitSidebarSettingsButton, which just swaps the sidebar rather than navigating away), and
     // the wrench itself moved down into CanvasActions next to Reset defaults. Only its menu's
     // handlers are still here.
@@ -3604,23 +3787,17 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// About's spec card — Logi's own "System &amp; Runtime Specifications" block, with SwiftX's
-    /// four honest rows.
-    /// <para>
-    /// Every value here is read at runtime rather than written into the XAML. Logi hard-codes its
-    /// version string in two places and its spec rows in one; a hard-coded "Windows 11" or
-    /// ".NET 10" is a line that silently stops being true the next time the csproj moves, and an
-    /// About page that lies about the runtime is worse than one that omits it.
-    /// </para>
+    /// About's framework and runtime lines — read at runtime rather than written into the XAML
+    /// so a csproj bump cannot leave the page lying about what is actually running.
     /// </summary>
-    private void FillSpecCard()
+    private void FillAboutDetails()
     {
-        SpecOs.Text = RuntimeInformation.OSDescription;
-        SpecRuntime.Text = RuntimeInformation.FrameworkDescription;
-        SpecDistribution.Text = (PackagedRuntime.IsPackaged
-            ? "MSIX (Microsoft Store)"
-            : "Portable (unpackaged)")
-            + " · " + RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
+        AboutFramework.Text = "WinUI 3 · Windows App SDK 2.4";
+        AboutRuntime.Text = RuntimeInformation.FrameworkDescription
+            + " · " + RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant()
+            + " · " + (PackagedRuntime.IsPackaged
+                ? "MSIX (Microsoft Store)"
+                : "Portable (unpackaged)");
     }
 
     private async void Export_Click(object sender, RoutedEventArgs e)
@@ -3778,64 +3955,25 @@ public sealed partial class ShellWindow : Window
         UpdateHotkeyStatus();
     }
 
-    private void SelectHotCorner(HotCorner corner)
+    private void SelectHotCorner(HotCorner corner) => RebuildHotCornerPicker(corner);
+
+    /// <summary>
+    /// Rebuilds the four-leaf hot-corner picker so the selected leaf matches
+    /// <paramref name="corner"/>. Rebuilt rather than mutated because the glyph is a fresh tree of
+    /// petals from <see cref="AppLogo.CreateCornerGlyph"/>.
+    /// </summary>
+    private void RebuildHotCornerPicker(HotCorner corner)
     {
-        foreach (ComboBoxItem item in HotCornerBox.Items)
+        if (HotCornerPickerHost is null) return;
+        HotCornerPickerHost.Content = AppLogo.CreateCornerGlyph(48, corner, picked =>
         {
-            if ((item.Tag as string) == corner.ToString())
-            {
-                HotCornerBox.SelectedItem = item;
-                break;
-            }
-        }
-        UpdateHotCornerIcon(corner);
-    }
-
-    /// <summary>
-    /// Turns the hot-corner triangle to point at <paramref name="corner"/>. The geometry in
-    /// ShellWindow.xaml is authored with its right angle at the top left, so each quarter turn
-    /// clockwise walks it round to the next corner in the same order the screen does.
-    /// <para>
-    /// Driven from the corner itself rather than the ComboBox's index so the two cannot drift apart
-    /// if the dropdown is ever reordered.
-    /// </para>
-    /// </summary>
-    private void UpdateHotCornerIcon(HotCorner corner) =>
-        HotCornerIconRotation.Angle = CornerTriangleAngle(corner);
-
-    /// <summary>
-    /// Clockwise rotation, in degrees, that turns a triangle authored pointing top-left (right
-    /// angle in that corner, hypotenuse cutting across to it) so it instead points at
-    /// <paramref name="corner"/>. Shared by <see cref="UpdateHotCornerIcon"/> — which turns the
-    /// XAML-declared PathIcon on the Orbit screen's Hot corner row — and
-    /// <see cref="AddHotCornerButton"/>, which builds the same triangle fresh in code for the
-    /// canvas button, so the two can never disagree about which way a given corner turns.
-    /// </summary>
-    private static double CornerTriangleAngle(HotCorner corner) => corner switch
-    {
-        HotCorner.TopLeft => 0,
-        HotCorner.TopRight => 90,
-        HotCorner.BottomRight => 180,
-        HotCorner.BottomLeft => 270,
-        _ => 0,
-    };
-
-    /// <summary>
-    /// The right-angle-triangle path shared by the row icon and the canvas button — see
-    /// <see cref="CornerTriangleAngle"/>. Authored pointing top-left at a nominal 14x14, the same
-    /// coordinates as the XAML-declared PathIcon's <c>Data</c> in ShellWindow.xaml, so the two
-    /// read as the same mark rather than merely similar ones. Built fresh per call rather than
-    /// cached: Geometry is cheap here and every other themed element on this canvas (brushes,
-    /// borders) is already rebuilt on each RenderPreview pass.
-    /// </summary>
-    private static PathGeometry CornerTriangleGeometry()
-    {
-        var figure = new PathFigure { StartPoint = new Point(0, 0), IsClosed = true };
-        figure.Segments.Add(new LineSegment { Point = new Point(14, 0) });
-        figure.Segments.Add(new LineSegment { Point = new Point(0, 14) });
-        var geometry = new PathGeometry();
-        geometry.Figures.Add(figure);
-        return geometry;
+            if (_loading) return;
+            _manager.Config.HotCorner = picked;
+            _manager.Save();
+            _manager.ApplyHotCorner();
+            RebuildHotCornerPicker(picked);
+            RenderPreview();
+        });
     }
 
     private void SelectHotCornerLayout(HotCornerLayout layout)
@@ -3855,20 +3993,6 @@ public sealed partial class ShellWindow : Window
         HotCornerOptionsRow.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         if (!on)
             _previewQuadrant = false;
-    }
-
-    private void HotCornerBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_loading || HotCornerBox.SelectedItem is not ComboBoxItem item) return;
-        if (Enum.TryParse<HotCorner>(item.Tag as string, out var corner))
-        {
-            _manager.Config.HotCorner = corner;
-            _manager.Save();
-            _manager.ApplyHotCorner();
-            UpdateHotCornerIcon(corner);
-            // The canvas draws the corner button, and any quadrant preview, at the chosen corner.
-            RenderPreview();
-        }
     }
 
     private void HotCornerEnabled_Toggled(object sender, RoutedEventArgs e)
@@ -4287,10 +4411,17 @@ public sealed partial class ShellWindow : Window
             Content = new TextBlock { Text = label, Style = (Style)Root.Resources["BoxOpenLabel"] },
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            BorderThickness = new Thickness(0),
-            Padding = new Thickness(0, 10, 0, 0),
+            MinWidth = 0,
+            MinHeight = 0,
+            Padding = new Thickness(0, 12, 0, 4),
         };
+        var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        button.Resources["ButtonBackground"] = transparent;
+        button.Resources["ButtonBackgroundPointerOver"] = ThemeHelper.Brush(Root, "ShellPillBrush");
+        button.Resources["ButtonBackgroundPressed"] = ThemeHelper.Brush(Root, "ShellPillBrush");
+        button.Resources["ButtonBorderBrush"] = transparent;
+        button.Resources["ButtonBorderBrushPointerOver"] = transparent;
+        button.Resources["ButtonBorderBrushPressed"] = transparent;
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, automationName);
         return button;
     }

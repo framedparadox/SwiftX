@@ -8,6 +8,7 @@ public class OrbitItemFactoryTests
 {
     [Theory]
     [InlineData(@"C:\Windows\System32\notepad.exe", OrbitItemKind.Application)]
+    [InlineData(@"C:\Users\me\Desktop\Code.lnk", OrbitItemKind.Shortcut)]
     [InlineData(@"C:\Windows", OrbitItemKind.Folder)]
     [InlineData("https://example.com", OrbitItemKind.WebLink)]
     [InlineData(@"C:\Temp\notes.txt", OrbitItemKind.File)]

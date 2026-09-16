@@ -103,7 +103,17 @@ public static class WindowChrome
     /// </summary>
     public static void SetTitleBarTheme(AppWindow appWindow, bool dark)
     {
-        appWindow.TitleBar.PreferredTheme = dark ? TitleBarTheme.Dark : TitleBarTheme.Light;
+        var titleBar = appWindow.TitleBar;
+        titleBar.PreferredTheme = dark ? TitleBarTheme.Dark : TitleBarTheme.Light;
+
+        // ExtendsContentIntoTitleBar leaves the OS caption plate in place unless these are
+        // cleared. Unset, that plate is opaque white (or the inactive-caption grey) and reads as
+        // a hard line along the top of a frosted / acrylic window.
+        var clear = Microsoft.UI.Colors.Transparent;
+        titleBar.BackgroundColor = clear;
+        titleBar.InactiveBackgroundColor = clear;
+        titleBar.ButtonBackgroundColor = clear;
+        titleBar.ButtonInactiveBackgroundColor = clear;
     }
 
     /// <summary>
@@ -135,7 +145,7 @@ public static class WindowChrome
 
     /// <summary>
     /// Makes the DWM window rim invisible — for opaque themes by painting it the window's own
-    /// surface color, for Frosted Glass by asking DWM not to draw a custom rim. The
+    /// surface color, for Frosted Glass by painting the backdrop's own tint. The
     /// immersive-dark-mode flag is tracked to the theme too (see <see cref="SetFrameTheme"/>) so
     /// DWM renders the window edge / corner anti-aliasing for the right background.
     /// <para>
@@ -158,10 +168,12 @@ public static class WindowChrome
     /// surfaces of roughly <c>#F9F0F4</c> and <c>#271C22</c>.
     /// </para>
     /// <para>
-    /// Frosted Glass is the exception. Its acrylic / frosted surface is translucent, so any solid
-    /// dark COLORREF on the rim (even the theme's own tint) reads as a black border. Pass
-    /// <see cref="NativeMethods.DWMWA_COLOR_NONE"/> as <paramref name="surfaceOverride"/> —
-    /// that sentinel is how we ask DWM not to draw a custom rim on the frosted shell.
+    /// Frosted Glass is the exception. Its acrylic / frosted surface is translucent, so a pure
+    /// black COLORREF on the rim reads as a hard black frame. Pass the backdrop's own tint
+    /// (<c>#101016</c> as COLORREF <c>0x00161010</c>) instead — close enough to the glass that
+    /// the 1px top edge disappears into it, which
+    /// <see cref="NativeMethods.DWMWA_COLOR_NONE"/> does not: that sentinel, with content
+    /// extended into the title bar, paints the caption as flat white.
     /// </para>
     /// <para>
     /// An explicit color is also the only one of the two that survives a theme switch on opaque
@@ -177,26 +189,25 @@ public static class WindowChrome
     /// </summary>
     /// <param name="surfaceOverride">
     /// A COLORREF (0x00BBGGRR) to paint the rim instead of the theme's flat <see cref="SurfaceDark"/>/
-    /// <see cref="SurfaceLight"/>, for a window whose surface is not that flat color — or
-    /// <see cref="NativeMethods.DWMWA_COLOR_NONE"/> to clear a custom rim (Frosted Glass). Settings
-    /// in Dark is the one opaque such window: its root now resolves to a lighter,
-    /// design-colours.md-anchored surface (#202020, see SettingsSurfaceBrush in Themes/Colors.xaml)
-    /// rather than the shared #000000 every other window still uses, so painting the rim pure black
-    /// would draw a hard edge around the window instead of disappearing into it.
+    /// <see cref="SurfaceLight"/>, for a window whose surface is not that flat color. Frosted Glass
+    /// passes the acrylic tint (<c>0x00161010</c>). Settings in Dark is the one opaque such window:
+    /// its root now resolves to a lighter, design-colours.md-anchored surface (#202020, see
+    /// SettingsSurfaceBrush in Themes/Colors.xaml) rather than the shared #000000 every other
+    /// window still uses, so painting the rim pure black would draw a hard edge around the window
+    /// instead of disappearing into it.
     /// </param>
     public static void HideWindowBorder(nint hwnd, bool dark, int? surfaceOverride = null)
     {
         SetFrameTheme(hwnd, dark);
 
-        // Pass-through: solid COLORREF for opaque themes, or DWMWA_COLOR_NONE for Frosted Glass.
         int surface = surfaceOverride ?? (dark ? SurfaceDark : SurfaceLight);
         NativeMethods.DwmSetWindowAttribute(
             hwnd, NativeMethods.DWMWA_BORDER_COLOR, ref surface, sizeof(int));
-        if (surfaceOverride == NativeMethods.DWMWA_COLOR_NONE)
-        {
-            NativeMethods.DwmSetWindowAttribute(
-                hwnd, NativeMethods.DWMWA_CAPTION_COLOR, ref surface, sizeof(int));
-        }
+        // Caption is a separate DWM colour from the rim. Leaving it at the system default is what
+        // drew a white strip along the top of an extended-into-title-bar window, even when the
+        // border itself matched the surface.
+        NativeMethods.DwmSetWindowAttribute(
+            hwnd, NativeMethods.DWMWA_CAPTION_COLOR, ref surface, sizeof(int));
     }
 
     /// <summary>
