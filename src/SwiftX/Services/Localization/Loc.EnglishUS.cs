@@ -81,6 +81,7 @@ public static partial class Loc
         ["QuickFormat.PlainText"] = "Plain text",
         ["QuickFormat.InvalidFormat"] = "{0} — invalid",
         ["QuickFormat.InvalidData"] = "Invalid data",
+        ["QuickFormat.TooLarge"] = "Too large for a quick look — open it in Data Formatter.",
         ["SecureValues.Heading"] = "Your saved values",
         ["SecureValues.InfoLabel"] = "About secure values",
         ["SecureValues.Blurb"] = "Every key and value you save here is encrypted at rest with Windows DPAPI, tied to your Windows account, and never leaves this PC. Values stay masked on screen until you copy one — Copy always places the real secret on the clipboard.",

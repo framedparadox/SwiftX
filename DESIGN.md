@@ -161,6 +161,7 @@ To guarantee that SwiftX never crashes, hangs, or exhausts system resources:
 | **Custom Icon Ingestion** | $16\text{ MB}$ | Pre-decode image header boundary check |
 | **Config Import** | $8\text{ MB}$ | Pre-parse JSON size limit |
 | **Editor Syntax Highlighting** | $100{,}000\text{ chars}$ | Skips syntax tokens above ceiling; falls back to raw monospace |
+| **Quick Format Auto-Run** | $2{,}000{,}000\text{ chars}$ | `InputLimits.MaxQuickFormatChars`; refused with a message pointing at the Data Formatter, since this is the one tool that formats unprompted |
 | **JSON Parser Depth** | $256\text{ levels}$ | `JsonDocumentOptions.MaxDepth = 256` with diagnostic capture |
 | **XML Entity Characters** | $1{,}024\text{ chars}$ | `XmlReaderSettings.MaxCharactersFromEntities = 1024` |
 
