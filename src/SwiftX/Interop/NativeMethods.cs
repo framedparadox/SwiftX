@@ -11,6 +11,9 @@ namespace SwiftX.Interop;
 internal static partial class NativeMethods
 {
     // ---- DWM window attributes --------------------------------------------
+    public const int DWMWA_NCRENDERING_POLICY = 2;
+    public const int DWMNCRP_USEWINDOWSTYLE = 0;
+    public const int DWMNCRP_DISABLED = 1;
     public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     public const int DWMWA_BORDER_COLOR = 34;
@@ -32,6 +35,8 @@ internal static partial class NativeMethods
 
     // ---- Background erase suppression (see WindowChrome.MakeTransparentOverlay) ----
     public const uint WM_ERASEBKGND = 0x0014;
+    public const uint WM_NCCALCSIZE = 0x0083;
+    public const uint WM_NCPAINT = 0x0085;
 
     public delegate nint SubclassProc(nint hwnd, uint msg, nint wParam, nint lParam, nuint id, nint data);
 
@@ -44,6 +49,18 @@ internal static partial class NativeMethods
 
     [LibraryImport("dwmapi.dll")]
     public static partial int DwmSetWindowAttribute(nint hwnd, int attribute, ref int value, int size);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MARGINS
+    {
+        public int cxLeftWidth;
+        public int cxRightWidth;
+        public int cyTopHeight;
+        public int cyBottomHeight;
+    }
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmExtendFrameIntoClientArea(nint hwnd, ref MARGINS margins);
 
     // ---- GDI regions (round hit-testing region for the orbit) --------------
     [DllImport("gdi32.dll")]
@@ -77,6 +94,10 @@ internal static partial class NativeMethods
     // ---- Extended window styles (tool window: off taskbar & alt-tab) ------
     public const int GWL_EXSTYLE = -20;
     public const long WS_EX_TOOLWINDOW = 0x00000080;
+    public const long WS_EX_DLGMODALFRAME = 0x00000001;
+    public const long WS_EX_WINDOWEDGE = 0x00000100;
+    public const long WS_EX_CLIENTEDGE = 0x00000200;
+    public const long WS_EX_STATICEDGE = 0x00020000;
 
     // ---- Window styles (strip the non-client frame / resize border) -------
     public const int GWL_STYLE = -16;

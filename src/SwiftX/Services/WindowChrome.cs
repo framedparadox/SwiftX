@@ -12,6 +12,7 @@ public static class WindowChrome
 {
     private const nuint NoEraseSubclassId = 0x53774658; // 'SwfX'
     private static readonly Dictionary<nint, NativeMethods.SubclassProc> NoEraseSubclassCallbacks = new();
+    private static readonly HashSet<nint> FrostedHwnds = new();
 
     /// <summary>Sizes a window's client area given a size in device-independent pixels.</summary>
     public static void SetClientSizeDip(AppWindow appWindow, nint hwnd, double dipW, double dipH)
@@ -114,6 +115,8 @@ public static class WindowChrome
         titleBar.InactiveBackgroundColor = clear;
         titleBar.ButtonBackgroundColor = clear;
         titleBar.ButtonInactiveBackgroundColor = clear;
+        titleBar.ButtonHoverBackgroundColor = clear;
+        titleBar.ButtonPressedBackgroundColor = clear;
     }
 
     /// <summary>
@@ -211,6 +214,101 @@ public static class WindowChrome
     }
 
     /// <summary>
+    /// Frosted Glass has no DWM frame: no 1px white/black rim, no caption plate. Opaque themes
+    /// keep the usual surface-matched rim.
+    /// <para>
+    /// <see cref="NativeMethods.DWMWA_COLOR_NONE"/> paints a white caption. A solid COLORREF on
+    /// acrylic paints a black (or tinted) one. The combination that actually removes the line is
+    /// to drop WinUI's border, zero the non-client metrics so DWM has nothing to stroke, skip NC
+    /// paint, and reset any leftover border/caption colour to the DWM default.
+    /// </para>
+    /// </summary>
+    public static void ApplyShellFrame(AppWindow appWindow, nint hwnd, bool dark, bool frosted, int rim)
+    {
+        SetTitleBarTheme(appWindow, dark);
+        SetRoundedCorners(hwnd);
+
+        try
+        {
+            if (appWindow.Presenter is OverlappedPresenter presenter)
+            {
+                presenter.SetBorderAndTitleBar(hasBorder: !frosted, hasTitleBar: true);
+                presenter.IsResizable = true;
+            }
+        }
+        catch
+        {
+            // Some presenters reject a borderless title bar; the DWM calls below still run.
+        }
+
+        SetFrostedNonClient(hwnd, frosted);
+
+        if (frosted)
+        {
+            var glass = new NativeMethods.MARGINS
+            {
+                cxLeftWidth = -1,
+                cxRightWidth = -1,
+                cyTopHeight = -1,
+                cyBottomHeight = -1,
+            };
+            NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref glass);
+
+            // COLOR_NONE is the white top edge. A tint COLORREF is the black one. Default, on a
+            // window whose NC metrics are already zero, leaves nothing to stroke.
+            int reset = NativeMethods.DWMWA_COLOR_DEFAULT;
+            NativeMethods.DwmSetWindowAttribute(
+                hwnd, NativeMethods.DWMWA_BORDER_COLOR, ref reset, sizeof(int));
+            NativeMethods.DwmSetWindowAttribute(
+                hwnd, NativeMethods.DWMWA_CAPTION_COLOR, ref reset, sizeof(int));
+
+            int ncOff = NativeMethods.DWMNCRP_DISABLED;
+            NativeMethods.DwmSetWindowAttribute(
+                hwnd, NativeMethods.DWMWA_NCRENDERING_POLICY, ref ncOff, sizeof(int));
+
+            StripEdgeStyles(hwnd);
+            SetFrameTheme(hwnd, dark);
+            SuppressClientErase(hwnd);
+            NotifyFrameChanged(hwnd);
+            return;
+        }
+
+        int ncOn = NativeMethods.DWMNCRP_USEWINDOWSTYLE;
+        NativeMethods.DwmSetWindowAttribute(
+            hwnd, NativeMethods.DWMWA_NCRENDERING_POLICY, ref ncOn, sizeof(int));
+
+        var zero = new NativeMethods.MARGINS();
+        NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref zero);
+        HideWindowBorder(hwnd, dark, rim);
+        NotifyFrameChanged(hwnd);
+    }
+
+    private static void SetFrostedNonClient(nint hwnd, bool frosted)
+    {
+        if (frosted)
+            FrostedHwnds.Add(hwnd);
+        else
+            FrostedHwnds.Remove(hwnd);
+    }
+
+    private static void StripEdgeStyles(nint hwnd)
+    {
+        long ex = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE);
+        long stripped = ex & ~(NativeMethods.WS_EX_CLIENTEDGE | NativeMethods.WS_EX_WINDOWEDGE |
+                               NativeMethods.WS_EX_DLGMODALFRAME | NativeMethods.WS_EX_STATICEDGE);
+        if (stripped != ex)
+            NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE, (nint)stripped);
+    }
+
+    private static void NotifyFrameChanged(nint hwnd)
+    {
+        NativeMethods.SetWindowPos(hwnd, 0, 0, 0, 0, 0,
+            NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE |
+            NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE |
+            NativeMethods.SWP_FRAMECHANGED);
+    }
+
+    /// <summary>
     /// Stops Win32 from filling the client with the class background brush. On a frosted/acrylic
     /// window that fill is opaque black, and it shows up as a rim around the rounded glass.
     /// Idempotent — the subclass is installed once.
@@ -296,6 +394,13 @@ public static class WindowChrome
     private static nint NoEraseSubclassProc(
         nint hwnd, uint msg, nint wParam, nint lParam, nuint id, nint data)
     {
+        if (FrostedHwnds.Contains(hwnd))
+        {
+            // Zero NC metrics so DWM has no 1px rim to stroke, and skip painting that rim.
+            if (msg == NativeMethods.WM_NCCALCSIZE || msg == NativeMethods.WM_NCPAINT)
+                return 0;
+        }
+
         // Non-zero says "background erased" — with nothing painted, which is the point.
         if (msg == NativeMethods.WM_ERASEBKGND)
             return 1;

@@ -598,6 +598,46 @@ public static class AppLogo
         }
 
         /// <summary>
+        /// A full clockwise turn of the whole mark, petals breathing in reverse order — the Home
+        /// Tools replay, so it is the same pinwheel as Customize without the same entrance.
+        /// </summary>
+        public void PlayPulse()
+        {
+            try
+            {
+                Reset();
+
+                var art = ArtVisual();
+                var compositor = art.Compositor;
+
+                var spin = compositor.CreateScalarKeyFrameAnimation();
+                spin.InsertKeyFrame(0, 0);
+                spin.InsertKeyFrame(1, 360f);
+                spin.Duration = TimeSpan.FromMilliseconds(720);
+                art.StartAnimation("RotationAngleInDegrees", spin);
+
+                int last = _petals.Length - 1;
+                for (int i = 0; i < _petals.Length; i++)
+                {
+                    var petal = PetalVisual(i);
+                    var delay = TimeSpan.FromMilliseconds((last - i) * PetalStaggerMs);
+
+                    var breathe = compositor.CreateVector3KeyFrameAnimation();
+                    breathe.InsertKeyFrame(0, Vector3.One);
+                    breathe.InsertKeyFrame(0.4f, new Vector3(0.58f, 0.58f, 1));
+                    breathe.InsertKeyFrame(1, Vector3.One);
+                    breathe.Duration = TimeSpan.FromMilliseconds(520);
+                    breathe.DelayTime = delay;
+                    petal.StartAnimation("Scale", breathe);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        /// <summary>
         /// Plays the mark back out — <see cref="PlayEntrance"/> rewound, last petal in first out.
         /// <para>
         /// Deliberately does <em>not</em> stop what is playing first, unlike <see cref="PlayEntrance"/>.

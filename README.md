@@ -1007,6 +1007,12 @@ at). The next launch reseeds the defaults.
 
 Not started; noted here as candidates.
 
+**Next**
+
+- Customizable orbit items
+- Customizable orbit design: chemical-formula layout
+- Orbit item shape — hexagon
+
 **Application**
 
 - Redesign the application layout as a formal application (beyond the current orbit + settings-window

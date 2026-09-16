@@ -136,17 +136,16 @@ public sealed class ToolWindowBase : Window
     {
         bool dark = ThemeHelper.IsDark(_root);
         _root.Background = ThemeHelper.Brush(_root, _manager.Config.Theme, "ShellBackgroundBrush");
-        WindowChrome.SetTitleBarTheme(_appWindow, dark);
         int rim = _manager.Config.Theme switch
         {
             AppTheme.Black => 0x00000000,
-            // FrostedGlassBackdrop's tint colour #101016, byte-reversed into a COLORREF — same
-            // rim ShellWindow/OnboardingWindow use so a tool window's frame doesn't read as a
-            // flat black line around translucent glass.
             AppTheme.FrostedGlass => 0x00161010,
             _ => dark ? 0x002B2B2B : 0x00F2F2F2,
         };
-        WindowChrome.HideWindowBorder(_hwnd, dark, rim);
+        WindowChrome.ApplyShellFrame(
+            _appWindow, _hwnd, dark,
+            frosted: _manager.Config.Theme == AppTheme.FrostedGlass,
+            rim);
     }
 
     public void BringToFront()

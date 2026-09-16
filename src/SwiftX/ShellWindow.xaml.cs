@@ -71,6 +71,10 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private DispatcherTimer? _homeOrbitMarkTimer;
     private AppLogo.Mark? _homeOrbitMark;
+    private AppLogo.Mark? _homeToolsMark;
+    private DispatcherTimer? _homeHoverHideTimer;
+    private bool _homeOrbitHoverOpen;
+    private bool _homeToolsHoverOpen;
     private readonly Dictionary<Button, List<(DependencyObject Target, Brush? Brush)>> _orbitGlyphRest = new();
     private bool? _orbitEditDropUsable;
     private int _orbitEditDragToken;
@@ -164,10 +168,12 @@ public sealed partial class ShellWindow : Window
         // Built once here rather than in the Loaded handler that fills in the rest of the About
         // card: Loaded can fire again if the tree is ever re-parented, and the mark has nothing to
         // wait for — unlike the version string and the toggles, it reads no state.
-        AboutMark.Content = AppLogo.Create(72);
+        AboutMark.Content = AppLogo.Create(56);
         HomeBrandMark.Content = AppLogo.Create(30);
         _homeOrbitMark = AppLogo.CreateFloating(160);
         HomeOrbitMarkHost.Content = _homeOrbitMark;
+        _homeToolsMark = AppLogo.CreateFloating(160);
+        HomeToolsMarkHost.Content = _homeToolsMark;
 
         PreviewCanvas.PointerPressed += Preview_PointerPressed;
         PreviewCanvas.PointerMoved += Preview_PointerMoved;
@@ -179,6 +185,11 @@ public sealed partial class ShellWindow : Window
         WireOrbitGlyphHover(OrbitSidebarSettingsButton);
         WireOrbitGlyphHover(OrbitHelpButton);
         WireOrbitGlyphHover(OrbitResetButton);
+        WireOrbitGlyphHover(ElementsShortcutButton);
+        WireOrbitGlyphHover(ThemeToggleButton);
+        WireOrbitGlyphHover(SettingsButton);
+        SuppressChromeFill(OrbitBox);
+        SuppressChromeFill(ToolsBox);
 
         // See OnRatingValueChanged for why this is a DP callback and not the ValueChanged event.
         ExperienceRating.RegisterPropertyChangedCallback(
@@ -218,6 +229,7 @@ public sealed partial class ShellWindow : Window
         Closed += (_, _) =>
         {
             StopHomeOrbitMark();
+            CancelHomeHoverHide();
             OrbitMetrics.Changed -= OnMetricsChanged;
         };
 
@@ -378,6 +390,7 @@ public sealed partial class ShellWindow : Window
         RebuildItemsList();
         RebuildToolsList();
         if (_orbitEditBuilt) BuildOrbitEditSidebar();
+        UpdateElementsGlyphs();
     }
 
     /// <summary>
@@ -692,16 +705,16 @@ public sealed partial class ShellWindow : Window
     private void ApplyChromeTheme()
     {
         bool dark = ThemeHelper.IsDark(Root);
-        WindowChrome.SetTitleBarTheme(_appWindow, dark);
         int rim = _manager.Config.Theme switch
         {
             AppTheme.Black => ShellRimColorBlack,
-            // FrostedGlassBackdrop tint #101016 as COLORREF. COLOR_NONE painted a white caption
-            // strip along the top of this extended-into-title-bar window.
             AppTheme.FrostedGlass => ShellRimColorFrosted,
             _ => dark ? ShellRimColorDark : ShellRimColorLight,
         };
-        WindowChrome.HideWindowBorder(_hwnd, dark, rim);
+        WindowChrome.ApplyShellFrame(
+            _appWindow, _hwnd, dark,
+            frosted: _manager.Config.Theme == AppTheme.FrostedGlass,
+            rim);
     }
 
     /// <summary>
@@ -773,6 +786,12 @@ public sealed partial class ShellWindow : Window
         }
         if (screen == ScreenElements) RebuildItemsList();
         if (screen == ScreenTools) RebuildToolsList();
+        UpdateElementsGlyphs();
+        if (screen != ScreenHome)
+        {
+            HideHomeOrbitHover();
+            HideHomeToolsHover();
+        }
     }
 
     /// <summary>
@@ -819,6 +838,13 @@ public sealed partial class ShellWindow : Window
         // between them — land on the top of the section that was just picked rather than partway
         // down it because the previous one happened to be scrolled.
         SettingsScroll.ChangeView(null, 0, null, disableAnimation: true);
+        SettingsScroll.HorizontalScrollMode = ScrollMode.Disabled;
+        SettingsScroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        bool compact = section is SectionGeneral or SectionAbout;
+        SettingsScroll.VerticalScrollMode = compact ? ScrollMode.Disabled : ScrollMode.Enabled;
+        SettingsScroll.VerticalScrollBarVisibility = compact
+            ? ScrollBarVisibility.Disabled
+            : ScrollBarVisibility.Auto;
     }
 
     /// <summary>
@@ -829,12 +855,12 @@ public sealed partial class ShellWindow : Window
     {
         StopHomeOrbitMark();
         _homeOrbitMark?.PlayEntrance();
-        AppLogo.PlayGlyphEntrance(HomeToolsGlyph);
+        _homeToolsMark?.PlayPulse();
         _homeOrbitMarkTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _homeOrbitMarkTimer.Tick += (_, _) =>
         {
             _homeOrbitMark?.PlayEntrance();
-            AppLogo.PlayGlyphEntrance(HomeToolsGlyph);
+            _homeToolsMark?.PlayPulse();
         };
         _homeOrbitMarkTimer.Start();
     }
@@ -844,6 +870,165 @@ public sealed partial class ShellWindow : Window
         if (_homeOrbitMarkTimer is null) return;
         _homeOrbitMarkTimer.Stop();
         _homeOrbitMarkTimer = null;
+    }
+
+    private void UpdateElementsGlyphs()
+    {
+        var rest = ThemeHelper.Brush(Root, "SettingsHeaderBrush");
+        var accent = new SolidColorBrush(CurrentAccentColor());
+        if (ElementsShortcutGlyph is not null)
+            ElementsShortcutGlyph.Foreground = _currentScreen == ScreenElements ? accent : rest;
+        if (OrbitElementsGlyph is not null)
+            OrbitElementsGlyph.Foreground = _orbitEditing ? accent : rest;
+    }
+
+    private void HomeOrbitHover_PointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        CancelHomeHoverHide();
+        HideHomeToolsHover();
+        ShowHomeOrbitHover();
+    }
+
+    private void HomeOrbitHover_PointerExited(object sender, PointerRoutedEventArgs e) =>
+        ScheduleHomeHoverHide(HideHomeOrbitHover);
+
+    private void HomeToolsHover_PointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        CancelHomeHoverHide();
+        HideHomeOrbitHover();
+        ShowHomeToolsHover();
+    }
+
+    private void HomeToolsHover_PointerExited(object sender, PointerRoutedEventArgs e) =>
+        ScheduleHomeHoverHide(HideHomeToolsHover);
+
+    private void HomeOrbitHoverAdd_Click(object sender, RoutedEventArgs e)
+    {
+        ShowScreen(ScreenOrbit);
+        SetOrbitEditing(true);
+    }
+
+    private void ShowHomeOrbitHover()
+    {
+        int used = _manager.Config.Primary.Items.Count(i => !i.Hidden);
+        int slots = OrbitMetrics.UserSlotCount;
+        HomeOrbitHoverCount.Text = $"{used} of {slots} slots in use";
+        HomeOrbitHoverSummary.Text =
+            "Pick what sits on the orbit, how large the items are, and whether a screen corner summons it.";
+        string hotkey = _manager.Config.HotkeyEnabled
+            ? (_manager.Config.Hotkey ?? HotkeyGesture.Default.ToString())
+            : "Off";
+        string corner = _manager.Config.HotCornerEnabled ? "Hot corner on" : "Hot corner off";
+        HomeOrbitHoverMeta.Text = $"Shortcut  {hotkey}  •  {corner}";
+
+        HomeOrbitHoverPanel.Visibility = Visibility.Visible;
+        HomeOrbitHoverSlide.X = _homeOrbitHoverOpen ? 0 : -28;
+        HomeOrbitHoverPanel.Opacity = _homeOrbitHoverOpen ? 1 : 0;
+        _homeOrbitHoverOpen = true;
+
+        var fade = new DoubleAnimation { To = 1, Duration = TimeSpan.FromMilliseconds(180) };
+        Storyboard.SetTarget(fade, HomeOrbitHoverPanel);
+        Storyboard.SetTargetProperty(fade, "Opacity");
+        var slide = new DoubleAnimation { To = 0, Duration = TimeSpan.FromMilliseconds(180) };
+        Storyboard.SetTarget(slide, HomeOrbitHoverSlide);
+        Storyboard.SetTargetProperty(slide, "X");
+        var sb = new Storyboard();
+        sb.Children.Add(fade);
+        sb.Children.Add(slide);
+        sb.Begin();
+    }
+
+    private void HideHomeOrbitHover()
+    {
+        _homeOrbitHoverOpen = false;
+        HomeOrbitHoverPanel.Visibility = Visibility.Collapsed;
+        HomeOrbitHoverPanel.Opacity = 0;
+        HomeOrbitHoverSlide.X = -28;
+    }
+
+    private void ShowHomeToolsHover()
+    {
+        var tools = ToolCatalog.All.ToList();
+        int shown = tools.Count(t => _manager.Config.IsToolShown(t.Kind));
+        HomeToolsHoverCount.Text = $"{shown} of {tools.Count} tools shown";
+        HomeToolsHoverSummary.Text =
+            "Quick utilities that live in SwiftX — formatters, secrets, and the rest. Toggle which ones appear on the Tools page.";
+        HomeToolsHoverMeta.Text = shown == 0
+            ? "Every tool is currently hidden."
+            : string.Join("  •  ", tools.Where(t => _manager.Config.IsToolShown(t.Kind)).Select(t => t.DisplayName));
+
+        if (!_homeToolsHoverOpen)
+        {
+            HomeToolsHoverIcons.Children.Clear();
+            foreach (var tool in tools.Where(t => _manager.Config.IsToolShown(t.Kind)))
+            {
+                var icon = new FontIcon
+                {
+                    Glyph = tool.Glyph,
+                    FontSize = 16,
+                    Foreground = ThemeHelper.Brush(Root, "SettingsHeaderBrush"),
+                };
+                var button = new Button
+                {
+                    Width = 32,
+                    Height = 32,
+                    Padding = new Thickness(0),
+                    CornerRadius = new CornerRadius(8),
+                    Content = icon,
+                };
+                SuppressChromeFill(button);
+                WireOrbitGlyphHover(button);
+                ToolTipService.SetToolTip(button, tool.DisplayName);
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, tool.DisplayName);
+                var kind = tool.Kind;
+                button.Click += (_, _) => _manager.OpenTool(kind);
+                HomeToolsHoverIcons.Children.Add(button);
+            }
+        }
+
+        HomeToolsHoverPanel.Visibility = Visibility.Visible;
+        HomeToolsHoverSlide.X = _homeToolsHoverOpen ? 0 : 28;
+        HomeToolsHoverPanel.Opacity = _homeToolsHoverOpen ? 1 : 0;
+        _homeToolsHoverOpen = true;
+
+        var fade = new DoubleAnimation { To = 1, Duration = TimeSpan.FromMilliseconds(180) };
+        Storyboard.SetTarget(fade, HomeToolsHoverPanel);
+        Storyboard.SetTargetProperty(fade, "Opacity");
+        var slide = new DoubleAnimation { To = 0, Duration = TimeSpan.FromMilliseconds(180) };
+        Storyboard.SetTarget(slide, HomeToolsHoverSlide);
+        Storyboard.SetTargetProperty(slide, "X");
+        var sb = new Storyboard();
+        sb.Children.Add(fade);
+        sb.Children.Add(slide);
+        sb.Begin();
+    }
+
+    private void HideHomeToolsHover()
+    {
+        _homeToolsHoverOpen = false;
+        HomeToolsHoverPanel.Visibility = Visibility.Collapsed;
+        HomeToolsHoverPanel.Opacity = 0;
+        HomeToolsHoverSlide.X = 28;
+        HomeToolsHoverIcons.Children.Clear();
+    }
+
+    private void ScheduleHomeHoverHide(Action hide)
+    {
+        CancelHomeHoverHide();
+        _homeHoverHideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(220) };
+        _homeHoverHideTimer.Tick += (_, _) =>
+        {
+            CancelHomeHoverHide();
+            hide();
+        };
+        _homeHoverHideTimer.Start();
+    }
+
+    private void CancelHomeHoverHide()
+    {
+        if (_homeHoverHideTimer is null) return;
+        _homeHoverHideTimer.Stop();
+        _homeHoverHideTimer = null;
     }
 
     private void OrbitBox_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenOrbit);
@@ -2884,6 +3069,7 @@ public sealed partial class ShellWindow : Window
 
         OrbitSidebarSettings.Visibility = editing ? Visibility.Collapsed : Visibility.Visible;
         OrbitSidebarEdit.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
+        UpdateElementsGlyphs();
     }
 
     /// <summary>
@@ -3585,12 +3771,12 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>
     /// PLACEHOLDER. SwiftX has no Microsoft Store listing yet — it builds unpackaged
-    /// (<c>WindowsPackageType=None</c>), so there is no product id to point at. Every Store link on
-    /// the Feedback &amp; Support page is derived from this one constant: put the real twelve-character
-    /// product id here once the app is listed and all three resolve on their own, with nothing else
-    /// to change. Until then they open a Store page that does not exist.
+    /// (<c>WindowsPackageType=None</c>), so there is no product id to point at. In-app rating
+    /// (<see cref="StoreFeedback.RequestRatingAsync"/>) still works from a packaged build.
+    /// Put the real twelve-character product id on <see cref="StoreFeedback.ProductId"/> once
+    /// the app is listed; listing URLs and the Store deep-link fallback all derive from it.
     /// </summary>
-    private const string StoreProductId = "0000000000000";
+    private const string StoreProductId = StoreFeedback.ProductId;
 
     /// <summary>
     /// The Store links, as <c>https://apps.microsoft.com</c> URLs rather than
@@ -3609,11 +3795,11 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private const string GitHubRepoUrl = "https://github.com/framedparadox/SwiftX";
 
-    private void ShareFeedback_Click(object sender, RoutedEventArgs e) =>
-        Launcher.OpenUrl(StoreReviewUrl);
+    private async void ShareFeedback_Click(object sender, RoutedEventArgs e) =>
+        await StoreFeedback.OpenFeedbackHubAsync();
 
-    private void RateOnStore_Click(object sender, RoutedEventArgs e) =>
-        Launcher.OpenUrl(StoreReviewUrl);
+    private async void RateOnStore_Click(object sender, RoutedEventArgs e) =>
+        await StoreFeedback.RequestRatingAsync(_hwnd);
 
     private void StarOnGitHub_Click(object sender, RoutedEventArgs e) =>
         Launcher.OpenUrl(GitHubRepoUrl);
@@ -3792,12 +3978,9 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private void FillAboutDetails()
     {
-        AboutFramework.Text = "WinUI 3 · Windows App SDK 2.4";
-        AboutRuntime.Text = RuntimeInformation.FrameworkDescription
-            + " · " + RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant()
-            + " · " + (PackagedRuntime.IsPackaged
-                ? "MSIX (Microsoft Store)"
-                : "Portable (unpackaged)");
+        string runtime = RuntimeInformation.FrameworkDescription;
+        string arch = RuntimeInformation.ProcessArchitecture.ToString().ToUpperInvariant();
+        AboutFramework.Text = $"WinUI 3  •  {runtime}  •  {arch}";
     }
 
     private async void Export_Click(object sender, RoutedEventArgs e)
@@ -3965,7 +4148,7 @@ public sealed partial class ShellWindow : Window
     private void RebuildHotCornerPicker(HotCorner corner)
     {
         if (HotCornerPickerHost is null) return;
-        HotCornerPickerHost.Content = AppLogo.CreateCornerGlyph(48, corner, picked =>
+        HotCornerPickerHost.Content = AppLogo.CreateCornerGlyph(56, corner, picked =>
         {
             if (_loading) return;
             _manager.Config.HotCorner = picked;
