@@ -140,7 +140,7 @@ is the right one here: 15px Bold item titles, 12px secondary descriptions, real 
 | **Item size** | 3 radio buttons — Small / Medium (default) / Large | `AppConfig.ItemSize`, `RingManager.SetItemSize` |
 | **Ring radius** | Slider 80–220, live value readout | `AppConfig.RingRadius`, `RingManager.SetRadius`. Reuse `RadiusSlider` and `NumberBoxScroll` |
 | **Hot corner** | 2×2 corner picker + enable toggle + Ring/Quadrant segmented control | `HotCornerEnabled`, `HotCorner`, `HotCornerLayout`, `RingManager.ApplyHotCorner` |
-| **Hover style** | Invert / Zoom segmented control — **moved out of General** | `AppConfig.HoverStyle` |
+| **Hover style** | Invert / Zoom / Tint pills — **moved out of General**. Zoom and Tint are split buttons: selected, the pill splits 70/30 into its name and a side pill (Zoom: In/Out; Tint: a hover-colour swatch that opens a picker) | `AppConfig.HoverStyle`, `HoverZoomDirection`, `HoverTintColorHex` |
 
 Every one of these already exists in `SettingsWindow`'s Home and General panels with working
 handlers. This is a move, not new logic — which is what makes the Ring screen the cheapest of the

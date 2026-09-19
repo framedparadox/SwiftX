@@ -56,14 +56,80 @@ public enum FrostedGlassLevel
 
 /// <summary>
 /// How an orbit item reads as "under the pointer".
+/// <para>
+/// Persisted by name (see <see cref="AppConfig.HoverStyle"/>), so these member names are part of
+/// the on-disk format. That is why <see cref="Zoom"/> kept its name when it stopped meaning "shrink":
+/// the label the user reads is theirs to change, the member a config file carries is not.
+/// </para>
 /// </summary>
 public enum OrbitHoverStyle
 {
     /// <summary>Fill and glyph swap to the opposite theme color while the item grows slightly. The original behavior.</summary>
     Invert,
 
-    /// <summary>Fill and glyph keep their resting color; the item just shrinks slightly instead.</summary>
+    /// <summary>
+    /// Fill and glyph keep their resting color; the item alone changes size under the pointer, in
+    /// the direction <see cref="AppConfig.HoverZoomDirection"/> names. Shown to the user as "Zoom".
+    /// </summary>
     Zoom,
+
+    /// <summary>
+    /// The item keeps its size and its glyph is redrawn for legibility, but its fill becomes the
+    /// colour <see cref="AppConfig.HoverTintColorHex"/> holds while the pointer is on it. Shown to
+    /// the user as "Tint".
+    /// </summary>
+    Tint,
+
+    /// <summary>
+    /// The item keeps its fill and settles at its resting size, but plays the motion
+    /// <see cref="AppConfig.HoverAnimation"/> names for as long as the pointer is on it. Shown to
+    /// the user as "Animate". Gives way to Zoom when Windows has animations switched off.
+    /// </summary>
+    Animate,
+}
+
+/// <summary>
+/// The motion <see cref="OrbitHoverStyle.Animate"/> plays. <see cref="Pulse"/> is first on purpose:
+/// it is the default, and it is also what <see cref="Services.TolerantEnumConverter{T}"/> falls back
+/// to (<c>default(T)</c>) for a name this build does not know. Persisted by name, like the other
+/// enums here, so members may be added but never renamed.
+/// </summary>
+public enum HoverAnimation
+{
+    /// <summary>Swells and settles, repeatedly.</summary>
+    Pulse,
+
+    /// <summary>Hops up and lands with a small rebound.</summary>
+    Bounce,
+
+    /// <summary>Tilts from side to side and comes to rest.</summary>
+    Wobble,
+
+    /// <summary>A quick side-to-side rattle, then a pause.</summary>
+    Shake,
+
+    /// <summary>One full turn.</summary>
+    Spin,
+
+    /// <summary>Drifts gently up and down.</summary>
+    Float,
+}
+
+/// <summary>
+/// Which way <see cref="OrbitHoverStyle.Zoom"/> moves an item under the pointer.
+/// <para>
+/// <see cref="In"/> is the first member on purpose: it is the default, and it is also what
+/// <see cref="Services.TolerantEnumConverter{T}"/> falls back to (<c>default(T)</c>) when a config
+/// carries a name this build does not know. Persisted by name, like the other enums here.
+/// </para>
+/// </summary>
+public enum HoverZoomDirection
+{
+    /// <summary>The item grows toward the pointer.</summary>
+    In,
+
+    /// <summary>The item recedes from the pointer: what Zoom did before it had a direction.</summary>
+    Out,
 }
 
 /// <summary>Persisted app settings and orbit profiles.</summary>
@@ -99,8 +165,48 @@ public sealed class AppConfig
     /// <summary>The UI language — see <see cref="AppLanguage"/> and <see cref="Services.Loc"/>.</summary>
     public AppLanguage Language { get; set; } = AppLanguage.System;
 
-    /// <summary>How orbit items respond to the pointer. See <see cref="OrbitHoverStyle"/>.</summary>
+    /// <summary>
+    /// How orbit items respond to the pointer. See <see cref="OrbitHoverStyle"/>.
+    /// <para>
+    /// Read through <see cref="Services.TolerantEnumConverter{T}"/> rather than the app-wide
+    /// <c>JsonStringEnumConverter</c>: that one throws on a name it does not know, and
+    /// <c>OrbitStore.Load</c> answers a throw by starting from a blank configuration, so a single
+    /// hand-edited word here would otherwise cost the user their whole orbit. An unknown value
+    /// reads as <see cref="OrbitHoverStyle.Invert"/>.
+    /// </para>
+    /// </summary>
+    [JsonConverter(typeof(Services.TolerantEnumConverter<OrbitHoverStyle>))]
     public OrbitHoverStyle HoverStyle { get; set; } = OrbitHoverStyle.Invert;
+
+    /// <summary>
+    /// Which way <see cref="OrbitHoverStyle.Zoom"/> moves an item: <see cref="HoverZoomDirection.In"/>
+    /// (grow) by default, or <see cref="HoverZoomDirection.Out"/> (shrink). Read only while
+    /// <see cref="HoverStyle"/> is Zoom, but persisted regardless so that switching styles and
+    /// back returns you to the direction you had. Tolerant of an unknown name for the same reason
+    /// <see cref="HoverStyle"/> is.
+    /// </summary>
+    [JsonConverter(typeof(Services.TolerantEnumConverter<HoverZoomDirection>))]
+    public HoverZoomDirection HoverZoomDirection { get; set; } = HoverZoomDirection.In;
+
+    /// <summary>
+    /// The fill an item takes under the pointer when <see cref="HoverStyle"/> is
+    /// <see cref="OrbitHoverStyle.Tint"/>, as "#RRGGBB", or null for the built-in black. Stored and
+    /// parsed the way <see cref="AccentColorHex"/> is, and by the same code
+    /// (<see cref="Services.AccentPalette.TryParseHex"/>): a value that does not parse falls back
+    /// to black rather than failing the load. <see cref="Services.OrbitHover.TintColor"/> is the
+    /// one place that resolves it.
+    /// </summary>
+    public string? HoverTintColorHex { get; set; }
+
+    /// <summary>
+    /// The motion an item plays under the pointer when <see cref="HoverStyle"/> is
+    /// <see cref="OrbitHoverStyle.Animate"/>. Read only then, but persisted regardless so that
+    /// switching styles and back returns you to the motion you had. Tolerant of an unknown name for
+    /// the same reason <see cref="HoverStyle"/> is; an unknown one reads as
+    /// <see cref="Models.HoverAnimation.Pulse"/>.
+    /// </summary>
+    [JsonConverter(typeof(Services.TolerantEnumConverter<HoverAnimation>))]
+    public HoverAnimation HoverAnimation { get; set; } = HoverAnimation.Pulse;
 
     public string Hotkey { get; set; } = HotkeyGesture.Default.ToString();
     public bool HotkeyEnabled { get; set; } = true;
@@ -231,6 +337,9 @@ public sealed class AppConfig
         FrostedGlass = other.FrostedGlass;
         Language = other.Language;
         HoverStyle = other.HoverStyle;
+        HoverZoomDirection = other.HoverZoomDirection;
+        HoverTintColorHex = other.HoverTintColorHex;
+        HoverAnimation = other.HoverAnimation;
         Hotkey = other.Hotkey;
         HotkeyEnabled = other.HotkeyEnabled;
         HotCornerEnabled = other.HotCornerEnabled;

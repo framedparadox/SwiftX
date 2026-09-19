@@ -35,6 +35,12 @@ public enum OrbitItemShape
     /// then there is no shape on the list that is actually square.
     /// </summary>
     Square,
+
+    /// <summary>
+    /// A pointy-top hexagon with its vertices rounded off, so the outline reads as a hexagon
+    /// without the sharp corners a straight-edged one would put on a small bubble.
+    /// </summary>
+    Hexagon,
 }
 
 /// <summary>
@@ -132,6 +138,7 @@ public static class OrbitMetrics
     {
         OrbitItemShape.Squircle => Math.Round(size * 0.28),
         OrbitItemShape.Square => 0,
+        OrbitItemShape.Hexagon => 0,
         _ => size / 2,
     };
 
@@ -144,15 +151,39 @@ public static class OrbitMetrics
 
     public static double DeadZone => 36;
 
-    /// <summary>How much an item grows under the pointer. Budgeted into <see cref="ContentRadius"/>.</summary>
+    /// <summary>
+    /// How much an item grows under the pointer. Budgeted into <see cref="ContentRadius"/>, which is
+    /// why <see cref="OrbitHoverStyle.Invert"/> and Zoom In share it: the layout leaves room for
+    /// exactly this much growth, and no hover style may ask for more.
+    /// </summary>
     public const double HoverScale = 1.14;
 
     /// <summary>
-    /// How much an item shrinks under the pointer when <see cref="OrbitHoverStyle.Zoom"/> is
-    /// active — the alternative to <see cref="HoverScale"/> for someone who wants hover to read
-    /// as a recede rather than a color-inverted grow.
+    /// How much an item shrinks under the pointer when <see cref="OrbitHoverStyle.Zoom"/> is set
+    /// to <see cref="HoverZoomDirection.Out"/>: for someone who wants hover to read as a recede
+    /// rather than an offer.
     /// </summary>
-    public const double ZoomHoverScale = 0.92;
+    public const double ZoomOutHoverScale = 0.92;
+
+    /// <summary>
+    /// The scale an item settles at while under the pointer, for the configured hover style.
+    /// <para>
+    /// <paramref name="restScale"/> is what the item rests at when nothing is hovering it, which is
+    /// not always 1: a group whose flyout is open rests a little enlarged so that it reads as
+    /// active. It only matters to <see cref="OrbitHoverStyle.Tint"/> and
+    /// <see cref="OrbitHoverStyle.Animate"/>, whose whole contract is that hover leaves the settled
+    /// size alone (Animate's own motion moves the item about that size); anything else names its own
+    /// target size outright.
+    /// </para>
+    /// </summary>
+    public static double HoverScaleFor(
+        OrbitHoverStyle style, HoverZoomDirection direction, double restScale = 1) => style switch
+        {
+            OrbitHoverStyle.Zoom => direction == HoverZoomDirection.Out ? ZoomOutHoverScale : HoverScale,
+            OrbitHoverStyle.Tint => restScale,
+            OrbitHoverStyle.Animate => restScale,
+            _ => HoverScale,
+        };
 
     /// <summary>
     /// Close is the one item that moves the other way under the pointer: it shrinks, reading as

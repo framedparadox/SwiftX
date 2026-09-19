@@ -75,7 +75,17 @@ public sealed class ToolWindowBase : Window
         WindowChrome.CenterOnCursor(_appWindow, windowId);
 
         Activated += (_, _) => ApplyChromeTheme();
-        _root.ActualThemeChanged += (_, _) => ApplyChromeTheme();
+        // The page as well as the chrome. An OS light/dark flip under the System theme is the one
+        // theme change that does not come through OrbitManager.ApplyTheme (no choice was made, so
+        // nothing fans out), and the chrome alone left the page wearing the local brushes it was
+        // built with until the window was closed and reopened. The accent too: the built-in default
+        // is a different colour either side of the flip.
+        _root.ActualThemeChanged += (_, _) =>
+        {
+            ApplyChromeTheme();
+            Page.ApplyTheme();
+            Page.ApplyAccent();
+        };
         ApplyChromeTheme();
 
         _appWindow.Closing += OnClosing;

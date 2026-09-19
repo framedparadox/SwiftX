@@ -177,6 +177,17 @@ public sealed partial class OrbitWindow : Window
         WindowChrome.StripFrame(_hwnd);
         WindowChrome.MakeTransparentOverlay(this, _hwnd);
         ApplyTheme();
+
+        // Windows flipping light/dark under the System theme reaches an open orbit only through
+        // here: nothing was chosen in Settings, so OrbitManager.ApplyTheme never runs. The bubbles
+        // are painted with theme colours resolved when they were built, so an orbit left open (it
+        // stays up while Settings does) kept the old ones until the next summon. Closed, there is
+        // nothing to repaint: Summon applies the theme and renders fresh.
+        Root.ActualThemeChanged += (_, _) =>
+        {
+            if (_isOpen)
+                RenderCurrent();
+        };
         _appWindow.Hide();
 
         // A click outside the orbit's own hit-test disc never reaches this window at all — it
@@ -977,13 +988,9 @@ public sealed partial class OrbitWindow : Window
         {
             Width = backdropSize,
             Height = backdropSize,
-            // Its own size, not the tint's: the two are drawn a hair apart (BackdropInset above),
-            // and a corner radius derived from the larger of them would bow the inset backdrop's
-            // corners out past the tint's — reintroducing exactly the peeking aliased edge the
-            // inset exists to prevent, on whichever of the three shapes has corners at all.
-            CornerRadius = new CornerRadius(OrbitMetrics.CornerRadiusFor(backdropSize)),
             SystemBackdrop = new DesktopAcrylicBackdrop(),
         };
+        OrbitItemGeometry.Apply(backdrop, backdropSize);
 
         // The theme tint over the blur — what ApplyBubbleFill actually swaps for hover/close
         // states, not border.Background below (left unset, or it would paint over the blur and
@@ -993,16 +1000,14 @@ public sealed partial class OrbitWindow : Window
         // One long-lived brush per bubble whose Color is animated, rather than a fresh brush
         // assigned on every state change: the fill then travels on the same curve and over the
         // same duration as the hover scale instead of snapping the instant the pointer arrives.
-        var tintBrush = new SolidColorBrush(ThemeColor("OrbitBubbleGlassTint"));
+        var tintBrush = new SolidColorBrush(RestTint());
         var tint = new Border
         {
             Width = diameter,
             Height = diameter,
-            // The one element that draws a bubble's outline, so this is where the Orbit screen's
-            // Item shape setting actually lands on the real orbit (see OrbitMetrics.CornerRadiusFor).
-            CornerRadius = new CornerRadius(OrbitMetrics.CornerRadiusFor(diameter)),
             Background = tintBrush,
         };
+        OrbitItemGeometry.Apply(tint, diameter);
 
         var content = new Grid();
         content.Children.Add(backdrop);
@@ -1817,15 +1822,78 @@ public sealed partial class OrbitWindow : Window
         // An expanded group stays lit while its flyout is open, so exiting it must not reset the
         // fill the way exiting an ordinary bubble does.
         ApplyBubbleFill(bubble, entered || ReferenceEquals(bubble, _flyoutParent));
+
+        // Animate's motion runs for exactly as long as the pointer is on the item. Stopping is not
+        // conditional on the style, only on a motion having been started: the setting can change
+        // between the enter and the exit, and the exit must still put the item back. Close keeps
+        // its plain red shrink whatever the style is, since a destructive item that also wobbled
+        // would be a gag rather than a warning.
+        if (entered)
+        {
+            if (EffectiveHoverStyle == OrbitHoverStyle.Animate && !IsCloseItem(bubble.Item))
+                StartHoverMotion(bubble, _manager.Config.HoverAnimation);
+        }
+        else
+        {
+            StopHoverMotion(bubble);
+        }
+    }
+
+    /// <summary>
+    /// Plays <paramref name="animation"/> on the bubble's own composition visual, the one every
+    /// entrance and hover animation already targets, so the acrylic, the tint and the glyph all move
+    /// together with nothing else needing to know. The composition work is
+    /// <see cref="HoverMotionPlayer"/>'s, shared with Settings' picker; what is the orbit's own is
+    /// the budget: a pulse that swells an item that already rests a little enlarged (an open group)
+    /// is clamped to <see cref="OrbitMetrics.HoverScale"/>, the growth the layout has room for.
+    /// </summary>
+    private static void StartHoverMotion(BubbleView bubble, HoverAnimation animation)
+    {
+        var spec = HoverMotion.For(animation);
+        if (HoverMotionPlayer.Start(
+                bubble.Host, bubble.Diameter, spec, bubble.RestScale, (float)OrbitMetrics.HoverScale))
+            bubble.ActiveMotion = spec;
+    }
+
+    /// <summary>
+    /// Brings a bubble back to rest after <see cref="StartHoverMotion"/>. Scale needs nothing here:
+    /// <see cref="OnHover"/> has already animated it back to rest, which replaced the pulse.
+    /// </summary>
+    private static void StopHoverMotion(BubbleView bubble)
+    {
+        var spec = bubble.ActiveMotion;
+        if (spec is null)
+            return;
+        bubble.ActiveMotion = null;
+
+        try
+        {
+            var compositor = ElementCompositionPreview.GetElementVisual(bubble.Host).Compositor;
+            HoverMotionPlayer.Stop(bubble.Host, spec, HoverMs, HoverEase(compositor));
+        }
+        catch
+        {
+            // ignore
+        }
     }
 
     /// <summary>
     /// Active state under <see cref="OrbitHoverStyle.Invert"/> reads as an inverted fill (no border
     /// in either theme) rather than an outline — the same two colors CreateBubble already applies
     /// at rest, just reversed. Under <see cref="OrbitHoverStyle.Zoom"/> the fill never changes at
-    /// all; <see cref="HoverScaleFor"/> shrinking the bubble is the only hover cue. Close is the
-    /// exception to both: it goes red under the pointer regardless of the setting, because it is
-    /// the one item on the orbit whose effect can't be undone by clicking again.
+    /// all; <see cref="HoverScaleFor"/> growing or shrinking the bubble is the only hover cue.
+    /// Under <see cref="OrbitHoverStyle.Tint"/> the fill becomes the user's own colour
+    /// (<see cref="OrbitHover.TintColor"/>) and nothing else moves. Close is the exception to all
+    /// three: it goes red under the pointer regardless of the setting, because it is the one item
+    /// on the orbit whose effect can't be undone by clicking again.
+    /// <para>
+    /// A tinted fill is opaque, like an inverted one, so it takes the acrylic disc out with it. The
+    /// glyph is black or white by the fill's own contrast (<see cref="OrbitHover.OnTint"/>), never
+    /// the theme's foreground, because the fill is not the theme's to choose. There is still no
+    /// border to decide about: a bubble has none at rest or under any style, and adding one only
+    /// under Tint would put a hard, unfeathered edge back on the disc that the opaque fill and the
+    /// dropped backdrop exist to avoid.
+    /// </para>
     /// <para>
     /// Both colors are animated over <see cref="HoverMs"/>, on the same curve as the scale the
     /// same hover started, rather than assigned outright — a fill that snapped while the bubble
@@ -1841,16 +1909,22 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     private void ApplyBubbleFill(BubbleView bubble, bool active)
     {
+        var style = EffectiveHoverStyle;
         bool destructive = active && IsCloseItem(bubble.Item);
-        bool invert = active && !destructive && _manager.Config.HoverStyle == OrbitHoverStyle.Invert;
-        bool opaque = destructive || invert;
+        bool invert = active && !destructive && style == OrbitHoverStyle.Invert;
+        bool tint = active && !destructive && style == OrbitHoverStyle.Tint;
+        bool opaque = destructive || invert || tint;
+
+        var tintColor = tint ? OrbitHover.TintColor(_manager.Config) : default;
 
         Color background = destructive ? ThemeColor("OrbitCloseHoverBackground")
             : invert ? ThemeColor("SwiftXForegroundBrush")
-            : ThemeColor("OrbitBubbleGlassTint");
+            : tint ? tintColor
+            : RestTint();
 
         Color foreground = destructive ? ThemeColor("OrbitCloseHoverForeground")
             : invert ? ThemeColor("OrbitBubbleBackground")
+            : tint ? OrbitHover.OnTint(tintColor)
             : ThemeColor("SwiftXForegroundBrush");
 
         bubble.TintFade = AnimateBrushTo(bubble.TintFade, bubble.TintBrush, background, HoverMs);
@@ -1858,16 +1932,39 @@ public sealed partial class OrbitWindow : Window
         AnimateOpacity(bubble.Backdrop, opaque ? 0f : 1f, HoverMs);
     }
 
+    /// <summary>
+    /// What a bubble is filled with when nothing is happening to it: the theme's glass tint, made
+    /// firmer under a hexagon, which has no acrylic behind it to be translucent over.
+    /// </summary>
+    private Color RestTint() => OrbitItemGeometry.RestTint(ThemeColor("OrbitBubbleGlassTint"));
+
     private static bool IsCloseItem(OrbitItem item) =>
         string.Equals(item.Target, SystemOrbitItems.CloseTarget, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The hover style in force right now: the configured one, except that Tint gives way to Invert
+    /// under High Contrast and Animate gives way to Zoom when Windows has animations off (see
+    /// <see cref="OrbitHover.Effective"/>). Each setting is asked of the OS only while the style it
+    /// can override is the configured one, since no other style has anything to give way.
+    /// </summary>
+    private OrbitHoverStyle EffectiveHoverStyle
+    {
+        get
+        {
+            var style = _manager.Config.HoverStyle;
+            return OrbitHover.Effective(
+                style,
+                highContrast: style == OrbitHoverStyle.Tint && HighContrast.IsActive(),
+                reducedMotion: style == OrbitHoverStyle.Animate && ReducedMotion.IsActive());
+        }
+    }
 
     private float HoverScaleFor(BubbleView bubble)
     {
         if (IsCloseItem(bubble.Item))
             return (float)OrbitMetrics.CloseHoverScale;
-        return (float)(_manager.Config.HoverStyle == OrbitHoverStyle.Zoom
-            ? OrbitMetrics.ZoomHoverScale
-            : OrbitMetrics.HoverScale);
+        return (float)OrbitMetrics.HoverScaleFor(
+            EffectiveHoverStyle, _manager.Config.HoverZoomDirection, bubble.RestScale);
     }
 
     private static void AnimateScale(BubbleView bubble, float target, int durationMs)
@@ -2280,6 +2377,10 @@ public sealed partial class OrbitWindow : Window
 
         /// <summary>Scale to return to when hover ends — not 1 for an expanded group bubble.</summary>
         public float RestScale { get; set; } = 1f;
+
+        /// <summary>The Animate motion currently playing on this bubble, or null. What lets the
+        /// exit put the item back even if the hover style was changed in between.</summary>
+        public MotionSpec? ActiveMotion { get; set; }
 
         public Action? Detach { get; set; }
 

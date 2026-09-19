@@ -260,44 +260,36 @@ internal static partial class NativeMethods
 
     public static readonly Guid IID_IImageList = new("46EB5926-582E-4017-9FDF-E8998DAA0950");
 
-    [ComImport]
-    [Guid("46EB5926-582E-4017-9FDF-E8998DAA0950")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IImageList
-    {
-        [PreserveSig] int Add(nint hbmImage, nint hbmMask, out int pi);
-        [PreserveSig] int ReplaceIcon(int i, nint hicon, out int pi);
-        [PreserveSig] int SetOverlayImage(int iImage, int iOverlay);
-        [PreserveSig] int Replace(int i, nint hbmImage, nint hbmMask);
-        [PreserveSig] int AddMasked(nint hbmImage, int crMask, out int pi);
-        [PreserveSig] int Draw(nint pimldp);
-        [PreserveSig] int Remove(int i);
-        [PreserveSig] int GetIcon(int i, int flags, out nint picon);
-        [PreserveSig] int GetImageInfo(int i, nint pImageInfo);
-        [PreserveSig] int Copy(int iDst, IImageList punkSrc, int iSrc, int uFlags);
-        [PreserveSig] int Merge(int i1, IImageList punk2, int i2, int dx, int dy, ref Guid riid, out nint ppv);
-        [PreserveSig] int Clone(ref Guid riid, out nint ppv);
-        [PreserveSig] int GetImageRect(int i, nint prc);
-        [PreserveSig] int GetIconSize(out int cx, out int cy);
-        [PreserveSig] int SetIconSize(int cx, int cy);
-        [PreserveSig] int GetImageCount(out int pi);
-        [PreserveSig] int SetImageCount(int uNewCount);
-        [PreserveSig] int SetBkColor(int clrBk, out int pclr);
-        [PreserveSig] int GetBkColor(out int pclr);
-        [PreserveSig] int BeginDrag(int iTrack, int dxHotspot, int dyHotspot);
-        [PreserveSig] int EndDrag();
-        [PreserveSig] int DragEnter(nint hwndLock, int x, int y);
-        [PreserveSig] int DragLeave(nint hwndLock);
-        [PreserveSig] int DragMove(int x, int y);
-        [PreserveSig] int SetDragCursorImage(IImageList punk, int iDrag, int dxHotspot, int dyHotspot);
-        [PreserveSig] int DragShowNolock(int fShow);
-        [PreserveSig] int GetDragImage(nint ppt, nint pptHotspot, ref Guid riid, out nint ppv);
-        [PreserveSig] int GetItemFlags(int i, out int dwFlags);
-        [PreserveSig] int GetOverlayImage(int iOverlay, out int piIndex);
-    }
+    // The image list is used through its raw COM pointer, not as a managed [ComImport] interface.
+    // Declaring it as `out IImageList ppv` makes the CLR build a managed wrapper around the returned
+    // pointer (System.StubHelpers.InterfaceMarshaler.ConvertToManaged), and in this app that step
+    // fails fast with a stowed E_UNEXPECTED (0xc000027b, exception code 8000ffff): every crash dump
+    // from it ends in that call. Nothing about the wrapper is needed, since the only thing ever
+    // done with the list is one GetIcon call, so the pointer is taken as-is, GetIcon is called
+    // through the interface's vtable, and the reference is released by hand.
+    [DllImport("shell32.dll", EntryPoint = "SHGetImageList")]
+    public static extern int SHGetImageList(int iImageList, ref Guid riid, out nint ppv);
 
-    [DllImport("shell32.dll")]
-    public static extern int SHGetImageList(int iImageList, ref Guid riid, out IImageList ppv);
+    /// <summary>
+    /// Position of <c>IImageList::GetIcon</c> in the interface's vtable: the three IUnknown methods,
+    /// then Add, ReplaceIcon, SetOverlayImage, Replace, AddMasked, Draw and Remove, in the order
+    /// commoncontrols.h declares them.
+    /// </summary>
+    private const int ImageListGetIconSlot = 10;
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int ImageListGetIconFn(nint self, int index, int flags, out nint hIcon);
+
+    /// <summary>
+    /// <c>IImageList::GetIcon</c> on a raw image-list pointer from <see cref="SHGetImageList"/>.
+    /// Returns the HRESULT; on success <paramref name="hIcon"/> is an icon the caller must destroy.
+    /// </summary>
+    public static int ImageListGetIcon(nint imageList, int index, int flags, out nint hIcon)
+    {
+        nint vtable = Marshal.ReadIntPtr(imageList);
+        nint method = Marshal.ReadIntPtr(vtable, ImageListGetIconSlot * nint.Size);
+        return Marshal.GetDelegateForFunctionPointer<ImageListGetIconFn>(method)(imageList, index, flags, out hIcon);
+    }
 
     // ---- Hidden helper window (tray callbacks + global hotkeys) ------------
     //

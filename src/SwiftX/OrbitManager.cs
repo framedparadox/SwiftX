@@ -534,11 +534,12 @@ public sealed class OrbitManager
         _orbitWindow?.ReloadItems();
     }
 
-    public void SetRadius(double? radius)
+    public void SetRadius(double? radius, bool persist = true)
     {
         Config.OrbitRadius = radius;
         OrbitMetrics.SetRadius(radius);
-        Save();
+        if (persist)
+            Save();
         _orbitWindow?.ReloadItems();
     }
 

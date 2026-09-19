@@ -223,6 +223,12 @@ gear on the right, over three portrait boxes:
 | **Tools** | The built-in developer tools, and which of them show on the orbit |
 | **Elements** | The apps, files, folders, links and groups on the orbit |
 
+A slim tab on Home's right edge, halfway down, opens a **How to** guide: a drawer that slides over
+the Home screen with four topics (setting up the dock, how to invoke it, how to use the hot corner,
+how to change items). It is written from your own configuration, so it names the shortcut and the
+corner you actually chose and says so plainly when either is switched off, and each topic has a
+button that goes to the place it describes. Esc, the close button or a click outside closes it.
+
 The gear opens **Settings**, which is a screen of its own rather than the window itself: a 270px
 rail with four sections — General, Feedback & Support, Privacy & Data, About. Every sub-screen has
 a back arrow that returns to Home.
@@ -302,6 +308,27 @@ so the orbit, its flyout band, the corner quadrant and this preview cannot drift
 different shapes from one setting.
 
 **Radius** — 80–220 px from the hub to each item's center.
+
+**Hover style** — **Invert**, **Zoom**, **Tint** or **Animate**: how an item reads as under the pointer. Invert
+swaps its fill to the opposite theme color and grows it slightly. **Zoom** keeps the fill and changes
+only the size, **Tint** keeps the size and fills the item with a color you choose, and **Animate** plays a motion while the pointer is on the item. Zoom, Tint and Animate
+are split buttons: unselected they are a single pill, and selecting one splits it into two adjoining
+pills, the option's own name on the left (70%) and its setting on the right (30%).
+
+- **Zoom** — the right pill reads **In** (the item grows, the default) or **Out** (it shrinks);
+  pressing it flips between them. The left part keeps Zoom selected and does nothing more.
+- **Tint** — the right pill is a swatch of the current hover color, black by default. Pressing it
+  opens a color picker with a **Reset to default** button; the choice applies to the orbit as you
+  drag. The glyph on the tinted item is black or white, whichever contrasts better with the color
+  picked, so any color stays readable. Under High Contrast the chosen color is not applied and Tint
+  behaves as Invert, so an item never gives no sign at all that it is under the pointer.
+- **Animate** - the right pill shows the symbol of the chosen motion; pressing it opens a picker of
+  six: **Pulse** (the default), **Bounce**, **Wobble**, **Shake**, **Spin** (one full turn) and
+  **Float**. Hovering an option in the picker plays that motion on its symbol, so the choice can be
+  seen from Settings. The motion repeats for as long as the pointer stays on the item, then the item
+  glides back to rest. With animations switched off in Windows, Animate behaves as Zoom.
+
+Close goes red under the pointer whichever style is set.
 
 **Hot corner** — one section, two rows:
 
@@ -467,7 +494,10 @@ pre-rename build is a file you can still pick.
 | `FrostedGlass` | `Light`/`Medium`/`Dark` | `Light` | How much frost the **Frosted glass** theme uses. Read only while `Theme` is `FrostedGlass`, but kept either way so switching away and back returns the frost you had. |
 | `AccentColorHex` | `"#RRGGBB"` or null | `null` | The app's accent colour. `null` means the built-in violet for the theme in play. Anything that doesn't parse falls back the same way. |
 | `Language` | `System`/`EnglishUS`/`EnglishUK`/`French`/`German`/`Spanish`/`Italian`/`PortugueseBR`/`PortuguesePT`/`Dutch`/`Polish`/`Turkish`/`Russian`/`Arabic`/`Hebrew`/`Hindi`/`Japanese`/`ChineseSimplified`/`ChineseTraditional`/`Korean` | `System` | UI language. `System` follows Windows' own UI language, falling back to English (US). |
-| `HoverStyle` | `Invert`/`Zoom` | `Invert` | How an orbit item reacts to the pointer — swap to the opposite color, or keep color and shrink slightly. |
+| `HoverStyle` | `Invert`/`Zoom`/`Tint`/`Animate` | `Invert` | How an orbit item reacts to the pointer: `Invert` swaps to the opposite color and grows, `Zoom` keeps its color and changes size (see `HoverZoomDirection`), `Tint` keeps its size and fills with `HoverTintColorHex`, `Animate` plays the motion `HoverAnimation` names. An unknown name reads as `Invert` rather than discarding the config. |
+| `HoverZoomDirection` | `In`/`Out` | `In` | Which way `Zoom` moves an item — `In` grows it, `Out` shrinks it. Read only while `HoverStyle` is `Zoom`, but kept either way. An unknown name reads as `In`. |
+| `HoverTintColorHex` | `"#RRGGBB"` or null | `null` | The fill `Tint` paints under the pointer. `null` means black. Anything that doesn't parse falls back the same way. |
+| `HoverAnimation` | `Pulse`/`Bounce`/`Wobble`/`Shake`/`Spin`/`Float` | `Pulse` | The motion `Animate` plays. Read only while `HoverStyle` is `Animate`, but kept either way. An unknown name reads as `Pulse` rather than discarding the config. |
 | `Hotkey` | string | `"Ctrl+Shift+S"` | Summon shortcut, in readable form so a hand-edited file stays legible. |
 | `HotkeyEnabled` | bool | `true` | Whether the shortcut is registered at all. |
 | `HotCornerEnabled` | bool | `true` | Whether a screen corner summons the orbit. |
@@ -747,7 +777,10 @@ way: an opaque fill fades the acrylic disc out along with it, since nothing show
 circle anyway.
 
 Hover under **Invert** swaps the tint to a fully opaque inverted fill; under **Zoom** the tint never
-changes at all and the scale is the only cue. Close is the exception to both and goes red
+changes at all and the scale is the only cue (it grows for **In**, shrinks for **Out**); under **Tint**
+the tint becomes the user's own opaque color and the scale does not move. An opaque tint takes the
+acrylic disc out with it, as inversion does, and its glyph is black or white by the color's own
+contrast rather than by theme. Close is the exception to all three and goes red
 (`#EF6F6F`) in either theme. Neither the hub nor the hover pill is glass — the hub paints nothing
 (the mark floats straight on the desktop on its own drop shadow) and the pill is a solid plate with
 a one-pixel border.

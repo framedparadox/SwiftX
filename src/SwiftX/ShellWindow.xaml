@@ -331,14 +331,26 @@
                         <Border.RenderTransform>
                             <TranslateTransform x:Name="HomeOrbitHoverSlide" X="-28" />
                         </Border.RenderTransform>
+                        <!-- Stretched (the default), not centred as a block: a TextBlock centres its
+                             own text only when its box is wider than the text, so the StackPanel and
+                             every TextBlock in it must fill the card's full content width and let
+                             TextAlignment do the centring — an outer HorizontalAlignment="Center"
+                             here would instead shrink each line to its own width and leave nothing
+                             for TextAlignment to centre within, reading as flush left. Only the
+                             button row, which is genuinely narrower than the card, centres itself
+                             as a block. -->
                         <StackPanel Spacing="10">
                             <TextBlock Text="Customize the orbit" FontSize="16" FontWeight="Bold"
+                                       TextAlignment="Center"
                                        Foreground="{ThemeResource SettingsTitleBrush}" />
                             <TextBlock x:Name="HomeOrbitHoverCount" FontSize="13" FontWeight="SemiBold"
+                                       TextAlignment="Center"
                                        Foreground="{ThemeResource SettingsAccentBrush}" />
-                            <TextBlock x:Name="HomeOrbitHoverSummary" Style="{StaticResource SettingBody}" />
-                            <TextBlock x:Name="HomeOrbitHoverMeta" Style="{StaticResource SettingBody}" />
-                            <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock x:Name="HomeOrbitHoverSummary" Style="{StaticResource SettingBody}"
+                                       TextAlignment="Center" />
+                            <TextBlock x:Name="HomeOrbitHoverMeta" Style="{StaticResource SettingBody}"
+                                       TextAlignment="Center" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                                 <Button Content="Customize" Padding="14,6" CornerRadius="6"
                                         Click="OrbitBox_Click" />
                                 <Button Content="Add items" Padding="14,6" CornerRadius="6"
@@ -349,7 +361,7 @@
 
                     <Border x:Name="HomeToolsHoverPanel" Width="248" MaxWidth="280"
                             HorizontalAlignment="Right" VerticalAlignment="Center"
-                            Margin="0,0,20,0" Padding="16" CornerRadius="12"
+                            Margin="0,0,36,0" Padding="16" CornerRadius="12"
                             Background="{ThemeResource ShellCardBackgroundBrush}"
                             BorderBrush="{ThemeResource ShellCardBorderBrush}"
                             BorderThickness="1" Visibility="Collapsed" Opacity="0"
@@ -358,16 +370,24 @@
                         <Border.RenderTransform>
                             <TranslateTransform x:Name="HomeToolsHoverSlide" X="28" />
                         </Border.RenderTransform>
+                        <!-- Same reasoning as HomeOrbitHoverPanel's own stack: stay stretched and let
+                             TextAlignment centre the text; only the narrower rows (the tool icons,
+                             the button) centre themselves as blocks. -->
                         <StackPanel Spacing="10">
                             <TextBlock Text="Built-in tools" FontSize="16" FontWeight="Bold"
+                                       TextAlignment="Center"
                                        Foreground="{ThemeResource SettingsTitleBrush}" />
                             <TextBlock x:Name="HomeToolsHoverCount" FontSize="13" FontWeight="SemiBold"
+                                       TextAlignment="Center"
                                        Foreground="{ThemeResource SettingsAccentBrush}" />
-                            <TextBlock x:Name="HomeToolsHoverSummary" Style="{StaticResource SettingBody}" />
-                            <TextBlock x:Name="HomeToolsHoverMeta" Style="{StaticResource SettingBody}" />
-                            <StackPanel x:Name="HomeToolsHoverIcons" Orientation="Horizontal" Spacing="8" />
+                            <TextBlock x:Name="HomeToolsHoverSummary" Style="{StaticResource SettingBody}"
+                                       TextAlignment="Center" />
+                            <TextBlock x:Name="HomeToolsHoverMeta" Style="{StaticResource SettingBody}"
+                                       TextAlignment="Center" />
+                            <StackPanel x:Name="HomeToolsHoverIcons" Orientation="Horizontal" Spacing="8"
+                                        HorizontalAlignment="Center" />
                             <Button Content="Open Tools" Padding="14,6" CornerRadius="6"
-                                    HorizontalAlignment="Left"
+                                    HorizontalAlignment="Center"
                                     Click="ToolsBox_Click" />
                         </StackPanel>
                     </Border>
@@ -410,10 +430,87 @@
                     </Button>
                 </StackPanel>
                 </Grid>
+
+                <!-- How-to guide. A slim tab on the right edge, halfway down the screen, whose
+                     chevron points the way the drawer will come from. It opens a drawer over the
+                     Home screen rather than a separate window, so the guide is never lost behind
+                     the app and closing it puts you exactly where you were. Its content is built in
+                     code (BuildHowToGuide) from the live configuration, so it names the shortcut
+                     and the corner the user actually set. The Tools hover panel above keeps its
+                     distance from the tab through its right margin. -->
+                <Button x:Name="HowToTab" Grid.RowSpan="2"
+                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Width="26" Height="80" Padding="0" MinWidth="0" MinHeight="0"
+                        CornerRadius="10,0,0,10"
+                        Background="{ThemeResource ShellCardBackgroundBrush}"
+                        BorderBrush="{ThemeResource ShellCardBorderBrush}"
+                        BorderThickness="1,1,0,1"
+                        Click="HowToTab_Click"
+                        AutomationProperties.Name="How to guide"
+                        AutomationProperties.AutomationId="ShellHowToTab"
+                        ToolTipService.ToolTip="How to">
+                    <FontIcon Glyph="&#xE76B;" FontSize="14"
+                              FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                              Foreground="{ThemeResource SettingsHeaderBrush}" />
+                </Button>
+
+                <!-- A neutral dimming layer: black at about a third, which reads as a scrim on
+                     every theme, so it is one of the few colours here that is not a theme token.
+                     Tapping it closes the drawer. -->
+                <Border x:Name="HowToScrim" Grid.RowSpan="2" Background="#59000000"
+                        Visibility="Collapsed" Opacity="0"
+                        Tapped="HowToScrim_Tapped" />
+
+                <Border x:Name="HowToPanel" Grid.RowSpan="2" Width="400" MaxWidth="480"
+                        HorizontalAlignment="Right" Visibility="Collapsed"
+                        CornerRadius="12,0,0,12" Padding="0"
+                        Background="{ThemeResource ShellCardBackgroundBrush}"
+                        BorderBrush="{ThemeResource ShellCardBorderBrush}"
+                        BorderThickness="1,1,0,1"
+                        AutomationProperties.Name="How to guide"
+                        AutomationProperties.AutomationId="ShellHowToPanel"
+                        KeyDown="HowToPanel_KeyDown">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="HowToPanelSlide" X="400" />
+                    </Border.RenderTransform>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Padding="24,18,12,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                <TextBlock Text="How to use SwiftX" Style="{StaticResource ScreenTitle}"
+                                           AutomationProperties.HeadingLevel="Level1" />
+                                <TextBlock Text="Four things worth knowing" Style="{StaticResource SecondaryCaption}" />
+                            </StackPanel>
+                            <Button x:Name="HowToCloseButton" Grid.Column="1"
+                                    Style="{StaticResource ChromeIconButton}"
+                                    Click="HowToClose_Click"
+                                    AutomationProperties.Name="Close how to guide"
+                                    ToolTipService.ToolTip="Close">
+                                <FontIcon Glyph="&#xE711;" FontSize="14"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                          Foreground="{ThemeResource SettingsHeaderBrush}" />
+                            </Button>
+                        </Grid>
+
+                        <ScrollViewer Grid.Row="1" Padding="24,6,24,24"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel x:Name="HowToContent" Spacing="14" />
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
             </Grid>
 
             <!-- ==================================================================
-                 ORBIT — Logi's ActionRingPage layout view, measured off
+                 ORBIT— Logi's ActionRingPage layout view, measured off
                  docs/images/17-app-ring.svg: a full-bleed canvas column (68px
                  header, the ring, a 60px toolbar over a hairline) beside a fixed
                  320px sidebar, in the ring canvas's own darker palette rather
@@ -466,7 +563,6 @@
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}"
                                           Foreground="{ThemeResource SettingsHeaderBrush}" />
                             </Button>
-                            <TextBlock Text="Orbit" Style="{StaticResource ScreenTitle}" />
                         </StackPanel>
 
                         <!-- The same cell, holding the header a group's own view wears instead
@@ -545,36 +641,35 @@
                          moved down here off the canvas card they used to sit inside. -->
                     <Grid Grid.Row="3" ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <!-- Spans both columns: the rule is the top edge of the whole bar, not of
-                             either half of it. -->
-                        <Border Grid.Column="0" Grid.ColumnSpan="2" VerticalAlignment="Top" Height="1"
+                        <Border Grid.Column="0" Grid.ColumnSpan="3" VerticalAlignment="Top" Height="1"
                                 Background="{ThemeResource OrbitCanvasBorderBrush}" />
-                        <!-- The bar's left half: the two screen-wide affordances, then what is
-                             left of the column for the hint. They sit opposite Add item / Reset
-                             defaults rather than beside them because those two act on the orbit's
-                             contents and go away with it (a corner preview, a group's children),
-                             while a way into Settings and a way into help are wanted from every
-                             state this canvas has. Still a Grid rather than one StackPanel so the
-                             hint keeps something to trim against — a StackPanel measures its
-                             children unbounded along its own axis, and an untrimmed hint on a
-                             narrow window would simply run underneath the buttons opposite. -->
-                        <Grid Grid.Column="0" Margin="16,0,0,0" ColumnSpacing="8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-
-                            <!-- The gear that used to live here now lives in the header (see
-                                 OrbitSidebarSettingsButton) and the wrench moved down to
-                                 CanvasActions, next to Reset defaults — this StackPanel is left
-                                 empty rather than restructuring the Grid around the hint text. -->
-                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2"
-                                        VerticalAlignment="Center" />
-                        </Grid>
-                        <StackPanel x:Name="CanvasActions" Grid.Column="1" Orientation="Horizontal"
+                        <Button x:Name="OrbitHelpButton" Grid.Column="0"
+                                Style="{StaticResource ChromeIconButton}"
+                                Margin="16,0,0,0"
+                                VerticalAlignment="Center"
+                                AutomationProperties.Name="How to"
+                                ToolTipService.ToolTip="How to">
+                            <FontIcon Glyph="&#xE946;" FontSize="16"
+                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                      Foreground="{ThemeResource SettingsHeaderBrush}" />
+                            <Button.Flyout>
+                                <MenuFlyout Placement="Top">
+                                    <MenuFlyoutItem Text="Run the set-up guide"
+                                                    Click="RunOnboarding_Click" />
+                                    <MenuFlyoutItem Text="Choose what goes on the orbit"
+                                                    Click="HowToArrange_Click" />
+                                    <MenuFlyoutItem Text="Read the handbook"
+                                                    Click="HowToHandbook_Click" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                        <TextBlock Grid.Column="1" Text="Orbit" Style="{StaticResource ScreenTitle}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <StackPanel x:Name="CanvasActions" Grid.Column="2" Orientation="Horizontal"
                                     Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center"
                                     Margin="0,0,24,0">
                             <Button x:Name="AddItemButton" Content="Add item…" Height="30"
@@ -586,28 +681,6 @@
                                 <FontIcon Glyph="&#xE777;" FontSize="16"
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}"
                                           Foreground="{ThemeResource SettingsHeaderBrush}" />
-                            </Button>
-                            <Button x:Name="OrbitHelpButton"
-                                    Style="{StaticResource ChromeIconButton}"
-                                    AutomationProperties.Name="Help and support"
-                                    ToolTipService.ToolTip="How to">
-                                <FontIcon Glyph="&#xE946;" FontSize="16"
-                                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                          Foreground="{ThemeResource SettingsHeaderBrush}" />
-                                <Button.Flyout>
-                                    <MenuFlyout Placement="Top">
-                                        <MenuFlyoutSubItem Text="How to">
-                                            <MenuFlyoutItem Text="Run the set-up guide"
-                                                            Click="RunOnboarding_Click" />
-                                            <MenuFlyoutItem Text="Choose what goes on the orbit"
-                                                            Click="HowToArrange_Click" />
-                                            <MenuFlyoutItem Text="Read the handbook"
-                                                            Click="HowToHandbook_Click" />
-                                        </MenuFlyoutSubItem>
-                                        <MenuFlyoutItem Text="Support" Click="OrbitSupport_Click" />
-                                        <MenuFlyoutItem Text="What's new" Click="WhatsNew_Click" />
-                                    </MenuFlyout>
-                                </Button.Flyout>
                             </Button>
                         </StackPanel>
                     </Grid>
@@ -629,9 +702,15 @@
                                 <StackPanel Spacing="6">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
+                                        <!-- Title and info both Auto-width so they sit side by side
+                                             on the left, same as Orbit radius's own row, rather than
+                                             a Star title stretching the info button out to the row's
+                                             far right edge. The trailing Star column is the spacer
+                                             that absorbs the rest of the row's width instead. -->
                                         <TextBlock Text="Item size" Style="{StaticResource SidebarHeading}"
                                                    VerticalAlignment="Center" />
                                         <Button Grid.Column="1" Style="{StaticResource SidebarInfoButton}"
@@ -648,20 +727,33 @@
                                             </Button.Flyout>
                                         </Button>
                                     </Grid>
-                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
-                                        <RadioButton x:Name="ItemSizeSmallOption" Content="Small" Tag="Small"
+                                    <Grid ColumnSpacing="8" Margin="0,2,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <!-- No HorizontalAlignment override: the default Stretch
+                                             (as Item shape's own 2x2 grid below already relies on)
+                                             left-aligns each circle+label at the same offset in its
+                                             column. Centering each one as its own block instead
+                                             used to shift "Small"/"Large" (five letters) further
+                                             right than "Medium" (six), since a shorter label makes
+                                             a narrower block to center — the circles never lined
+                                             up, and "Small" read as having stray left padding. -->
+                                        <RadioButton Grid.Column="0" x:Name="ItemSizeSmallOption" Content="Small" Tag="Small"
                                                      GroupName="ItemSize" Style="{StaticResource SidebarRadio}"
                                                      AutomationProperties.Name="Item size: Small"
                                                      Checked="ItemSize_Checked" />
-                                        <RadioButton x:Name="ItemSizeMediumOption" Content="Medium" Tag="Medium"
+                                        <RadioButton Grid.Column="1" x:Name="ItemSizeMediumOption" Content="Medium" Tag="Medium"
                                                      GroupName="ItemSize" Style="{StaticResource SidebarRadio}"
                                                      AutomationProperties.Name="Item size: Medium"
                                                      Checked="ItemSize_Checked" />
-                                        <RadioButton x:Name="ItemSizeLargeOption" Content="Large" Tag="Large"
+                                        <RadioButton Grid.Column="2" x:Name="ItemSizeLargeOption" Content="Large" Tag="Large"
                                                      GroupName="ItemSize" Style="{StaticResource SidebarRadio}"
                                                      AutomationProperties.Name="Item size: Large"
                                                      Checked="ItemSize_Checked" />
-                                    </StackPanel>
+                                    </Grid>
                                 </StackPanel>
 
                                 <Border Height="1" Background="{ThemeResource OrbitSidebarBorderBrush}" />
@@ -669,8 +761,9 @@
                                 <StackPanel Spacing="6">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Item shape" Style="{StaticResource SidebarHeading}"
                                                    VerticalAlignment="Center" />
@@ -688,21 +781,38 @@
                                             </Button.Flyout>
                                         </Button>
                                     </Grid>
-                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
-                                        <RadioButton x:Name="ItemShapeCircleOption" Content="Circle" Tag="Circle"
+                                    <Grid ColumnSpacing="8" RowSpacing="4" Margin="0,2,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <RadioButton Grid.Row="0" Grid.Column="0"
+                                                     x:Name="ItemShapeCircleOption" Content="Circle" Tag="Circle"
                                                      GroupName="ItemShape" Style="{StaticResource SidebarRadio}"
                                                      AutomationProperties.Name="Item shape: Circle"
                                                      Checked="ItemShape_Checked" />
-                                        <RadioButton x:Name="ItemShapeSquircleOption" Content="Squircle" Tag="Squircle"
+                                        <RadioButton Grid.Row="0" Grid.Column="1"
+                                                     x:Name="ItemShapeSquircleOption" Content="Squircle" Tag="Squircle"
                                                      GroupName="ItemShape" Style="{StaticResource SidebarRadio}"
                                                      AutomationProperties.Name="Item shape: Squircle"
                                                      ToolTipService.ToolTip="A square with its corners rounded off"
                                                      Checked="ItemShape_Checked" />
-                                        <RadioButton x:Name="ItemShapeSquareOption" Content="Square" Tag="Square"
+                                        <RadioButton Grid.Row="1" Grid.Column="0"
+                                                     x:Name="ItemShapeSquareOption" Content="Square" Tag="Square"
                                                      GroupName="ItemShape" Style="{StaticResource SidebarRadio}"
                                                      AutomationProperties.Name="Item shape: Square"
                                                      Checked="ItemShape_Checked" />
-                                    </StackPanel>
+                                        <RadioButton Grid.Row="1" Grid.Column="1"
+                                                     x:Name="ItemShapeHexagonOption" Content="Hexagon" Tag="Hexagon"
+                                                     GroupName="ItemShape" Style="{StaticResource SidebarRadio}"
+                                                     AutomationProperties.Name="Item shape: Hexagon"
+                                                     ToolTipService.ToolTip="A hexagon with curved edges"
+                                                     Checked="ItemShape_Checked" />
+                                    </Grid>
                                 </StackPanel>
 
                                 <Border Height="1" Background="{ThemeResource OrbitSidebarBorderBrush}" />
@@ -710,17 +820,19 @@
                                 <StackPanel Spacing="6">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Orbit radius" Style="{StaticResource SidebarHeading}"
                                                    VerticalAlignment="Center" />
-                                        <TextBlock x:Name="RadiusReadout" Grid.Column="1"
-                                                   VerticalAlignment="Center" Margin="0,0,4,0"
-                                                   FontSize="10" FontWeight="SemiBold"
-                                                   Foreground="{ThemeResource SettingsTitleBrush}" />
-                                        <Button Grid.Column="2" Style="{StaticResource SidebarInfoButton}"
+                                        <!-- Info sits right after the title, same as every other
+                                             section's — Reset moves down to column 4, beside the
+                                             readout it actually resets, rather than sitting between
+                                             the title and its own info button. -->
+                                        <Button Grid.Column="1" Style="{StaticResource SidebarInfoButton}"
                                                 AutomationProperties.Name="About orbit radius">
                                             <FontIcon Glyph="&#xE946;" FontSize="11"
                                                       FontFamily="{ThemeResource SymbolThemeFontFamily}"
@@ -732,6 +844,20 @@
                                                                MaxWidth="220" />
                                                 </Flyout>
                                             </Button.Flyout>
+                                        </Button>
+                                        <TextBlock x:Name="RadiusReadout" Grid.Column="3"
+                                                   VerticalAlignment="Center" Margin="0,0,4,0"
+                                                   FontSize="10" FontWeight="SemiBold"
+                                                   Foreground="{ThemeResource SettingsTitleBrush}" />
+                                        <Button x:Name="RadiusResetButton" Grid.Column="4"
+                                                Style="{StaticResource SidebarInfoButton}"
+                                                Margin="6,0,0,0"
+                                                Click="RadiusReset_Click"
+                                                AutomationProperties.Name="Reset orbit radius"
+                                                ToolTipService.ToolTip="Reset to default radius">
+                                            <FontIcon Glyph="&#xE777;" FontSize="12"
+                                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                                      Foreground="{ThemeResource SettingsMutedBrush}" />
                                         </Button>
                                     </Grid>
                                     <Slider x:Name="RadiusSlider" Margin="0,6,0,2"
@@ -745,10 +871,16 @@
                                 <StackPanel Spacing="6">
                                     <Grid ColumnSpacing="6">
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
+                                        <!-- Title and info together on the left, same as every other
+                                             row (see Orbit radius) — the toggle is the row's actual
+                                             control, so it moves to column 3, on the right past the
+                                             spacer, rather than sitting between the title and the
+                                             info button that explains it. -->
                                         <TextBlock Grid.Column="0" Text="Hot corner"
                                                    Style="{StaticResource SidebarHeading}"
                                                    VerticalAlignment="Center" />
@@ -765,7 +897,7 @@
                                                 </Flyout>
                                             </Button.Flyout>
                                         </Button>
-                                        <ToggleSwitch x:Name="HotCornerEnabledToggle" Grid.Column="2"
+                                        <ToggleSwitch x:Name="HotCornerEnabledToggle" Grid.Column="3"
                                                       OnContent="" OffContent="" MinWidth="0"
                                                       AutomationProperties.Name="Hot corner"
                                                       VerticalAlignment="Center"
@@ -783,7 +915,7 @@
                                                         IsTabStop="False"
                                                         AutomationProperties.AutomationId="SettingsHotCornerBox" />
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2"
-                                                    HorizontalAlignment="Right">
+                                                    HorizontalAlignment="Center">
                                             <RadioButton x:Name="HotCornerLayoutOrbit" Content="Orbit"
                                                          GroupName="HotCornerLayout"
                                                          Style="{StaticResource SidebarRadio}"
@@ -803,8 +935,9 @@
                                 <StackPanel Spacing="6">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Hover style" Style="{StaticResource SidebarHeading}"
                                                    VerticalAlignment="Center" />
@@ -815,21 +948,50 @@
                                                       Foreground="{ThemeResource SettingsMutedBrush}" />
                                             <Button.Flyout>
                                                 <Flyout Placement="Bottom">
-                                                    <TextBlock Text="Invert swaps an item's fill under the pointer. Zoom keeps its colour and shrinks it."
+                                                    <TextBlock Text="Invert swaps an item's fill under the pointer. Zoom keeps its colour and grows it (In) or shrinks it (Out). Tint keeps its size and fills it with a colour you pick. Animate keeps both and plays a motion (pulse, bounce, wobble, shake, spin or float) while the pointer is on it. Windows' animation setting turns Animate into a plain Zoom."
                                                                Style="{StaticResource SidebarCaption}"
                                                                MaxWidth="220" />
                                                 </Flyout>
                                             </Button.Flyout>
                                         </Button>
                                     </Grid>
-                                    <Grid ColumnSpacing="8" Margin="0,2,0,0">
+                                    <!-- Two options a row, two rows: Invert | Zoom, then Tint | Animate.
+                                         Four across would leave a pill ~55px wide, and the selected
+                                         one splits 70/30 into ~38 and ~16, which leaves no room for
+                                         "Out". Four stacked would be wide enough but costs 136px of
+                                         height, and this panel does not scroll (see
+                                         OrbitSidebarSettings), so Hover style, being last, would be
+                                         the thing to fall off the bottom. Two rows cost 44px in all,
+                                         and no pill ever changes width when another is chosen: a
+                                         selected pill splits inside the cell it already has (~84 +
+                                         ~36 for each of the three that split).
+
+                                         Each option is a Button holding a Border, painted in code
+                                         by SelectHoverStyle. When its option is selected the
+                                         Button narrows to the left 70% of its cell and the side
+                                         Button (direction / colour) appears in the right 30%,
+                                         adjoining it; unselected, the side Button is collapsed and
+                                         the main one spans the whole cell. -->
+                                    <Grid ColumnSpacing="8" RowSpacing="8" Margin="0,2,0,0">
+                                        <Grid.Resources>
+                                            <Style x:Key="HoverStyleButton" TargetType="Button">
+                                                <Setter Property="Padding" Value="0" />
+                                                <Setter Property="Background" Value="Transparent" />
+                                                <Setter Property="BorderThickness" Value="0" />
+                                                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            </Style>
+                                        </Grid.Resources>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <Button Grid.Column="0" Padding="0" Background="Transparent"
-                                                BorderThickness="0" HorizontalAlignment="Stretch"
-                                                HorizontalContentAlignment="Stretch"
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <Button Grid.Row="0" Grid.Column="0" Style="{StaticResource HoverStyleButton}"
                                                 Tag="Invert" Click="HoverStyleOption_Click"
                                                 AutomationProperties.Name="Hover style: Invert">
                                             <Border x:Name="HoverStyleInvertPill" CornerRadius="8"
@@ -839,18 +1001,130 @@
                                                            FontWeight="SemiBold" />
                                             </Border>
                                         </Button>
-                                        <Button Grid.Column="1" Padding="0" Background="Transparent"
-                                                BorderThickness="0" HorizontalAlignment="Stretch"
-                                                HorizontalContentAlignment="Stretch"
-                                                Tag="Zoom" Click="HoverStyleOption_Click"
-                                                AutomationProperties.Name="Hover style: Zoom">
-                                            <Border x:Name="HoverStyleZoomPill" CornerRadius="8"
-                                                    BorderThickness="1" Padding="0,10">
-                                                <TextBlock x:Name="HoverStyleZoomText" Text="Zoom"
-                                                           HorizontalAlignment="Center" FontSize="12"
-                                                           FontWeight="SemiBold" />
-                                            </Border>
-                                        </Button>
+
+                                        <!-- Tag stays "Zoom": it round-trips through
+                                             Enum.TryParse<OrbitHoverStyle> straight into the
+                                             persisted config (see HoverStyleOption_Click), and
+                                             OrbitHoverStyle.Zoom is written to disk by name (see
+                                             that enum's own doc comment). The style used to shrink an
+                                             item and be labelled "Shrink"; it now grows it by
+                                             default, and the side pill flips it to shrink. -->
+                                        <Grid Grid.Row="0" Grid.Column="1" ColumnSpacing="2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="7*" />
+                                                <ColumnDefinition Width="3*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button x:Name="HoverStyleZoomButton" Grid.ColumnSpan="2"
+                                                    Style="{StaticResource HoverStyleButton}"
+                                                    Tag="Zoom" Click="HoverStyleOption_Click"
+                                                    AutomationProperties.Name="Hover style: Zoom">
+                                                <Border x:Name="HoverStyleZoomPill" CornerRadius="8"
+                                                        BorderThickness="1" Padding="0,10">
+                                                    <TextBlock x:Name="HoverStyleZoomText" Text="Zoom"
+                                                               HorizontalAlignment="Center" FontSize="12"
+                                                               FontWeight="SemiBold" />
+                                                </Border>
+                                            </Button>
+                                            <Button x:Name="HoverZoomDirectionButton" Grid.Column="1"
+                                                    Visibility="Collapsed"
+                                                    Style="{StaticResource HoverStyleButton}"
+                                                    Click="HoverZoomDirection_Click">
+                                                <Border x:Name="HoverZoomDirectionPill" CornerRadius="0,8,8,0"
+                                                        BorderThickness="1" Padding="0,10">
+                                                    <TextBlock x:Name="HoverZoomDirectionText" Text="In"
+                                                               HorizontalAlignment="Center" FontSize="12"
+                                                               FontWeight="SemiBold" />
+                                                </Border>
+                                            </Button>
+                                        </Grid>
+
+                                        <Grid Grid.Row="1" Grid.Column="0" ColumnSpacing="2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="7*" />
+                                                <ColumnDefinition Width="3*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button x:Name="HoverStyleTintButton" Grid.ColumnSpan="2"
+                                                    Style="{StaticResource HoverStyleButton}"
+                                                    Tag="Tint" Click="HoverStyleOption_Click"
+                                                    AutomationProperties.Name="Hover style: Tint">
+                                                <Border x:Name="HoverStyleTintPill" CornerRadius="8"
+                                                        BorderThickness="1" Padding="0,10">
+                                                    <TextBlock x:Name="HoverStyleTintText" Text="Tint"
+                                                               HorizontalAlignment="Center" FontSize="12"
+                                                               FontWeight="SemiBold" />
+                                                </Border>
+                                            </Button>
+                                            <!-- The swatch: a chip of the current hover colour set into
+                                                 an accent pill, so it reads as the selected pill's own
+                                                 right-hand end rather than a stray colour square. The
+                                                 picker mirrors General's accent picker, and applies
+                                                 live the same way: OrbitWindow reads the colour out
+                                                 of the config each time an item is hovered. -->
+                                            <Button x:Name="HoverTintButton" Grid.Column="1"
+                                                    Visibility="Collapsed"
+                                                    Style="{StaticResource HoverStyleButton}"
+                                                    AutomationProperties.Name="Hover colour"
+                                                    ToolTipService.ToolTip="Hover colour">
+                                                <Border x:Name="HoverTintPill" CornerRadius="0,8,8,0"
+                                                        BorderThickness="1" Padding="0,10">
+                                                    <Border x:Name="HoverTintChip" Height="16" Margin="8,0"
+                                                            CornerRadius="4" BorderThickness="1" />
+                                                </Border>
+                                                <Button.Flyout>
+                                                    <Flyout Placement="Bottom">
+                                                        <StackPanel Spacing="10" MinWidth="260">
+                                                            <ColorPicker x:Name="HoverTintPicker"
+                                                                         IsAlphaEnabled="False"
+                                                                         AutomationProperties.Name="Hover colour picker"
+                                                                         ColorChanged="HoverTintPicker_ColorChanged" />
+                                                            <Button Content="Reset to default" HorizontalAlignment="Stretch"
+                                                                    Click="HoverTintReset_Click" />
+                                                        </StackPanel>
+                                                    </Flyout>
+                                                </Button.Flyout>
+                                            </Button>
+                                        </Grid>
+
+                                        <!-- Animate: its side pill shows the symbol of the chosen
+                                             motion and opens a picker of all of them. The picker is
+                                             built in code (BuildHoverAnimationPicker) because each
+                                             option plays its own motion under the pointer, which is
+                                             the only way to see what the orbit will do from here: the
+                                             orbit is a separate window, and this sidebar's preview
+                                             ring does not reproduce hover. The symbol's line height
+                                             is pinned to the label's so the two halves of the split
+                                             pill stay the same height. -->
+                                        <Grid Grid.Row="1" Grid.Column="1" ColumnSpacing="2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="7*" />
+                                                <ColumnDefinition Width="3*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button x:Name="HoverStyleAnimateButton" Grid.ColumnSpan="2"
+                                                    Style="{StaticResource HoverStyleButton}"
+                                                    Tag="Animate" Click="HoverStyleOption_Click"
+                                                    AutomationProperties.Name="Hover style: Animate">
+                                                <Border x:Name="HoverStyleAnimatePill" CornerRadius="8"
+                                                        BorderThickness="1" Padding="0,10">
+                                                    <TextBlock x:Name="HoverStyleAnimateText" Text="Animate"
+                                                               HorizontalAlignment="Center" FontSize="12"
+                                                               FontWeight="SemiBold" />
+                                                </Border>
+                                            </Button>
+                                            <Button x:Name="HoverAnimationButton" Grid.Column="1"
+                                                    Visibility="Collapsed"
+                                                    Style="{StaticResource HoverStyleButton}">
+                                                <Border x:Name="HoverAnimationPill" CornerRadius="0,8,8,0"
+                                                        BorderThickness="1" Padding="0,10">
+                                                    <TextBlock x:Name="HoverAnimationSymbol"
+                                                               HorizontalAlignment="Center" FontSize="13"
+                                                               LineHeight="16" LineStackingStrategy="BlockLineHeight"
+                                                               FontFamily="Segoe UI Symbol" />
+                                                </Border>
+                                                <Button.Flyout>
+                                                    <Flyout x:Name="HoverAnimationFlyout" Placement="Bottom" />
+                                                </Button.Flyout>
+                                            </Button>
+                                        </Grid>
                                     </Grid>
                                 </StackPanel>
                             </StackPanel>
@@ -868,10 +1142,22 @@
                                       Drop="OrbitSidebarEdit_Drop">
                             <Grid>
                                 <StackPanel Spacing="10">
-                                    <TextBlock Text="ADD TO ORBIT" Style="{StaticResource SidebarEyebrow}" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="OrbitEditEyebrow" Grid.Column="0"
+                                                   Text="ADD TO ORBIT" Style="{StaticResource SidebarEyebrow}"
+                                                   VerticalAlignment="Center" />
+                                        <HyperlinkButton x:Name="OrbitEditCancelButton" Grid.Column="1"
+                                                         Content="Cancel" Style="{StaticResource AccentLink}"
+                                                         Visibility="Collapsed"
+                                                         Click="OrbitEditCancel_Click" />
+                                    </Grid>
                                     <TextBlock x:Name="OrbitEditSummary" Style="{StaticResource SidebarCaption}"
                                                TextWrapping="Wrap" />
-                                    <TextBlock Text="Drag an app, shortcut or link here, or pick one below."
+                                    <TextBlock Text="Drag an app, folder, shortcut or link here, or pick one below. Drop one on a group to add it to that group."
                                                Style="{StaticResource SidebarCaption}" />
                                     <!-- Categories are built in code (BuildOrbitEditSidebar) because
                                          their rows are data — the apps and folders this machine
@@ -882,7 +1168,7 @@
                                         BorderThickness="2" Visibility="Collapsed"
                                         IsHitTestVisible="False"
                                         AutomationProperties.AccessibilityView="Raw">
-                                    <TextBlock Text="Drop to add"
+                                    <TextBlock x:Name="OrbitEditDropOverlayText" Text="Drop to add"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                FontSize="13" FontWeight="SemiBold"
                                                Foreground="{ThemeResource SettingsAccentBrush}" />
@@ -933,7 +1219,13 @@
                              control would mean rebuilding the ItemsSource binding for no visible
                              change. MaximumRowsOrColumns="4" caps the wrap at four columns outright
                              rather than leaving it to width math, so the fifth ToolRow wraps to its
-                             own row instead of ever being dropped. -->
+                             own row instead of ever being dropped. Each 224px slot holds a 200px
+                             card (the container's 24px right margin is the gutter between columns)
+                             whose content is centred on the card's own centre line, see
+                             BuildToolCardShell. The container stretches its content both ways so
+                             the card fills its slot exactly, rather than sitting at the left of it
+                             or floating vertically centred when another card in the row is taller,
+                             either of which would read as the card being shifted. -->
                         <ListView x:Name="ToolsList" SelectionMode="None"
                                   ScrollViewer.VerticalScrollBarVisibility="Disabled"
                                   ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -949,6 +1241,7 @@
                                     <Setter Property="Padding" Value="0" />
                                     <Setter Property="Margin" Value="0,0,24,24" />
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
                                     <Setter Property="MinHeight" Value="0" />
                                 </Style>
                             </ListView.ItemContainerStyle>
@@ -980,7 +1273,8 @@
                                       FontFamily="{ThemeResource SymbolThemeFontFamily}"
                                       Foreground="{ThemeResource SettingsHeaderBrush}" />
                         </Button>
-                        <TextBlock Text="Elements" Style="{StaticResource ScreenTitle}" />
+                        <TextBlock Text="Elements" Style="{StaticResource ScreenTitle}"
+                                   AutomationProperties.HeadingLevel="Level1" />
                     </StackPanel>
                     <Button Grid.Column="1" Content="Add item…" VerticalAlignment="Center"
                             CornerRadius="6" Click="AddAppItem_Click" />
@@ -988,15 +1282,11 @@
 
                 <ScrollViewer Grid.Row="1" Padding="48,8,64,48">
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Elements are the apps, files, folders, links, and groups you've added to the orbit. Show, hide, or remove items on the orbit. Settings and Close are always on the orbit, so they are not listed here."
+                        <TextBlock Text="Elements are the apps, shortcuts, folders, links, and groups you've added to the orbit, listed by type. Hover a card for everything SwiftX knows about it. Show, hide, edit, or remove items on the orbit. Settings and Close are always on the orbit and the built-in tools have their own screen, so none of them are listed here."
                                    Style="{StaticResource SettingBody}" Margin="0,0,0,8" />
-                        <Grid x:Name="ItemsList" ColumnSpacing="20" RowSpacing="20">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                        </Grid>
+                        <!-- One section per category (ElementSections.Build), each a heading over
+                             its own three-column card grid, built in code by RebuildItemsList. -->
+                        <StackPanel x:Name="ItemsList" Spacing="28" />
                     </StackPanel>
                 </ScrollViewer>
             </Grid>
