@@ -45,12 +45,27 @@ public static class IconService
             // 1. Explicit user-supplied icon wins — but only if it actually decodes. A path that
             // has since been deleted, or an image the XAML stack can't read, falls through to the
             // normal resolution below rather than leaving the item blank.
-            if (!string.IsNullOrWhiteSpace(item.CustomIconPath) && File.Exists(item.CustomIconPath))
+            //
+            // Two shapes share this field: a plain image file (png/jpg/ico/bmp), and — the same
+            // "path,index" form a Windows shortcut's own icon location uses — one of the icons
+            // embedded in a module the "Select an app or DLL…" picker browsed to.
+            if (!string.IsNullOrWhiteSpace(item.CustomIconPath))
             {
-                var custom = await FromFileAsync(item.CustomIconPath!);
-                if (custom is not null)
-                    return custom;
-                Diag.Log($"IconService: custom icon '{item.CustomIconPath}' didn't decode — using the default");
+                var (modulePath, moduleIndex) = SplitModuleIconPath(item.CustomIconPath!);
+                if (moduleIndex is { } index && File.Exists(modulePath))
+                {
+                    var moduleIcon = await LoadModuleIconAsync(modulePath, index);
+                    if (moduleIcon is not null)
+                        return moduleIcon;
+                    Diag.Log($"IconService: module icon '{item.CustomIconPath}' didn't decode — using the default");
+                }
+                else if (File.Exists(item.CustomIconPath))
+                {
+                    var custom = await FromFileAsync(item.CustomIconPath!);
+                    if (custom is not null)
+                        return custom;
+                    Diag.Log($"IconService: custom icon '{item.CustomIconPath}' didn't decode — using the default");
+                }
             }
 
             // 2. Kind-specific resolution.
@@ -102,24 +117,102 @@ public static class IconService
 
         try
         {
-            byte[]? png = TryEncodeIconPng(hIcon);
-            if (png is null)
-            {
-                // Fallback for the rare icon GetDIBits can't read as plain 32bpp (e.g. a legacy
-                // icon with no real color bitmap) — the GDI+ path, buggy on jumbo/PNG-compressed
-                // icons but otherwise fine, and better than nothing here.
-                using var icon = System.Drawing.Icon.FromHandle(hIcon);
-                using var bitmap = icon.ToBitmap();
-                using var ms = new MemoryStream();
-                bitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
-                png = ms.ToArray();
-            }
-            return await DecodeAsync(png);
+            return await DecodeHIconAsync(hIcon);
         }
         finally
         {
             NativeMethods.DestroyIcon(hIcon);
         }
+    }
+
+    /// <summary>
+    /// Turns a live icon handle into a decoded image — the tail end <see cref="ShellIconAsync"/>
+    /// and <see cref="LoadModuleIconAsync"/> both need once they each have an <c>HICON</c> from
+    /// their own different source (the shell's image list, or a module's embedded resources).
+    /// Neither owns the handle: the caller extracted or looked it up and is the one that has to
+    /// destroy it.
+    /// </summary>
+    private static async Task<ImageSource?> DecodeHIconAsync(nint hIcon)
+    {
+        byte[]? png = TryEncodeIconPng(hIcon);
+        if (png is null)
+        {
+            // Fallback for the rare icon GetDIBits can't read as plain 32bpp (e.g. a legacy
+            // icon with no real color bitmap) — the GDI+ path, buggy on jumbo/PNG-compressed
+            // icons but otherwise fine, and better than nothing here.
+            using var icon = System.Drawing.Icon.FromHandle(hIcon);
+            using var bitmap = icon.ToBitmap();
+            using var ms = new MemoryStream();
+            bitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+            png = ms.ToArray();
+        }
+        return await DecodeAsync(png);
+    }
+
+    /// <summary>
+    /// How many icons a module (an .exe or .dll) carries — <c>ExtractIconEx</c>'s documented
+    /// trick of asking for icon index -1, which returns a count instead of extracting anything.
+    /// Used by the icon picker's "Select an app or DLL…" to know how many entries its gallery has
+    /// to offer; zero (a module with no icon resources, or one that couldn't be opened at all)
+    /// means there is nothing to choose there.
+    /// </summary>
+    public static int CountModuleIcons(string path)
+    {
+        try
+        {
+            return (int)NativeMethods.ExtractIconEx(path, -1, out _, out _, 0);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log($"IconService: icon count failed for '{path}': {ex.GetType().Name}: {ex.Message}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Extracts one icon out of a module by index (see <see cref="CountModuleIcons"/>) and decodes
+    /// it — the module counterpart of <see cref="ShellIconAsync"/>'s shell lookup, for an icon the
+    /// user picked directly out of an .exe or .dll rather than the file the orbit item itself
+    /// launches. <see cref="OrbitItem.CustomIconPath"/> stores the choice as "path,index", the same
+    /// form a Windows shortcut's own icon location field uses, so it round-trips through the same
+    /// property a plain image file already does.
+    /// </summary>
+    public static async Task<ImageSource?> LoadModuleIconAsync(string path, int index)
+    {
+        if (NativeMethods.ExtractIconEx(path, index, out nint large, out nint small, 1) == 0)
+            return null;
+
+        nint hIcon = large != nint.Zero ? large : small;
+        if (hIcon == nint.Zero)
+            return null;
+
+        try
+        {
+            return await DecodeHIconAsync(hIcon);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log($"IconService: module icon failed for '{path}[{index}]': {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+        finally
+        {
+            if (large != nint.Zero) NativeMethods.DestroyIcon(large);
+            if (small != nint.Zero && small != large) NativeMethods.DestroyIcon(small);
+        }
+    }
+
+    /// <summary>
+    /// Splits the "path,index" form <see cref="OrbitItem.CustomIconPath"/> carries for a module
+    /// icon back into its parts. A plain image path — no trailing ",N", or one that doesn't parse
+    /// as a number — comes back with a null index, read as an ordinary file instead.
+    /// </summary>
+    private static (string Path, int? Index) SplitModuleIconPath(string raw)
+    {
+        int comma = raw.LastIndexOf(',');
+        if (comma > 0 && int.TryParse(raw.AsSpan(comma + 1), out int index))
+            return (raw[..comma], index);
+        return (raw, null);
     }
 
     /// <summary>
@@ -218,12 +311,24 @@ public static class IconService
             return nint.Zero;
 
         var iid = NativeMethods.IID_IImageList;
-        if (NativeMethods.SHGetImageList(NativeMethods.SHIL_JUMBO, ref iid, out var imageList) != 0)
+        if (NativeMethods.SHGetImageList(NativeMethods.SHIL_JUMBO, ref iid, out nint imageList) != 0
+            || imageList == nint.Zero)
             return nint.Zero;
 
-        return imageList.GetIcon(info.iIcon, NativeMethods.ILD_TRANSPARENT, out nint hIcon) == 0
-            ? hIcon
-            : nint.Zero;
+        // The raw pointer, not a managed interface: see the note above SHGetImageList. That also
+        // makes the reference ours to release, which a wrapper's finalizer used to do, later and on
+        // a thread of its choosing.
+        try
+        {
+            return NativeMethods.ImageListGetIcon(
+                imageList, info.iIcon, NativeMethods.ILD_TRANSPARENT, out nint hIcon) == 0
+                ? hIcon
+                : nint.Zero;
+        }
+        finally
+        {
+            Marshal.Release(imageList);
+        }
     }
 
     /// <summary>

@@ -55,10 +55,13 @@ public sealed class AppTitleBar : Grid
     /// thing again, right under this bar. A caption that repeated it a third time, in a strip whose
     /// job is otherwise just to host the mark and drag the window, was the one copy worth cutting.
     /// </summary>
+    private readonly FrameworkElement? _leading;
+
     private AppTitleBar(FrameworkElement? leading, FrameworkElement? headerActions)
     {
         Height = HeightDip;
         Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        _leading = leading;
 
         if (leading is not null)
         {
@@ -75,6 +78,16 @@ public sealed class AppTitleBar : Grid
             headerActions.Margin = new Thickness(0, 0, SystemButtonZoneWidth, 0);
             Children.Add(headerActions);
         }
+    }
+
+    /// <summary>
+    /// Home already wears the mark as the X in SwiftX, so the caption mark is hidden there and
+    /// shown on every other screen — the caption is otherwise empty once you leave Home.
+    /// </summary>
+    public void SetMarkVisible(bool visible)
+    {
+        if (_leading is not null)
+            _leading.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>

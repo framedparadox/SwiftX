@@ -136,7 +136,7 @@
             <Grid x:Name="ShortcutStep" Visibility="Collapsed">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Spacing="10" MaxWidth="700" HorizontalAlignment="Left"
+                    <StackPanel Spacing="10" HorizontalAlignment="Stretch"
                                 Margin="0,0,0,16">
 
                         <Border Style="{StaticResource Card}">

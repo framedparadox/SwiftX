@@ -11,9 +11,22 @@ namespace SwiftX.Interop;
 internal static partial class NativeMethods
 {
     // ---- DWM window attributes --------------------------------------------
+    public const int DWMWA_NCRENDERING_POLICY = 2;
+    public const int DWMNCRP_USEWINDOWSTYLE = 0;
+    public const int DWMNCRP_DISABLED = 1;
     public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     public const int DWMWA_BORDER_COLOR = 34;
+    public const int DWMWA_CAPTION_COLOR = 35;
+
+    /// <summary>
+    /// DWM "no custom border color" sentinel for <see cref="DWMWA_BORDER_COLOR"/>.
+    /// Pass this instead of a solid COLORREF when a translucent window must not paint a custom rim.
+    /// </summary>
+    public const int DWMWA_COLOR_NONE = unchecked((int)0xFFFFFFFE);
+
+    /// <summary>DWM default border-color sentinel for <see cref="DWMWA_BORDER_COLOR"/>.</summary>
+    public const int DWMWA_COLOR_DEFAULT = unchecked((int)0xFFFFFFFF);
 
     // DWM_WINDOW_CORNER_PREFERENCE
     public const int DWMWCP_DONOTROUND = 1;
@@ -22,6 +35,8 @@ internal static partial class NativeMethods
 
     // ---- Background erase suppression (see WindowChrome.MakeTransparentOverlay) ----
     public const uint WM_ERASEBKGND = 0x0014;
+    public const uint WM_NCCALCSIZE = 0x0083;
+    public const uint WM_NCPAINT = 0x0085;
 
     public delegate nint SubclassProc(nint hwnd, uint msg, nint wParam, nint lParam, nuint id, nint data);
 
@@ -34,6 +49,18 @@ internal static partial class NativeMethods
 
     [LibraryImport("dwmapi.dll")]
     public static partial int DwmSetWindowAttribute(nint hwnd, int attribute, ref int value, int size);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MARGINS
+    {
+        public int cxLeftWidth;
+        public int cxRightWidth;
+        public int cyTopHeight;
+        public int cyBottomHeight;
+    }
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmExtendFrameIntoClientArea(nint hwnd, ref MARGINS margins);
 
     // ---- GDI regions (round hit-testing region for the orbit) --------------
     [DllImport("gdi32.dll")]
@@ -67,6 +94,10 @@ internal static partial class NativeMethods
     // ---- Extended window styles (tool window: off taskbar & alt-tab) ------
     public const int GWL_EXSTYLE = -20;
     public const long WS_EX_TOOLWINDOW = 0x00000080;
+    public const long WS_EX_DLGMODALFRAME = 0x00000001;
+    public const long WS_EX_WINDOWEDGE = 0x00000100;
+    public const long WS_EX_CLIENTEDGE = 0x00000200;
+    public const long WS_EX_STATICEDGE = 0x00020000;
 
     // ---- Window styles (strip the non-client frame / resize border) -------
     public const int GWL_STYLE = -16;
@@ -229,44 +260,36 @@ internal static partial class NativeMethods
 
     public static readonly Guid IID_IImageList = new("46EB5926-582E-4017-9FDF-E8998DAA0950");
 
-    [ComImport]
-    [Guid("46EB5926-582E-4017-9FDF-E8998DAA0950")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IImageList
-    {
-        [PreserveSig] int Add(nint hbmImage, nint hbmMask, out int pi);
-        [PreserveSig] int ReplaceIcon(int i, nint hicon, out int pi);
-        [PreserveSig] int SetOverlayImage(int iImage, int iOverlay);
-        [PreserveSig] int Replace(int i, nint hbmImage, nint hbmMask);
-        [PreserveSig] int AddMasked(nint hbmImage, int crMask, out int pi);
-        [PreserveSig] int Draw(nint pimldp);
-        [PreserveSig] int Remove(int i);
-        [PreserveSig] int GetIcon(int i, int flags, out nint picon);
-        [PreserveSig] int GetImageInfo(int i, nint pImageInfo);
-        [PreserveSig] int Copy(int iDst, IImageList punkSrc, int iSrc, int uFlags);
-        [PreserveSig] int Merge(int i1, IImageList punk2, int i2, int dx, int dy, ref Guid riid, out nint ppv);
-        [PreserveSig] int Clone(ref Guid riid, out nint ppv);
-        [PreserveSig] int GetImageRect(int i, nint prc);
-        [PreserveSig] int GetIconSize(out int cx, out int cy);
-        [PreserveSig] int SetIconSize(int cx, int cy);
-        [PreserveSig] int GetImageCount(out int pi);
-        [PreserveSig] int SetImageCount(int uNewCount);
-        [PreserveSig] int SetBkColor(int clrBk, out int pclr);
-        [PreserveSig] int GetBkColor(out int pclr);
-        [PreserveSig] int BeginDrag(int iTrack, int dxHotspot, int dyHotspot);
-        [PreserveSig] int EndDrag();
-        [PreserveSig] int DragEnter(nint hwndLock, int x, int y);
-        [PreserveSig] int DragLeave(nint hwndLock);
-        [PreserveSig] int DragMove(int x, int y);
-        [PreserveSig] int SetDragCursorImage(IImageList punk, int iDrag, int dxHotspot, int dyHotspot);
-        [PreserveSig] int DragShowNolock(int fShow);
-        [PreserveSig] int GetDragImage(nint ppt, nint pptHotspot, ref Guid riid, out nint ppv);
-        [PreserveSig] int GetItemFlags(int i, out int dwFlags);
-        [PreserveSig] int GetOverlayImage(int iOverlay, out int piIndex);
-    }
+    // The image list is used through its raw COM pointer, not as a managed [ComImport] interface.
+    // Declaring it as `out IImageList ppv` makes the CLR build a managed wrapper around the returned
+    // pointer (System.StubHelpers.InterfaceMarshaler.ConvertToManaged), and in this app that step
+    // fails fast with a stowed E_UNEXPECTED (0xc000027b, exception code 8000ffff): every crash dump
+    // from it ends in that call. Nothing about the wrapper is needed, since the only thing ever
+    // done with the list is one GetIcon call, so the pointer is taken as-is, GetIcon is called
+    // through the interface's vtable, and the reference is released by hand.
+    [DllImport("shell32.dll", EntryPoint = "SHGetImageList")]
+    public static extern int SHGetImageList(int iImageList, ref Guid riid, out nint ppv);
 
-    [DllImport("shell32.dll")]
-    public static extern int SHGetImageList(int iImageList, ref Guid riid, out IImageList ppv);
+    /// <summary>
+    /// Position of <c>IImageList::GetIcon</c> in the interface's vtable: the three IUnknown methods,
+    /// then Add, ReplaceIcon, SetOverlayImage, Replace, AddMasked, Draw and Remove, in the order
+    /// commoncontrols.h declares them.
+    /// </summary>
+    private const int ImageListGetIconSlot = 10;
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int ImageListGetIconFn(nint self, int index, int flags, out nint hIcon);
+
+    /// <summary>
+    /// <c>IImageList::GetIcon</c> on a raw image-list pointer from <see cref="SHGetImageList"/>.
+    /// Returns the HRESULT; on success <paramref name="hIcon"/> is an icon the caller must destroy.
+    /// </summary>
+    public static int ImageListGetIcon(nint imageList, int index, int flags, out nint hIcon)
+    {
+        nint vtable = Marshal.ReadIntPtr(imageList);
+        nint method = Marshal.ReadIntPtr(vtable, ImageListGetIconSlot * nint.Size);
+        return Marshal.GetDelegateForFunctionPointer<ImageListGetIconFn>(method)(imageList, index, flags, out hIcon);
+    }
 
     // ---- Hidden helper window (tray callbacks + global hotkeys) ------------
     //

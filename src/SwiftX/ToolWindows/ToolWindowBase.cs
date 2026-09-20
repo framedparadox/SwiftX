@@ -75,7 +75,17 @@ public sealed class ToolWindowBase : Window
         WindowChrome.CenterOnCursor(_appWindow, windowId);
 
         Activated += (_, _) => ApplyChromeTheme();
-        _root.ActualThemeChanged += (_, _) => ApplyChromeTheme();
+        // The page as well as the chrome. An OS light/dark flip under the System theme is the one
+        // theme change that does not come through OrbitManager.ApplyTheme (no choice was made, so
+        // nothing fans out), and the chrome alone left the page wearing the local brushes it was
+        // built with until the window was closed and reopened. The accent too: the built-in default
+        // is a different colour either side of the flip.
+        _root.ActualThemeChanged += (_, _) =>
+        {
+            ApplyChromeTheme();
+            Page.ApplyTheme();
+            Page.ApplyAccent();
+        };
         ApplyChromeTheme();
 
         _appWindow.Closing += OnClosing;
@@ -136,17 +146,16 @@ public sealed class ToolWindowBase : Window
     {
         bool dark = ThemeHelper.IsDark(_root);
         _root.Background = ThemeHelper.Brush(_root, _manager.Config.Theme, "ShellBackgroundBrush");
-        WindowChrome.SetTitleBarTheme(_appWindow, dark);
         int rim = _manager.Config.Theme switch
         {
             AppTheme.Black => 0x00000000,
-            // FrostedGlassBackdrop's tint colour #101016, byte-reversed into a COLORREF — same
-            // rim ShellWindow/OnboardingWindow use so a tool window's frame doesn't read as a
-            // flat black line around translucent glass.
             AppTheme.FrostedGlass => 0x00161010,
             _ => dark ? 0x002B2B2B : 0x00F2F2F2,
         };
-        WindowChrome.HideWindowBorder(_hwnd, dark, rim);
+        WindowChrome.ApplyShellFrame(
+            _appWindow, _hwnd, dark,
+            frosted: _manager.Config.Theme == AppTheme.FrostedGlass,
+            rim);
     }
 
     public void BringToFront()

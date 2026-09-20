@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using SwiftX.Controls;
+using SwiftX.Interop;
 using SwiftX.Models;
 using SwiftX.Services;
 using Windows.UI;
@@ -274,15 +275,16 @@ public sealed partial class OnboardingWindow : Window
     private void ApplyChromeTheme()
     {
         bool dark = ThemeHelper.IsDark(Root);
-        WindowChrome.SetTitleBarTheme(_appWindow, dark);
         int rim = _manager.Config.Theme switch
         {
             AppTheme.Black => 0x00000000,
-            // FrostedGlassBackdrop's tint colour #101016, byte-reversed into a COLORREF.
             AppTheme.FrostedGlass => 0x00161010,
             _ => dark ? 0x002B2B2B : 0x00F2F2F2,
         };
-        WindowChrome.HideWindowBorder(_hwnd, dark, rim);
+        WindowChrome.ApplyShellFrame(
+            _appWindow, _hwnd, dark,
+            frosted: _manager.Config.Theme == AppTheme.FrostedGlass,
+            rim);
     }
 
     // ===================== steps =====================
