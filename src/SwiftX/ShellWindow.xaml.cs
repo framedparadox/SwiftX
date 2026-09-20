@@ -2789,17 +2789,28 @@ public sealed partial class ShellWindow : Window
 
     private async void PickIconImage(OrbitItem item)
     {
-        var picker = new FileOpenPicker();
-        InitializeWithWindow.Initialize(picker, _hwnd);
-        foreach (var extension in new[] { ".png", ".jpg", ".jpeg", ".bmp", ".ico" })
-            picker.FileTypeFilter.Add(extension);
+        // async void, no caller: PickSingleFileAsync throws (rather than returning null) when a
+        // picker is already open on this window — reachable from a double-click, or from this
+        // picker and Export/Import's overlapping — so this is guarded the same way
+        // AddItemWindow.Browse_Click guards the identical call.
+        try
+        {
+            var picker = new FileOpenPicker();
+            InitializeWithWindow.Initialize(picker, _hwnd);
+            foreach (var extension in new[] { ".png", ".jpg", ".jpeg", ".bmp", ".ico" })
+                picker.FileTypeFilter.Add(extension);
 
-        var file = await picker.PickSingleFileAsync();
-        if (file is null) return;
+            var file = await picker.PickSingleFileAsync();
+            if (file is null) return;
 
-        // The glyph goes with it: IconKey carries both, and an item holding a picture and a custom
-        // glyph at once would fall back to a glyph the user replaced the moment the file moved.
-        ApplyIconChoice(item, null, file.Path);
+            // The glyph goes with it: IconKey carries both, and an item holding a picture and a custom
+            // glyph at once would fall back to a glyph the user replaced the moment the file moved.
+            ApplyIconChoice(item, null, file.Path);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("ShellWindow.PickIconImage failed: " + ex);
+        }
     }
 
     /// <summary>
@@ -3985,46 +3996,68 @@ public sealed partial class ShellWindow : Window
 
     private async void Export_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FileSavePicker();
-        InitializeWithWindow.Initialize(picker, _hwnd);
-        picker.SuggestedFileName = "orbit";
-        picker.FileTypeChoices.Add("JSON", [".json"]);
-        var file = await picker.PickSaveFileAsync();
-        if (file is not null)
-            OrbitStore.ExportTo(_manager.Config, file.Path);
+        // async void, no caller: guarded for the same reason as PickIconImage — PickSaveFileAsync
+        // throws rather than returning null when a picker is already open on this window.
+        try
+        {
+            var picker = new FileSavePicker();
+            InitializeWithWindow.Initialize(picker, _hwnd);
+            picker.SuggestedFileName = "orbit";
+            picker.FileTypeChoices.Add("JSON", [".json"]);
+            var file = await picker.PickSaveFileAsync();
+            if (file is not null)
+                OrbitStore.ExportTo(_manager.Config, file.Path);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("ShellWindow.Export_Click failed: " + ex);
+        }
     }
 
     private async void Import_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FileOpenPicker();
-        InitializeWithWindow.Initialize(picker, _hwnd);
-        picker.FileTypeFilter.Add(".json");
-        var file = await picker.PickSingleFileAsync();
-        if (file is null) return;
-        var imported = OrbitStore.ImportFrom(file.Path);
-        if (imported is null) return;
-        // The whole Orbits collection is being replaced, so nothing the selection/expansion state
-        // could be pointing at survives.
-        HideItemDetails();
-        CollapseGroup();
-        _manager.Config.CopyAppSettingsFrom(imported);
-        _manager.Config.Orbits.Clear();
-        _manager.Config.Orbits.AddRange(imported.Orbits);
-        _manager.Config.EnsurePrimary();
-        _manager.NotifyItemsChanged();
-        _manager.ApplyTheme();
-        _manager.ApplyLanguage();
-        _manager.ApplyHotCorner();
-        ApplyTheme();
-        _loading = true;
-        PopulateLanguageBox();
-        HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
-        SelectHotCorner(_manager.Config.HotCorner);
-        SelectHotCornerLayout(_manager.Config.HotCornerLayout);
-        SyncHotCornerControls();
-        _loading = false;
-        RenderPreview();
-        RebuildItemsList();
+        // async void, no caller: guarded for the same reason as PickIconImage/Export_Click, and
+        // because everything from HideItemDetails() on applies an imported dock.json's contents
+        // straight into this window's live controls — OrbitStore.ImportFrom already validates the
+        // JSON shape, but a structurally-valid, semantically-odd import (e.g. HotCornerLayout the
+        // combo box below has no entry for) has no business taking the whole app down with it.
+        try
+        {
+            var picker = new FileOpenPicker();
+            InitializeWithWindow.Initialize(picker, _hwnd);
+            picker.FileTypeFilter.Add(".json");
+            var file = await picker.PickSingleFileAsync();
+            if (file is null) return;
+            var imported = OrbitStore.ImportFrom(file.Path);
+            if (imported is null) return;
+            // The whole Orbits collection is being replaced, so nothing the selection/expansion state
+            // could be pointing at survives.
+            HideItemDetails();
+            CollapseGroup();
+            _manager.Config.CopyAppSettingsFrom(imported);
+            _manager.Config.Orbits.Clear();
+            _manager.Config.Orbits.AddRange(imported.Orbits);
+            _manager.Config.EnsurePrimary();
+            _manager.NotifyItemsChanged();
+            _manager.ApplyTheme();
+            _manager.ApplyLanguage();
+            _manager.ApplyHotCorner();
+            ApplyTheme();
+            _loading = true;
+            PopulateLanguageBox();
+            HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
+            SelectHotCorner(_manager.Config.HotCorner);
+            SelectHotCornerLayout(_manager.Config.HotCornerLayout);
+            SyncHotCornerControls();
+            _loading = false;
+            RenderPreview();
+            RebuildItemsList();
+        }
+        catch (Exception ex)
+        {
+            _loading = false;
+            Diag.Log("ShellWindow.Import_Click failed: " + ex);
+        }
     }
 
     private void ResetAll_Click(object sender, RoutedEventArgs e)
@@ -4714,11 +4747,22 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private static async void LoadRowIcon(OrbitItem item, Image image, FontIcon glyph)
     {
-        var source = await IconService.LoadIconAsync(item);
-        if (source is null) return;
-        image.Source = source;
-        image.Visibility = Visibility.Visible;
-        glyph.Visibility = Visibility.Collapsed;
+        // async void, no caller: this list is rebuilt (RebuildItemsList) whenever the Elements
+        // list changes while icon loads for dozens of rows are still in flight, and the window
+        // itself can close during that time too — either way this resumes to touch two elements
+        // that may no longer be in a live visual tree.
+        try
+        {
+            var source = await IconService.LoadIconAsync(item);
+            if (source is null) return;
+            image.Source = source;
+            image.Visibility = Visibility.Visible;
+            glyph.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("ShellWindow.LoadRowIcon failed: " + ex);
+        }
     }
 
     /// <summary>
