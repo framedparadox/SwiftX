@@ -500,11 +500,20 @@ public sealed partial class OnboardingWindow : Window
     /// </summary>
     private static async void LoadTileIcon(OrbitItem item, Image image, FontIcon glyph)
     {
-        var source = await IconService.LoadIconAsync(item);
-        if (source is null) return;
-        image.Source = source;
-        image.Visibility = Visibility.Visible;
-        glyph.Visibility = Visibility.Collapsed;
+        // async void, no caller: this window closes (Finish, or the title bar) while dozens of
+        // these tile icon loads can still be in flight — same race as ShellWindow.LoadRowIcon.
+        try
+        {
+            var source = await IconService.LoadIconAsync(item);
+            if (source is null) return;
+            image.Source = source;
+            image.Visibility = Visibility.Visible;
+            glyph.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("OnboardingWindow.LoadTileIcon failed: " + ex);
+        }
     }
 
     /// <summary>
@@ -638,47 +647,58 @@ public sealed partial class OnboardingWindow : Window
     /// </summary>
     private async void Finish()
     {
-        var chosen = SelectedItems();
-
-        // An orbit with nothing on it is not a choice anyone means to make — it leaves the app with
-        // no reason to be summoned. Keep what Start already seeded in that case, and say nothing:
-        // the user can empty the orbit deliberately from Elements, where the consequence is visible.
-        if (chosen.Count > 0)
+        // async void, no caller: nothing here used to be guarded, and NotifyItemsChanged alone
+        // fans out to every ItemsChanged subscriber (ShellWindow, the live OrbitWindow) plus
+        // OrbitWindow.ReloadItems directly — any one of which throwing would otherwise take the
+        // whole app down on the one screen every first run passes through.
+        try
         {
-            _manager.Config.Primary.Items.Clear();
-            _manager.Config.Primary.Items.AddRange(chosen);
-            // The tools group has to be the shape the rest of the app expects wherever it came from
-            // — and if the user unticked it, this is what puts the built-in tools back out of the
-            // way rather than leaving orbit items pointing at tools that are nowhere.
-            ToolCatalog.EnsureToolsGroup(_manager.Config.Primary.Items);
-            ToolCatalog.ApplyVisibility(_manager.Config.Primary.Items, _manager.Config);
+            var chosen = SelectedItems();
+
+            // An orbit with nothing on it is not a choice anyone means to make — it leaves the app with
+            // no reason to be summoned. Keep what Start already seeded in that case, and say nothing:
+            // the user can empty the orbit deliberately from Elements, where the consequence is visible.
+            if (chosen.Count > 0)
+            {
+                _manager.Config.Primary.Items.Clear();
+                _manager.Config.Primary.Items.AddRange(chosen);
+                // The tools group has to be the shape the rest of the app expects wherever it came from
+                // — and if the user unticked it, this is what puts the built-in tools back out of the
+                // way rather than leaving orbit items pointing at tools that are nowhere.
+                ToolCatalog.EnsureToolsGroup(_manager.Config.Primary.Items);
+                ToolCatalog.ApplyVisibility(_manager.Config.Primary.Items, _manager.Config);
+            }
+
+            if (_gesture is not null)
+                _manager.Config.Hotkey = _gesture.ToString();
+            _manager.Config.HotkeyEnabled = _hotkeyEnabled;
+            _manager.Config.HotCornerEnabled = _hotCornerEnabled;
+            _manager.Config.HotCorner = _hotCorner;
+
+            _manager.NotifyItemsChanged();
+            _manager.ApplyHotkey();
+            _manager.ApplyHotCorner();
+
+            // Both of these touch the OS rather than the config, and both can fail (a policy-locked
+            // Run key, a read-only desktop). Awaited before the window closes so a failure is not
+            // racing a teardown, and deliberately not reported here — the same switches on Settings ›
+            // General show what actually took effect.
+            await StartupService.SetEnabledAsync(StartupToggle.IsOn);
+            _manager.Config.LaunchAtStartup = StartupToggle.IsOn;
+
+            // Apply reports what is actually on the desktop afterwards, which is not always what was
+            // asked for (a read-only or redirected desktop). Persist that, not the request — Settings'
+            // own switch reads the same truth back and would otherwise disagree with the config.
+            _manager.Config.DesktopShortcut = DesktopShortcutService.Apply(DesktopShortcutToggle.IsOn);
+
+            _manager.Save();
+
+            _finished = true;
+            Close();
         }
-
-        if (_gesture is not null)
-            _manager.Config.Hotkey = _gesture.ToString();
-        _manager.Config.HotkeyEnabled = _hotkeyEnabled;
-        _manager.Config.HotCornerEnabled = _hotCornerEnabled;
-        _manager.Config.HotCorner = _hotCorner;
-
-        _manager.NotifyItemsChanged();
-        _manager.ApplyHotkey();
-        _manager.ApplyHotCorner();
-
-        // Both of these touch the OS rather than the config, and both can fail (a policy-locked
-        // Run key, a read-only desktop). Awaited before the window closes so a failure is not
-        // racing a teardown, and deliberately not reported here — the same switches on Settings ›
-        // General show what actually took effect.
-        await StartupService.SetEnabledAsync(StartupToggle.IsOn);
-        _manager.Config.LaunchAtStartup = StartupToggle.IsOn;
-
-        // Apply reports what is actually on the desktop afterwards, which is not always what was
-        // asked for (a read-only or redirected desktop). Persist that, not the request — Settings'
-        // own switch reads the same truth back and would otherwise disagree with the config.
-        _manager.Config.DesktopShortcut = DesktopShortcutService.Apply(DesktopShortcutToggle.IsOn);
-
-        _manager.Save();
-
-        _finished = true;
-        Close();
+        catch (Exception ex)
+        {
+            Diag.Log("OnboardingWindow.Finish failed: " + ex);
+        }
     }
 }

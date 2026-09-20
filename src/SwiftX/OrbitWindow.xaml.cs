@@ -1792,27 +1792,39 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     private async void ScheduleFlyoutForHover(BubbleView? bubble)
     {
-        int hoverGen = ++_hoverGeneration;
-        int renderGen = _renderGeneration;
+        // async void: nothing calls this back, so an exception past this point is unhandled —
+        // and it is reachable. The generation checks above only rule out a hover that the orbit
+        // itself superseded; they say nothing about the orbit having been dismissed and its
+        // visuals torn down while this was asleep in the delay, which is exactly when
+        // CollapseFlyoutAsync/ExpandFlyout below touch composition visuals off bubble.Host.
+        try
+        {
+            int hoverGen = ++_hoverGeneration;
+            int renderGen = _renderGeneration;
 
-        if (bubble is null || bubble.IsFlyout)
-            return;
+            if (bubble is null || bubble.IsFlyout)
+                return;
 
-        bool wantsOpen = bubble.Item.IsGroup && !ReferenceEquals(_flyoutParent, bubble);
-        bool wantsClose = !bubble.Item.IsGroup && _flyoutParent is not null;
-        if (!wantsOpen && !wantsClose)
-            return;
+            bool wantsOpen = bubble.Item.IsGroup && !ReferenceEquals(_flyoutParent, bubble);
+            bool wantsClose = !bubble.Item.IsGroup && _flyoutParent is not null;
+            if (!wantsOpen && !wantsClose)
+                return;
 
-        await Task.Delay(FlyoutHoverDelayMs);
-        if (hoverGen != _hoverGeneration || renderGen != _renderGeneration || !_isOpen)
-            return;
+            await Task.Delay(FlyoutHoverDelayMs);
+            if (hoverGen != _hoverGeneration || renderGen != _renderGeneration || !_isOpen)
+                return;
 
-        await CollapseFlyoutAsync();
-        if (hoverGen != _hoverGeneration || renderGen != _renderGeneration || !_isOpen)
-            return;
+            await CollapseFlyoutAsync();
+            if (hoverGen != _hoverGeneration || renderGen != _renderGeneration || !_isOpen)
+                return;
 
-        if (wantsOpen)
-            ExpandFlyout(bubble);
+            if (wantsOpen)
+                ExpandFlyout(bubble);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("OrbitWindow.ScheduleFlyoutForHover: " + ex.Message);
+        }
     }
 
     private void OnHover(BubbleView bubble, bool entered)
@@ -2163,38 +2175,49 @@ public sealed partial class OrbitWindow : Window
 
     private async void OrbitCanvas_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        var pos = e.GetCurrentPoint(OrbitCanvas).Position;
-        double dx = pos.X - _cx;
-        double dy = pos.Y - _cy;
-        double dist = Math.Sqrt(dx * dx + dy * dy);
-
-        if (dist < OrbitMetrics.DeadZone)
+        // async void, no caller: OnSelectAsync's own try/catch covers item activation, but its
+        // group-expand branch calls CollapseFlyoutAsync/ExpandFlyout outside that guard — the
+        // same composition-visual race ScheduleFlyoutForHover guards against, reachable here too
+        // if the orbit is dismissed between the press and the await completing.
+        try
         {
-            // Nothing lives in the dead zone to select, so a press here always means "close this",
-            // whether or not a flyout happens to be open — see the matching gap case below.
-            Dismiss();
-            return;
-        }
+            var pos = e.GetCurrentPoint(OrbitCanvas).Position;
+            double dx = pos.X - _cx;
+            double dy = pos.Y - _cy;
+            double dist = Math.Sqrt(dx * dx + dy * dy);
 
-        // A press landing directly on a bubble is handled by that bubble's own Tapped handler
-        // (e.OriginalSource is then the Border or one of its children, not the Canvas). This
-        // covers presses in the gaps between bubbles: with the hit-region covering the whole
-        // disk, a press out here should activate whichever item angular-hover currently targets,
-        // the same as clicking the bubble itself would.
-        if (e.OriginalSource is Canvas)
-        {
-            if (_hovered is { } bubble)
+            if (dist < OrbitMetrics.DeadZone)
             {
-                e.Handled = true;
-                await OnSelectAsync(bubble);
-            }
-            else
-            {
-                // Nothing is hovered/selected — a gap with no bubble in it, or empty space past an
-                // open flyout's arc — so the click means "dismiss the dock", not "step back one
-                // level". Dismiss() already reverses an open flyout alongside the inner orbit.
+                // Nothing lives in the dead zone to select, so a press here always means "close this",
+                // whether or not a flyout happens to be open — see the matching gap case below.
                 Dismiss();
+                return;
             }
+
+            // A press landing directly on a bubble is handled by that bubble's own Tapped handler
+            // (e.OriginalSource is then the Border or one of its children, not the Canvas). This
+            // covers presses in the gaps between bubbles: with the hit-region covering the whole
+            // disk, a press out here should activate whichever item angular-hover currently targets,
+            // the same as clicking the bubble itself would.
+            if (e.OriginalSource is Canvas)
+            {
+                if (_hovered is { } bubble)
+                {
+                    e.Handled = true;
+                    await OnSelectAsync(bubble);
+                }
+                else
+                {
+                    // Nothing is hovered/selected — a gap with no bubble in it, or empty space past an
+                    // open flyout's arc — so the click means "dismiss the dock", not "step back one
+                    // level". Dismiss() already reverses an open flyout alongside the inner orbit.
+                    Dismiss();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("OrbitWindow.OrbitCanvas_PointerPressed: " + ex.Message);
         }
     }
 
@@ -2311,14 +2334,24 @@ public sealed partial class OrbitWindow : Window
 
     private async void Root_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key != VirtualKey.Escape)
-            return;
+        // async void, no caller: same CollapseFlyoutAsync race as ScheduleFlyoutForHover/
+        // OrbitCanvas_PointerPressed — Escape pressed right as the orbit is dismissed some other
+        // way should not be able to take the process down with it.
+        try
+        {
+            if (e.Key != VirtualKey.Escape)
+                return;
 
-        e.Handled = true;
-        if (_flyoutParent is not null)
-            await CollapseFlyoutAsync();
-        else
-            Dismiss();
+            e.Handled = true;
+            if (_flyoutParent is not null)
+                await CollapseFlyoutAsync();
+            else
+                Dismiss();
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("OrbitWindow.Root_KeyDown: " + ex.Message);
+        }
     }
 
     private sealed class BubbleView
