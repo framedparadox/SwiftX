@@ -432,12 +432,14 @@
                 </Grid>
 
                 <!-- How-to guide. A slim tab on the right edge, halfway down the screen, whose
-                     chevron points the way the drawer will come from. It opens a drawer over the
-                     Home screen rather than a separate window, so the guide is never lost behind
-                     the app and closing it puts you exactly where you were. Its content is built in
-                     code (BuildHowToGuide) from the live configuration, so it names the shortcut
-                     and the corner the user actually set. The Tools hover panel above keeps its
-                     distance from the tab through its right margin. -->
+                     chevron points the way the guide will come from. It opens a modal over the
+                     main area of the Home screen rather than a separate window, so the guide is
+                     never lost behind the app and closing it puts you exactly where you were. The
+                     scrim and the modal sit in row 1 only: the brand and the toolbar in row 0 stay
+                     clear, so the theme toggle and Settings remain within reach while it is open.
+                     Its content is built in code (BuildHowToGuide) from the live configuration, so
+                     it names the shortcut and the corner the user actually set. The Tools hover
+                     panel above keeps its distance from the tab through its right margin. -->
                 <Button x:Name="HowToTab" Grid.RowSpan="2"
                         HorizontalAlignment="Right" VerticalAlignment="Center"
                         Width="26" Height="80" Padding="0" MinWidth="0" MinHeight="0"
@@ -456,27 +458,35 @@
 
                 <!-- A neutral dimming layer: black at about a third, which reads as a scrim on
                      every theme, so it is one of the few colours here that is not a theme token.
-                     Tapping it closes the drawer. -->
-                <Border x:Name="HowToScrim" Grid.RowSpan="2" Background="#59000000"
+                     Tapping it closes the guide. -->
+                <Border x:Name="HowToScrim" Grid.Row="1" Background="#59000000"
                         Visibility="Collapsed" Opacity="0"
                         Tapped="HowToScrim_Tapped" />
 
-                <Border x:Name="HowToPanel" Grid.RowSpan="2" Width="400" MaxWidth="480"
-                        HorizontalAlignment="Right" Visibility="Collapsed"
-                        CornerRadius="12,0,0,12" Padding="0"
+                <!-- Fills the main area up to 760 x 500 and is centred in it: it shows one topic at
+                     a time, so a wider or taller one would only be empty space around the card.
+                     Starts 48px to the right and transparent, so it eases in from the side the tab
+                     is on. -->
+                <Border x:Name="HowToPanel" Grid.Row="1"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                        MaxWidth="760" MaxHeight="500"
+                        Margin="24,0,24,24"
+                        Visibility="Collapsed" Opacity="0"
+                        CornerRadius="12" Padding="0"
                         Background="{ThemeResource ShellCardBackgroundBrush}"
                         BorderBrush="{ThemeResource ShellCardBorderBrush}"
-                        BorderThickness="1,1,0,1"
+                        BorderThickness="1"
                         AutomationProperties.Name="How to guide"
                         AutomationProperties.AutomationId="ShellHowToPanel"
                         KeyDown="HowToPanel_KeyDown">
                     <Border.RenderTransform>
-                        <TranslateTransform x:Name="HowToPanelSlide" X="400" />
+                        <TranslateTransform x:Name="HowToPanelSlide" X="48" />
                     </Border.RenderTransform>
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <Grid Grid.Row="0" Padding="24,18,12,8">
@@ -500,11 +510,31 @@
                             </Button>
                         </Grid>
 
-                        <ScrollViewer Grid.Row="1" Padding="24,6,24,24"
-                                      VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled">
-                            <StackPanel x:Name="HowToContent" Spacing="14" />
-                        </ScrollViewer>
+                        <!-- One topic at a time. The topics sit side by side and the FlipView moves
+                             between them (mouse wheel, Left and Right, swipe, or the arrows that
+                             show on hover), so the guide still scrolls left and right but only ever
+                             shows one. A card taller than the room scrolls inside itself (see
+                             BuildHowToGuide), which leaves the wheel free to flip. The default
+                             background is dropped so the modal's own shows through. -->
+                        <FlipView x:Name="HowToFlip" Grid.Row="1" Background="Transparent"
+                                  AutomationProperties.Name="How to topics"
+                                  SelectionChanged="HowToFlip_SelectionChanged">
+                            <!-- Stretch, so each card fills its page instead of shrinking to its own
+                                 content and floating in the middle of it. -->
+                            <FlipView.ItemContainerStyle>
+                                <Style TargetType="FlipViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                </Style>
+                            </FlipView.ItemContainerStyle>
+                        </FlipView>
+
+                        <!-- Where you are in the guide: one dot per topic, and a dot can be clicked to
+                             jump to that topic. Kept in step with the FlipView from both sides. -->
+                        <PipsPager x:Name="HowToPips" Grid.Row="2"
+                                   HorizontalAlignment="Center" Margin="0,4,0,16"
+                                   AutomationProperties.Name="Topic"
+                                   SelectedIndexChanged="HowToPips_SelectedIndexChanged" />
                     </Grid>
                 </Border>
             </Grid>

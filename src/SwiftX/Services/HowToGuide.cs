@@ -37,7 +37,7 @@ public sealed record GuideSection(
     GuideAction Action);
 
 /// <summary>
-/// The content of the how-to guide that slides out of the Home screen: setting up the dock, calling
+/// The content of the how-to guide that opens over the Home screen: setting up the dock, calling
 /// it up, using the hot corner, and changing what is on it.
 /// <para>
 /// Built from the user's own configuration rather than written once as static text, so it names the

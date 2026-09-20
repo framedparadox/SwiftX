@@ -438,7 +438,7 @@ public sealed partial class ShellWindow : Window
         RebuildItemsList();
         RebuildToolsList();
         if (_orbitEditBuilt) BuildOrbitEditSidebar();
-        if (_howToOpen) BuildHowToGuide();
+        if (_howToOpen) BuildHowToGuide(keepPage: true);
         UpdateElementsGlyphs();
     }
 
@@ -841,7 +841,7 @@ public sealed partial class ShellWindow : Window
         {
             HideHomeOrbitHover();
             HideHomeToolsHover();
-            // The drawer belongs to Home: leaving must not strand it open, waiting there the next time
+            // The guide belongs to Home: leaving must not strand it open, waiting there the next time
             // Home is shown.
             HideHowTo(immediate: true);
         }
@@ -1086,13 +1086,13 @@ public sealed partial class ShellWindow : Window
 
     // ---- How-to guide ----------------------------------------------------------------------
 
-    /// <summary>Width of the guide's drawer, which is also how far off-screen it waits.</summary>
-    private const double HowToPanelWidth = 400;
+    /// <summary>How far to the right of its resting place the modal starts, and returns to, as it fades in and out.</summary>
+    private const double HowToPanelTravel = 48;
 
     private bool _howToOpen;
 
     /// <summary>
-    /// Bumped by every open and close, so that the end of a close animation collapses the drawer
+    /// Bumped by every open and close, so that the end of a close animation collapses the modal
     /// only if nothing has opened it again in the meantime.
     /// </summary>
     private int _howToGeneration;
@@ -1114,12 +1114,13 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// Slides the guide in over the Home screen. It is a drawer inside this window rather than a
+    /// Brings the guide up as a modal over the main area of the Home screen (the row under the
+    /// brand and toolbar, which it leaves clear). It is a layer inside this window rather than a
     /// second window: it cannot be lost behind the app, it needs no window management, and closing
     /// it leaves the user exactly where they were. The content is rebuilt on every open, from the
     /// live configuration, so it always names the shortcut and corner the user has now.
     /// <para>
-    /// With animations off in Windows the drawer simply appears, the same courtesy the orbit's own
+    /// With animations off in Windows the modal simply appears, the same courtesy the orbit's own
     /// Animate hover style extends (see <see cref="ReducedMotion"/>).
     /// </para>
     /// </summary>
@@ -1139,17 +1140,20 @@ public sealed partial class ShellWindow : Window
         if (ReducedMotion.IsActive())
         {
             HowToPanelSlide.X = 0;
+            HowToPanel.Opacity = 1;
             HowToScrim.Opacity = 1;
         }
         else
         {
-            HowToPanelSlide.X = HowToPanelWidth;
+            HowToPanelSlide.X = HowToPanelTravel;
+            HowToPanel.Opacity = 0;
             HowToScrim.Opacity = 0;
             RunHowToStoryboard(slideTo: 0, fadeTo: 1, milliseconds: 240, ease: EasingMode.EaseOut, then: () =>
             {
                 // Hand the end position back to the base value so the next animation starts from it
                 // instead of from a value the finished one is still holding.
                 HowToPanelSlide.X = 0;
+                HowToPanel.Opacity = 1;
                 HowToScrim.Opacity = 1;
             });
         }
@@ -1158,8 +1162,8 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// Slides the guide back out. <paramref name="immediate"/> skips the motion, for when the
-    /// drawer has to be gone before the screen it sits on is (see <see cref="ShowScreen"/>).
+    /// Takes the guide away again. <paramref name="immediate"/> skips the motion, for when the
+    /// modal has to be gone before the screen it sits on is (see <see cref="ShowScreen"/>).
     /// </summary>
     private void HideHowTo(bool immediate = false)
     {
@@ -1174,7 +1178,8 @@ public sealed partial class ShellWindow : Window
         {
             if (generation != _howToGeneration)
                 return;
-            HowToPanelSlide.X = HowToPanelWidth;
+            HowToPanelSlide.X = HowToPanelTravel;
+            HowToPanel.Opacity = 0;
             HowToScrim.Opacity = 0;
             HowToPanel.Visibility = Visibility.Collapsed;
             HowToScrim.Visibility = Visibility.Collapsed;
@@ -1184,7 +1189,7 @@ public sealed partial class ShellWindow : Window
             Finish();
         else
             RunHowToStoryboard(
-                slideTo: HowToPanelWidth, fadeTo: 0, milliseconds: 180, ease: EasingMode.EaseIn, then: Finish);
+                slideTo: HowToPanelTravel, fadeTo: 0, milliseconds: 180, ease: EasingMode.EaseIn, then: Finish);
 
         // Back to the tab that opened it, so a keyboard user is not left with nothing focused.
         if (!immediate)
@@ -1207,9 +1212,14 @@ public sealed partial class ShellWindow : Window
         Storyboard.SetTarget(fade, HowToScrim);
         Storyboard.SetTargetProperty(fade, "Opacity");
 
+        var panelFade = new DoubleAnimation { To = fadeTo, Duration = duration };
+        Storyboard.SetTarget(panelFade, HowToPanel);
+        Storyboard.SetTargetProperty(panelFade, "Opacity");
+
         var storyboard = new Storyboard();
         storyboard.Children.Add(slide);
         storyboard.Children.Add(fade);
+        storyboard.Children.Add(panelFade);
         storyboard.Completed += (_, _) =>
         {
             // Only the storyboard still in charge gets to finish: a stopped one never completes, but
@@ -1223,21 +1233,48 @@ public sealed partial class ShellWindow : Window
         storyboard.Begin();
     }
 
-    /// <summary>
-    /// Fills the drawer: one card per topic from <see cref="HowToGuide"/>, each a heading, a line
-    /// that says where things stand now, numbered steps, and a button that goes to the place the
-    /// topic is about. Rebuilt rather than repainted on a theme change (see
-    /// <see cref="RepaintThemedContent"/>), because the badges carry local brushes.
-    /// </summary>
-    private void BuildHowToGuide()
+    // The FlipView and the dots each move the other. Both handlers only act when the two disagree,
+    // so the change one makes comes back as a no-op instead of a loop.
+    private void HowToFlip_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        HowToContent.Children.Clear();
+        int index = HowToFlip.SelectedIndex;
+        if (index >= 0 && index < HowToPips.NumberOfPages && HowToPips.SelectedPageIndex != index)
+            HowToPips.SelectedPageIndex = index;
+    }
+
+    private void HowToPips_SelectedIndexChanged(PipsPager sender, PipsPagerSelectedIndexChangedEventArgs args)
+    {
+        int index = sender.SelectedPageIndex;
+        if (index >= 0 && index < HowToFlip.Items.Count && HowToFlip.SelectedIndex != index)
+            HowToFlip.SelectedIndex = index;
+    }
+
+    /// <summary>
+    /// Fills the modal: one page per topic from <see cref="HowToGuide"/>, each a heading, a line
+    /// that says where things stand now, numbered steps, and a button that goes to the place the
+    /// topic is about. Only one page shows at a time; the FlipView moves between them. Rebuilt
+    /// rather than repainted on a theme change (see <see cref="RepaintThemedContent"/>), because
+    /// the badges carry local brushes.
+    /// <para>
+    /// <paramref name="keepPage"/> is for that rebuild: the theme toggle stays reachable while the
+    /// guide is open, and rebuilding would otherwise put it back on the first topic. An open starts
+    /// on the first topic, however it was last closed.
+    /// </para>
+    /// </summary>
+    private void BuildHowToGuide(bool keepPage = false)
+    {
+        int page = keepPage ? Math.Max(HowToFlip.SelectedIndex, 0) : 0;
+        var sections = HowToGuide.Sections(_manager.Config);
+
+        // The dots first: the first topic selects itself the moment it is added, and that moves them.
+        HowToPips.NumberOfPages = sections.Count;
+        HowToFlip.Items.Clear();
 
         var accent = new SolidColorBrush(CurrentAccentColor());
         var badgeFill = ThemeHelper.Brush(Root, "ShellPillBrush");
         var badgeText = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
 
-        foreach (var section in HowToGuide.Sections(_manager.Config))
+        foreach (var section in sections)
         {
             var stack = new StackPanel { Spacing = 10 };
 
@@ -1323,17 +1360,34 @@ public sealed partial class ShellWindow : Window
                 stack.Children.Add(button);
             }
 
-            HowToContent.Children.Add(new Border
+            // The side margins keep the card clear of the FlipView's own arrows, which sit on its
+            // left and right edges. The padding is on the ScrollViewer, not the card, so its
+            // scrollbar runs along the card's own edge instead of floating inside the padding. The
+            // scrollbar only shows when a card is taller than the room the modal has (a short
+            // window), and then scrolls that one card.
+            HowToFlip.Items.Add(new Border
             {
                 Style = (Style)Root.Resources["Card"],
-                Padding = new Thickness(16, 14, 16, 14),
-                Child = stack,
+                Margin = new Thickness(48, 6, 48, 6),
+                Padding = new Thickness(0),
+                Child = new ScrollViewer
+                {
+                    Padding = new Thickness(20, 16, 20, 16),
+                    VerticalScrollMode = ScrollMode.Auto,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollMode = ScrollMode.Disabled,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = stack,
+                },
             });
         }
+
+        HowToFlip.SelectedIndex = Math.Min(page, HowToFlip.Items.Count - 1);
+        HowToPips.SelectedPageIndex = Math.Max(HowToFlip.SelectedIndex, 0);
     }
 
     /// <summary>
-    /// Takes the user to what a topic is about. The drawer is closed first and without motion, since
+    /// Takes the user to what a topic is about. The guide is closed first and without motion, since
     /// the screen it belongs to is about to be hidden under it.
     /// </summary>
     private void RunGuideAction(GuideAction action)
