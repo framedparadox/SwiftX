@@ -140,6 +140,14 @@ public sealed class CodeEditor : Grid
 
     private IReadOnlyDictionary<int, GutterMarker>? _gutterMarkers;
 
+    /// <summary>The line count the gutter currently shows, or -1 when it shows nothing yet — see
+    /// <see cref="RefreshGutter"/>.</summary>
+    private int _gutterLineCount = -1;
+
+    /// <summary>Whether what the gutter currently shows was built from markers, so a document that
+    /// merely kept its line count while its markers came or went is still rebuilt.</summary>
+    private bool _gutterHasMarkers;
+
     public string PlaceholderText
     {
         get => TextBox.PlaceholderText;
@@ -240,21 +248,32 @@ public sealed class CodeEditor : Grid
             .HasFlag(CoreVirtualKeyStates.Down);
 
     /// <summary>
+    /// The last value <see cref="Text"/> read out of the document, or null when the document has
+    /// changed since. See <see cref="Text"/> for why this exists.
+    /// </summary>
+    private string? _cachedText;
+
+    /// <summary>
     /// The document's text, with the rich-edit paragraph mark (<c>\r</c>) normalised to
     /// <c>\n</c>. The substitution is one character for one character, so a token offset computed
     /// over this string indexes the same position in the underlying document — which is what makes
     /// colouring by range possible at all.
+    /// <para>
+    /// <b>Memoized between changes</b>, because reading it is not cheap and the callers read it
+    /// several times per change: one <c>GetText</c> copies the whole document out of the native
+    /// rich-edit store, and the <c>Replace</c> copies it again. A tool page's own
+    /// <c>TextChanged</c> handler reads this three or four times in a row (is it empty, is it
+    /// dirty, count the characters, re-detect the format), <see cref="LineCount"/> read the
+    /// document a fifth time for the gutter, and <see cref="Highlight"/> a sixth — so a single
+    /// keystroke in a one-megabyte document allocated megabytes, on the UI thread, to re-derive
+    /// the same string six times. The cache is dropped by the <c>TextChanged</c> handler below
+    /// (before its own early-out, so a suppressed change invalidates it too) and by the setter, so
+    /// it can never outlive the document it was read from.
+    /// </para>
     /// </summary>
     public string Text
     {
-        get
-        {
-            TextBox.Document.GetText(TextGetOptions.None, out var text);
-            // The document always reports a trailing paragraph mark that the user did not type.
-            if (text.EndsWith('\r'))
-                text = text[..^1];
-            return text.Replace('\r', '\n');
-        }
+        get => _cachedText ??= ReadDocumentText();
         set
         {
             _suppressTextChanged = true;
@@ -266,10 +285,45 @@ public sealed class CodeEditor : Grid
             {
                 _suppressTextChanged = false;
             }
+            _cachedText = null;
             RefreshGutter();
             Highlight();
             TextChanged?.Invoke(this, EventArgs.Empty);
         }
+    }
+
+    /// <summary>
+    /// Whether the document is empty — the one question the tool pages ask of <see cref="Text"/>
+    /// most often, spelled out so the intent at those call sites is "is there anything here" rather
+    /// than a length comparison that reads like it might be free.
+    /// </summary>
+    public bool IsEmpty => Text.Length == 0;
+
+    private string ReadDocumentText()
+    {
+        TextBox.Document.GetText(TextGetOptions.None, out var text);
+        // The document always reports a trailing paragraph mark that the user did not type.
+        if (text.EndsWith('\r'))
+            text = text[..^1];
+        return text.Replace('\r', '\n');
+    }
+
+    /// <summary>
+    /// Sets the text and the tokenizer that colours it in one step, colouring the result once.
+    /// <para>
+    /// Assigning the two properties one after the other colours the whole document twice: the
+    /// <see cref="Text"/> setter colours it with the tokenizer still left over from the previous
+    /// document, and the <see cref="Tokenizer"/> setter then colours it again. That pass is the
+    /// expensive one on this control — it walks every token and crosses the rich-edit ABI twice per
+    /// token to set a range's colour — and for a page that swaps both at once (the format it
+    /// detected decides the tokenizer, so every load does) the first of the two was always wasted
+    /// work against the wrong palette.
+    /// </para>
+    /// </summary>
+    public void SetContent(string text, ITokenizer? tokenizer)
+    {
+        _tokenizer = tokenizer;
+        Text = text;
     }
 
     public CodeEditor()
@@ -332,6 +386,9 @@ public sealed class CodeEditor : Grid
 
         TextBox.TextChanged += (_, _) =>
         {
+            // Before the early-out, not after: a suppressed change is still a change to the
+            // document, so a cached copy read before it is stale either way.
+            _cachedText = null;
             if (_suppressTextChanged)
                 return;
             RefreshGutter();
@@ -350,57 +407,66 @@ public sealed class CodeEditor : Grid
     }
 
     /// <summary>
-    /// The number of display lines, counted off the document's own text without building the
-    /// normalised copy <see cref="Text"/> returns.
+    /// The number of display lines in the document.
     /// <para>
     /// This runs on <em>every keystroke</em>, from the <c>TextChanged</c> handler, so what it
-    /// allocates is paid per character typed. Going through <see cref="Text"/> cost two full
-    /// copies of the document each time — one from <c>GetText</c> and a second from its
-    /// <c>Replace('\r', '\n')</c> — which on a multi-megabyte document is megabytes of garbage per
-    /// keypress on the UI thread, felt as typing lag. Note that
-    /// <see cref="MaxHighlightLength"/> does not bound this: it gates colouring only, while the
-    /// gutter is rebuilt for documents all the way up to <c>InputLimits.MaxTextBytes</c>.
-    /// </para>
-    /// <para>
-    /// Counting both <c>\r</c> and <c>\n</c> is what makes this exactly equivalent to counting
-    /// <c>\n</c> in <see cref="Text"/>: that property is this same string with every <c>\r</c>
-    /// rewritten to <c>\n</c>, so the two characters together are the line breaks it would have
-    /// produced. The trailing paragraph mark the document always reports is dropped the same way
-    /// <see cref="Text"/> drops it, over a span rather than a substring so nothing is allocated
-    /// for it.
+    /// allocates is paid per character typed — and note that <see cref="MaxHighlightLength"/> does
+    /// not bound it: that gates colouring only, while the gutter is rebuilt for documents all the
+    /// way up to <c>InputLimits.MaxTextBytes</c>. It counts over <see cref="Text"/>, which is
+    /// memoized between changes (see that property), so the one document read a keystroke needs is
+    /// shared with every other caller in the same change rather than being a read of its own: this
+    /// used to call <c>GetText</c> directly precisely to avoid a second copy, which stopped being
+    /// the cheaper of the two the moment the copy it was avoiding became free.
     /// </para>
     /// </summary>
     private int LineCount()
     {
-        TextBox.Document.GetText(TextGetOptions.None, out var raw);
-
-        var span = raw.AsSpan();
-        if (span.Length > 0 && span[^1] == '\r')
-            span = span[..^1];
-
         int lines = 1;
-        foreach (char c in span)
-            if (c is '\r' or '\n')
+        foreach (char c in Text)
+            if (c == '\n')
                 lines++;
         return lines;
     }
 
+    /// <summary>
+    /// Rebuilds the line-number column — but only when it would actually come out different.
+    /// <para>
+    /// This is called on every keystroke, and the overwhelming majority of keystrokes do not add or
+    /// remove a line, so the column they produce is character for character the one already on
+    /// screen. Rebuilding it anyway meant a fresh multi-line string per character typed: on a
+    /// hundred-thousand-line document that is close to a megabyte of garbage, plus a
+    /// <see cref="TextBlock"/> re-layout, to redraw digits that did not move. The numbers depend on
+    /// nothing but the line count, so the count is what is compared.
+    /// </para>
+    /// <para>
+    /// The marker path is exempt from the skip and always rebuilds: markers are assigned as a whole
+    /// dictionary (see <see cref="GutterMarkers"/>) and can change while the line count does not,
+    /// so "same number of lines" is not evidence that the same column would come out.
+    /// </para>
+    /// </summary>
     private void RefreshGutter()
     {
         int lines = LineCount();
 
         if (_gutterMarkers is not { Count: > 0 } markers)
         {
-            _gutter.Text = string.Join('\n', Enumerable.Range(1, lines));
+            if (!_gutterHasMarkers && _gutterLineCount == lines)
+                return;
+            _gutterLineCount = lines;
+            _gutterHasMarkers = false;
+            _gutter.Text = BuildNumberColumn(lines);
             return;
         }
+
+        _gutterLineCount = lines;
+        _gutterHasMarkers = true;
 
         // Every line gets the same "marker-or-space, space, right-padded number" prefix once any
         // marker exists, so the number column stays put regardless of which lines have one — the
         // per-line lengths are then all equal, which is also why TextAlignment.Right above never
         // needs special-casing this path.
         int width = lines.ToString(CultureInfo.InvariantCulture).Length;
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(GutterCapacityFor(lines, width + 2));
         for (int line = 1; line <= lines; line++)
         {
             if (line > 1)
@@ -410,6 +476,36 @@ public sealed class CodeEditor : Grid
         }
         _gutter.Text = sb.ToString();
     }
+
+    /// <summary>
+    /// <c>1\n2\n…\nlines</c>, written with a sized <see cref="StringBuilder"/> rather than
+    /// <c>string.Join('\n', Enumerable.Range(1, lines))</c> — the same change, and for the same
+    /// reason, as <c>CodeView.BuildGutter</c>'s: that expression allocates an enumerator, a
+    /// boxed <c>int</c> and a separate string per line before joining them, which is a hundred
+    /// thousand throwaway objects on a large document for a column of digits. It matters more here
+    /// than it does there, because this side is rebuilt as the user types rather than once per
+    /// render.
+    /// </summary>
+    private static string BuildNumberColumn(int lines)
+    {
+        var sb = new StringBuilder(GutterCapacityFor(lines, 8));
+        for (int line = 1; line <= lines; line++)
+        {
+            if (line > 1)
+                sb.Append('\n');
+            sb.Append(line);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// A starting capacity for the gutter string, capped rather than taken literally: the gutter is
+    /// built for documents all the way up to the 50 MB file ceiling, and reserving a per-line
+    /// estimate for one of those would ask for hundreds of megabytes up front. Past the cap the
+    /// builder grows the usual way, which is slower and bounded rather than fast and unbounded.
+    /// </summary>
+    private static int GutterCapacityFor(int lines, int perLine) =>
+        (int)Math.Min((long)lines * perLine, 1L << 20);
 
     /// <summary>
     /// Maps a press on the gutter to the display line under it and, if that line carries a
@@ -443,7 +539,6 @@ public sealed class CodeEditor : Grid
     {
         _highlightTimer.Stop();
 
-        var text = Text;
         // Under High Contrast the platform's own TextControlForeground resource already carries
         // the palette the user picked (design doc §13.3: "High Contrast always wins") — forcing a
         // hardcoded Black/White here would fight it, exactly the bug CodeView's own render path
@@ -456,15 +551,24 @@ public sealed class CodeEditor : Grid
             ? (TextBox.Foreground as SolidColorBrush)?.Color
             : ThemeHelper.ColorFor(this, "SwiftXForegroundColor");
 
+        string text;
         int selectionStart;
         int selectionEnd;
         try
         {
-            // Reading the selection and opening the batch are inside a guard of their own, not
-            // above the main one. Every line here talks to the RichEditBox's native document, and
-            // the one caller is a timer tick — so on the closed-window path (see the Unloaded
-            // handler in the constructor) these are the calls that throw, and they used to throw
-            // from outside every try in this method.
+            // Reading the document, reading the selection and opening the batch are inside a guard
+            // of their own, not above the main one. Every line here talks to the RichEditBox's
+            // native document, and the one caller is a timer tick — so on the closed-window path
+            // (see the Unloaded handler in the constructor) these are the calls that throw, and
+            // they used to throw from outside every try in this method.
+            //
+            // Reading the text is one of them, and was the line still left outside: Unloaded is
+            // what stops the pending tick, and it is not guaranteed to run when a window closes
+            // with the tree still attached — so a paste followed immediately by closing the window
+            // could still land here with the native document gone. An exception on a timer tick has
+            // no caller, which makes it an unhandled one: the process, not the colouring, is what
+            // ends.
+            text = Text;
             selectionStart = TextBox.Document.Selection.StartPosition;
             selectionEnd = TextBox.Document.Selection.EndPosition;
             TextBox.Document.BatchDisplayUpdates();

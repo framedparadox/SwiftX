@@ -19,7 +19,21 @@ public static class FormatRegistry
 
     public static readonly IDataFormat Auto = new AutoDataFormat();
 
-    public static IDataFormat DetectBest(string text)
+    public static IDataFormat DetectBest(string text) => Detect(text).Format;
+
+    /// <summary>
+    /// The best-scoring format <em>and the score it got</em>, in one pass.
+    /// <para>
+    /// A caller that has to know both — "which format is this, and was it recognizable as one at
+    /// all?" — otherwise runs the whole detection twice: <see cref="DetectBest"/> scores all four
+    /// formats and throws the numbers away, and the caller then calls
+    /// <see cref="IDataFormat.DetectConfidence"/> again on the winner. Two of the four scorers
+    /// (<see cref="YamlFormat"/> and <see cref="CsvFormat"/>) walk every line of the document to
+    /// answer, so the second pass is a full extra scan of the user's paste on the UI thread for a
+    /// number that was already computed a moment earlier.
+    /// </para>
+    /// </summary>
+    public static (IDataFormat Format, int Confidence) Detect(string text)
     {
         IDataFormat best = Json;
         int bestScore = 0;
@@ -32,7 +46,7 @@ public static class FormatRegistry
                 best = format;
             }
         }
-        return best;
+        return (best, bestScore);
     }
 
     private sealed class AutoDataFormat : IDataFormat

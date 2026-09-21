@@ -227,7 +227,8 @@ A slim tab on Home's right edge, halfway down, opens a **How to** guide: a drawe
 the Home screen with four topics (setting up the dock, how to invoke it, how to use the hot corner,
 how to change items). It is written from your own configuration, so it names the shortcut and the
 corner you actually chose and says so plainly when either is switched off, and each topic has a
-button that goes to the place it describes. Esc, the close button or a click outside closes it.
+button that goes to the place it describes. The topics are one scrolling list, and nothing dims the
+Home screen behind it. Esc or the close button closes it.
 
 The gear opens **Settings**, which is a screen of its own rather than the window itself: a 270px
 rail with four sections — General, Feedback & Support, Privacy & Data, About. Every sub-screen has
@@ -262,8 +263,10 @@ palettes and not one). What it shows is what the orbit draws, at the current siz
   Clicking the same item again closes the card.
 - **Click a group** and the canvas becomes that group: its own mark at the centre and its children
   fanned on an arc around it, at the same bubble size and angular spacing the real orbit opens a
-  group with. The header changes to that group's name with a back arrow out of it, and a dashed
-  slot at each end of the arc adds to the group.
+  group with. The toolbar's **Orbit Layout** title gives way to that group's name while it is open,
+  and the header's Home button stays put as on every other screen. The way out is the group's own
+  mark at the centre: it turns into a close mark under the pointer, and a click returns to the
+  whole orbit. A dashed slot at each end of the arc adds to the group.
 - **Drag an item** to another slot to rearrange. A drop lands on the nearest slot, even out past
   the bubbles — the intent is the nearest place, not a pixel-perfect landing.
 - **Right-click an item** for **Replace…** and **Delete**. Replace opens the same form the `+`
@@ -281,7 +284,9 @@ Each filled slot wears an outward **name pill** — Logi's own 30px, 6-corner, 1
 placed by Logi's own rule rather than a polar formula: the top and bottom slots take theirs above
 and below, the other six out to the side. They are drawn on a second canvas behind the bubbles with
 hit-testing off, which is what lets a pill overlap a node without ever becoming a drag target; they
-hide for the duration of a drag, since they do not follow a bubble, and come back on the drop.
+hide for the duration of a drag, since they do not follow a bubble, and come back on the drop. A
+name takes a drop exactly as its icon does: drag something from the Edit panel, or in from Explorer
+or a browser, onto the name and it lands in that item's slot.
 Nothing is drawn under them: like Logi's, the ring is implied by where its nodes sit.
 
 **The sidebar** has two modes, and the **Edit** button in the header swaps between them. This is

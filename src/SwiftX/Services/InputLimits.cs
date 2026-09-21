@@ -41,6 +41,27 @@ public static class InputLimits
     public const long MaxBinaryBytes = 256L * 1024 * 1024;
 
     /// <summary>
+    /// The ceiling on text Quick Format will take in and format by itself.
+    /// <para>
+    /// Quick Format is the one tool that formats <em>without being asked</em>: it reads the
+    /// clipboard the instant its window opens, and again on every paste. That makes it the one
+    /// place where a payload nobody chose to open decides how long the UI thread is busy — and the
+    /// expensive half is not the parse (which now runs off the UI thread; see
+    /// <c>QuickFormatPage.ApplyTextAsync</c>) but handing the result to a
+    /// <c>RichEditBox</c>, which is a rich-text engine and has to lay the whole document out on the
+    /// UI thread before it can paint again. Past this size that lands as a window that opened and
+    /// then stopped responding, with nothing on screen to say why.
+    /// </para>
+    /// <para>
+    /// Deliberately far below <see cref="MaxTextBytes"/>, and deliberately <em>not</em> applied to
+    /// the full Data Formatter: that tool only ever formats when the user presses a button on a
+    /// document they chose to open, and it is exactly where this refusal points them
+    /// ("QuickFormat.TooLarge", beside the title bar's own Open Data Formatter button).
+    /// </para>
+    /// </summary>
+    public const int MaxQuickFormatChars = 2_000_000;
+
+    /// <summary>
     /// The ceiling for a custom dock icon. An icon is decoded to a bitmap and drawn at 44 px;
     /// anything past this is not an icon, and image decoders are a classic place to hand a
     /// deliberately expensive file.

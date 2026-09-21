@@ -134,6 +134,14 @@ public sealed class FormatterPage : EditorToolPage
         _detectTimer.IsRepeating = false;
         _detectTimer.Tick += (_, _) => RefreshDetection(autoValidate: true);
 
+        // The same closed-window race CodeEditor.Highlight guards against, for the same reason:
+        // this timer's one caller is a dispatcher tick with nobody to catch what it throws. Typing
+        // then closing the window within the 280ms debounce leaves this tick queued against a
+        // RichEditBox whose native document is already gone by the time it fires — stopping the
+        // timer here narrows the window, and RefreshDetection's own try/catch (below) is what
+        // actually closes it, since a tick already queued when Stop() runs still fires.
+        PageClosing.Register(() => _detectTimer.Stop());
+
         // Built before the TextChanged handler below, which reads its Visibility.
         _searchPanel = BuildSearchPanel();
 
@@ -383,29 +391,44 @@ public sealed class FormatterPage : EditorToolPage
         UpdateDetectedLabel(format);
     }
 
+    /// <summary>
+    /// Runs on every keystroke's debounce tick and on every deliberate edit (Format, Minify,
+    /// Convert, Clear, ...) alike, so — unlike those callers — its one path back to the window
+    /// closing underneath it is a dispatcher tick with no caller to catch what it throws: see
+    /// <see cref="CodeEditor.Highlight"/> for the identical race (a timer stopped from
+    /// <see cref="ToolPage.PageClosing"/> can still have a tick already queued) and why an
+    /// unhandled exception there ends the process rather than the detection.
+    /// </summary>
     private void RefreshDetection(bool autoValidate)
     {
-        var text = _editor.Text;
-        if (text.Length == 0)
+        try
         {
-            _detectedLabel.Text = "";
+            var text = _editor.Text;
+            if (text.Length == 0)
+            {
+                _detectedLabel.Text = "";
+                if (!autoValidate)
+                    StatusBar.SetUntouched();
+                return;
+            }
+
+            var format = FormatRegistry.DetectBest(text);
+            UpdateDetectedLabel(format);
+            _editor.Tokenizer = format.Tokenizer;
+
             if (!autoValidate)
-                StatusBar.SetUntouched();
-            return;
+                return;
+
+            var diagnostics = format.Validate(text);
+            if (diagnostics.Count == 0)
+                StatusBar.SetValid();
+            else
+                StatusBar.SetError(diagnostics[0].Line, diagnostics[0].Column);
         }
-
-        var format = FormatRegistry.DetectBest(text);
-        UpdateDetectedLabel(format);
-        _editor.Tokenizer = format.Tokenizer;
-
-        if (!autoValidate)
-            return;
-
-        var diagnostics = format.Validate(text);
-        if (diagnostics.Count == 0)
-            StatusBar.SetValid();
-        else
-            StatusBar.SetError(diagnostics[0].Line, diagnostics[0].Column);
+        catch (Exception ex)
+        {
+            Diag.Log("FormatterPage.RefreshDetection: document unavailable: " + ex.Message);
+        }
     }
 
     private void UpdateDetectedLabel(IDataFormat format) =>
