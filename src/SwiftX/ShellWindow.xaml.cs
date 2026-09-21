@@ -68,8 +68,8 @@ public sealed partial class ShellWindow : Window
     private bool _radiusAdjusting;
 
     /// <summary>
-    /// Replays the Home Orbit Settings mark — the same pinwheel the dock hub plays on summon —
-    /// every five seconds while Home is showing.
+    /// Replays the Home Orbit / Tools marks every five seconds while Home is showing — Orbit
+    /// splits into the dock layout, Tools runs the encode cell scramble.
     /// </summary>
     private DispatcherTimer? _homeOrbitMarkTimer;
     private AppLogo.Mark? _homeOrbitMark;
@@ -901,19 +901,19 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// Plays the Home Customize mark — the same pinwheel the dock hub plays when it is
-    /// summoned — and keeps replaying it every five seconds while Home is on screen.
+    /// Plays the Home Orbit dock-split and Tools encode motions, and keeps replaying them
+    /// every five seconds while Home is on screen.
     /// </summary>
     private void StartHomeOrbitMark()
     {
         StopHomeOrbitMark();
-        _homeOrbitMark?.PlayEntrance();
-        _homeToolsMark?.PlayPulse();
+        _homeOrbitMark?.PlayOrbitDock();
+        _homeToolsMark?.PlayEncode();
         _homeOrbitMarkTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _homeOrbitMarkTimer.Tick += (_, _) =>
         {
-            _homeOrbitMark?.PlayEntrance();
-            _homeToolsMark?.PlayPulse();
+            _homeOrbitMark?.PlayOrbitDock();
+            _homeToolsMark?.PlayEncode();
         };
         _homeOrbitMarkTimer.Start();
     }

@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SwiftX — Tools animation mockups</title>
+  <style>
+    :root {
+      --bg: #0c1014;
+      --canvas: #12181e;
+      --card: #182028;
+      --card-border: #2a3540;
+      --text: #e7eef4;
+      --muted: #7d8d9a;
+      --accent: #2cd098;
+      --chip: #243038;
+      --chip-on: #2cd098;
+      --chip-on-fg: #06140f;
+      --shadow: rgba(0, 0, 0, 0.5);
+      --rate: 1;
+      --gutter: #ffd510;
+      --keyword: #2cd098;
+      --string: #ff0a76;
+      --fn: #1d4adb;
+    }
+    html[data-theme="light"] {
+      --bg: #e8eef2;
+      --canvas: #f4f7fa;
+      --card: #ffffff;
+      --card-border: #d3dde6;
+      --text: #152028;
+      --muted: #5b6b78;
+      --chip: #dce5ec;
+      --chip-on: #0f7a58;
+      --chip-on-fg: #fff;
+      --shadow: rgba(20, 30, 40, 0.14);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: "Cascadia Code", "Cascadia Mono", Consolas, "Segoe UI", monospace;
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--bg) 88%, #2cd098) 0, var(--bg) 180px),
+        var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    body::before {
+      content: "";
+      pointer-events: none;
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(color-mix(in srgb, var(--text) 5%, transparent) 1px, transparent 1px),
+        linear-gradient(90deg, color-mix(in srgb, var(--text) 5%, transparent) 1px, transparent 1px);
+      background-size: 24px 24px;
+      mask-image: linear-gradient(180deg, rgba(0,0,0,.35), transparent 42%);
+      opacity: .45;
+    }
+    a { color: inherit; }
+
+    .top {
+      position: sticky; top: 0; z-index: 20;
+      background: color-mix(in srgb, var(--bg) 86%, transparent);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--card-border);
+    }
+    .top-inner {
+      max-width: 1280px; margin: 0 auto;
+      padding: 10px 28px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    }
+    .wordmark {
+      display: flex; align-items: baseline; gap: 10px;
+      font-size: 22px; font-weight: 700; letter-spacing: -0.04em;
+    }
+    .wordmark em { font-style: normal; color: var(--accent); font-weight: 650; font-size: 13px; }
+    .top-actions { display: flex; gap: 8px; align-items: center; }
+    .page-nav { display: flex; gap: 6px; }
+    .page-nav a, button, select {
+      font: inherit; color: var(--text); text-decoration: none;
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: 8px; padding: 7px 12px; cursor: pointer;
+    }
+    .page-nav a[aria-current="page"] {
+      background: var(--chip-on); color: var(--chip-on-fg); border-color: transparent; font-weight: 600;
+    }
+    button:hover, .page-nav a:hover { border-color: color-mix(in srgb, var(--text) 35%, var(--card-border)); }
+
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 28px 80px; position: relative; }
+    .lede { color: var(--muted); font-size: 14px; line-height: 1.55; margin: 0 0 20px; max-width: 78ch; }
+    .lede strong { color: var(--text); font-weight: 650; }
+
+    .ide {
+      background: var(--canvas);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      overflow: hidden;
+      margin-bottom: 28px;
+      box-shadow: 0 22px 50px var(--shadow);
+    }
+    .ide-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 14px;
+      background: color-mix(in srgb, var(--card) 80%, #000);
+      border-bottom: 1px solid var(--card-border);
+      font-size: 12px; color: var(--muted);
+    }
+    .ide-dot { width: 9px; height: 9px; border-radius: 50%; }
+    .ide-body {
+      display: flex; flex-wrap: wrap; justify-content: center; gap: 28px 56px;
+      padding: 28px 20px 22px;
+    }
+    .hero { text-align: center; min-width: 260px; }
+    .hero .mark-host { width: 160px; height: 160px; margin: 0 auto; overflow: visible; }
+    .hero h2 {
+      margin: 16px 0 0; font-size: 22px; font-weight: 700;
+      font-family: "Segoe UI", sans-serif;
+    }
+    .hero .pick { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+    .hero select { min-width: 260px; }
+    .hint { font-size: 12px; color: var(--muted); margin: 0; }
+    .status {
+      display: flex; flex-wrap: wrap; gap: 14px;
+      padding: 8px 16px; border-top: 1px solid var(--card-border);
+      font-size: 11px; color: var(--muted);
+    }
+    .status b { color: var(--keyword); font-weight: 650; }
+
+    .tools {
+      display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+      padding: 0 16px 18px;
+    }
+    .tool-chip {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 10px; border-radius: 999px;
+      background: var(--chip); font-size: 12px;
+    }
+    .tool-chip i { font-style: normal; color: var(--accent); font-size: 11px; }
+
+    .filters {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin: 0 0 18px; position: sticky; top: 52px; z-index: 10;
+      padding: 8px 0;
+      background: color-mix(in srgb, var(--bg) 80%, transparent);
+      backdrop-filter: blur(10px);
+    }
+    .chip {
+      border-radius: 999px; padding: 6px 12px; font-size: 13px;
+      background: var(--chip); border: 0; color: var(--text); cursor: pointer;
+    }
+    .chip[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-fg); }
+
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 14px;
+      display: flex; flex-direction: column; gap: 8px;
+      min-height: 292px;
+      scroll-margin-top: 130px;
+    }
+    .card.hidden { display: none; }
+    .preview { height: 176px; display: grid; place-items: center; overflow: visible; }
+    .card h3 { margin: 0; font-size: 14px; font-weight: 700; font-family: "Segoe UI", sans-serif; }
+    .card p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; flex: 1; }
+    .meta { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag {
+      font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 3px 7px; border-radius: 999px;
+      background: color-mix(in srgb, var(--text) 8%, transparent);
+      color: var(--muted);
+    }
+    .tag.maps { background: #2cd09822; color: var(--keyword); }
+    .card-actions button { padding: 5px 8px; font-size: 11px; }
+
+    .notes {
+      margin-top: 36px;
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 800px) { .notes { grid-template-columns: 1fr; } }
+    .notes article {
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: 14px; padding: 18px 20px;
+    }
+    .notes h2 { margin: 0 0 8px; font-size: 16px; font-family: "Segoe UI", sans-serif; }
+    .notes p, .notes li { color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+    .notes ul { margin: 8px 0 0; padding-left: 18px; }
+    code { font-size: 0.92em; }
+
+    .stage {
+      --mark: 112px;
+      width: var(--mark); height: var(--mark);
+      overflow: visible;
+      filter: drop-shadow(0 calc(var(--mark) * 0.06) calc(var(--mark) * 0.2) rgba(0,0,0,.45));
+    }
+    .stage.lg { --mark: 160px; }
+    .stage.sm { --mark: 28px; filter: none; }
+    .mark { transform-box: view-box; transform-origin: 50% 50%; }
+    .slot { transform-box: view-box; transform-origin: 0 0; transform: translate(var(--tx), var(--ty)); }
+    .s0 { --tx: 0%; --ty: 0%; --i: 0; }
+    .s1 { --tx: 51.25%; --ty: 0%; --i: 1; }
+    .s2 { --tx: 51.25%; --ty: 51.25%; --i: 2; }
+    .s3 { --tx: 0%; --ty: 51.25%; --i: 3; }
+    .petal { transform-box: fill-box; transform-origin: center; }
+    .overlay { opacity: 0; pointer-events: none; }
+    .brace { font-size: 30px; font-weight: 600; fill: var(--keyword); font-family: Consolas, monospace; }
+    .gutter { stroke: var(--gutter); stroke-width: 1.1; opacity: 0; }
+    .scan { fill: var(--keyword); opacity: 0; }
+    .cell { opacity: 0; }
+    .node, .tchip { opacity: 0; }
+    .link { stroke: color-mix(in srgb, var(--keyword) 70%, var(--text)); stroke-width: 1.05; fill: none; opacity: 0; stroke-dasharray: 2.2 1.6; }
+    .shackle { fill: none; stroke: url(#g-tr); stroke-width: 2.1; stroke-linecap: round; opacity: 0; }
+    .clip { opacity: 0; }
+    .caret { fill: var(--gutter); opacity: 0; }
+    .token { opacity: 0; font-size: 5.2px; font-family: Consolas, monospace; fill: #fff; }
+
+    .is-playing.anim-glyph .mark { animation: glyph-in calc(440ms / var(--rate)) both; }
+
+    .is-playing.anim-pretty .mark { animation: pretty-mark calc(2400ms / var(--rate)) both infinite; }
+    .is-playing.anim-pretty .gutter { animation: fade-hold calc(2400ms / var(--rate)) both infinite; }
+    .is-playing.anim-pretty .s0 { animation: pretty-s0 calc(2400ms / var(--rate)) both infinite; }
+    .is-playing.anim-pretty .s1 { animation: pretty-s1 calc(2400ms / var(--rate)) both infinite; }
+    .is-playing.anim-pretty .s2 { animation: pretty-s2 calc(2400ms / var(--rate)) both infinite; }
+    .is-playing.anim-pretty .s3 { animation: pretty-s3 calc(2400ms / var(--rate)) both infinite; }
+
+    .is-playing.anim-minify .s0 { animation: pretty-s0 calc(2000ms / var(--rate)) both infinite reverse; }
+    .is-playing.anim-minify .s1 { animation: pretty-s1 calc(2000ms / var(--rate)) both infinite reverse; }
+    .is-playing.anim-minify .s2 { animation: pretty-s2 calc(2000ms / var(--rate)) both infinite reverse; }
+    .is-playing.anim-minify .s3 { animation: pretty-s3 calc(2000ms / var(--rate)) both infinite reverse; }
+
+    .is-playing.anim-braces .brace-l { animation: brace-l calc(2600ms / var(--rate)) both infinite; }
+    .is-playing.anim-braces .brace-r { animation: brace-r calc(2600ms / var(--rate)) both infinite; }
+    .is-playing.anim-braces .mark { animation: braces-mark calc(2600ms / var(--rate)) both infinite; }
+
+    .is-playing.anim-encode .petal { animation: fade-out-hold calc(3200ms / var(--rate)) both infinite; }
+    .is-playing.anim-encode .cell {
+      animation: encode-cell calc(3200ms / var(--rate)) both infinite;
+      animation-delay: calc(var(--k) * 28ms / var(--rate));
+    }
+
+    .is-playing.anim-pipeline .petal { animation: fade-out-hold calc(2800ms / var(--rate)) both infinite; }
+    .is-playing.anim-pipeline .node {
+      animation: node-in calc(2800ms / var(--rate)) both infinite;
+      animation-delay: calc(var(--i) * 80ms / var(--rate));
+    }
+    .is-playing.anim-pipeline .link { animation: link-flow calc(2800ms / var(--rate)) both infinite; }
+
+    .is-playing.anim-strip .petal { animation: fade-out-hold calc(3000ms / var(--rate)) both infinite; }
+    .is-playing.anim-strip .tchip {
+      animation: strip-in calc(3000ms / var(--rate)) both infinite;
+      animation-delay: calc(var(--i) * 70ms / var(--rate));
+    }
+
+    .is-playing.anim-scan .scan { animation: scan-run calc(1800ms / var(--rate)) linear infinite; }
+    .is-playing.anim-scan .petal { animation: scan-lit calc(1800ms / var(--rate)) linear infinite; animation-delay: calc(var(--i) * 90ms / var(--rate)); }
+
+    .is-playing.anim-lock .mark { animation: lock-body calc(2600ms / var(--rate)) both infinite; }
+    .is-playing.anim-lock .shackle { animation: lock-arm calc(2600ms / var(--rate)) both infinite; }
+
+    .is-playing.anim-ingest .clip { animation: ingest calc(2200ms / var(--rate)) both infinite; }
+    .is-playing.anim-ingest .mark { animation: ingest-mark calc(2200ms / var(--rate)) both infinite; }
+
+    .is-playing.anim-compile .mark { animation: compile calc(1600ms / var(--rate)) both infinite; }
+    .is-playing.anim-compile .petal { animation: compile-petal calc(1600ms / var(--rate)) both infinite; animation-delay: calc(var(--i) * 40ms / var(--rate)); }
+
+    .is-playing.anim-handshake .petal { animation: handshake calc(2000ms / var(--rate)) both infinite; animation-delay: calc(var(--i) * 140ms / var(--rate)); }
+
+    .is-playing.anim-tokens .petal { animation: fade-out-hold calc(2600ms / var(--rate)) both infinite; }
+    .is-playing.anim-tokens .token { animation: token-in calc(2600ms / var(--rate)) both infinite; animation-delay: calc(var(--i) * 90ms / var(--rate)); }
+
+    .is-playing.anim-diff .p0, .is-playing.anim-diff .p3 { animation: diff-keep calc(1800ms / var(--rate)) ease-in-out infinite; }
+    .is-playing.anim-diff .p1, .is-playing.anim-diff .p2 { animation: diff-add calc(1800ms / var(--rate)) ease-in-out infinite; }
+
+    .is-playing.anim-hex .cell { animation: hex-cell calc(2400ms / var(--rate)) both infinite; animation-delay: calc(var(--k) * 18ms / var(--rate)); }
+    .is-playing.anim-hex .petal { animation: fade-out-hold calc(2400ms / var(--rate)) both infinite; }
+
+    .is-playing.anim-caret .caret { animation: caret-blink calc(1100ms / var(--rate)) steps(2) infinite; }
+    .is-playing.anim-caret .mark { animation: caret-nudge calc(2200ms / var(--rate)) both infinite; }
+
+    @keyframes glyph-in {
+      from { transform: rotate(90deg) scale(0.45); opacity: 0; }
+      55% { transform: rotate(-6deg) scale(1.06); opacity: 1; }
+      to { transform: none; opacity: 1; }
+    }
+    @keyframes pretty-mark {
+      0%, 12%, 88%, 100% { transform: none; }
+      30%, 70% { transform: translateX(6%); }
+    }
+    @keyframes pretty-s0 {
+      0%, 12%, 88%, 100% { transform: translate(0%, 0%); }
+      30%, 70% { transform: translate(4%, 6%); }
+    }
+    @keyframes pretty-s1 {
+      0%, 12%, 88%, 100% { transform: translate(51.25%, 0%); }
+      30%, 70% { transform: translate(58%, 6%); }
+    }
+    @keyframes pretty-s2 {
+      0%, 12%, 88%, 100% { transform: translate(51.25%, 51.25%); }
+      30%, 70% { transform: translate(58%, 58%); }
+    }
+    @keyframes pretty-s3 {
+      0%, 12%, 88%, 100% { transform: translate(0%, 51.25%); }
+      30%, 70% { transform: translate(4%, 58%); }
+    }
+    @keyframes fade-hold {
+      0%, 12%, 88%, 100% { opacity: 0; }
+      28%, 72% { opacity: 1; }
+    }
+    @keyframes fade-out-hold {
+      0%, 8%, 90%, 100% { opacity: 1; }
+      18%, 78% { opacity: 0; }
+    }
+    @keyframes brace-l {
+      0%, 10%, 90%, 100% { opacity: 0; transform: translate(-8px, 0); }
+      28%, 72% { opacity: 1; transform: none; }
+    }
+    @keyframes brace-r {
+      0%, 10%, 90%, 100% { opacity: 0; transform: translate(8px, 0); }
+      28%, 72% { opacity: 1; transform: none; }
+    }
+    @keyframes braces-mark {
+      0%, 10%, 90%, 100% { transform: none; }
+      28%, 72% { transform: scale(0.72); }
+    }
+    @keyframes encode-cell {
+      0%, 8% { opacity: 0; transform: scale(0.4); }
+      18% { opacity: 1; transform: scale(1); }
+      38% { transform: translate(var(--jx), var(--jy)) scale(0.85); opacity: 1; }
+      58%, 78% { transform: none; opacity: 1; }
+      90%, 100% { opacity: 0; }
+    }
+    @keyframes node-in {
+      0%, 8% { opacity: 0; transform: scale(0.3); }
+      22%, 78% { opacity: 1; transform: scale(1); }
+      90%, 100% { opacity: 0; }
+    }
+    @keyframes link-flow {
+      0%, 14%, 88%, 100% { opacity: 0; stroke-dashoffset: 12; }
+      28%, 78% { opacity: 1; stroke-dashoffset: 0; }
+    }
+    @keyframes strip-in {
+      0%, 8% { opacity: 0; transform: scale(0.2); }
+      24%, 76% { opacity: 1; transform: scale(1); }
+      90%, 100% { opacity: 0; transform: scale(0.2); }
+    }
+    @keyframes scan-run {
+      0% { opacity: 0; transform: translateX(-4px); }
+      8% { opacity: 0.85; }
+      92% { opacity: 0.85; transform: translateX(50px); }
+      100% { opacity: 0; transform: translateX(52px); }
+    }
+    @keyframes scan-lit {
+      0%, 100% { filter: brightness(1); }
+      40% { filter: brightness(1.28); }
+    }
+    @keyframes lock-body {
+      0%, 12%, 88%, 100% { transform: none; }
+      30%, 70% { transform: translateY(6%) scale(0.86); }
+    }
+    @keyframes lock-arm {
+      0%, 12%, 88%, 100% { opacity: 0; transform: translateY(4px); }
+      28%, 72% { opacity: 1; transform: none; }
+    }
+    @keyframes ingest {
+      0% { opacity: 0; transform: translate(18px, -16px) scale(0.6); }
+      28% { opacity: 1; transform: translate(6px, -2px) scale(1); }
+      55% { opacity: 0; transform: translate(0, 10px) scale(0.2); }
+      100% { opacity: 0; }
+    }
+    @keyframes ingest-mark {
+      0%, 40% { transform: scale(1); }
+      55% { transform: scale(1.08); }
+      70%, 100% { transform: scale(1); }
+    }
+    @keyframes compile {
+      0% { transform: rotate(0) scale(1); filter: brightness(1); }
+      35% { transform: rotate(8deg) scale(0.92); filter: brightness(1.4); }
+      70% { transform: rotate(-4deg) scale(1.04); }
+      100% { transform: none; filter: brightness(1); }
+    }
+    @keyframes compile-petal {
+      0%, 100% { transform: none; }
+      40% { transform: rotate(-12deg) scale(0.86); }
+    }
+    @keyframes handshake {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      25% { transform: scale(0.55) translate(12%, 12%); opacity: 0.5; }
+      50% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes token-in {
+      0%, 10% { opacity: 0; transform: translateY(6px); }
+      24%, 76% { opacity: 1; transform: none; }
+      90%, 100% { opacity: 0; }
+    }
+    @keyframes diff-keep {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.55; transform: scale(0.94); }
+    }
+    @keyframes diff-add {
+      0%, 100% { opacity: 1; transform: scale(1); filter: none; }
+      50% { opacity: 1; transform: scale(1.08); filter: brightness(1.2); }
+    }
+    @keyframes hex-cell {
+      0%, 10% { opacity: 0; }
+      20%, 80% { opacity: 0.95; }
+      90%, 100% { opacity: 0; }
+    }
+    @keyframes caret-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+    @keyframes caret-nudge {
+      0%, 100% { transform: translateX(0); }
+      50% { transform: translateX(4%); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .stage * { animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="g-tl" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#FF0A76" /><stop offset="1" stop-color="#FFD510" />
+      </linearGradient>
+      <linearGradient id="g-tr" x1="1" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#2CD098" /><stop offset="1" stop-color="#1D4ADB" />
+      </linearGradient>
+      <linearGradient id="g-br" x1="1" y1="1" x2="0" y2="0">
+        <stop offset="0" stop-color="#F1067E" /><stop offset="1" stop-color="#1A65B5" />
+      </linearGradient>
+      <linearGradient id="g-bl" x1="0" y1="1" x2="1" y2="0">
+        <stop offset="0" stop-color="#2CD098" /><stop offset="1" stop-color="#1D4ADB" />
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <header class="top">
+    <div class="top-inner">
+      <div class="wordmark">SwiftX <em>tools</em></div>
+      <div class="top-actions">
+        <label class="hint">Speed
+          <select id="rate">
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2">2×</option>
+          </select>
+        </label>
+        <nav class="page-nav" aria-label="Mockup pages">
+          <a href="logo-petal-animations.html">Orbit</a>
+          <a href="tools-animations.html" aria-current="page">Tools</a>
+        </nav>
+        <button id="theme" type="button">Light</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <p class="lede">Developer-tool motions for the Home <strong>Tools</strong> mark — not another orbit pinwheel. The four petals stay the identity; they reformat, encode, and pipe, the way SwiftX’s built-ins do. Pair these with Orbit’s <a href="logo-petal-animations.html">split-to-dock</a> so the two home marks tell different stories.</p>
+
+    <section class="ide" aria-label="Tools home preview">
+      <div class="ide-bar">
+        <span class="ide-dot" style="background:#ff5f57"></span>
+        <span class="ide-dot" style="background:#febc2e"></span>
+        <span class="ide-dot" style="background:#28c840"></span>
+        <span>tools.swiftx — Home preview @ 160px</span>
+      </div>
+      <div class="ide-body">
+        <div class="hero">
+          <div class="mark-host" id="toolsMark" data-mark="lg"></div>
+          <h2>Tools</h2>
+          <div class="pick">
+            <select id="toolsPick"></select>
+            <p class="hint">Ships today as PlayPulse. These replace that with a formatter grammar.</p>
+          </div>
+        </div>
+      </div>
+      <div class="tools" id="toolStrip"></div>
+      <div class="status">
+        <span>UTF-8</span><span>LF</span><span>JSON <b>auto</b></span><span>5 tools</span>
+        <span>replay <select id="interval">
+          <option value="2500">2.5s</option>
+          <option value="5000" selected>5s (app)</option>
+          <option value="8000">8s</option>
+        </select></span>
+      </div>
+    </section>
+
+    <nav class="filters" id="filters" aria-label="Filter animations"></nav>
+    <section class="gallery" id="gallery"></section>
+
+    <section class="notes">
+      <article>
+        <h2>Why this is not the orbit animation</h2>
+        <p>Orbit’s job is a radial dock: hub plus items on a circle. Tools is a workbench — format, encode, stash, inspect. If both home marks unfurl into rings, the page reads as two copies of Customize. These motions keep the same four leaves so the brand holds, then treat them as tokens in a pipeline rather than bubbles on a ring.</p>
+      </article>
+      <article>
+        <h2>Map onto the catalog</h2>
+        <ul>
+          <li><strong>Data Formatter</strong> — Pretty-print, Minify, Braces.</li>
+          <li><strong>Quick Format</strong> — Clipboard ingest (the last copy flies in).</li>
+          <li><strong>Base64</strong> — Encode / hex grid.</li>
+          <li><strong>Secure values</strong> — Lock.</li>
+          <li><strong>Certificate</strong> — Handshake.</li>
+          <li><strong>All five</strong> — Tool strip, Pipeline, Tokens.</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const NOMINAL = 48, HALF_GAP = 0.6;
+    const PETAL = (NOMINAL - 2 * HALF_GAP) / 2;
+    const RADIUS = PETAL * 0.466;
+    const FAR = PETAL + 2 * HALF_GAP;
+
+    function mainPath() {
+      const s = PETAL, r = RADIUS;
+      return `M 0 0 L ${s - r} 0 A ${r} ${r} 0 0 1 ${s} ${r} L ${s} ${s} L ${r} ${s} A ${r} ${r} 0 0 1 0 ${s - r} Z`;
+    }
+    function antiPath() {
+      const s = PETAL, r = RADIUS;
+      return `M ${s} 0 L ${s} ${s - r} A ${r} ${r} 0 0 1 ${s - r} ${s} L 0 ${s} L 0 ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
+    }
+    const PETALS = [
+      { cls: "p0", fill: "url(#g-tl)", d: mainPath() },
+      { cls: "p1", fill: "url(#g-tr)", d: antiPath() },
+      { cls: "p2", fill: "url(#g-br)", d: mainPath() },
+      { cls: "p3", fill: "url(#g-bl)", d: antiPath() },
+    ];
+    const FILLS = ["url(#g-tl)", "url(#g-tr)", "url(#g-br)", "url(#g-bl)"];
+    const TOOLS = [
+      { name: "Data Formatter", glyph: "{ }" },
+      { name: "Quick Format", glyph: "⇢" },
+      { name: "Secure values", glyph: "⚿" },
+      { name: "Base64", glyph: "B64" },
+      { name: "Certificate", glyph: "CRT" },
+    ];
+
+    function markSvg() {
+      const slots = PETALS.map((p, i) => `
+        <g class="slot s${i}">
+          <g class="petal ${p.cls}">
+            <path d="${p.d}" fill="${p.fill}" />
+          </g>
+        </g>`).join("");
+
+      const cells = Array.from({ length: 16 }, (_, k) => {
+        const col = k % 4, row = Math.floor(k / 4);
+        const q = row < 2 ? (col < 2 ? 0 : 1) : (col < 2 ? 3 : 2);
+        const jx = (col % 2) ? "40%" : "-40%";
+        const jy = (row % 2) ? "40%" : "-40%";
+        return `<rect class="cell overlay" x="${col * 12 + 0.4}" y="${row * 12 + 0.4}"
+          width="11.2" height="11.2" rx="1.8" fill="${FILLS[q]}"
+          style="--k:${k}; --jx:${jx}; --jy:${jy}; transform-box: fill-box; transform-origin: center;" />`;
+      }).join("");
+
+      const nodes = [0, 1, 2, 3].map(i => {
+        const x = 3.5 + i * 13.7;
+        return `<circle class="node overlay" cx="${x}" cy="24" r="4.1" fill="${FILLS[i]}" style="--i:${i}; transform-box: fill-box; transform-origin: center;" />`;
+      }).join("");
+      const links = [0, 1, 2].map(i => {
+        const x1 = 7.8 + i * 13.7, x2 = x1 + 4.8;
+        return `<line class="link overlay" x1="${x1}" y1="24" x2="${x2}" y2="24" />`;
+      }).join("");
+
+      const chips = TOOLS.map((t, i) => {
+        const ang = (-90 + i * 72) * Math.PI / 180;
+        const ex = 24 + 18 * Math.cos(ang);
+        const ey = 24 + 18 * Math.sin(ang);
+        return `<g class="tchip overlay" style="--i:${i}; transform-box: fill-box; transform-origin: center;">
+          <circle cx="${ex}" cy="${ey}" r="5.2" fill="${FILLS[i % 4]}" />
+          <text class="token" x="${ex}" y="${ey + 1.7}" text-anchor="middle">${t.glyph}</text>
+        </g>`;
+      }).join("");
+
+      const tokens = ["fmt", "b64", "key", "crt"].map((label, i) => `
+        <g class="token overlay" style="--i:${i}; transform-box: fill-box; transform-origin: center;">
+          <rect x="${2 + i * 11.5}" y="19" width="10.6" height="9" rx="2" fill="${FILLS[i]}" />
+          <text x="${7.3 + i * 11.5}" y="25" text-anchor="middle">${label}</text>
+        </g>`).join("");
+
+      return `<svg viewBox="-6 -8 60 64" overflow="visible" aria-hidden="true">
+        <line class="gutter overlay" x1="-1" y1="2" x2="-1" y2="46" />
+        <text class="brace brace-l overlay" x="-6" y="32">{</text>
+        <text class="brace brace-r overlay" x="49" y="32">}</text>
+        <path class="shackle overlay" d="M16 20 v-5 a8 8 0 0 1 16 0 v5" />
+        <rect class="clip overlay" x="38" y="-6" width="11" height="13" rx="1.6" fill="#FFD510" />
+        <rect class="scan overlay" x="-2" y="-2" width="2.4" height="52" />
+        <rect class="caret overlay" x="49" y="14" width="1.3" height="18" />
+        <g class="mark">${slots}</g>
+        ${cells}${nodes}${links}${chips}${tokens}
+      </svg>`;
+    }
+
+    const ANIMATIONS = [
+      { id: "rest", title: "Rest (static)", cat: "brand", tags: ["brand"], mode: "none",
+        desc: "The Tools mark at rest — same four leaves as Orbit, so Home still reads as one product." },
+      { id: "glyph", title: "Glyph pop", cat: "brand", tags: ["brand"], mode: "replay", interval: 2400,
+        maps: "PlayGlyphEntrance",
+        desc: "Whole mark as one piece, +90°. Closest to what Home Tools does today, without the four-petal unfurl." },
+      { id: "pretty", title: "Pretty-print", cat: "format", tags: ["format", "home"], mode: "infinite",
+        maps: "Data Formatter",
+        desc: "Leaves indent: a yellow gutter appears and the pinwheel opens like formatted JSON. The Tools counterpart to Orbit’s split." },
+      { id: "minify", title: "Minify", cat: "format", tags: ["format"], mode: "infinite",
+        maps: "Data Formatter",
+        desc: "Pretty-print run backwards. Packs the mark tight, then lets it breathe." },
+      { id: "braces", title: "Wrap in braces", cat: "format", tags: ["format", "home"], mode: "infinite",
+        maps: "Data Formatter",
+        desc: "`{ }` scale in from the sides and the mark becomes the payload. Syntax as chrome." },
+      { id: "encode", title: "Encode", cat: "encode", tags: ["encode", "home"], mode: "infinite",
+        maps: "Base64",
+        desc: "Leaves dissolve into a 4×4 cell grid, scramble one beat, then reassemble. Encode / decode." },
+      { id: "hex", title: "Hex dump", cat: "encode", tags: ["encode"], mode: "infinite",
+        maps: "Base64",
+        desc: "Same grid, no scramble — a dump that lights cell by cell." },
+      { id: "pipeline", title: "Pipeline", cat: "workbench", tags: ["workbench", "home"], mode: "infinite",
+        maps: "All tools",
+        desc: "Four circles in a row with dashed connectors. Input → transform → transform → output. Linear on purpose: Orbit owns the ring." },
+      { id: "strip", title: "Tool strip", cat: "workbench", tags: ["workbench", "home"], mode: "infinite",
+        maps: "All five",
+        desc: "The catalog fans out to five chips (Formatter, Quick Format, Secure, Base64, Certificate) then merges back." },
+      { id: "tokens", title: "Token stream", cat: "workbench", tags: ["workbench"], mode: "infinite",
+        maps: "Data Formatter",
+        desc: "Leaves become four lexer tokens on a line: fmt, b64, key, crt." },
+      { id: "scan", title: "Lexer scan", cat: "workbench", tags: ["workbench"], mode: "infinite",
+        maps: "Quick Format",
+        desc: "A caret-colored scanline runs left to right; each leaf lights as it is ‘read’." },
+      { id: "caret", title: "Prompt caret", cat: "workbench", tags: ["workbench"], mode: "infinite",
+        maps: "Terminal",
+        desc: "Blinking caret at the right edge, mark eases as if a command is being typed." },
+      { id: "ingest", title: "Clipboard ingest", cat: "format", tags: ["format", "home"], mode: "infinite",
+        maps: "Quick Format",
+        desc: "A yellow clip flies in from the corner and is swallowed. Quick Format reading the last copy." },
+      { id: "lock", title: "Lock", cat: "secure", tags: ["secure", "home"], mode: "infinite",
+        maps: "Secure values",
+        desc: "A shackle drops over the mark and the leaves sit as the body of a padlock." },
+      { id: "handshake", title: "Handshake", cat: "secure", tags: ["secure"], mode: "infinite",
+        maps: "Certificate",
+        desc: "Leaves pulse toward the hub in sequence — ClientHello, ServerHello, key, finish." },
+      { id: "compile", title: "Compile flash", cat: "workbench", tags: ["workbench"], mode: "infinite",
+        maps: "Build",
+        desc: "A short brightness + twist, like a successful format. Punchy; not a 5s ambient." },
+      { id: "diff", title: "Diff", cat: "format", tags: ["format"], mode: "infinite",
+        maps: "Data Formatter",
+        desc: "Left pair recedes (old), right pair kicks (new). Minus / plus without extra chrome." },
+    ];
+
+    const FILTERS = [
+      ["all", "All"],
+      ["home", "Home-friendly"],
+      ["format", "Format"],
+      ["encode", "Encode"],
+      ["secure", "Secure"],
+      ["workbench", "Workbench"],
+      ["brand", "Brand"],
+    ];
+
+    function mountMark(el) {
+      const size = el.dataset.mark === "lg" ? "lg" : el.dataset.mark === "sm" ? "sm" : "";
+      el.innerHTML = markSvg();
+      const stage = el.querySelector("svg");
+      stage.classList.add("stage");
+      if (size) stage.classList.add(size);
+      return stage;
+    }
+    document.querySelectorAll("[data-mark]").forEach(mountMark);
+
+    const strip = document.getElementById("toolStrip");
+    TOOLS.forEach(t => {
+      const el = document.createElement("span");
+      el.className = "tool-chip";
+      el.innerHTML = `<i>${t.glyph}</i>${t.name}`;
+      strip.appendChild(el);
+    });
+
+    const gallery = document.getElementById("gallery");
+    const toolsPick = document.getElementById("toolsPick");
+
+    function applyAnim(stage, spec) {
+      if (stage._timer) { clearInterval(stage._timer); stage._timer = null; }
+      [...stage.classList].forEach(c => {
+        if (c.startsWith("anim-") || c === "is-playing") stage.classList.remove(c);
+      });
+      stage.classList.add("anim-" + spec.id);
+      const play = () => {
+        stage.classList.remove("is-playing");
+        void stage.offsetWidth;
+        stage.classList.add("is-playing");
+      };
+      if (spec.mode === "infinite" || spec.mode === "none") {
+        if (spec.mode !== "none") stage.classList.add("is-playing");
+        return;
+      }
+      play();
+      const ms = stage.classList.contains("lg")
+        ? (Number(document.getElementById("interval").value) || 5000)
+        : (spec.interval || 2600);
+      stage._timer = setInterval(play, ms);
+    }
+
+    ANIMATIONS.forEach(spec => {
+      const card = document.createElement("article");
+      card.className = "card";
+      card.dataset.tags = spec.tags.join(" ");
+      card.innerHTML = `
+        <div class="preview"></div>
+        <h3>${spec.title}</h3>
+        <p>${spec.desc}</p>
+        <div class="meta">
+          ${spec.maps ? `<span class="tag maps">${spec.maps}</span>` : ""}
+          <span class="tag">${spec.cat}</span>
+        </div>
+        <div class="card-actions">
+          <button type="button" data-replay>Replay</button>
+          <button type="button" data-use>Use on Tools</button>
+        </div>`;
+      const preview = card.querySelector(".preview");
+      preview.innerHTML = markSvg();
+      const stage = preview.querySelector("svg");
+      stage.classList.add("stage");
+      applyAnim(stage, spec);
+      card.querySelector("[data-replay]").onclick = () => applyAnim(stage, spec);
+      card.querySelector("[data-use]").onclick = () => assign(spec.id);
+      gallery.appendChild(card);
+      const opt = document.createElement("option");
+      opt.value = spec.id;
+      opt.textContent = spec.title;
+      toolsPick.appendChild(opt);
+    });
+
+    const toolsStage = document.querySelector("#toolsMark svg");
+    toolsStage.classList.add("lg");
+    function specById(id) { return ANIMATIONS.find(a => a.id === id); }
+    function assign(id) {
+      toolsPick.value = id;
+      applyAnim(toolsStage, specById(id));
+    }
+    toolsPick.value = "pretty";
+    applyAnim(toolsStage, specById("pretty"));
+    toolsPick.onchange = () => assign(toolsPick.value);
+    document.getElementById("interval").onchange = () => assign(toolsPick.value);
+
+    const filters = document.getElementById("filters");
+    FILTERS.forEach(([id, label], i) => {
+      const b = document.createElement("button");
+      b.className = "chip";
+      b.type = "button";
+      b.textContent = label;
+      b.setAttribute("aria-pressed", i === 0 ? "true" : "false");
+      b.onclick = () => {
+        filters.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", "false"));
+        b.setAttribute("aria-pressed", "true");
+        gallery.querySelectorAll(".card").forEach(card => {
+          card.classList.toggle("hidden", id !== "all" && !card.dataset.tags.split(" ").includes(id));
+        });
+      };
+      filters.appendChild(b);
+    });
+
+    document.getElementById("rate").onchange = (e) => {
+      document.documentElement.style.setProperty("--rate", e.target.value);
+    };
+    document.getElementById("theme").onclick = () => {
+      const light = document.documentElement.getAttribute("data-theme") === "light";
+      document.documentElement.setAttribute("data-theme", light ? "dark" : "light");
+      document.getElementById("theme").textContent = light ? "Light" : "Dark";
+    };
+  </script>
+</body>
+</html>
