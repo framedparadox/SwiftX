@@ -319,6 +319,156 @@ public class ConcurrencyAndEnduranceTests(ITestOutputHelper output)
         }
     }
 
+    /// <summary>
+    /// Both stores publish through a scratch file, and the scratch file's <em>name</em> used to be
+    /// a constant — <c>orbit.json.tmp</c>, <c>secure-values.json.tmp</c> — which makes it shared
+    /// state between writers rather than private space. Two overlapping saves then interleave as:
+    /// A writes its JSON to the scratch file, B truncates it and writes its own, A moves the
+    /// scratch file over the real one. What lands is B's half-written bytes under A's name, and
+    /// neither store has a backup: <c>OrbitStore.Load</c> answers unparseable JSON with a default
+    /// configuration and <c>SecureValueStore.Load</c> answers it with an empty list, so the visible
+    /// result is an orbit or a secret list that is simply gone.
+    /// <para>
+    /// The assertion is therefore not "every save won" but "what is on disk afterwards is
+    /// something a writer actually wrote". Losing a race is fine and expected — a save the last
+    /// writer overwrote, or one that lost <c>File.Move</c>'s claim on the destination to a reader
+    /// holding it open, is a lost write, which is what a whole-file store does. Publishing a blend
+    /// of two writers is not, and that is what a shared scratch name produced.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void BothStores_SavedFromManyThreadsAtOnce_NeverPublishATornFile()
+    {
+        var unexpected = new ConcurrentBag<string>();
+
+        Parallel.For(0, Workers, worker =>
+        {
+            for (int round = 0; round < 12; round++)
+            {
+                // Deliberately different lengths per worker: two writes of the same size can tear
+                // into something that still happens to parse, and the point is to make a torn file
+                // unmistakable.
+                var config = new AppConfig { Theme = AppTheme.Dark }.EnsurePrimary();
+                config.Primary.Items.Add(new OrbitItem
+                {
+                    Kind = OrbitItemKind.Application,
+                    DisplayName = $"w{worker}-r{round}",
+                    Target = new string('t', 200 + worker * 40),
+                });
+                OrbitStore.Save(config); // swallows its own failures by contract
+
+                try
+                {
+                    SecureValueStore.Save(Enumerable.Range(0, 10 + worker).Select(i => new SecureValueEntry
+                    {
+                        Id = $"{worker}-{round}-{i}",
+                        Key = $"KEY_{worker}_{i}",
+                        Value = new string('v', 100 + worker * 50),
+                    }).ToList());
+                }
+                catch (IOException)
+                {
+                    // A lost publish, not a torn one — see the remarks.
+                }
+                catch (Exception ex)
+                {
+                    unexpected.Add($"SecureValueStore.Save threw {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+        });
+
+        Assert.True(unexpected.IsEmpty, string.Join("\n", unexpected.Distinct().Take(10)));
+
+        // Read back once the contention is over, so what is being judged is the file rather than
+        // the timing of the read. Both stores answer an unparseable file with "nothing was there",
+        // which is precisely the shape a torn write takes from a user's side.
+        var reloaded = OrbitStore.Load();
+        Assert.Single(reloaded.Primary.Items);
+        Assert.StartsWith("w", reloaded.Primary.Items[0].DisplayName);
+        Assert.Equal(AppTheme.Dark, reloaded.Theme);
+
+        var secrets = SecureValueStore.Load();
+        Assert.NotEmpty(secrets);
+        Assert.All(secrets, e => Assert.StartsWith("KEY_", e.Key));
+        // Every row in a whole-file write came from the same writer, so they agree on their value.
+        Assert.Single(secrets.Select(e => e.Value).Distinct());
+    }
+
+    /// <summary>
+    /// The mechanism both stores now publish through, on its own and in its own directory so the
+    /// assertion is about this code and not about whatever else in the suite happens to be writing
+    /// at the time. Two things are pinned: concurrent publishes each land whole (the reader only
+    /// ever sees one writer's content), and no scratch file survives — a unique name per write
+    /// means one left behind is litter nothing would ever reuse or clean up.
+    /// </summary>
+    [Fact]
+    public void AtomicWrite_UnderConcurrentPublishes_LandsWholeAndLeavesNothingBehind()
+    {
+        var directory = Path.Combine(TestEnvironment.DataDirectory, "atomic-" + Guid.NewGuid().ToString("N"));
+        var target = Path.Combine(directory, "file.json");
+        var payloads = Enumerable.Range(0, Workers)
+            .Select(w => new string((char)('a' + w), 1_000 + w * 997))
+            .ToArray();
+        var torn = new ConcurrentBag<string>();
+
+        Parallel.For(0, Workers, worker =>
+        {
+            for (int round = 0; round < 20; round++)
+            {
+                Publish(target, payloads[worker]);
+
+                if (ReadWhileOthersWrite(target) is { } observed && Array.IndexOf(payloads, observed) < 0)
+                    torn.Add($"{observed.Length} chars starting '{observed[..Math.Min(4, observed.Length)]}'");
+            }
+        });
+
+        Assert.True(torn.IsEmpty, "a reader saw content no single writer wrote: " + string.Join("; ", torn.Distinct().Take(5)));
+        Assert.Contains(File.ReadAllText(target), payloads);
+        Assert.Empty(Directory.GetFiles(directory, "*.tmp"));
+    }
+
+    /// <summary>
+    /// <see cref="AtomicWrite.Publish"/>, retried past the one failure that is the operating
+    /// system rather than the code under test: <c>File.Move(overwrite: true)</c> needs delete
+    /// access to the destination, so it loses to a reader that happens to hold it open at that
+    /// instant. That is a lost write, which the stores already treat as such; it is not the torn
+    /// write this test is looking for.
+    /// </summary>
+    private static void Publish(string target, string payload)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                AtomicWrite.Publish(target, payload);
+                return;
+            }
+            catch (IOException) when (attempt < 20)
+            {
+                Thread.Sleep(1);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads the published file with a share mode that tolerates a concurrent replace, so the
+    /// read itself cannot be what makes another thread's publish fail. Null when the file is
+    /// mid-swap, which is not an observation either way.
+    /// </summary>
+    private static string? ReadWhileOthersWrite(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(
+                path, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
     // =========================================================================================
     // 3. Endurance
     // =========================================================================================
