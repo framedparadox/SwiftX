@@ -432,11 +432,13 @@
                 </Grid>
 
                 <!-- How-to guide. A slim tab on the right edge, halfway down the screen, whose
-                     chevron points the way the guide will come from. It opens a modal over the
+                     chevron points the way the drawer will come from. It opens a drawer over the
                      main area of the Home screen rather than a separate window, so the guide is
                      never lost behind the app and closing it puts you exactly where you were. The
-                     scrim and the modal sit in row 1 only: the brand and the toolbar in row 0 stay
-                     clear, so the theme toggle and Settings remain within reach while it is open.
+                     drawer sits in row 1 only, and nothing dims the screen behind it: the Home
+                     screen stays as it is, and the brand and the toolbar in row 0 stay clear, so
+                     the theme toggle and Settings remain within reach while it is open. Its close
+                     button and Escape put it away.
                      Its content is built in code (BuildHowToGuide) from the live configuration, so
                      it names the shortcut and the corner the user actually set. The Tools hover
                      panel above keeps its distance from the tab through its right margin. -->
@@ -456,37 +458,24 @@
                               Foreground="{ThemeResource SettingsHeaderBrush}" />
                 </Button>
 
-                <!-- A neutral dimming layer: black at about a third, which reads as a scrim on
-                     every theme, so it is one of the few colours here that is not a theme token.
-                     Tapping it closes the guide. -->
-                <Border x:Name="HowToScrim" Grid.Row="1" Background="#59000000"
-                        Visibility="Collapsed" Opacity="0"
-                        Tapped="HowToScrim_Tapped" />
-
-                <!-- Fills the main area up to 760 x 500 and is centred in it: it shows one topic at
-                     a time, so a wider or taller one would only be empty space around the card.
-                     Starts 48px to the right and transparent, so it eases in from the side the tab
-                     is on. -->
-                <Border x:Name="HowToPanel" Grid.Row="1"
-                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                        MaxWidth="760" MaxHeight="500"
-                        Margin="24,0,24,24"
-                        Visibility="Collapsed" Opacity="0"
-                        CornerRadius="12" Padding="0"
+                <!-- 400 wide, the full height of the main area, on the right edge. It waits off
+                     the right edge and slides in (see ShowHowTo). -->
+                <Border x:Name="HowToPanel" Grid.Row="1" Width="400" MaxWidth="480"
+                        HorizontalAlignment="Right" Visibility="Collapsed"
+                        CornerRadius="12,0,0,12" Padding="0"
                         Background="{ThemeResource ShellCardBackgroundBrush}"
                         BorderBrush="{ThemeResource ShellCardBorderBrush}"
-                        BorderThickness="1"
+                        BorderThickness="1,1,0,1"
                         AutomationProperties.Name="How to guide"
                         AutomationProperties.AutomationId="ShellHowToPanel"
                         KeyDown="HowToPanel_KeyDown">
                     <Border.RenderTransform>
-                        <TranslateTransform x:Name="HowToPanelSlide" X="48" />
+                        <TranslateTransform x:Name="HowToPanelSlide" X="400" />
                     </Border.RenderTransform>
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <Grid Grid.Row="0" Padding="24,18,12,8">
@@ -510,31 +499,13 @@
                             </Button>
                         </Grid>
 
-                        <!-- One topic at a time. The topics sit side by side and the FlipView moves
-                             between them (mouse wheel, Left and Right, swipe, or the arrows that
-                             show on hover), so the guide still scrolls left and right but only ever
-                             shows one. A card taller than the room scrolls inside itself (see
-                             BuildHowToGuide), which leaves the wheel free to flip. The default
-                             background is dropped so the modal's own shows through. -->
-                        <FlipView x:Name="HowToFlip" Grid.Row="1" Background="Transparent"
-                                  AutomationProperties.Name="How to topics"
-                                  SelectionChanged="HowToFlip_SelectionChanged">
-                            <!-- Stretch, so each card fills its page instead of shrinking to its own
-                                 content and floating in the middle of it. -->
-                            <FlipView.ItemContainerStyle>
-                                <Style TargetType="FlipViewItem">
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                                </Style>
-                            </FlipView.ItemContainerStyle>
-                        </FlipView>
-
-                        <!-- Where you are in the guide: one dot per topic, and a dot can be clicked to
-                             jump to that topic. Kept in step with the FlipView from both sides. -->
-                        <PipsPager x:Name="HowToPips" Grid.Row="2"
-                                   HorizontalAlignment="Center" Margin="0,4,0,16"
-                                   AutomationProperties.Name="Topic"
-                                   SelectedIndexChanged="HowToPips_SelectedIndexChanged" />
+                        <!-- All the topics, one card after another, scrolling when they run past the
+                             bottom. -->
+                        <ScrollViewer Grid.Row="1" Padding="24,6,24,24"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel x:Name="HowToContent" Spacing="14" />
+                        </ScrollViewer>
                     </Grid>
                 </Border>
             </Grid>
@@ -574,7 +545,7 @@
                         <RowDefinition Height="60" />
                     </Grid.RowDefinitions>
 
-                    <!-- Logi's header row: back chevron and title on the left, its layout/profile
+                    <!-- Logi's header row: the Home button on the left, its layout/profile
                          tabs on the right. SwiftX has no profiles, so the right-hand slot carries
                          the Edit toggle — the one control that changes what the sidebar is. -->
                     <Grid Grid.Row="0" Padding="24,16,24,0">
@@ -584,7 +555,14 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
-                        <StackPanel x:Name="OrbitTitleBar" Grid.Column="0" Orientation="Horizontal"
+                        <!-- Home: the same button, in the same place, as on every other screen, and
+                             never swapped for anything else, inside a group too. The group's name is
+                             not up here: it takes the place of the screen's title in the toolbar
+                             along the bottom (OrbitLayoutTitle / OrbitGroupName). The way back out
+                             to the whole orbit is not a button either: it is the group's own mark at
+                             the centre of the canvas, which turns into a close mark under the
+                             pointer (see RenderGroupArc). -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal"
                                     Spacing="12" VerticalAlignment="Center">
                             <Button Style="{StaticResource ChromeIconButton}" Click="Back_Click"
                                     AutomationProperties.Name="Home"
@@ -593,36 +571,6 @@
                                           FontFamily="{ThemeResource SymbolThemeFontFamily}"
                                           Foreground="{ThemeResource SettingsHeaderBrush}" />
                             </Button>
-                        </StackPanel>
-
-                        <!-- The same cell, holding the header a group's own view wears instead
-                             (ShowGroupHeader / HideGroupHeader). Opening a group no longer reveals
-                             a strip under the canvas — the canvas itself becomes that group's
-                             children — so with an unchanged header the two views would be
-                             indistinguishable at a glance, and the only way back out would be the
-                             bubble you no longer have on screen. The back arrow here returns to
-                             the whole orbit rather than to Home, which is what the one above it
-                             still does. -->
-                        <StackPanel x:Name="OrbitGroupHeader" Grid.Column="0" Visibility="Collapsed"
-                                    Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                            <Button Style="{StaticResource ChromeIconButton}"
-                                    Click="OrbitGroupBack_Click"
-                                    AutomationProperties.Name="Back to the whole orbit"
-                                    ToolTipService.ToolTip="Back to the whole orbit">
-                                <FontIcon Glyph="&#xE72B;" FontSize="18"
-                                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                          Foreground="{ThemeResource SettingsHeaderBrush}" />
-                            </Button>
-                            <FontIcon x:Name="OrbitGroupIcon" FontSize="18" VerticalAlignment="Center"
-                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                      Foreground="{ThemeResource OrbitCanvasAccentBrush}"
-                                      Tapped="OrbitGroupHeaderTitle_Tapped" />
-                            <StackPanel VerticalAlignment="Center"
-                                        Tapped="OrbitGroupHeaderTitle_Tapped">
-                                <TextBlock Text="GROUP" Style="{StaticResource SidebarEyebrow}" />
-                                <TextBlock x:Name="OrbitGroupName" Style="{StaticResource ScreenTitle}"
-                                           TextTrimming="CharacterEllipsis" MaxWidth="320" />
-                            </StackPanel>
                         </StackPanel>
 
                         <!-- Elements reveals the "ADD TO ORBIT" sidebar (SetOrbitEditing(true))
@@ -697,8 +645,17 @@
                                 </MenuFlyout>
                             </Button.Flyout>
                         </Button>
-                        <TextBlock Grid.Column="1" Text="Orbit" Style="{StaticResource ScreenTitle}"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <!-- The screen's title, and in its place while a group is open (OpenGroup /
+                             CollapseGroup) that group's name, one shown at a time in the same spot.
+                             Tapping the name opens the group's details card. -->
+                        <Grid Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock x:Name="OrbitLayoutTitle" Text="Orbit Layout"
+                                       Style="{StaticResource ScreenTitle}" />
+                            <TextBlock x:Name="OrbitGroupName" Visibility="Collapsed"
+                                       Style="{StaticResource ScreenTitle}"
+                                       TextTrimming="CharacterEllipsis" MaxWidth="320"
+                                       Tapped="OrbitGroupName_Tapped" />
+                        </Grid>
                         <StackPanel x:Name="CanvasActions" Grid.Column="2" Orientation="Horizontal"
                                     Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center"
                                     Margin="0,0,24,0">
