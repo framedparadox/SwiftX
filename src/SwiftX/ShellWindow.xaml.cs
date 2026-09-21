@@ -438,7 +438,7 @@ public sealed partial class ShellWindow : Window
         RebuildItemsList();
         RebuildToolsList();
         if (_orbitEditBuilt) BuildOrbitEditSidebar();
-        if (_howToOpen) BuildHowToGuide(keepPage: true);
+        if (_howToOpen) BuildHowToGuide();
         UpdateElementsGlyphs();
     }
 
@@ -1086,13 +1086,13 @@ public sealed partial class ShellWindow : Window
 
     // ---- How-to guide ----------------------------------------------------------------------
 
-    /// <summary>How far to the right of its resting place the modal starts, and returns to, as it fades in and out.</summary>
-    private const double HowToPanelTravel = 48;
+    /// <summary>Width of the guide's drawer, which is also how far off-screen it waits.</summary>
+    private const double HowToPanelWidth = 400;
 
     private bool _howToOpen;
 
     /// <summary>
-    /// Bumped by every open and close, so that the end of a close animation collapses the modal
+    /// Bumped by every open and close, so that the end of a close animation collapses the drawer
     /// only if nothing has opened it again in the meantime.
     /// </summary>
     private int _howToGeneration;
@@ -1103,8 +1103,6 @@ public sealed partial class ShellWindow : Window
 
     private void HowToClose_Click(object sender, RoutedEventArgs e) => HideHowTo();
 
-    private void HowToScrim_Tapped(object sender, TappedRoutedEventArgs e) => HideHowTo();
-
     private void HowToPanel_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key != Windows.System.VirtualKey.Escape)
@@ -1114,13 +1112,13 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// Brings the guide up as a modal over the main area of the Home screen (the row under the
-    /// brand and toolbar, which it leaves clear). It is a layer inside this window rather than a
-    /// second window: it cannot be lost behind the app, it needs no window management, and closing
-    /// it leaves the user exactly where they were. The content is rebuilt on every open, from the
-    /// live configuration, so it always names the shortcut and corner the user has now.
+    /// Slides the guide in over the main area of the Home screen (the row under the brand and
+    /// toolbar, which it leaves clear). It is a drawer inside this window rather than a second
+    /// window: it cannot be lost behind the app, it needs no window management, and closing it
+    /// leaves the user exactly where they were. The content is rebuilt on every open, from the live
+    /// configuration, so it always names the shortcut and corner the user has now.
     /// <para>
-    /// With animations off in Windows the modal simply appears, the same courtesy the orbit's own
+    /// With animations off in Windows the drawer simply appears, the same courtesy the orbit's own
     /// Animate hover style extends (see <see cref="ReducedMotion"/>).
     /// </para>
     /// </summary>
@@ -1134,27 +1132,20 @@ public sealed partial class ShellWindow : Window
 
         BuildHowToGuide();
         HowToTab.Visibility = Visibility.Collapsed;
-        HowToScrim.Visibility = Visibility.Visible;
         HowToPanel.Visibility = Visibility.Visible;
 
         if (ReducedMotion.IsActive())
         {
             HowToPanelSlide.X = 0;
-            HowToPanel.Opacity = 1;
-            HowToScrim.Opacity = 1;
         }
         else
         {
-            HowToPanelSlide.X = HowToPanelTravel;
-            HowToPanel.Opacity = 0;
-            HowToScrim.Opacity = 0;
-            RunHowToStoryboard(slideTo: 0, fadeTo: 1, milliseconds: 240, ease: EasingMode.EaseOut, then: () =>
+            HowToPanelSlide.X = HowToPanelWidth;
+            RunHowToStoryboard(slideTo: 0, milliseconds: 240, ease: EasingMode.EaseOut, then: () =>
             {
                 // Hand the end position back to the base value so the next animation starts from it
                 // instead of from a value the finished one is still holding.
                 HowToPanelSlide.X = 0;
-                HowToPanel.Opacity = 1;
-                HowToScrim.Opacity = 1;
             });
         }
 
@@ -1162,8 +1153,8 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// Takes the guide away again. <paramref name="immediate"/> skips the motion, for when the
-    /// modal has to be gone before the screen it sits on is (see <see cref="ShowScreen"/>).
+    /// Slides the guide back out. <paramref name="immediate"/> skips the motion, for when the
+    /// drawer has to be gone before the screen it sits on is (see <see cref="ShowScreen"/>).
     /// </summary>
     private void HideHowTo(bool immediate = false)
     {
@@ -1178,48 +1169,34 @@ public sealed partial class ShellWindow : Window
         {
             if (generation != _howToGeneration)
                 return;
-            HowToPanelSlide.X = HowToPanelTravel;
-            HowToPanel.Opacity = 0;
-            HowToScrim.Opacity = 0;
+            HowToPanelSlide.X = HowToPanelWidth;
             HowToPanel.Visibility = Visibility.Collapsed;
-            HowToScrim.Visibility = Visibility.Collapsed;
         }
 
         if (immediate || ReducedMotion.IsActive())
             Finish();
         else
             RunHowToStoryboard(
-                slideTo: HowToPanelTravel, fadeTo: 0, milliseconds: 180, ease: EasingMode.EaseIn, then: Finish);
+                slideTo: HowToPanelWidth, milliseconds: 180, ease: EasingMode.EaseIn, then: Finish);
 
         // Back to the tab that opened it, so a keyboard user is not left with nothing focused.
         if (!immediate)
             HowToTab.Focus(FocusState.Programmatic);
     }
 
-    private void RunHowToStoryboard(double slideTo, double fadeTo, int milliseconds, EasingMode ease, Action then)
+    private void RunHowToStoryboard(double slideTo, int milliseconds, EasingMode ease, Action then)
     {
-        var duration = TimeSpan.FromMilliseconds(milliseconds);
         var slide = new DoubleAnimation
         {
             To = slideTo,
-            Duration = duration,
+            Duration = TimeSpan.FromMilliseconds(milliseconds),
             EasingFunction = new CubicEase { EasingMode = ease },
         };
         Storyboard.SetTarget(slide, HowToPanelSlide);
         Storyboard.SetTargetProperty(slide, "X");
 
-        var fade = new DoubleAnimation { To = fadeTo, Duration = duration };
-        Storyboard.SetTarget(fade, HowToScrim);
-        Storyboard.SetTargetProperty(fade, "Opacity");
-
-        var panelFade = new DoubleAnimation { To = fadeTo, Duration = duration };
-        Storyboard.SetTarget(panelFade, HowToPanel);
-        Storyboard.SetTargetProperty(panelFade, "Opacity");
-
         var storyboard = new Storyboard();
         storyboard.Children.Add(slide);
-        storyboard.Children.Add(fade);
-        storyboard.Children.Add(panelFade);
         storyboard.Completed += (_, _) =>
         {
             // Only the storyboard still in charge gets to finish: a stopped one never completes, but
@@ -1233,48 +1210,21 @@ public sealed partial class ShellWindow : Window
         storyboard.Begin();
     }
 
-    // The FlipView and the dots each move the other. Both handlers only act when the two disagree,
-    // so the change one makes comes back as a no-op instead of a loop.
-    private void HowToFlip_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        int index = HowToFlip.SelectedIndex;
-        if (index >= 0 && index < HowToPips.NumberOfPages && HowToPips.SelectedPageIndex != index)
-            HowToPips.SelectedPageIndex = index;
-    }
-
-    private void HowToPips_SelectedIndexChanged(PipsPager sender, PipsPagerSelectedIndexChangedEventArgs args)
-    {
-        int index = sender.SelectedPageIndex;
-        if (index >= 0 && index < HowToFlip.Items.Count && HowToFlip.SelectedIndex != index)
-            HowToFlip.SelectedIndex = index;
-    }
-
     /// <summary>
-    /// Fills the modal: one page per topic from <see cref="HowToGuide"/>, each a heading, a line
+    /// Fills the drawer: one card per topic from <see cref="HowToGuide"/>, each a heading, a line
     /// that says where things stand now, numbered steps, and a button that goes to the place the
-    /// topic is about. Only one page shows at a time; the FlipView moves between them. Rebuilt
-    /// rather than repainted on a theme change (see <see cref="RepaintThemedContent"/>), because
-    /// the badges carry local brushes.
-    /// <para>
-    /// <paramref name="keepPage"/> is for that rebuild: the theme toggle stays reachable while the
-    /// guide is open, and rebuilding would otherwise put it back on the first topic. An open starts
-    /// on the first topic, however it was last closed.
-    /// </para>
+    /// topic is about. Rebuilt rather than repainted on a theme change (see
+    /// <see cref="RepaintThemedContent"/>), because the badges carry local brushes.
     /// </summary>
-    private void BuildHowToGuide(bool keepPage = false)
+    private void BuildHowToGuide()
     {
-        int page = keepPage ? Math.Max(HowToFlip.SelectedIndex, 0) : 0;
-        var sections = HowToGuide.Sections(_manager.Config);
-
-        // The dots first: the first topic selects itself the moment it is added, and that moves them.
-        HowToPips.NumberOfPages = sections.Count;
-        HowToFlip.Items.Clear();
+        HowToContent.Children.Clear();
 
         var accent = new SolidColorBrush(CurrentAccentColor());
         var badgeFill = ThemeHelper.Brush(Root, "ShellPillBrush");
         var badgeText = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
 
-        foreach (var section in sections)
+        foreach (var section in HowToGuide.Sections(_manager.Config))
         {
             var stack = new StackPanel { Spacing = 10 };
 
@@ -1360,34 +1310,17 @@ public sealed partial class ShellWindow : Window
                 stack.Children.Add(button);
             }
 
-            // The side margins keep the card clear of the FlipView's own arrows, which sit on its
-            // left and right edges. The padding is on the ScrollViewer, not the card, so its
-            // scrollbar runs along the card's own edge instead of floating inside the padding. The
-            // scrollbar only shows when a card is taller than the room the modal has (a short
-            // window), and then scrolls that one card.
-            HowToFlip.Items.Add(new Border
+            HowToContent.Children.Add(new Border
             {
                 Style = (Style)Root.Resources["Card"],
-                Margin = new Thickness(48, 6, 48, 6),
-                Padding = new Thickness(0),
-                Child = new ScrollViewer
-                {
-                    Padding = new Thickness(20, 16, 20, 16),
-                    VerticalScrollMode = ScrollMode.Auto,
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    HorizontalScrollMode = ScrollMode.Disabled,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    Content = stack,
-                },
+                Padding = new Thickness(16, 14, 16, 14),
+                Child = stack,
             });
         }
-
-        HowToFlip.SelectedIndex = Math.Min(page, HowToFlip.Items.Count - 1);
-        HowToPips.SelectedPageIndex = Math.Max(HowToFlip.SelectedIndex, 0);
     }
 
     /// <summary>
-    /// Takes the user to what a topic is about. The guide is closed first and without motion, since
+    /// Takes the user to what a topic is about. The drawer is closed first and without motion, since
     /// the screen it belongs to is about to be hidden under it.
     /// </summary>
     private void RunGuideAction(GuideAction action)
@@ -1575,6 +1508,14 @@ public sealed partial class ShellWindow : Window
             var origin = pill.TransformToVisual(PreviewCanvas).TransformPoint(new Point(0, 0));
             ShowItemDetails(item, origin);
         };
+
+        // A drop on the name lands where a drop on the icon does. The pills are not under the
+        // canvas the drop handlers are on, so a drag over one never reached them, and only the
+        // icon took a drop. These are the canvas's own handlers: they tell a pill by its sender.
+        pill.AllowDrop = true;
+        pill.DragOver += Preview_DragOver;
+        pill.DragLeave += Preview_DragLeave;
+        pill.Drop += Preview_Drop;
 
         // A Canvas gives its children no alignment, so the pill has to be placed by a corner — and
         // the six side pills are placed by whichever corner faces the hub, which for the left-hand
@@ -2393,6 +2334,11 @@ public sealed partial class ShellWindow : Window
     /// that row's own DragStarting in <see cref="BuildEditRow"/>). Declined inside an open group and
     /// on the pinned Settings/Close slots, the same exclusions <see cref="Preview_RightTapped"/> and
     /// <see cref="BuildOrbitItemMenu"/> already make.
+    /// <para>
+    /// The name pill beside an item takes the drop as well as its icon (see <see cref="AddSlotLabel"/>,
+    /// which points the pill's own drag events here). <paramref name="sender"/> is what tells the
+    /// two apart, through <see cref="DropSlotAt"/>.
+    /// </para>
     /// </summary>
     private void Preview_DragOver(object sender, DragEventArgs e)
     {
@@ -2404,12 +2350,18 @@ public sealed partial class ShellWindow : Window
             return;
         }
 
-        var point = e.GetPosition(PreviewCanvas);
-        int slot = _previewQuadrant
-            ? QuadrantSlotAt(point, requireHit: false)
-            : PreviewSlotAt(point, requireHit: false);
+        int slot = DropSlotAt(sender, e);
         if (!_previewQuadrant && slot >= OrbitMetrics.UserSlotCount)
             slot = -1;
+
+        // The pinned Settings and Close pills label no place that can take anything, so a pill
+        // with no slot behind it says no rather than offering an add that would go nowhere.
+        if (slot < 0 && sender is Border)
+        {
+            e.AcceptedOperation = DataPackageOperation.None;
+            ClearPreviewDropHighlight();
+            return;
+        }
 
         var border = slot < 0
             ? null
@@ -2445,6 +2397,23 @@ public sealed partial class ShellWindow : Window
 
     private void Preview_DragLeave(object sender, DragEventArgs e) => ClearPreviewDropHighlight();
 
+    /// <summary>
+    /// The place a drag is aimed at. Over the canvas it is the one nearest the pointer. Over an
+    /// item's name pill it is that item's own place, wherever on the pill the pointer is: the pill
+    /// sits out beside the icon, where the nearest place by angle can be its neighbour's. -1 when
+    /// the pill's item holds no place a drop can go (the pinned Settings and Close).
+    /// </summary>
+    private int DropSlotAt(object sender, DragEventArgs e)
+    {
+        if (sender is Border { Tag: OrbitItem labelled })
+            return Array.FindIndex(_slotBorders, b => ReferenceEquals(b?.Tag, labelled));
+
+        var point = e.GetPosition(PreviewCanvas);
+        return _previewQuadrant
+            ? QuadrantSlotAt(point, requireHit: false)
+            : PreviewSlotAt(point, requireHit: false);
+    }
+
     private void ClearPreviewDropHighlight()
     {
         _previewDropSlot = -1;
@@ -2456,10 +2425,7 @@ public sealed partial class ShellWindow : Window
         ClearPreviewDropHighlight();
         if (_expandedGroup is not null) return;
 
-        var point = e.GetPosition(PreviewCanvas);
-        int slot = _previewQuadrant
-            ? QuadrantSlotAt(point, requireHit: false)
-            : PreviewSlotAt(point, requireHit: false);
+        int slot = DropSlotAt(sender, e);
         if (slot < 0)
         {
             e.AcceptedOperation = DataPackageOperation.None;
@@ -2975,7 +2941,18 @@ public sealed partial class ShellWindow : Window
         if (!ShowsGroupArc(item))
             return glyph;
 
-        var grid = new Grid { Width = diameter, Height = diameter };
+        // Centred explicitly. The bubble's Border hands its child a content area smaller than the
+        // diameter (its ring takes 1 to 1.5px off each side), and a child bigger than the room it
+        // is given does not stay centred by default: Stretch gives way to top-left, which shifted
+        // the glyph and the arc together, right and down by the ring's width, only on items that
+        // carry an arc. Centre overflows evenly instead, so both sit on the bubble's own centre.
+        var grid = new Grid
+        {
+            Width = diameter,
+            Height = diameter,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
         grid.Children.Add(glyph);
         grid.Children.Add(BuildPreviewGroupArc(diameter, angleRad, foreground));
         return grid;
@@ -3182,7 +3159,7 @@ public sealed partial class ShellWindow : Window
     private void ShowItemDetails(OrbitItem item, Point at)
     {
         // Whatever put an item's details on screen — the main ring, the quadrant preview, a
-        // group's own arc, a title pill, or the group header tap above.
+        // group's own arc, a title pill, or a tap on the open group's name.
         if (ReferenceEquals(_selectedItem, item) && _detailsFlyout is not null)
         {
             HideItemDetails();
@@ -3747,7 +3724,8 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>
     /// Opens <paramref name="group"/> on the canvas: the whole orbit is replaced by that group's
-    /// own children, fanned on an arc, and the header changes to say where you are.
+    /// own children, fanned on an arc, and the title along the bottom becomes the group's name to
+    /// say where you are.
     /// <para>
     /// This used to reveal a horizontal strip below the canvas instead. A strip could show the
     /// children but not where they sit relative to anything, and it left the orbit they came out of
@@ -3761,10 +3739,9 @@ public sealed partial class ShellWindow : Window
         HideItemDetails();
         _expandedGroup = group;
 
-        OrbitTitleBar.Visibility = Visibility.Collapsed;
-        OrbitGroupHeader.Visibility = Visibility.Visible;
-        OrbitGroupIcon.Glyph = group.Glyph;
         OrbitGroupName.Text = group.DisplayName;
+        OrbitLayoutTitle.Visibility = Visibility.Collapsed;
+        OrbitGroupName.Visibility = Visibility.Visible;
 
         RenderPreview();
     }
@@ -3780,20 +3757,18 @@ public sealed partial class ShellWindow : Window
         _expandedGroup = null;
         HideItemDetails();
 
-        OrbitGroupHeader.Visibility = Visibility.Collapsed;
-        OrbitTitleBar.Visibility = Visibility.Visible;
+        OrbitGroupName.Visibility = Visibility.Collapsed;
+        OrbitLayoutTitle.Visibility = Visibility.Visible;
 
         RenderPreview();
     }
 
-    private void OrbitGroupBack_Click(object sender, RoutedEventArgs e) => CollapseGroup();
-
     /// <summary>
-    /// The group header's own icon and title, made tappable so that reaching the open group's
-    /// details does not require finding it again on the arc — it is right there at the top of the
-    /// screen the whole time the group is open.
+    /// The open group's name, made tappable so that reaching the group's details does not require
+    /// finding it again on the arc — it is right there in the toolbar the whole time the group is
+    /// open.
     /// </summary>
-    private void OrbitGroupHeaderTitle_Tapped(object sender, TappedRoutedEventArgs e)
+    private void OrbitGroupName_Tapped(object sender, TappedRoutedEventArgs e)
     {
         if (_expandedGroup is not null)
             ShowItemDetails(_expandedGroup, e.GetPosition(PreviewCanvas));
@@ -3847,6 +3822,15 @@ public sealed partial class ShellWindow : Window
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
         var accent = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasAccentBrush");
 
+        // The centre is the way back out as well as the mark of where you are: at rest it is the
+        // group's own mark, under the pointer it becomes a close mark, and a click closes the group
+        // and returns to the whole orbit. The header has no back arrow for this, which is what lets
+        // its Home button be the same on every screen. A tap closes it whether or not a pointer
+        // ever hovered (touch), the swap is only the hint.
+        double markSize = glyphSize * 1.15;
+        var groupMark = PreviewBubbleContent(group, markSize, accent, parent, 0);
+        var closeMark = PreviewGlyph("\uE711", markSize, accent);
+
         var parentBubble = new Border
         {
             Width = parent,
@@ -3854,10 +3838,17 @@ public sealed partial class ShellWindow : Window
             Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
             BorderBrush = accent,
             BorderThickness = new Thickness(1.5),
-            Child = PreviewBubbleContent(group, glyphSize * 1.15, accent, parent, 0),
+            Child = groupMark,
         };
         OrbitItemGeometry.Apply(parentBubble, parent);
-        ToolTipService.SetToolTip(parentBubble, group.DisplayName);
+        ToolTipService.SetToolTip(parentBubble, "Click to close group");
+        parentBubble.PointerEntered += (_, _) => parentBubble.Child = closeMark;
+        parentBubble.PointerExited += (_, _) => parentBubble.Child = groupMark;
+        parentBubble.Tapped += (_, e) =>
+        {
+            e.Handled = true;
+            CollapseGroup();
+        };
         AttachPreviewHover(parentBubble);
         Canvas.SetLeft(parentBubble, cx - parent / 2);
         Canvas.SetTop(parentBubble, cy - parent / 2);
