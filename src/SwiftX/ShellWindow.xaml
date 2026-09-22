@@ -444,7 +444,7 @@
                      panel above keeps its distance from the tab through its right margin. -->
                 <Button x:Name="HowToTab" Grid.RowSpan="2"
                         HorizontalAlignment="Right" VerticalAlignment="Center"
-                        Width="26" Height="80" Padding="0" MinWidth="0" MinHeight="0"
+                        Width="28" Height="148" Padding="0" MinWidth="0" MinHeight="0"
                         CornerRadius="10,0,0,10"
                         Background="{ThemeResource ShellCardBackgroundBrush}"
                         BorderBrush="{ThemeResource ShellCardBorderBrush}"
@@ -453,9 +453,30 @@
                         AutomationProperties.Name="How to guide"
                         AutomationProperties.AutomationId="ShellHowToTab"
                         ToolTipService.ToolTip="How to">
-                    <FontIcon Glyph="&#xE76B;" FontSize="14"
-                              FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                              Foreground="{ThemeResource SettingsHeaderBrush}" />
+                    <StackPanel Spacing="10" HorizontalAlignment="Center"
+                                VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE76B;" FontSize="14"
+                                  FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                  Foreground="{ThemeResource SettingsHeaderBrush}"
+                                  HorizontalAlignment="Center" />
+                        <!-- Lay out "How to" horizontally at full width, then rotate −90° into a
+                             tall narrow slot so the glyphs are not clipped by the tab width. -->
+                        <Canvas Width="16" Height="56" HorizontalAlignment="Center">
+                            <Border Width="56" Height="16">
+                                <Border.RenderTransform>
+                                    <TransformGroup>
+                                        <RotateTransform Angle="-90" />
+                                        <TranslateTransform Y="56" />
+                                    </TransformGroup>
+                                </Border.RenderTransform>
+                                <TextBlock Text="How to"
+                                           FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{ThemeResource SettingsHeaderBrush}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                            </Border>
+                        </Canvas>
+                    </StackPanel>
                 </Button>
 
                 <!-- 400 wide, the full height of the main area, on the right edge. It waits off

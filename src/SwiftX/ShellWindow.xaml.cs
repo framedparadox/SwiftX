@@ -68,8 +68,8 @@ public sealed partial class ShellWindow : Window
     private bool _radiusAdjusting;
 
     /// <summary>
-    /// Replays the Home Orbit / Tools marks every five seconds while Home is showing — Orbit
-    /// splits into the dock layout, Tools runs the encode cell scramble.
+    /// Home Orbit / Tools idle marks — Orbit drifts continuously; Tools replays on a timer
+    /// while Home is showing.
     /// </summary>
     private DispatcherTimer? _homeOrbitMarkTimer;
     private AppLogo.Mark? _homeOrbitMark;
@@ -901,8 +901,8 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// Plays the Home Orbit dock-split and Tools encode motions, and keeps replaying them
-    /// every five seconds while Home is on screen.
+    /// Starts Home idle marks: Orbit keeps a small hub with a slow continuous ring drift;
+    /// Tools replays the tile-spin grid every five seconds.
     /// </summary>
     private void StartHomeOrbitMark()
     {
@@ -912,7 +912,7 @@ public sealed partial class ShellWindow : Window
         _homeOrbitMarkTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _homeOrbitMarkTimer.Tick += (_, _) =>
         {
-            _homeOrbitMark?.PlayOrbitDock();
+            // Orbit drifts forever once started; only Tools needs a periodic replay.
             _homeToolsMark?.PlayEncode();
         };
         _homeOrbitMarkTimer.Start();

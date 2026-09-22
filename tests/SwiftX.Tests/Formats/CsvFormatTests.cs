@@ -125,4 +125,45 @@ public class CsvFormatTests
     {
         Assert.Equal(0, CsvFormat.Instance.DetectConfidence("{\"a\": 1}"));
     }
+
+    /// <summary>
+    /// Prose with commas in it is not a table. This matters more than a mis-drawn label because
+    /// Quick Format reads the clipboard the instant its window opens and formats whatever it
+    /// detected with no confirmation step — so claiming an email or a paragraph as CSV means
+    /// rewriting it. The quoted case is the one that does visible damage: a CSV round trip
+    /// re-quotes any field carrying a quote character, turning
+    /// <c>He said, "hello", then left.</c> into <c>He said," ""hello""", then left.</c>
+    /// </summary>
+    [Theory]
+    [InlineData("He said, \"hello\", then left.\nShe replied, \"fine\".")]
+    [InlineData("Dear Ada,\nThanks for the notes, they were useful.\nI will send the draft, the budget, and the plan.\nBest, Alan")]
+    [InlineData("It arrived, finally.\nIt works, mostly.")]
+    public void DetectConfidence_DoesNotClaimProseThatHappensToContainCommas(string prose)
+    {
+        Assert.Equal(0, CsvFormat.Instance.DetectConfidence(prose));
+
+        // The guard is only worth anything if it survives the whole Quick Format path, which is
+        // where the rewriting actually happened.
+        var analyzed = QuickFormatter.Analyze(prose);
+        Assert.Null(analyzed.Format);
+        Assert.Equal(prose, analyzed.Text);
+    }
+
+    /// <summary>
+    /// The other half of the same guard: it is narrow enough that real tables keep detecting.
+    /// A sentence-shaped <em>cell</em> is ordinary data and must not disqualify the document —
+    /// only a majority of sentence-shaped rows does, and a ragged table needs none at all.
+    /// </summary>
+    [Theory]
+    [InlineData("a,b,c\n1,2,3\n4,5,6\n")]
+    [InlineData("a,b,c\n1,2\n3,4,5\n")]
+    [InlineData("name,note\n\"Ada, L\",\"said \"\"hi\"\"\"\n\"Alan T\",ok\n")]
+    [InlineData("id,note\n1,Fix the bug.\n2,ok\n3,ok\n4,ok\n")]
+    [InlineData("Shopping list\nApples, pears, plums\nBread, milk, cheese")]
+    public void DetectConfidence_StillRecognizesRealTables(string csv)
+    {
+        Assert.True(
+            CsvFormat.Instance.DetectConfidence(csv) > 0,
+            $"the prose guard swallowed a real table: {csv.Replace("\n", "\\n")}");
+    }
 }

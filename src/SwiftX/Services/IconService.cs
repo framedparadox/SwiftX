@@ -370,12 +370,24 @@ public static class IconService
         string scheme = uri.Scheme is "http" or "https" ? uri.Scheme : "https";
         string cacheFile = Path.Combine(CacheDir, Sanitize(host) + ".ico");
 
-        // 1. Cached copy.
+        // 1. Cached copy. Bounded on the way back in, not only on the way out: what this cache
+        // holds is whatever was written to a predictable path under the user's own data directory,
+        // and the ceiling that kept the download small is no help at all against a file that did
+        // not arrive as a download. ReadAllBytesAsync on it was the one unbounded read left on the
+        // icon path.
         if (File.Exists(cacheFile))
         {
-            var cached = await DecodeAsync(await File.ReadAllBytesAsync(cacheFile));
-            if (cached is not null)
-                return cached;
+            var read = await InputLimits.ReadBytesAsync(cacheFile, MaxFaviconBytes);
+            if (read.Ok)
+            {
+                var cached = await DecodeAsync(read.Bytes);
+                if (cached is not null)
+                    return cached;
+            }
+            else
+            {
+                Diag.Log($"IconService: cached favicon '{cacheFile}' not read: {read.Error}");
+            }
         }
 
         // 2. Fetch, preferring the site's own favicon (no third party), then a service fallback.
@@ -463,16 +475,38 @@ public static class IconService
         return buffer.Length > 0 ? buffer.ToArray() : null;
     }
 
+    /// <summary>
+    /// How long the decode confirmation below is waited for before the icon is given up on.
+    /// <para>
+    /// A <see cref="BitmapImage"/> reports its outcome by raising exactly one of
+    /// <c>ImageOpened</c> / <c>ImageFailed</c> — so awaiting that pair is how the decode is
+    /// confirmed, and awaiting it <em>unbounded</em> is a bet that one of them always arrives.
+    /// Nothing in the contract guarantees it: the events are raised on the dispatcher after
+    /// <c>SetSourceAsync</c> returns, so an image whose window is torn down in between, or a
+    /// decoder that answers neither way, leaves the await pending for the life of the process.
+    /// That is one orphaned task and one held <see cref="BitmapImage"/> per item, and
+    /// <c>LoadIconAsync</c> runs once per item on every render — so the accumulation is per
+    /// summon, not one-off. A ceiling turns "never answers" into "answers no", which is what the
+    /// caller already handles (the glyph fallback).
+    /// </para>
+    /// </summary>
+    private static readonly TimeSpan DecodeTimeout = TimeSpan.FromSeconds(5);
+
     /// <summary>Decodes raw bytes into a BitmapImage, confirming the decode actually succeeded
     /// (so a 200-OK HTML error page never gets shown as a broken image).</summary>
     private static async Task<ImageSource?> DecodeAsync(byte[] bytes)
     {
+        // Declared out here so the finally can detach them, constructed inside the try so that a
+        // BitmapImage refused on the calling thread is still the caught "no icon" this method has
+        // always returned rather than a throw out of an icon load.
+        BitmapImage? bmp = null;
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnOpened(object s, Microsoft.UI.Xaml.RoutedEventArgs e) => tcs.TrySetResult(true);
+        void OnFailed(object s, Microsoft.UI.Xaml.ExceptionRoutedEventArgs e) => tcs.TrySetResult(false);
+
         try
         {
-            var bmp = new BitmapImage();
-            var tcs = new TaskCompletionSource<bool>();
-            void OnOpened(object s, Microsoft.UI.Xaml.RoutedEventArgs e) => tcs.TrySetResult(true);
-            void OnFailed(object s, Microsoft.UI.Xaml.ExceptionRoutedEventArgs e) => tcs.TrySetResult(false);
+            bmp = new BitmapImage();
             bmp.ImageOpened += OnOpened;
             bmp.ImageFailed += OnFailed;
 
@@ -489,15 +523,27 @@ public static class IconService
                 await bmp.SetSourceAsync(ras);
             }
 
-            bool ok = await tcs.Task;
-            bmp.ImageOpened -= OnOpened;
-            bmp.ImageFailed -= OnFailed;
-            return ok ? bmp : null;
+            if (await Task.WhenAny(tcs.Task, Task.Delay(DecodeTimeout)) != tcs.Task)
+            {
+                Diag.Log($"IconService: decode of {bytes.Length} bytes reported neither opened nor failed within {DecodeTimeout.TotalSeconds}s — using the default");
+                return null;
+            }
+            return await tcs.Task ? bmp : null;
         }
         catch (Exception ex)
         {
             Diag.Log($"IconService: decode failed ({bytes.Length} bytes): {ex.GetType().Name}: {ex.Message}");
             return null;
+        }
+        finally
+        {
+            // In a finally, not on the success path alone: the throwing and timing-out paths are
+            // exactly the ones that leave the handlers attached to a bitmap nothing else reaches.
+            if (bmp is not null)
+            {
+                bmp.ImageOpened -= OnOpened;
+                bmp.ImageFailed -= OnFailed;
+            }
         }
     }
 

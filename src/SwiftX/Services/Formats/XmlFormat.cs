@@ -124,9 +124,11 @@ public sealed class XmlFormat : IDataFormat
             MaxCharactersFromEntities = 1024,
             IgnoreWhitespace = true,
         });
-        var document = XDocument.Load(reader, LoadOptions.None);
-        EnsureWithinDepthLimit(document);
-        return document;
+        // The depth ceiling is applied by the reader, so the refusal happens on the way in rather
+        // than after a tree exists — see DepthLimitedXmlReader for why that distinction is the
+        // whole guard rather than a detail of where it is written.
+        using var bounded = new DepthLimitedXmlReader(reader, MaxDepth);
+        return XDocument.Load(bounded, LoadOptions.None);
     }
 
     /// <summary>
@@ -152,27 +154,90 @@ public sealed class XmlFormat : IDataFormat
     /// to build a multi-gigabyte string and threw <see cref="OutOfMemoryException"/>, which the
     /// <see cref="XmlException"/> handlers around it do not catch.</item>
     /// </list>
+    /// <list type="number" start="3">
+    /// <item><b>A hang, from building the tree at all.</b> The two guards above were enforced by
+    /// walking the loaded <see cref="XDocument"/>, which meant the ceiling could only be applied
+    /// once the document it was meant to refuse had already been constructed — and
+    /// <see cref="XDocument.Load(XmlReader, LoadOptions)"/> is superlinear in nesting depth.
+    /// Measured on the nested-<c>&lt;a&gt;</c> chain: 231 ms at depth 10000, 2.2 s at 20000,
+    /// 10.5 s at 40000 and <b>73 s at 100000</b> — the last from 700 KB of text, an eighth of
+    /// Quick Format's own <c>MaxQuickFormatChars</c> and a seventieth of
+    /// <see cref="Services.InputLimits.MaxTextBytes"/>. The walk that then refused it took
+    /// 0.1 ms, which is exactly the problem: the guard was correct and ran after the expensive
+    /// part. Quick Format reads the clipboard unprompted, so this was reachable by pasting.</item>
+    /// </list>
     /// <para>
-    /// Enforced here, on the one shared load path, so all four public entry points
-    /// (Format/Minify/Validate/ToCanonical) inherit it. The walk is iterative on an explicit
-    /// stack: recursing to measure the nesting would be the very thing being guarded against.
+    /// Enforced by <see cref="DepthLimitedXmlReader"/> on the one shared load path, so all four
+    /// public entry points (Format/Minify/Validate/ToCanonical) inherit it. Refusing during the
+    /// read rather than after it holds the cost of a too-deep document to the first
+    /// <see cref="MaxDepth"/> levels regardless of how much follows: the same inputs now refuse in
+    /// 0.1 ms at every depth measured, up to 200000 levels / 1.4 MB.
     /// </para>
     /// </summary>
-    private static void EnsureWithinDepthLimit(XDocument document)
+    private sealed class DepthLimitedXmlReader(XmlReader inner, int maxDepth) : XmlReader, IXmlLineInfo
     {
-        if (document.Root is null)
-            return;
-
-        var pending = new Stack<(XElement Element, int Depth)>();
-        pending.Push((document.Root, 1));
-        while (pending.Count > 0)
+        /// <summary>
+        /// The one member that is not a pass-through.
+        /// <para>
+        /// Counted over <see cref="XmlNodeType.Element"/> nodes only, which is what makes this
+        /// the same ceiling the tree walk it replaced applied rather than a slightly tighter one.
+        /// <see cref="XmlReader.Depth"/> is 0 at the root element, so an element at depth
+        /// <c>maxDepth</c> is the <c>maxDepth + 1</c>th level and the first one to refuse — and a
+        /// text node is one deeper than the element holding it, so <c>&lt;a&gt;leaf&lt;/a&gt;</c>
+        /// nested exactly <see cref="MaxDepth"/> times must not be refused on account of its
+        /// leaf. Both sides are pinned by
+        /// <c>XmlAtTheDepthLimit_IsAccepted_AndOnlyThePastItIsRefused</c>.
+        /// </para>
+        /// </summary>
+        public override bool Read()
         {
-            var (element, depth) = pending.Pop();
-            if (depth > MaxDepth)
-                throw new XmlException($"Document is nested more than {MaxDepth} levels deep.");
-            foreach (var child in element.Elements())
-                pending.Push((child, depth + 1));
+            if (!inner.Read())
+                return false;
+            if (inner.NodeType == XmlNodeType.Element && inner.Depth >= maxDepth)
+                throw new XmlException($"Document is nested more than {maxDepth} levels deep.");
+            return true;
         }
+
+        // Everything below delegates. IXmlLineInfo is carried through as well so that a parse
+        // error keeps the line/column ToDiagnostic reports; XDocument tests the reader it is given
+        // for that interface, and a wrapper that dropped it would silently zero every diagnostic.
+        public override int AttributeCount => inner.AttributeCount;
+        public override string BaseURI => inner.BaseURI;
+        public override int Depth => inner.Depth;
+        public override bool EOF => inner.EOF;
+        public override bool HasValue => inner.HasValue;
+        public override bool IsDefault => inner.IsDefault;
+        public override bool IsEmptyElement => inner.IsEmptyElement;
+        public override string LocalName => inner.LocalName;
+        public override string NamespaceURI => inner.NamespaceURI;
+        public override XmlNameTable NameTable => inner.NameTable;
+        public override XmlNodeType NodeType => inner.NodeType;
+        public override string Prefix => inner.Prefix;
+        public override ReadState ReadState => inner.ReadState;
+        public override XmlReaderSettings? Settings => inner.Settings;
+        public override string Value => inner.Value;
+        public override string XmlLang => inner.XmlLang;
+        public override XmlSpace XmlSpace => inner.XmlSpace;
+
+        public override string GetAttribute(int i) => inner.GetAttribute(i);
+        public override string? GetAttribute(string name) => inner.GetAttribute(name);
+        public override string? GetAttribute(string name, string? namespaceURI) => inner.GetAttribute(name, namespaceURI);
+        public override string? LookupNamespace(string prefix) => inner.LookupNamespace(prefix);
+        public override bool MoveToAttribute(string name) => inner.MoveToAttribute(name);
+        public override bool MoveToAttribute(string name, string? ns) => inner.MoveToAttribute(name, ns);
+        public override bool MoveToElement() => inner.MoveToElement();
+        public override bool MoveToFirstAttribute() => inner.MoveToFirstAttribute();
+        public override bool MoveToNextAttribute() => inner.MoveToNextAttribute();
+        public override bool ReadAttributeValue() => inner.ReadAttributeValue();
+        public override void ResolveEntity() => inner.ResolveEntity();
+
+        public bool HasLineInfo() => inner is IXmlLineInfo info && info.HasLineInfo();
+        public int LineNumber => inner is IXmlLineInfo info ? info.LineNumber : 0;
+        public int LinePosition => inner is IXmlLineInfo info ? info.LinePosition : 0;
+
+        // Deliberately does not close the inner reader: LoadSecure owns it in its own `using`,
+        // and disposing it twice is the caller's bug to not have, not this wrapper's to cause.
+        protected override void Dispose(bool disposing) { }
     }
 
     private static XmlWriterSettings WriterSettings(bool indent, int indentWidth) => new()
@@ -231,7 +296,7 @@ public sealed class XmlFormat : IDataFormat
     }
 
     /// <summary>
-    /// The write-side companion to <see cref="EnsureWithinDepthLimit"/>. Every
+    /// The write-side companion to <see cref="DepthLimitedXmlReader"/>. Every
     /// <see cref="DataNode"/> reaching here is produced by a <c>ToCanonical</c> that is itself
     /// depth-capped (XML by that guard, JSON by its parser's <c>MaxDepth</c>), so this is the
     /// belt to that pair of braces rather than the primary limit — but it is what keeps the

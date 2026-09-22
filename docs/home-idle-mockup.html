@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SwiftX — Home idle variations</title>
+  <style>
+    :root {
+      --bg: #1a1a1a;
+      --canvas: #222;
+      --card: #2c2c2c;
+      --border: #3a3a3a;
+      --text: #f3f3f3;
+      --muted: #9a9a9a;
+      --chip: #333;
+      --chip-on: #fff;
+      --chip-on-fg: #111;
+      --rate: 1;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: "Segoe UI", Cambria, Georgia, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .top {
+      position: sticky; top: 0; z-index: 10;
+      background: color-mix(in srgb, var(--bg) 90%, transparent);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+    }
+    .top-inner {
+      max-width: 1180px; margin: 0 auto;
+      padding: 14px 24px;
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.03em; }
+    .top a {
+      color: var(--muted); text-decoration: none; font-size: 13px;
+      border: 1px solid var(--border); padding: 6px 10px; border-radius: 8px;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 20px 24px 80px; }
+    .lede { color: var(--muted); font-size: 14px; line-height: 1.55; margin: 0 0 18px; max-width: 78ch; }
+    .lede strong { color: var(--text); }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+    .filters button {
+      font: inherit; cursor: pointer; color: var(--text);
+      background: var(--chip); border: 1px solid var(--border);
+      border-radius: 999px; padding: 6px 12px; font-size: 13px;
+    }
+    .filters button[aria-pressed="true"] {
+      background: var(--chip-on); color: var(--chip-on-fg); border-color: transparent; font-weight: 600;
+    }
+    .section-title {
+      font-size: 13px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase;
+      color: var(--muted); margin: 8px 0 12px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 14px 16px;
+      display: flex; flex-direction: column; align-items: center; gap: 12px;
+    }
+    .card.hidden { display: none; }
+    .stage {
+      width: 160px; height: 160px;
+      background: var(--canvas);
+      border-radius: 12px;
+      display: grid; place-items: center;
+      filter: drop-shadow(0 8px 16px rgba(0,0,0,.35));
+    }
+    .stage svg { width: 148px; height: 148px; overflow: visible; display: block; }
+    .card h2 { margin: 0; font-size: 14px; font-weight: 650; text-align: center; }
+    .card p { margin: 0; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.4; min-height: 2.8em; }
+
+    /* shared mark bits */
+    .guide {
+      fill: none;
+      stroke: color-mix(in srgb, var(--text) 28%, transparent);
+      stroke-width: 0.55;
+      stroke-dasharray: 1.2 1.6;
+      opacity: .85;
+    }
+    .bubble { filter: drop-shadow(0 0.5px 0.7px rgba(0,0,0,.35)); }
+    .hub {
+      transform-box: view-box;
+      transform-origin: 50% 50%;
+    }
+    .ring {
+      transform-box: view-box;
+      transform-origin: 50% 50%;
+    }
+    .cell {
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    /* —— Orbit variants —— */
+    .o-steady .hub { transform: scale(0.32); }
+    .o-steady .ring { animation: revolve calc(8s / var(--rate)) linear infinite; }
+
+    .o-slow .hub { transform: scale(0.32); }
+    .o-slow .ring { animation: revolve calc(16s / var(--rate)) linear infinite; }
+
+    .o-fast .hub { transform: scale(0.32); }
+    .o-fast .ring { animation: revolve calc(4s / var(--rate)) linear infinite; }
+
+    .o-ccw .hub { transform: scale(0.32); }
+    .o-ccw .ring { animation: revolve-ccw calc(8s / var(--rate)) linear infinite; }
+
+    .o-tick .hub { transform: scale(0.32); }
+    .o-tick .ring { animation: tick45 calc(4.8s / var(--rate)) steps(8) infinite; }
+
+    .o-pendulum .hub { transform: scale(0.32); }
+    .o-pendulum .ring { animation: sway calc(3.6s / var(--rate)) ease-in-out infinite; }
+
+    .o-pause .hub { transform: scale(0.32); }
+    .o-pause .ring { animation: pause-go calc(6s / var(--rate)) ease-in-out infinite; }
+
+    .o-tiny-hub .hub { transform: scale(0.22); }
+    .o-tiny-hub .ring { animation: revolve calc(8s / var(--rate)) linear infinite; }
+
+    .o-mid-hub .hub { transform: scale(0.42); }
+    .o-mid-hub .ring { animation: revolve calc(8s / var(--rate)) linear infinite; }
+
+    .o-hub-pulse .hub { transform: scale(0.32); animation: hub-breathe calc(2.4s / var(--rate)) ease-in-out infinite; }
+    .o-hub-pulse .ring { animation: revolve calc(8s / var(--rate)) linear infinite; }
+
+    .o-radius .hub { transform: scale(0.32); }
+    .o-radius .ring { animation: revolve calc(8s / var(--rate)) linear infinite; }
+    .o-radius .bubble { transform-box: fill-box; transform-origin: center; animation: bubble-pulse calc(2s / var(--rate)) ease-in-out infinite; animation-delay: calc(var(--i) * 80ms / var(--rate)); }
+
+    .o-chase .hub { transform: scale(0.32); }
+    .o-chase .ring { animation: revolve calc(10s / var(--rate)) linear infinite; }
+    .o-chase .bubble { transform-box: fill-box; transform-origin: center; animation: bubble-chase calc(1.6s / var(--rate)) ease-in-out infinite; animation-delay: calc(var(--i) * 100ms / var(--rate)); }
+
+    .o-upright .hub { transform: scale(0.32); }
+    .o-upright .ring { animation: revolve calc(8s / var(--rate)) linear infinite; }
+    .o-upright .bubble { transform-box: fill-box; transform-origin: center; animation: counter-spin calc(8s / var(--rate)) linear infinite; }
+
+    .o-no-guide .hub { transform: scale(0.32); }
+    .o-no-guide .guide { display: none; }
+    .o-no-guide .ring { animation: revolve calc(8s / var(--rate)) linear infinite; }
+
+    .o-drift .hub { transform: scale(0.32); animation: hub-drift calc(5s / var(--rate)) ease-in-out infinite; }
+    .o-drift .ring { animation: revolve calc(9s / var(--rate)) linear infinite; }
+
+    @keyframes revolve { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes revolve-ccw { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+    @keyframes counter-spin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+    @keyframes tick45 { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes sway {
+      0%, 100% { transform: rotate(-22deg); }
+      50% { transform: rotate(22deg); }
+    }
+    @keyframes pause-go {
+      0% { transform: rotate(0deg); }
+      18% { transform: rotate(45deg); }
+      25% { transform: rotate(45deg); }
+      43% { transform: rotate(90deg); }
+      50% { transform: rotate(90deg); }
+      68% { transform: rotate(135deg); }
+      75% { transform: rotate(135deg); }
+      93% { transform: rotate(180deg); }
+      100% { transform: rotate(180deg); }
+    }
+    @keyframes hub-breathe {
+      0%, 100% { transform: scale(0.30); }
+      50% { transform: scale(0.38); }
+    }
+    @keyframes hub-drift {
+      0%, 100% { transform: scale(0.32) rotate(0deg); }
+      50% { transform: scale(0.32) rotate(12deg); }
+    }
+    @keyframes bubble-pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.18); }
+    }
+    @keyframes bubble-chase {
+      0%, 100% { transform: scale(1); opacity: 0.55; }
+      40% { transform: scale(1.22); opacity: 1; }
+    }
+
+    /* —— Tools variants —— */
+    .t-scramble .cell {
+      animation: scramble calc(3200ms / var(--rate)) both infinite;
+      animation-delay: calc(var(--k) * 28ms / var(--rate));
+    }
+    .t-soft .cell {
+      animation: soft-scramble calc(3600ms / var(--rate)) both infinite;
+      animation-delay: calc(var(--k) * 28ms / var(--rate));
+    }
+    .t-breathe .cell {
+      animation: cell-breathe calc(2400ms / var(--rate)) ease-in-out infinite;
+      animation-delay: calc(var(--k) * 40ms / var(--rate));
+    }
+    .t-wave .cell {
+      animation: cell-wave calc(2200ms / var(--rate)) ease-in-out infinite;
+      animation-delay: calc((var(--col) + var(--row)) * 70ms / var(--rate));
+    }
+    .t-rows .cell {
+      animation: row-slide calc(2800ms / var(--rate)) both infinite;
+      animation-delay: calc(var(--row) * 120ms / var(--rate));
+    }
+    .t-cols .cell {
+      animation: col-drop calc(2800ms / var(--rate)) both infinite;
+      animation-delay: calc(var(--col) * 120ms / var(--rate));
+    }
+    .t-checker .cell {
+      animation: checker calc(2000ms / var(--rate)) ease-in-out infinite;
+      animation-delay: calc(((var(--col) + var(--row)) % 2) * 200ms / var(--rate));
+    }
+    .t-chase .cell {
+      animation: opacity-chase calc(1800ms / var(--rate)) linear infinite;
+      animation-delay: calc(var(--k) * 70ms / var(--rate));
+    }
+    .t-spin .cell {
+      animation: cell-spin calc(3000ms / var(--rate)) both infinite;
+      animation-delay: calc(var(--k) * 35ms / var(--rate));
+    }
+    .t-pack .cell {
+      animation: pack calc(2600ms / var(--rate)) ease-in-out infinite;
+      animation-delay: calc(var(--k) * 20ms / var(--rate));
+    }
+    .t-spiral .cell {
+      animation: spiral-out calc(3400ms / var(--rate)) both infinite;
+      animation-delay: calc(var(--ring) * 90ms / var(--rate));
+    }
+    .t-diag .cell {
+      animation: scramble calc(3000ms / var(--rate)) both infinite;
+      animation-delay: calc((var(--col) + var(--row)) * 55ms / var(--rate));
+    }
+    .t-float .cell {
+      animation: cell-float calc(2800ms / var(--rate)) ease-in-out infinite;
+      animation-delay: calc(var(--k) * 50ms / var(--rate));
+    }
+    .t-flash .cell {
+      animation: flash-scramble calc(2400ms / var(--rate)) both infinite;
+      animation-delay: calc(var(--k) * 22ms / var(--rate));
+    }
+    .t-gap .cell {
+      animation: gap-breathe calc(2600ms / var(--rate)) ease-in-out infinite;
+    }
+
+    @keyframes scramble {
+      0%, 12% { transform: none; }
+      32% { transform: translate(var(--jx), var(--jy)) scale(0.85); }
+      52%, 100% { transform: none; }
+    }
+    @keyframes soft-scramble {
+      0%, 18% { transform: none; }
+      40% { transform: translate(calc(var(--jx) * 0.45), calc(var(--jy) * 0.45)) scale(0.94); }
+      62%, 100% { transform: none; }
+    }
+    @keyframes cell-breathe {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(0.78); }
+    }
+    @keyframes cell-wave {
+      0%, 100% { transform: scale(1); }
+      35% { transform: scale(1.12); }
+      55% { transform: scale(0.9); }
+    }
+    @keyframes row-slide {
+      0%, 15%, 85%, 100% { transform: none; }
+      40% { transform: translateX(var(--jx)); }
+      60% { transform: none; }
+    }
+    @keyframes col-drop {
+      0%, 15%, 85%, 100% { transform: none; }
+      40% { transform: translateY(var(--jy)); }
+      60% { transform: none; }
+    }
+    @keyframes checker {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.72); opacity: 0.75; }
+    }
+    @keyframes opacity-chase {
+      0%, 100% { opacity: 0.35; transform: scale(0.92); }
+      30% { opacity: 1; transform: scale(1.06); }
+    }
+    @keyframes cell-spin {
+      0%, 10% { transform: none; }
+      35% { transform: rotate(90deg) scale(0.9); }
+      55%, 100% { transform: none; }
+    }
+    @keyframes pack {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      45% { transform: translate(calc((1.5 - var(--col)) * 18%), calc((1.5 - var(--row)) * 18%)) scale(0.88); }
+    }
+    @keyframes spiral-out {
+      0%, 12% { transform: none; }
+      35% { transform: translate(var(--jx), var(--jy)) rotate(18deg) scale(0.82); }
+      58%, 100% { transform: none; }
+    }
+    @keyframes cell-float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10%); }
+    }
+    @keyframes flash-scramble {
+      0%, 8% { transform: none; filter: brightness(1); }
+      22% { transform: translate(var(--jx), var(--jy)) scale(0.8); filter: brightness(1.25); }
+      45%, 100% { transform: none; filter: brightness(1); }
+    }
+    @keyframes gap-breathe {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(0.86); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .stage * { animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="top-inner">
+      <h1>Home idle — variations</h1>
+      <a href="logo-petal-animations.html">← petal catalog</a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <p class="lede">
+      Same constraints as before: <strong>Orbit</strong> keeps a small hub and revolves dock bubbles (no join-back);
+      <strong>Tools</strong> keeps the 4×4 grid as the rest mark and only animates it.
+      Pick a pair when you’re ready to implement.
+    </p>
+    <div class="filters" role="group" aria-label="Filter">
+      <button type="button" data-filter="all" aria-pressed="true">All</button>
+      <button type="button" data-filter="orbit" aria-pressed="false">Orbit</button>
+      <button type="button" data-filter="tools" aria-pressed="false">Tools</button>
+    </div>
+
+    <div class="section-title" data-section="orbit">Orbit</div>
+    <div class="grid" id="orbitGrid"></div>
+
+    <div class="section-title" data-section="tools" style="margin-top:28px">Tools</div>
+    <div class="grid" id="toolsGrid"></div>
+  </div>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="g-tl" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#FF0A76"/><stop offset="1" stop-color="#FFD510"/>
+      </linearGradient>
+      <linearGradient id="g-tr" x1="1" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#2CD098"/><stop offset="1" stop-color="#1D4ADB"/>
+      </linearGradient>
+      <linearGradient id="g-br" x1="1" y1="1" x2="0" y2="0">
+        <stop offset="0" stop-color="#F1067E"/><stop offset="1" stop-color="#1A65B5"/>
+      </linearGradient>
+      <linearGradient id="g-bl" x1="0" y1="1" x2="1" y2="0">
+        <stop offset="0" stop-color="#2CD098"/><stop offset="1" stop-color="#1D4ADB"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <script>
+    const PETAL = 23.4, GAP = 1.2, FAR = PETAL + GAP;
+    const FILLS = ["url(#g-tl)", "url(#g-tr)", "url(#g-br)", "url(#g-bl)"];
+
+    function mainPath() {
+      const s = PETAL, r = s * 0.466;
+      return `M 0 0 L ${s - r} 0 A ${r} ${r} 0 0 1 ${s} ${r} L ${s} ${s} L ${r} ${s} A ${r} ${r} 0 0 1 0 ${s - r} Z`;
+    }
+    function antiPath() {
+      const s = PETAL, r = s * 0.466;
+      return `M ${s} 0 L ${s} ${s - r} A ${r} ${r} 0 0 1 ${s - r} ${s} L 0 ${s} L 0 ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
+    }
+
+    function orbitSvg() {
+      const CX = 24, CY = 24, R = 19;
+      const petals = [
+        { fill: FILLS[0], d: mainPath(), x: 0, y: 0 },
+        { fill: FILLS[1], d: antiPath(), x: FAR, y: 0 },
+        { fill: FILLS[2], d: mainPath(), x: FAR, y: FAR },
+        { fill: FILLS[3], d: antiPath(), x: 0, y: FAR },
+      ].map(p => `<g transform="translate(${p.x} ${p.y})"><path d="${p.d}" fill="${p.fill}"/></g>`).join("");
+
+      const bubbles = Array.from({ length: 8 }, (_, i) => {
+        const rad = (-90 + i * 45) * Math.PI / 180;
+        const ex = CX + R * Math.cos(rad);
+        const ey = CY + R * Math.sin(rad);
+        return `<circle class="bubble" style="--i:${i}" cx="${ex}" cy="${ey}" r="4.4" fill="${FILLS[i % 4]}"/>`;
+      }).join("");
+
+      return `<svg viewBox="-4 -4 56 56" aria-hidden="true">
+        <g class="hub">${petals}</g>
+        <g class="ring">
+          <circle class="guide" cx="${CX}" cy="${CY}" r="${R}"/>
+          ${bubbles}
+        </g>
+      </svg>`;
+    }
+
+    function toolsSvg() {
+      const cells = Array.from({ length: 16 }, (_, k) => {
+        const col = k % 4, row = Math.floor(k / 4);
+        const q = row < 2 ? (col < 2 ? 0 : 1) : (col < 2 ? 3 : 2);
+        const jx = (col % 2) ? "40%" : "-40%";
+        const jy = (row % 2) ? "40%" : "-40%";
+        const ring = Math.max(Math.abs(col - 1.5), Math.abs(row - 1.5));
+        return `<rect class="cell" x="${col * 12 + 0.4}" y="${row * 12 + 0.4}"
+          width="11.2" height="11.2" rx="1.8" fill="${FILLS[q]}"
+          style="--k:${k}; --col:${col}; --row:${row}; --ring:${ring}; --jx:${jx}; --jy:${jy};"/>`;
+      }).join("");
+      return `<svg viewBox="0 0 48 48" aria-hidden="true">${cells}</svg>`;
+    }
+
+    const ORBIT = [
+      { id: "o-steady", title: "Steady revolve", note: "Baseline — 8s continuous CW, hub 0.32" },
+      { id: "o-slow", title: "Slow drift", note: "Same layout, 16s/rev — quieter idle" },
+      { id: "o-fast", title: "Quick revolve", note: "4s/rev — more energy, easier to tire of" },
+      { id: "o-ccw", title: "Counter-clockwise", note: "Mirror direction of the baseline" },
+      { id: "o-tick", title: "Quarter ticks", note: "Steps of 45° — mechanical dock feel" },
+      { id: "o-pendulum", title: "Pendulum sway", note: "±22° rock instead of a full orbit" },
+      { id: "o-pause", title: "Pause & go", note: "Advance a slot, hold, advance — stop-motion" },
+      { id: "o-tiny-hub", title: "Tiny hub", note: "Hub 0.22 — bubbles dominate" },
+      { id: "o-mid-hub", title: "Mid hub", note: "Hub 0.42 — closer to today’s logo weight" },
+      { id: "o-hub-pulse", title: "Hub breathe", note: "Ring revolves; hub gently scales" },
+      { id: "o-radius", title: "Bubble pulse", note: "Bubbles scale in a soft wave while revolving" },
+      { id: "o-chase", title: "Highlight chase", note: "One bright bubble races around the ring" },
+      { id: "o-upright", title: "Upright bubbles", note: "Ferris-wheel: bubbles counter-rotate so fills stay level" },
+      { id: "o-no-guide", title: "No guide ring", note: "Cleaner — just hub + bubbles" },
+      { id: "o-drift", title: "Hub drift", note: "Hub slowly twists while the ring turns" },
+    ];
+
+    const TOOLS = [
+      { id: "t-scramble", title: "Scramble", note: "Baseline — jitter ±40%, settle, repeat" },
+      { id: "t-soft", title: "Soft scramble", note: "Half the travel — calmer encode feel" },
+      { id: "t-breathe", title: "Breathe", note: "Scale pulse only, staggered by cell" },
+      { id: "t-wave", title: "Ripple wave", note: "Diagonal wave across the grid" },
+      { id: "t-rows", title: "Row slide", note: "Rows nudge sideways then return" },
+      { id: "t-cols", title: "Column drop", note: "Columns nudge vertically then return" },
+      { id: "t-checker", title: "Checker pulse", note: "Alternating cells scale in pairs" },
+      { id: "t-chase", title: "Brightness chase", note: "A highlight runs cell-by-cell" },
+      { id: "t-spin", title: "Tile spin", note: "Each cell quarter-turns then settles" },
+      { id: "t-pack", title: "Pack to centre", note: "Grid tightens toward the middle, then opens" },
+      { id: "t-spiral", title: "Spiral resolve", note: "Outer ring scrambles first, inward" },
+      { id: "t-diag", title: "Diagonal cascade", note: "Scramble timed on col+row diagonal" },
+      { id: "t-float", title: "Float", note: "Gentle vertical bob — least “encode” of the set" },
+      { id: "t-flash", title: "Flash scramble", note: "Scramble with a brightness kick" },
+      { id: "t-gap", title: "Gap breathe", note: "All cells scale together — gap opens/closes" },
+    ];
+
+    function renderCards(target, items, kind, svg) {
+      target.innerHTML = items.map(item => `
+        <article class="card" data-kind="${kind}">
+          <div class="stage ${item.id}">${svg}</div>
+          <h2>${item.title}</h2>
+          <p>${item.note}</p>
+        </article>`).join("");
+    }
+
+    renderCards(document.getElementById("orbitGrid"), ORBIT, "orbit", orbitSvg());
+    renderCards(document.getElementById("toolsGrid"), TOOLS, "tools", toolsSvg());
+
+    const buttons = [...document.querySelectorAll(".filters button")];
+    buttons.forEach(btn => btn.addEventListener("click", () => {
+      const filter = btn.dataset.filter;
+      buttons.forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+      document.querySelectorAll(".card").forEach(card => {
+        card.classList.toggle("hidden", filter !== "all" && card.dataset.kind !== filter);
+      });
+      document.querySelectorAll("[data-section]").forEach(el => {
+        el.style.display = filter === "all" || el.dataset.section === filter ? "" : "none";
+      });
+    }));
+  </script>
+</body>
+</html>

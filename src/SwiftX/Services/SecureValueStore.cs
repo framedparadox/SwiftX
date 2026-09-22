@@ -125,18 +125,24 @@ public static class SecureValueStore
         return result;
     }
 
+    /// <summary>
+    /// Serializes writers against each other. This file has no merge and no backup — a save
+    /// replaces the whole record — so two overlapping saves losing each other's rows is the mild
+    /// outcome and the one worth designing for; see <see cref="AtomicWrite"/> for the outcome that
+    /// is not.
+    /// </summary>
+    private static readonly object SaveGate = new();
+
     public static void Save(IEnumerable<SecureValueEntry> entries)
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
             var plain = entries.Select(e => new PlainEntry { Id = e.Id, Key = e.Key, Value = e.Value }).ToList();
             var innerJson = JsonSerializer.Serialize(plain, Options);
             var file = new StoredFile { Version = CurrentVersion, Protected = Protect(innerJson) };
             var json = JsonSerializer.Serialize(file, Options);
-            var tmp = FilePath + ".tmp";
-            File.WriteAllText(tmp, json);
-            File.Move(tmp, FilePath, overwrite: true);
+            lock (SaveGate)
+                AtomicWrite.Publish(FilePath, json);
         }
         catch (Exception ex)
         {
