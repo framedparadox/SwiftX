@@ -281,6 +281,7 @@
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0"
                                 VerticalAlignment="Center">
                         <Button x:Name="ElementsShortcutButton" Style="{StaticResource ChromeIconButton}"
+                                Visibility="Collapsed"
                                 Click="ElementsShortcutButton_Click"
                                 AutomationProperties.Name="Elements"
                                 AutomationProperties.AutomationId="ShellElementsShortcut"
@@ -290,7 +291,8 @@
                                       Foreground="{ThemeResource SettingsHeaderBrush}" />
                         </Button>
 
-                        <Border x:Name="ThemeToggleLeadingDivider" Style="{StaticResource HeaderToolbarDivider}" />
+                        <Border x:Name="ThemeToggleLeadingDivider" Style="{StaticResource HeaderToolbarDivider}"
+                                Visibility="Collapsed" />
 
                         <Button x:Name="ThemeToggleButton" Style="{StaticResource ChromeIconButton}"
                                 Click="ThemeToggleButton_Click"
@@ -386,7 +388,7 @@
                                        TextAlignment="Center" />
                             <StackPanel x:Name="HomeToolsHoverIcons" Orientation="Horizontal" Spacing="8"
                                         HorizontalAlignment="Center" />
-                            <Button Content="Open Tools" Padding="14,6" CornerRadius="6"
+                            <Button Content="Open Dev Tools" Padding="14,6" CornerRadius="6"
                                     HorizontalAlignment="Center"
                                     Click="ToolsBox_Click" />
                         </StackPanel>
@@ -419,11 +421,11 @@
                             PointerEntered="HomeToolsHover_PointerEntered"
                             PointerExited="HomeToolsHover_PointerExited"
                             AutomationProperties.AutomationId="ShellBoxTools"
-                            AutomationProperties.Name="Tools">
+                            AutomationProperties.Name="Dev Tools">
                         <StackPanel Spacing="20" HorizontalAlignment="Center">
                             <ContentControl x:Name="HomeToolsMarkHost" Width="160" Height="160"
                                             HorizontalAlignment="Center" IsTabStop="False" />
-                            <TextBlock Text="Tools" FontSize="22" FontWeight="Bold"
+                            <TextBlock Text="Dev Tools" FontSize="22" FontWeight="Bold"
                                        TextAlignment="Center" HorizontalAlignment="Center"
                                        Foreground="{ThemeResource SettingsTitleBrush}" />
                         </StackPanel>
@@ -558,7 +560,11 @@
                     <ColumnDefinition Width="320" />
                 </Grid.ColumnDefinitions>
 
-                <Grid Grid.Column="0" Background="{ThemeResource OrbitCanvasBackgroundBrush}">
+                <!-- Transparent so the window's own background shows through once. Painting
+                     OrbitCanvasBackgroundBrush here stacked a second #D9 plate on Dark's Mica
+                     and made this column darker than the title bar and the gutter beside the
+                     settings card. -->
+                <Grid Grid.Column="0" Background="Transparent">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="68" />
                         <RowDefinition Height="*" />
@@ -596,7 +602,7 @@
 
                         <!-- Elements reveals the "ADD TO ORBIT" sidebar (SetOrbitEditing(true))
                              and Settings reveals the orbit's own settings sidebar. -->
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4"
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="0"
                                     VerticalAlignment="Center">
                             <Button x:Name="OrbitElementsButton" Style="{StaticResource ChromeIconButton}"
                                     Click="OrbitElementsButton_Click"
@@ -606,6 +612,7 @@
                                           Data="M 8,0.5 L 15.5,4.5 L 15.5,11.5 L 8,15.5 L 0.5,11.5 L 0.5,4.5 Z"
                                           Foreground="{ThemeResource SettingsHeaderBrush}" />
                             </Button>
+                            <Border Style="{StaticResource HeaderToolbarDivider}" />
                             <Button x:Name="OrbitSidebarSettingsButton" Style="{StaticResource ChromeIconButton}"
                                     Click="OrbitSidebarSettingsButton_Click"
                                     AutomationProperties.Name="Orbit settings"
@@ -1205,7 +1212,7 @@
                                   FontFamily="{ThemeResource SymbolThemeFontFamily}"
                                   Foreground="{ThemeResource SettingsHeaderBrush}" />
                     </Button>
-                    <TextBlock Text="Tools" Style="{StaticResource ScreenTitle}" />
+                    <TextBlock Text="Dev Tools" Style="{StaticResource ScreenTitle}" />
                 </StackPanel>
 
                 <ScrollViewer Grid.Row="1" Padding="48,8,64,48">

@@ -146,15 +146,17 @@ public static class AppLogo
 
     /// <summary>
     /// The four petals as a hot-corner picker: top-left / top-right / bottom-right / bottom-left
-    /// <summary>
-    /// The four petals as a hot-corner picker: top-left / top-right / bottom-right / bottom-left
-    /// leaves map onto those screen corners. The selected leaf is full strength; the other three
-    /// sit dimmed so the mark still reads as the logo. When <paramref name="onPicked"/> is set,
+    /// leaves map onto those screen corners. Every leaf stays at full strength, so the mark reads
+    /// as the whole logo. The chosen corner is a thin outline in <paramref name="selectionStroke"/>
+    /// (the shell's own header colour, never the accent). When <paramref name="onPicked"/> is set,
     /// each leaf is a hit target; otherwise this is a static glyph (the orbit preview's corner
     /// button).
     /// </summary>
     public static FrameworkElement CreateCornerGlyph(
-        double size, HotCorner selected, Action<HotCorner>? onPicked = null)
+        double size,
+        HotCorner selected,
+        Action<HotCorner>? onPicked = null,
+        Brush? selectionStroke = null)
     {
         double edge = size > 0 ? size : NominalSize;
         var canvas = new Canvas
@@ -167,8 +169,14 @@ public static class AppLogo
         void AddPetal(int column, int row, Windows.UI.Color outer, Windows.UI.Color inner, HotCorner corner)
         {
             var petal = Petal(column, row, outer, inner);
-            petal.Opacity = corner == selected ? 1 : 0.32;
+            petal.Opacity = 1;
             petal.IsHitTestVisible = false;
+            if (corner == selected && selectionStroke is not null)
+            {
+                petal.Stroke = selectionStroke;
+                petal.StrokeThickness = 1.75;
+                petal.StrokeLineJoin = PenLineJoin.Round;
+            }
             canvas.Children.Add(petal);
         }
 

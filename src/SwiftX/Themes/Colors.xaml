@@ -175,10 +175,9 @@
             <SolidColorBrush x:Key="ShellToolbarIconBrush" Color="#BBBBBB"/>
             <SolidColorBrush x:Key="ShellSeparatorBrush" Color="#505050"/>
 
-            <!-- Orbit Settings plates align with ShellBackgroundBrush / ShellCardBackgroundBrush
-                 so Dark Orbit matches the rest of the app shell. Ring accent, nodes, hub and
-                 pills stay on their own palette (Logi's teal canvas family). -->
-            <SolidColorBrush x:Key="OrbitCanvasBackgroundBrush" Color="#D92B2B2B"/>
+            <!-- The orbit canvas ground is the app background (ShellBackgroundBrush). The sidebar
+                 stays a card on top of it. Ring accent, nodes, hub and pills keep their own palette. -->
+            <StaticResource x:Key="OrbitCanvasBackgroundBrush" ResourceKey="ShellBackgroundBrush"/>
             <SolidColorBrush x:Key="OrbitCanvasBorderBrush" Color="#333333"/>
             <SolidColorBrush x:Key="OrbitNodeBackgroundBrush" Color="#1A1A1A"/>
             <SolidColorBrush x:Key="OrbitHubBrush" Color="#282828"/>
@@ -327,13 +326,10 @@
             <SolidColorBrush x:Key="ShellToolbarIconBrush" Color="#555555"/>
             <SolidColorBrush x:Key="ShellSeparatorBrush" Color="#CCCCCC"/>
 
-            <!-- The Orbit screen's own canvas palette. Deliberately a different family from the
-                 Shell* tokens above: docs/full-app-mockups-logi-base.md records that Logi runs two
-                 accents of its own — app chrome violet, ring canvas teal — and keeps the ring's
-                 surfaces darker than the app's. The Orbit screen is built to that split (see
-                 docs/images/17-app-ring.svg, which is where every value here comes from), so the
-                 canvas reads as its own place rather than another page of Settings. -->
-            <SolidColorBrush x:Key="OrbitCanvasBackgroundBrush" Color="#F7F9FB"/>
+            <!-- Canvas ground matches the app background (ShellBackgroundBrush, #F2F2F2). The
+                 sidebar stays a white card on top of that ground. Nodes, hub and pills keep the
+                 ring palette. -->
+            <StaticResource x:Key="OrbitCanvasBackgroundBrush" ResourceKey="ShellBackgroundBrush"/>
             <SolidColorBrush x:Key="OrbitCanvasBorderBrush" Color="#D8DEE6"/>
             <SolidColorBrush x:Key="OrbitNodeBackgroundBrush" Color="#FFFFFF"/>
             <SolidColorBrush x:Key="OrbitHubBrush" Color="#E4E9EF"/>
@@ -434,10 +430,9 @@
             <SolidColorBrush x:Key="ShellToolbarIconBrush" Color="#BBBBBB"/>
             <SolidColorBrush x:Key="ShellSeparatorBrush" Color="#505050"/>
 
-            <!-- Orbit Settings plates align with ShellBackgroundBrush / ShellCardBackgroundBrush
-                 so Dark Orbit matches the rest of the app shell. Ring accent, nodes, hub and
-                 pills stay on their own palette (Logi's teal canvas family). -->
-            <SolidColorBrush x:Key="OrbitCanvasBackgroundBrush" Color="#D92B2B2B"/>
+            <!-- The orbit canvas ground is the app background (ShellBackgroundBrush). The sidebar
+                 stays a card on top of it. Ring accent, nodes, hub and pills keep their own palette. -->
+            <StaticResource x:Key="OrbitCanvasBackgroundBrush" ResourceKey="ShellBackgroundBrush"/>
             <SolidColorBrush x:Key="OrbitCanvasBorderBrush" Color="#333333"/>
             <SolidColorBrush x:Key="OrbitNodeBackgroundBrush" Color="#1A1A1A"/>
             <SolidColorBrush x:Key="OrbitHubBrush" Color="#282828"/>

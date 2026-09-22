@@ -1005,7 +1005,7 @@ public sealed partial class ShellWindow : Window
         int shown = tools.Count(t => _manager.Config.IsToolShown(t.Kind));
         HomeToolsHoverCount.Text = $"{shown} of {tools.Count} tools shown";
         HomeToolsHoverSummary.Text =
-            "Quick utilities that live in SwiftX — formatters, secrets, and the rest. Toggle which ones appear on the Tools page.";
+            "Quick utilities that live in SwiftX — formatters, secrets, and the rest. Toggle which ones appear on the Dev Tools page.";
         HomeToolsHoverMeta.Text = shown == 0
             ? "Every tool is currently hidden."
             : string.Join("  •  ", tools.Where(t => _manager.Config.IsToolShown(t.Kind)).Select(t => t.DisplayName));
@@ -1408,8 +1408,8 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// Glyph on the header theme button: the theme (or frost level) in effect, not the next press.
-    /// Hidden under Midnight. Under Frosted glass it tracks Light/Medium/Dark frost.
+    /// Glyph on the header theme button: brightness in Light, the power glyph in Dark.
+    /// Hidden under Midnight. Frosted glass keeps the brightness glyph at every frost level.
     /// </summary>
     private void UpdateThemeToggleIcon()
     {
@@ -1417,16 +1417,14 @@ public sealed partial class ShellWindow : Window
         ThemeToggleButton.Visibility = theme == AppTheme.Black
             ? Visibility.Collapsed
             : Visibility.Visible;
-        ThemeToggleLeadingDivider.Visibility = ThemeToggleButton.Visibility;
+        // The hairline that used to sit beside the Home Elements button stays hidden.
+        ThemeToggleLeadingDivider.Visibility = Visibility.Collapsed;
 
         ThemeToggleIcon.Glyph = theme switch
         {
-            AppTheme.FrostedGlass => _manager.Config.FrostedGlass switch
-            {
-                FrostedGlassLevel.Dark => "\uE708",
-                FrostedGlassLevel.Medium => "\uE7E8",
-                _ => "\uE706",
-            },
+            // Frosted glass keeps the theme glyph at every frost level. Dark frost used to
+            // borrow the power glyph (\uE708) that Dark mode uses.
+            AppTheme.FrostedGlass => "\uE706",
             _ when ThemeHelper.IsDark(Root) => "\uE708",
             _ => "\uE706",
         };
@@ -1838,8 +1836,8 @@ public sealed partial class ShellWindow : Window
     /// canvas corner that matches the chosen screen one, and switching the canvas between the
     /// orbit and what that corner would actually show.
     /// <para>
-    /// The mark is the four logo leaves, with the selected corner's leaf at full strength — the
-    /// same glyph the sidebar picker uses. While the quadrant preview is up, it swaps to a back
+    /// The mark is the whole logo at full strength, with the chosen corner outlined — the same
+    /// glyph the sidebar picker uses. While the quadrant preview is up, it swaps to a back
     /// chevron so the button reads as a way out rather than as another pointer at the corner it
     /// is already sitting in.
     /// </para>
@@ -1865,7 +1863,10 @@ public sealed partial class ShellWindow : Window
                     Glyph = "\uE72B",
                     FontSize = 14,
                 }
-                : AppLogo.CreateCornerGlyph(28, corner),
+                : AppLogo.CreateCornerGlyph(
+                    28,
+                    corner,
+                    selectionStroke: ThemeHelper.Brush(Root, "SettingsHeaderBrush")),
         };
         WireOrbitGlyphHover(button);
 
@@ -1886,8 +1887,9 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// Orbit canvas chrome (hot corner, Elements, Settings, info, reset): no disc on hover.
-    /// The glyph / logo tints to the accent instead.
+    /// Orbit canvas chrome (Elements, Settings, info, reset): no disc on hover. The glyph tints
+    /// to the accent. The hot-corner logo is the exception — its petals stay the brand mark and
+    /// the highlight is the whole logo at full strength.
     /// </summary>
     private void WireOrbitGlyphHover(Button button)
     {
@@ -1922,6 +1924,13 @@ public sealed partial class ShellWindow : Window
             }
             else if (node is Shape shape)
             {
+                // Logo petals (the hot-corner mark) keep their own gradients. Highlight
+                // means the whole logo at full strength, not a petal painted in the accent.
+                if (shape.Fill is LinearGradientBrush)
+                {
+                    shape.Opacity = 1;
+                    continue;
+                }
                 saved.Add((shape, shape.Fill));
                 shape.Fill = accent;
             }
@@ -6109,7 +6118,7 @@ public sealed partial class ShellWindow : Window
             _manager.ApplyHotCorner();
             RebuildHotCornerPicker(picked);
             RenderPreview();
-        });
+        }, ThemeHelper.Brush(Root, "SettingsHeaderBrush"));
     }
 
     private void SelectHotCornerLayout(HotCornerLayout layout)
