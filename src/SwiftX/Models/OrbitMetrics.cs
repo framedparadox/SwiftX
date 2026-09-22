@@ -9,6 +9,41 @@ public enum OrbitItemSize
 }
 
 /// <summary>
+/// The outline an orbit item is drawn with — a separate axis from <see cref="OrbitItemSize"/>,
+/// which says how much room an item takes rather than what fills it.
+/// <para>
+/// Persisted by name (see <see cref="AppConfig.ItemShape"/> and <c>OrbitStore</c>'s
+/// <c>JsonStringEnumConverter</c>), so these member names are part of the on-disk format and
+/// cannot be renamed without stranding every config that already carries one.
+/// </para>
+/// </summary>
+public enum OrbitItemShape
+{
+    /// <summary>A full disc — what every build before this one drew, and still what a fresh config gets.</summary>
+    Circle,
+
+    /// <summary>
+    /// A square whose corners are rounded far enough to read as soft without reading as round.
+    /// Named for the shape rather than described as one: "square with rounded edges" is a sentence,
+    /// and this is a value that has to survive being written into a config file.
+    /// </summary>
+    Squircle,
+
+    /// <summary>
+    /// A plain square. The corners are left genuinely sharp rather than nearly so — a square with
+    /// two pixels taken off its corners is just <see cref="Squircle"/> with a smaller number, and
+    /// then there is no shape on the list that is actually square.
+    /// </summary>
+    Square,
+
+    /// <summary>
+    /// A pointy-top hexagon with its vertices rounded off, so the outline reads as a hexagon
+    /// without the sharp corners a straight-edged one would put on a small bubble.
+    /// </summary>
+    Hexagon,
+}
+
+/// <summary>
 /// Orbit geometry. Two independent knobs, and only two:
 /// <list type="bullet">
 /// <item><see cref="ItemSize"/> — how big each item around the orbit is drawn.</item>
@@ -25,6 +60,7 @@ public enum OrbitItemSize
 public static class OrbitMetrics
 {
     public static OrbitItemSize ItemSize { get; private set; } = OrbitItemSize.Medium;
+    public static OrbitItemShape ItemShape { get; private set; } = OrbitItemShape.Circle;
     private static double? s_radiusOverride;
 
     public static event Action? Changed;
@@ -33,6 +69,19 @@ public static class OrbitMetrics
     {
         if (ItemSize == size) return;
         ItemSize = size;
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// The outline every bubble is drawn with. Lives here rather than being read out of
+    /// <see cref="AppConfig"/> at each draw site for the same reason <see cref="ItemSize"/> does:
+    /// the orbit, the hot-corner quadrant and the Orbit screen's preview all draw bubbles, and one
+    /// of them (the orbit) has no config reference of its own to read.
+    /// </summary>
+    public static void SetItemShape(OrbitItemShape shape)
+    {
+        if (ItemShape == shape) return;
+        ItemShape = shape;
         Changed?.Invoke();
     }
 
@@ -71,6 +120,28 @@ public static class OrbitMetrics
         _ => 16,
     };
 
+    /// <summary>
+    /// The corner radius a bubble <paramref name="size"/> across is drawn with under the current
+    /// <see cref="ItemShape"/> — the single place that turns the shape setting into geometry, so
+    /// the orbit, the flyout band, the corner quadrant and the preview cannot drift into drawing
+    /// three different shapes from one setting.
+    /// <para>
+    /// Expressed as a fraction of the size rather than a constant because every one of those
+    /// callers draws at a different diameter — the preview scales the whole orbit down, the flyout
+    /// band runs at 88% of the inner one — and a fixed 14px corner would read as a barely-nicked
+    /// square on a large bubble and as a circle on a small one. <see cref="OrbitItemShape.Circle"/>
+    /// falls out of the same expression as half the size, which is the value every call site used
+    /// to hard-code.
+    /// </para>
+    /// </summary>
+    public static double CornerRadiusFor(double size) => ItemShape switch
+    {
+        OrbitItemShape.Squircle => Math.Round(size * 0.28),
+        OrbitItemShape.Square => 0,
+        OrbitItemShape.Hexagon => 0,
+        _ => size / 2,
+    };
+
     // ---- Hub: fixed, unaffected by every setting -------------------------------------------
 
     /// <summary>Layout box the centered logo occupies. Nothing paints behind it.</summary>
@@ -80,15 +151,39 @@ public static class OrbitMetrics
 
     public static double DeadZone => 36;
 
-    /// <summary>How much an item grows under the pointer. Budgeted into <see cref="ContentRadius"/>.</summary>
+    /// <summary>
+    /// How much an item grows under the pointer. Budgeted into <see cref="ContentRadius"/>, which is
+    /// why <see cref="OrbitHoverStyle.Invert"/> and Zoom In share it: the layout leaves room for
+    /// exactly this much growth, and no hover style may ask for more.
+    /// </summary>
     public const double HoverScale = 1.14;
 
     /// <summary>
-    /// How much an item shrinks under the pointer when <see cref="OrbitHoverStyle.Zoom"/> is
-    /// active — the alternative to <see cref="HoverScale"/> for someone who wants hover to read
-    /// as a recede rather than a color-inverted grow.
+    /// How much an item shrinks under the pointer when <see cref="OrbitHoverStyle.Zoom"/> is set
+    /// to <see cref="HoverZoomDirection.Out"/>: for someone who wants hover to read as a recede
+    /// rather than an offer.
     /// </summary>
-    public const double ZoomHoverScale = 0.92;
+    public const double ZoomOutHoverScale = 0.92;
+
+    /// <summary>
+    /// The scale an item settles at while under the pointer, for the configured hover style.
+    /// <para>
+    /// <paramref name="restScale"/> is what the item rests at when nothing is hovering it, which is
+    /// not always 1: a group whose flyout is open rests a little enlarged so that it reads as
+    /// active. It only matters to <see cref="OrbitHoverStyle.Tint"/> and
+    /// <see cref="OrbitHoverStyle.Animate"/>, whose whole contract is that hover leaves the settled
+    /// size alone (Animate's own motion moves the item about that size); anything else names its own
+    /// target size outright.
+    /// </para>
+    /// </summary>
+    public static double HoverScaleFor(
+        OrbitHoverStyle style, HoverZoomDirection direction, double restScale = 1) => style switch
+        {
+            OrbitHoverStyle.Zoom => direction == HoverZoomDirection.Out ? ZoomOutHoverScale : HoverScale,
+            OrbitHoverStyle.Tint => restScale,
+            OrbitHoverStyle.Animate => restScale,
+            _ => HoverScale,
+        };
 
     /// <summary>
     /// Close is the one item that moves the other way under the pointer: it shrinks, reading as

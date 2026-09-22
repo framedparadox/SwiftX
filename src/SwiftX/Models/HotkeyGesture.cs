@@ -24,9 +24,9 @@ public enum HotkeyModifiers
 /// </summary>
 public sealed class HotkeyGesture : IEquatable<HotkeyGesture>
 {
-    /// <summary>The shortcut SwiftX ships with: Ctrl+Shift+S.</summary>
+    /// <summary>The shortcut SwiftX ships with: Ctrl+Shift+X.</summary>
     public static HotkeyGesture Default { get; } =
-        new(HotkeyModifiers.Control | HotkeyModifiers.Shift, 0x53);
+        new(HotkeyModifiers.Control | HotkeyModifiers.Shift, 0x58);
 
     public HotkeyGesture(HotkeyModifiers modifiers, uint key)
     {

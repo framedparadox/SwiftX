@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="700" viewBox="0 0 1040 700" font-family="'Segoe UI',Inter,system-ui,sans-serif" role="img" aria-label="SwiftX Settings - Home, ring canvas and ring settings">
+<title>SwiftX Settings - Home, ring canvas and ring settings</title>
+<defs><filter id="sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.35"/></filter></defs>
+<rect width="1040" height="700" fill="#141414"/>
+<rect x="0" y="0" width="1040" height="40" rx="0" fill="#101010"/>
+<text x="16" y="25" font-size="12" font-weight="600" fill="#FFFFFF">◉  SwiftX Settings</text>
+<text x="1024" y="25" font-size="12" font-weight="400" fill="#9A9A9A" text-anchor="end">—   □   ✕</text>
+<rect x="0" y="40" width="270" height="660" rx="0" fill="#101010"/>
+<line x1="270" y1="40" x2="270" y2="700" stroke="#2E2E2E" stroke-width="1"/>
+<text x="32" y="96" font-size="30" font-weight="700" fill="#FFFFFF">SwiftX</text>
+<text x="32" y="130" font-size="30" font-weight="700" fill="#FFFFFF">Settings</text>
+<rect x="0" y="178" width="4" height="44" rx="0" fill="#3DDCD3"/>
+<text x="32" y="205" font-size="11" font-weight="700" fill="#3DDCD3" letter-spacing="1.6">HOME</text>
+<text x="32" y="249" font-size="11" font-weight="700" fill="#9A9A9A" letter-spacing="1.6">GENERAL</text>
+<text x="32" y="293" font-size="11" font-weight="700" fill="#9A9A9A" letter-spacing="1.6">ELEMENTS</text>
+<text x="32" y="337" font-size="11" font-weight="700" fill="#9A9A9A" letter-spacing="1.6">TOOLS</text>
+<line x1="24" y1="366" x2="246" y2="366" stroke="#2E2E2E" stroke-width="1"/>
+<text x="32" y="413" font-size="11" font-weight="700" fill="#9A9A9A" letter-spacing="1.6">FEEDBACK &amp; SUPPORT</text>
+<text x="32" y="457" font-size="11" font-weight="700" fill="#9A9A9A" letter-spacing="1.6">PRIVACY &amp; DATA</text>
+<text x="32" y="501" font-size="11" font-weight="700" fill="#9A9A9A" letter-spacing="1.6">ABOUT</text>
+<text x="318" y="96" font-size="22" font-weight="700" fill="#FFFFFF">Home</text>
+<text x="318" y="118" font-size="12" font-weight="400" fill="#9A9A9A">Click a slot or + to add; click an item for details; drag to rearrange.</text>
+<rect x="318" y="150" width="360" height="360" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1"/>
+<circle cx="498.0" cy="320.0" r="118" fill="none" stroke="#2E2E2E" stroke-width="1"/>
+<circle cx="498.0" cy="320.0" r="12" fill="#101010"/>
+<text x="498.0" y="324.0" font-size="10" font-weight="400" fill="#9A9A9A" text-anchor="middle">✕</text>
+<circle cx="498.0" cy="202.0" r="24" fill="#101010" stroke="#2E2E2E" stroke-width="1"/>
+<text x="498.0" y="206.0" font-size="9.5" font-weight="400" fill="#FFFFFF" text-anchor="middle">{ }</text>
+<circle cx="581.4386001800126" cy="236.5613998199874" r="24" fill="#101010" stroke="#2E2E2E" stroke-width="1"/>
+<text x="581.4386001800126" y="240.5613998199874" font-size="9.5" font-weight="400" fill="#FFFFFF" text-anchor="middle">KEY</text>
+<circle cx="616.0" cy="320.0" r="24" fill="#101010" stroke="#2E2E2E" stroke-width="1"/>
+<text x="616.0" y="324.0" font-size="9.5" font-weight="400" fill="#FFFFFF" text-anchor="middle">B64</text>
+<circle cx="581.4386001800126" cy="403.4386001800126" r="24" fill="#101010" stroke="#2E2E2E" stroke-width="1"/>
+<text x="581.4386001800126" y="407.4386001800126" font-size="9.5" font-weight="400" fill="#FFFFFF" text-anchor="middle">CRT</text>
+<circle cx="498.0" cy="438.0" r="24" fill="#101010" stroke="#2E2E2E" stroke-width="1"/>
+<text x="498.0" y="442.0" font-size="9.5" font-weight="400" fill="#FFFFFF" text-anchor="middle">●</text>
+<circle cx="414.5613998199874" cy="403.4386001800126" r="24" fill="#101010" stroke="#2E2E2E" stroke-width="1"/>
+<text x="414.5613998199874" y="407.4386001800126" font-size="9.5" font-weight="400" fill="#FFFFFF" text-anchor="middle">▥</text>
+<circle cx="380.0" cy="320.0" r="24" fill="#101010" stroke="#3DDCD3" stroke-width="1.5"/>
+<text x="380.0" y="324.0" font-size="9.5" font-weight="400" fill="#3DDCD3" text-anchor="middle">⚙</text>
+<circle cx="414.5613998199874" cy="236.5613998199874" r="24" fill="#101010" stroke="#3DDCD3" stroke-width="1.5"/>
+<text x="414.5613998199874" y="240.5613998199874" font-size="9.5" font-weight="400" fill="#3DDCD3" text-anchor="middle">✕</text>
+<rect x="390.0" y="470" width="216" height="28" rx="6" fill="#101010" stroke="#2E2E2E" stroke-width="1"/>
+<text x="402.0" y="489" font-size="11" font-weight="400" fill="#FFFFFF">Add item…</text>
+<text x="506.0" y="489" font-size="11" font-weight="400" fill="#FFFFFF">Reset defaults</text>
+<rect x="698" y="150" width="336" height="70" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1"/>
+<text x="714" y="176" font-size="14" font-weight="600" fill="#FFFFFF">Item size</text>
+<text x="714" y="194" font-size="10.5" font-weight="400" fill="#9A9A9A">How large ring items are drawn.</text>
+<rect x="928" y="180" width="90" height="30" rx="6" fill="#101010" stroke="#2E2E2E" stroke-width="1"/>
+<text x="1018" y="199" font-size="10.5" font-weight="400" fill="#FFFFFF" text-anchor="end">Medium ⌄</text>
+<rect x="698" y="232" width="336" height="82" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1"/>
+<text x="714" y="258" font-size="14" font-weight="600" fill="#FFFFFF">Ring radius</text>
+<rect x="714" y="274" width="244" height="3" rx="1.5" fill="#2E2E2E"/>
+<rect x="714" y="274" width="34.160000000000004" height="3" rx="1.5" fill="#3DDCD3"/>
+<circle cx="748.16" cy="275.5" r="7" fill="#3DDCD3"/>
+<text x="1018" y="260" font-size="11" font-weight="600" fill="#FFFFFF" text-anchor="end">100 px</text>
+<rect x="698" y="326" width="336" height="118" rx="8" fill="#1C1C1C" stroke="#2E2E2E" stroke-width="1"/>
+<text x="714" y="352" font-size="14" font-weight="600" fill="#FFFFFF">Hot corner</text>
+<rect x="980" y="342" width="38" height="20" rx="10.0" fill="#3DDCD3"/>
+<circle cx="1006" cy="352" r="7.5" fill="#141414"/>
+<rect x="714" y="370" width="60" height="44" rx="5" fill="#101010" stroke="#2E2E2E" stroke-width="1"/>
+<circle cx="722" cy="378" r="4" fill="#3DDCD3"/>
+<circle cx="750" cy="378" r="4" fill="none" stroke="#2E2E2E" stroke-width="1.1"/>
+<circle cx="722" cy="406" r="4" fill="none" stroke="#2E2E2E" stroke-width="1.1"/>
+<circle cx="750" cy="406" r="4" fill="none" stroke="#2E2E2E" stroke-width="1.1"/>
+<text x="788" y="384" font-size="12" font-weight="400" fill="#FFFFFF">Top-left</text>
+<rect x="788" y="394" width="46" height="22" rx="11" fill="#3DDCD3"/>
+<text x="811" y="409" font-size="10" font-weight="600" fill="#141414" text-anchor="middle">Ring</text>
+<rect x="838" y="394" width="68" height="22" rx="11" fill="none" stroke="#2E2E2E" stroke-width="1"/>
+<text x="872" y="409" font-size="10" font-weight="500" fill="#9A9A9A" text-anchor="middle">Quadrant</text>
+<rect x="698" y="456" width="336" height="78" rx="8" fill="#1C1C1C" stroke="#3DDCD3" stroke-width="1.2"/>
+<text x="714" y="480" font-size="10" font-weight="400" fill="#6B6B6B">Name</text>
+<text x="714" y="498" font-size="14" font-weight="600" fill="#FFFFFF">Chrome</text>
+<text x="714" y="518" font-size="10.5" font-weight="400" fill="#9A9A9A">Target: C:\Program Files\Google\Chrome\...</text>
+<text x="698" y="552" font-size="10" font-weight="600" fill="#3DDCD3" letter-spacing="0.5">InfoBox — shown once a ring item is selected</text>
+<text x="318" y="568" font-size="10.5" font-weight="400" fill="#6B6B6B">Ring preview + Add item…/Reset defaults sit on the canvas. Item size, Ring radius, and Hot corner are</text>
+<text x="318" y="583" font-size="10.5" font-weight="400" fill="#6B6B6B">already colocated here in SettingsWindow.xaml today — nothing moved from General.</text>
+</svg>

@@ -11,20 +11,21 @@ public sealed class AppTitleBar : Grid
     /// <summary>
     /// Room reserved on the right for the OS-drawn minimize/maximize/close buttons. A page's
     /// <see cref="HeaderActions"/> (see <c>ToolPages.ToolPage</c>) is anchored just to the left
-    /// of this zone rather than given a Grid column of its own — titles here are always short
-    /// ("Data", "Certificate"), so the two can never collide.
+    /// of this zone rather than given a Grid column of its own — the caption has nothing else in
+    /// it for those buttons to collide with, but the reservation still has to hold: the OS chrome
+    /// paints there regardless of what this control puts down.
     /// </summary>
     private const double SystemButtonZoneWidth = 140;
 
     /// <summary>
     /// Edge of the SwiftX mark when a title bar leads with it. Slightly over the 16px glyph size
     /// below because the mark is four separate petals around a gap rather than one solid glyph, so
-    /// it needs a touch more room to carry the same visual weight beside the title.
+    /// it needs a touch more room to carry the same visual weight.
     /// </summary>
     private const double AppMarkSize = 18;
 
-    public AppTitleBar(string glyph, string title, FrameworkElement? headerActions = null)
-        : this(GlyphIcon(glyph), title, headerActions)
+    public AppTitleBar(string glyph, FrameworkElement? headerActions = null)
+        : this(GlyphIcon(glyph), headerActions)
     {
     }
 
@@ -34,8 +35,8 @@ public sealed class AppTitleBar : Grid
     /// caption, so Windows never draws the window icon for them — without this they carry no mark
     /// at all.
     /// </summary>
-    public static AppTitleBar WithAppMark(string title, FrameworkElement? headerActions = null) =>
-        new(AppLogo.Create(AppMarkSize), title, headerActions);
+    public static AppTitleBar WithAppMark(FrameworkElement? headerActions = null) =>
+        new(AppLogo.Create(AppMarkSize), headerActions);
 
     /// <summary>
     /// The caption strip's fixed height in DIPs. Public because a window that sizes itself to its
@@ -44,37 +45,31 @@ public sealed class AppTitleBar : Grid
     /// </summary>
     public const double HeightDip = 40;
 
-    private AppTitleBar(FrameworkElement? leading, string title, FrameworkElement? headerActions)
+    /// <summary>
+    /// No title text is drawn here — the caption carries the mark or the tool's glyph alone. What
+    /// a window <em>is</em> still has two real answers, neither of which lived in this strip: the
+    /// real <c>Window.Title</c> every caller already sets (what Alt+Tab, the taskbar and its
+    /// thumbnail tooltip read), and — for the windows that open on more than one thing (Add to
+    /// orbit vs. Edit, a specific tool) — an in-body heading (<c>AddItemWindow</c>'s
+    /// <c>HeadingText</c>, <c>OnboardingWindow</c>'s <c>StepTitle</c>) that already said the same
+    /// thing again, right under this bar. A caption that repeated it a third time, in a strip whose
+    /// job is otherwise just to host the mark and drag the window, was the one copy worth cutting.
+    /// </summary>
+    private readonly FrameworkElement? _leading;
+
+    private AppTitleBar(FrameworkElement? leading, FrameworkElement? headerActions)
     {
         Height = HeightDip;
         Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        _leading = leading;
 
-        var content = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 10,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Margin = new Thickness(16, 0, 0, 0),
-        };
-
-        // Left out entirely when there is nothing to lead with, rather than added collapsed, so the
-        // title sits at the panel's margin either way. Centred here rather than by each caller: a
-        // fixed-size element in a horizontal StackPanel is not centred by default, so the mark would
-        // otherwise ride high against the title.
         if (leading is not null)
         {
+            leading.HorizontalAlignment = HorizontalAlignment.Left;
             leading.VerticalAlignment = VerticalAlignment.Center;
-            content.Children.Add(leading);
+            leading.Margin = new Thickness(16, 0, 0, 0);
+            Children.Add(leading);
         }
-
-        content.Children.Add(new TextBlock
-        {
-            Text = title,
-            VerticalAlignment = VerticalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        });
-        Children.Add(content);
 
         if (headerActions is not null)
         {
@@ -83,6 +78,16 @@ public sealed class AppTitleBar : Grid
             headerActions.Margin = new Thickness(0, 0, SystemButtonZoneWidth, 0);
             Children.Add(headerActions);
         }
+    }
+
+    /// <summary>
+    /// Home already wears the mark as the X in SwiftX, so the caption mark is hidden there and
+    /// shown on every other screen — the caption is otherwise empty once you leave Home.
+    /// </summary>
+    public void SetMarkVisible(bool visible)
+    {
+        if (_leading is not null)
+            _leading.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>

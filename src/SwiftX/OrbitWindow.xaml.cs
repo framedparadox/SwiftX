@@ -177,6 +177,17 @@ public sealed partial class OrbitWindow : Window
         WindowChrome.StripFrame(_hwnd);
         WindowChrome.MakeTransparentOverlay(this, _hwnd);
         ApplyTheme();
+
+        // Windows flipping light/dark under the System theme reaches an open orbit only through
+        // here: nothing was chosen in Settings, so OrbitManager.ApplyTheme never runs. The bubbles
+        // are painted with theme colours resolved when they were built, so an orbit left open (it
+        // stays up while Settings does) kept the old ones until the next summon. Closed, there is
+        // nothing to repaint: Summon applies the theme and renders fresh.
+        Root.ActualThemeChanged += (_, _) =>
+        {
+            if (_isOpen)
+                RenderCurrent();
+        };
         _appWindow.Hide();
 
         // A click outside the orbit's own hit-test disc never reaches this window at all — it
@@ -486,26 +497,6 @@ public sealed partial class OrbitWindow : Window
             bubble.Detach?.Invoke();
     }
 
-    /// <summary>
-    /// Keeps the Settings bubble's "Add new" child (see <see cref="SystemOrbitItems.CreateAddNew"/>)
-    /// in sync with whether there is anywhere left to add into. The full orbit never needs this
-    /// fallback — <see cref="CurrentItems"/> already puts an "Add new" placeholder directly on
-    /// every empty user slot, which is reachable without opening Settings at all — so this only
-    /// ever fires for the quadrant, whose four places (Settings among them) have no such per-slot
-    /// placeholder of their own. Recomputed on every render since which shape is showing — orbit or
-    /// quadrant — is itself part of what "room to add" means.
-    /// </summary>
-    private void UpdateSettingsAddNew()
-    {
-        _settingsItem.Children.Clear();
-        if (_quadrant is not { } corner)
-            return;
-
-        bool full = HotCornerItems.Resolve(_manager.Config, _settingsItem).Count >= QuadrantLayout.ItemCount;
-        if (!full)
-            _settingsItem.Children.Add(SystemOrbitItems.CreateAddNew());
-    }
-
     private IReadOnlyList<(OrbitItem Item, int Slot)> CurrentItems()
     {
         var slots = new List<(OrbitItem, int)>();
@@ -565,7 +556,6 @@ public sealed partial class OrbitWindow : Window
         _flyout.Clear();
         _flyoutParent = null;
         _hovered = null;
-        UpdateSettingsAddNew();
 
         // The hub is the orbit's center mark. A quarter circle's center is the screen corner, so
         // three quarters of a full-sized one would be off the screen — AttachHub draws a smaller
@@ -998,9 +988,9 @@ public sealed partial class OrbitWindow : Window
         {
             Width = backdropSize,
             Height = backdropSize,
-            CornerRadius = new CornerRadius(backdropSize / 2),
             SystemBackdrop = new DesktopAcrylicBackdrop(),
         };
+        OrbitItemGeometry.Apply(backdrop, backdropSize);
 
         // The theme tint over the blur — what ApplyBubbleFill actually swaps for hover/close
         // states, not border.Background below (left unset, or it would paint over the blur and
@@ -1010,14 +1000,14 @@ public sealed partial class OrbitWindow : Window
         // One long-lived brush per bubble whose Color is animated, rather than a fresh brush
         // assigned on every state change: the fill then travels on the same curve and over the
         // same duration as the hover scale instead of snapping the instant the pointer arrives.
-        var tintBrush = new SolidColorBrush(ThemeColor("OrbitBubbleGlassTint"));
+        var tintBrush = new SolidColorBrush(RestTint());
         var tint = new Border
         {
             Width = diameter,
             Height = diameter,
-            CornerRadius = new CornerRadius(diameter / 2),
             Background = tintBrush,
         };
+        OrbitItemGeometry.Apply(tint, diameter);
 
         var content = new Grid();
         content.Children.Add(backdrop);
@@ -1033,12 +1023,8 @@ public sealed partial class OrbitWindow : Window
         //
         // Only drawn when the group actually has something to expand into — the same
         // Where(!Hidden) filter ExpandFlyout itself uses, since that is what decides whether
-        // hovering this bubble opens a flyout at all. Settings is the item this matters for: it is
-        // always Kind.Group, but its one child — "Add new" — only exists on the quadrant, where it
-        // drops out once that's full too (see UpdateSettingsAddNew); on the full orbit it never has
-        // one at all, since every empty user slot already carries its own "Add new" placeholder.
-        // Either way, a Settings bubble wearing an arc that promises a flyout it can no longer open
-        // would be a lie the moment you hovered it.
+        // hovering this bubble opens a flyout at all. Settings is a plain launch item and never
+        // wears an arc.
         if (item.IsGroup && !isFlyout && item.Children.Any(c => !c.Hidden))
             content.Children.Add(BuildGroupArc(diameter, angle, glyphBrush));
 
@@ -1175,8 +1161,7 @@ public sealed partial class OrbitWindow : Window
         bool dark = requested == ElementTheme.Default
             ? ThemeHelper.IsDark(Root)
             : requested == ElementTheme.Dark;
-        bool isBlack = _manager.Config.Theme == AppTheme.Black;
-        return ThemeHelper.ColorFor(dark, isBlack, key);
+        return ThemeHelper.ColorFor(dark, _manager.Config.Theme, key);
     }
 
     // ---- Hover name pill -----------------------------------------------------------------
@@ -1807,27 +1792,39 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     private async void ScheduleFlyoutForHover(BubbleView? bubble)
     {
-        int hoverGen = ++_hoverGeneration;
-        int renderGen = _renderGeneration;
+        // async void: nothing calls this back, so an exception past this point is unhandled —
+        // and it is reachable. The generation checks above only rule out a hover that the orbit
+        // itself superseded; they say nothing about the orbit having been dismissed and its
+        // visuals torn down while this was asleep in the delay, which is exactly when
+        // CollapseFlyoutAsync/ExpandFlyout below touch composition visuals off bubble.Host.
+        try
+        {
+            int hoverGen = ++_hoverGeneration;
+            int renderGen = _renderGeneration;
 
-        if (bubble is null || bubble.IsFlyout)
-            return;
+            if (bubble is null || bubble.IsFlyout)
+                return;
 
-        bool wantsOpen = bubble.Item.IsGroup && !ReferenceEquals(_flyoutParent, bubble);
-        bool wantsClose = !bubble.Item.IsGroup && _flyoutParent is not null;
-        if (!wantsOpen && !wantsClose)
-            return;
+            bool wantsOpen = bubble.Item.IsGroup && !ReferenceEquals(_flyoutParent, bubble);
+            bool wantsClose = !bubble.Item.IsGroup && _flyoutParent is not null;
+            if (!wantsOpen && !wantsClose)
+                return;
 
-        await Task.Delay(FlyoutHoverDelayMs);
-        if (hoverGen != _hoverGeneration || renderGen != _renderGeneration || !_isOpen)
-            return;
+            await Task.Delay(FlyoutHoverDelayMs);
+            if (hoverGen != _hoverGeneration || renderGen != _renderGeneration || !_isOpen)
+                return;
 
-        await CollapseFlyoutAsync();
-        if (hoverGen != _hoverGeneration || renderGen != _renderGeneration || !_isOpen)
-            return;
+            await CollapseFlyoutAsync();
+            if (hoverGen != _hoverGeneration || renderGen != _renderGeneration || !_isOpen)
+                return;
 
-        if (wantsOpen)
-            ExpandFlyout(bubble);
+            if (wantsOpen)
+                ExpandFlyout(bubble);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("OrbitWindow.ScheduleFlyoutForHover: " + ex.Message);
+        }
     }
 
     private void OnHover(BubbleView bubble, bool entered)
@@ -1837,15 +1834,78 @@ public sealed partial class OrbitWindow : Window
         // An expanded group stays lit while its flyout is open, so exiting it must not reset the
         // fill the way exiting an ordinary bubble does.
         ApplyBubbleFill(bubble, entered || ReferenceEquals(bubble, _flyoutParent));
+
+        // Animate's motion runs for exactly as long as the pointer is on the item. Stopping is not
+        // conditional on the style, only on a motion having been started: the setting can change
+        // between the enter and the exit, and the exit must still put the item back. Close keeps
+        // its plain red shrink whatever the style is, since a destructive item that also wobbled
+        // would be a gag rather than a warning.
+        if (entered)
+        {
+            if (EffectiveHoverStyle == OrbitHoverStyle.Animate && !IsCloseItem(bubble.Item))
+                StartHoverMotion(bubble, _manager.Config.HoverAnimation);
+        }
+        else
+        {
+            StopHoverMotion(bubble);
+        }
+    }
+
+    /// <summary>
+    /// Plays <paramref name="animation"/> on the bubble's own composition visual, the one every
+    /// entrance and hover animation already targets, so the acrylic, the tint and the glyph all move
+    /// together with nothing else needing to know. The composition work is
+    /// <see cref="HoverMotionPlayer"/>'s, shared with Settings' picker; what is the orbit's own is
+    /// the budget: a pulse that swells an item that already rests a little enlarged (an open group)
+    /// is clamped to <see cref="OrbitMetrics.HoverScale"/>, the growth the layout has room for.
+    /// </summary>
+    private static void StartHoverMotion(BubbleView bubble, HoverAnimation animation)
+    {
+        var spec = HoverMotion.For(animation);
+        if (HoverMotionPlayer.Start(
+                bubble.Host, bubble.Diameter, spec, bubble.RestScale, (float)OrbitMetrics.HoverScale))
+            bubble.ActiveMotion = spec;
+    }
+
+    /// <summary>
+    /// Brings a bubble back to rest after <see cref="StartHoverMotion"/>. Scale needs nothing here:
+    /// <see cref="OnHover"/> has already animated it back to rest, which replaced the pulse.
+    /// </summary>
+    private static void StopHoverMotion(BubbleView bubble)
+    {
+        var spec = bubble.ActiveMotion;
+        if (spec is null)
+            return;
+        bubble.ActiveMotion = null;
+
+        try
+        {
+            var compositor = ElementCompositionPreview.GetElementVisual(bubble.Host).Compositor;
+            HoverMotionPlayer.Stop(bubble.Host, spec, HoverMs, HoverEase(compositor));
+        }
+        catch
+        {
+            // ignore
+        }
     }
 
     /// <summary>
     /// Active state under <see cref="OrbitHoverStyle.Invert"/> reads as an inverted fill (no border
     /// in either theme) rather than an outline — the same two colors CreateBubble already applies
     /// at rest, just reversed. Under <see cref="OrbitHoverStyle.Zoom"/> the fill never changes at
-    /// all; <see cref="HoverScaleFor"/> shrinking the bubble is the only hover cue. Close is the
-    /// exception to both: it goes red under the pointer regardless of the setting, because it is
-    /// the one item on the orbit whose effect can't be undone by clicking again.
+    /// all; <see cref="HoverScaleFor"/> growing or shrinking the bubble is the only hover cue.
+    /// Under <see cref="OrbitHoverStyle.Tint"/> the fill becomes the user's own colour
+    /// (<see cref="OrbitHover.TintColor"/>) and nothing else moves. Close is the exception to all
+    /// three: it goes red under the pointer regardless of the setting, because it is the one item
+    /// on the orbit whose effect can't be undone by clicking again.
+    /// <para>
+    /// A tinted fill is opaque, like an inverted one, so it takes the acrylic disc out with it. The
+    /// glyph is black or white by the fill's own contrast (<see cref="OrbitHover.OnTint"/>), never
+    /// the theme's foreground, because the fill is not the theme's to choose. There is still no
+    /// border to decide about: a bubble has none at rest or under any style, and adding one only
+    /// under Tint would put a hard, unfeathered edge back on the disc that the opaque fill and the
+    /// dropped backdrop exist to avoid.
+    /// </para>
     /// <para>
     /// Both colors are animated over <see cref="HoverMs"/>, on the same curve as the scale the
     /// same hover started, rather than assigned outright — a fill that snapped while the bubble
@@ -1861,16 +1921,22 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     private void ApplyBubbleFill(BubbleView bubble, bool active)
     {
+        var style = EffectiveHoverStyle;
         bool destructive = active && IsCloseItem(bubble.Item);
-        bool invert = active && !destructive && _manager.Config.HoverStyle == OrbitHoverStyle.Invert;
-        bool opaque = destructive || invert;
+        bool invert = active && !destructive && style == OrbitHoverStyle.Invert;
+        bool tint = active && !destructive && style == OrbitHoverStyle.Tint;
+        bool opaque = destructive || invert || tint;
+
+        var tintColor = tint ? OrbitHover.TintColor(_manager.Config) : default;
 
         Color background = destructive ? ThemeColor("OrbitCloseHoverBackground")
             : invert ? ThemeColor("SwiftXForegroundBrush")
-            : ThemeColor("OrbitBubbleGlassTint");
+            : tint ? tintColor
+            : RestTint();
 
         Color foreground = destructive ? ThemeColor("OrbitCloseHoverForeground")
             : invert ? ThemeColor("OrbitBubbleBackground")
+            : tint ? OrbitHover.OnTint(tintColor)
             : ThemeColor("SwiftXForegroundBrush");
 
         bubble.TintFade = AnimateBrushTo(bubble.TintFade, bubble.TintBrush, background, HoverMs);
@@ -1878,16 +1944,39 @@ public sealed partial class OrbitWindow : Window
         AnimateOpacity(bubble.Backdrop, opaque ? 0f : 1f, HoverMs);
     }
 
+    /// <summary>
+    /// What a bubble is filled with when nothing is happening to it: the theme's glass tint, made
+    /// firmer under a hexagon, which has no acrylic behind it to be translucent over.
+    /// </summary>
+    private Color RestTint() => OrbitItemGeometry.RestTint(ThemeColor("OrbitBubbleGlassTint"));
+
     private static bool IsCloseItem(OrbitItem item) =>
         string.Equals(item.Target, SystemOrbitItems.CloseTarget, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The hover style in force right now: the configured one, except that Tint gives way to Invert
+    /// under High Contrast and Animate gives way to Zoom when Windows has animations off (see
+    /// <see cref="OrbitHover.Effective"/>). Each setting is asked of the OS only while the style it
+    /// can override is the configured one, since no other style has anything to give way.
+    /// </summary>
+    private OrbitHoverStyle EffectiveHoverStyle
+    {
+        get
+        {
+            var style = _manager.Config.HoverStyle;
+            return OrbitHover.Effective(
+                style,
+                highContrast: style == OrbitHoverStyle.Tint && HighContrast.IsActive(),
+                reducedMotion: style == OrbitHoverStyle.Animate && ReducedMotion.IsActive());
+        }
+    }
 
     private float HoverScaleFor(BubbleView bubble)
     {
         if (IsCloseItem(bubble.Item))
             return (float)OrbitMetrics.CloseHoverScale;
-        return (float)(_manager.Config.HoverStyle == OrbitHoverStyle.Zoom
-            ? OrbitMetrics.ZoomHoverScale
-            : OrbitMetrics.HoverScale);
+        return (float)OrbitMetrics.HoverScaleFor(
+            EffectiveHoverStyle, _manager.Config.HoverZoomDirection, bubble.RestScale);
     }
 
     private static void AnimateScale(BubbleView bubble, float target, int durationMs)
@@ -2028,12 +2117,7 @@ public sealed partial class OrbitWindow : Window
             return;
         }
 
-        // Settings is a group now too (it owns the Add new quick action below), but unlike a
-        // user-created group it still has a job of its own to do on click — open Settings
-        // — so it deliberately skips the generic group-click branch, which only ever toggles a
-        // flyout and never activates anything. Hovering it still opens that flyout regardless (see
-        // ScheduleFlyoutForHover, which checks Item.IsGroup independently of this method).
-        if (item.IsGroup && !IsSettingsItem(item))
+        if (item.IsGroup)
         {
             // Nested groups inside a flyout would need a third orbit to land in; there isn't one,
             // so they simply don't expand.
@@ -2091,38 +2175,49 @@ public sealed partial class OrbitWindow : Window
 
     private async void OrbitCanvas_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        var pos = e.GetCurrentPoint(OrbitCanvas).Position;
-        double dx = pos.X - _cx;
-        double dy = pos.Y - _cy;
-        double dist = Math.Sqrt(dx * dx + dy * dy);
-
-        if (dist < OrbitMetrics.DeadZone)
+        // async void, no caller: OnSelectAsync's own try/catch covers item activation, but its
+        // group-expand branch calls CollapseFlyoutAsync/ExpandFlyout outside that guard — the
+        // same composition-visual race ScheduleFlyoutForHover guards against, reachable here too
+        // if the orbit is dismissed between the press and the await completing.
+        try
         {
-            // Nothing lives in the dead zone to select, so a press here always means "close this",
-            // whether or not a flyout happens to be open — see the matching gap case below.
-            Dismiss();
-            return;
-        }
+            var pos = e.GetCurrentPoint(OrbitCanvas).Position;
+            double dx = pos.X - _cx;
+            double dy = pos.Y - _cy;
+            double dist = Math.Sqrt(dx * dx + dy * dy);
 
-        // A press landing directly on a bubble is handled by that bubble's own Tapped handler
-        // (e.OriginalSource is then the Border or one of its children, not the Canvas). This
-        // covers presses in the gaps between bubbles: with the hit-region covering the whole
-        // disk, a press out here should activate whichever item angular-hover currently targets,
-        // the same as clicking the bubble itself would.
-        if (e.OriginalSource is Canvas)
-        {
-            if (_hovered is { } bubble)
+            if (dist < OrbitMetrics.DeadZone)
             {
-                e.Handled = true;
-                await OnSelectAsync(bubble);
-            }
-            else
-            {
-                // Nothing is hovered/selected — a gap with no bubble in it, or empty space past an
-                // open flyout's arc — so the click means "dismiss the dock", not "step back one
-                // level". Dismiss() already reverses an open flyout alongside the inner orbit.
+                // Nothing lives in the dead zone to select, so a press here always means "close this",
+                // whether or not a flyout happens to be open — see the matching gap case below.
                 Dismiss();
+                return;
             }
+
+            // A press landing directly on a bubble is handled by that bubble's own Tapped handler
+            // (e.OriginalSource is then the Border or one of its children, not the Canvas). This
+            // covers presses in the gaps between bubbles: with the hit-region covering the whole
+            // disk, a press out here should activate whichever item angular-hover currently targets,
+            // the same as clicking the bubble itself would.
+            if (e.OriginalSource is Canvas)
+            {
+                if (_hovered is { } bubble)
+                {
+                    e.Handled = true;
+                    await OnSelectAsync(bubble);
+                }
+                else
+                {
+                    // Nothing is hovered/selected — a gap with no bubble in it, or empty space past an
+                    // open flyout's arc — so the click means "dismiss the dock", not "step back one
+                    // level". Dismiss() already reverses an open flyout alongside the inner orbit.
+                    Dismiss();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("OrbitWindow.OrbitCanvas_PointerPressed: " + ex.Message);
         }
     }
 
@@ -2239,14 +2334,24 @@ public sealed partial class OrbitWindow : Window
 
     private async void Root_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key != VirtualKey.Escape)
-            return;
+        // async void, no caller: same CollapseFlyoutAsync race as ScheduleFlyoutForHover/
+        // OrbitCanvas_PointerPressed — Escape pressed right as the orbit is dismissed some other
+        // way should not be able to take the process down with it.
+        try
+        {
+            if (e.Key != VirtualKey.Escape)
+                return;
 
-        e.Handled = true;
-        if (_flyoutParent is not null)
-            await CollapseFlyoutAsync();
-        else
-            Dismiss();
+            e.Handled = true;
+            if (_flyoutParent is not null)
+                await CollapseFlyoutAsync();
+            else
+                Dismiss();
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("OrbitWindow.Root_KeyDown: " + ex.Message);
+        }
     }
 
     private sealed class BubbleView
@@ -2305,6 +2410,10 @@ public sealed partial class OrbitWindow : Window
 
         /// <summary>Scale to return to when hover ends — not 1 for an expanded group bubble.</summary>
         public float RestScale { get; set; } = 1f;
+
+        /// <summary>The Animate motion currently playing on this bubble, or null. What lets the
+        /// exit put the item back even if the hover style was changed in between.</summary>
+        public MotionSpec? ActiveMotion { get; set; }
 
         public Action? Detach { get; set; }
 

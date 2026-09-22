@@ -133,6 +133,41 @@ public class CrashAndHangRegressionTests
     }
 
     /// <summary>
+    /// <b>Refusing has to be cheap, not merely correct.</b> The depth ceiling used to be applied by
+    /// walking the loaded <see cref="System.Xml.Linq.XDocument"/> — which meant the document it
+    /// existed to refuse was fully built first, and
+    /// <see cref="System.Xml.Linq.XDocument.Load(XmlReader, System.Xml.Linq.LoadOptions)"/> is
+    /// superlinear in nesting depth. Measured on this exact input: 231 ms at depth 10000, 2.2 s at
+    /// 20000, 10.5 s at 40000 and 73 s at 100000, with the walk that then rejected it taking
+    /// 0.1 ms. Every one of those inputs is well inside the ceilings the app already applies —
+    /// depth 100000 is 700 KB, an eighth of <c>InputLimits.MaxQuickFormatChars</c> — and Quick
+    /// Format reads the clipboard unprompted, so a paste was enough.
+    /// <para>
+    /// The assertions the other tests here make ("it reported an error") all passed throughout
+    /// that, because the tool did eventually report one. This is the assertion that did not exist:
+    /// the cost of saying no must not scale with the size of the thing being said no to. The
+    /// budget is two orders of magnitude above the measured cost after the fix (0.2–0.3 ms at
+    /// every depth below) and still an order of magnitude below the old cost at the *smallest*
+    /// size tested.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(10_000)]
+    [InlineData(40_000)]
+    [InlineData(100_000)]
+    public void DeeplyNestedXml_IsRefusedInTimeThatDoesNotGrowWithTheNesting(int depth)
+    {
+        var xml = NestedXml(depth);
+
+        FormatResult result = default!;
+        AssertFasterThan(2_000, $"refuse xml nested {depth} deep", () =>
+            result = XmlFormat.Instance.Format(xml, FormatOptions.Default));
+
+        Assert.False(result.Success);
+        Assert.Contains(XmlFormat.MaxDepth.ToString(), result.Diagnostics[0].Message);
+    }
+
+    /// <summary>
     /// Depth is measured per branch, not summed across the document: a wide, shallow document has
     /// thousands of elements and nests three levels, and must not be mistaken for a deep one.
     /// </summary>

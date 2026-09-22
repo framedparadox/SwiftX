@@ -10,8 +10,37 @@ public partial class App : Application
 
     private static Mutex? _instanceMutex;
 
+    [ThreadStatic]
+    private static bool _tracingFirstChance;
+
     public App()
     {
+        // Exceptions that never reach the XAML handler below used to leave nothing in the log at all,
+        // which is how a crash on a background thread went unexplained.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            Diag.Log("FATAL (AppDomain): " + e.ExceptionObject);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+            Diag.Log("UNOBSERVED TASK EXCEPTION: " + e.Exception);
+
+        // A stowed WinRT error (0xc000027b) is worse: it is a fail-fast, so not even the two handlers
+        // above see it. What can be logged is the exception thrown and caught just before it, with the
+        // live call stack (an exception's own trace ends at the throw, before it has unwound through
+        // any caller). Off unless asked for: ArgumentException and COMException are thrown and
+        // caught routinely (the window frame code catches one at every start-up), so on by default
+        // this would bury the log. Set SWIFTX_TRACE_EXCEPTIONS=1 to turn it on.
+        if (Environment.GetEnvironmentVariable("SWIFTX_TRACE_EXCEPTIONS") == "1")
+        {
+            AppDomain.CurrentDomain.FirstChanceException += (_, e) =>
+            {
+                if (_tracingFirstChance || e.Exception is not (ArgumentException or System.Runtime.InteropServices.COMException))
+                    return;
+                // Logging can throw and catch too, which would re-enter this handler.
+                _tracingFirstChance = true;
+                try { Diag.Log("FIRST-CHANCE " + e.Exception.GetType().Name + ": " + e.Exception + "\n  caller stack:\n" + Environment.StackTrace); }
+                finally { _tracingFirstChance = false; }
+            };
+        }
+
         InitializeComponent();
         UnhandledException += (_, e) =>
         {

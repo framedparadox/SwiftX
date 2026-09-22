@@ -1,9 +1,12 @@
 using System.Numerics;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
+using SwiftX.Models;
 using Windows.Foundation;
 
 // ImplicitUsings pulls in System.IO, so the bare name "Path" is already taken by System.IO.Path.
@@ -91,6 +94,138 @@ public static class AppLogo
     /// </summary>
     /// <param name="size">Width and height in DIPs the logo should occupy.</param>
     public static Mark CreateFloating(double size) => new(size, floating: true);
+
+    /// <summary>
+    /// Springs a single glyph the way <see cref="Mark.PlayEntrance"/> springs the pinwheel, but as
+    /// one piece and clockwise — the Home Tools mark, so it rhymes with Customize without replaying
+    /// the same four-petal choreography.
+    /// </summary>
+    public static void PlayGlyphEntrance(FrameworkElement element)
+    {
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(element);
+            visual.StopAnimation("RotationAngleInDegrees");
+            visual.StopAnimation("Scale");
+            visual.StopAnimation("Opacity");
+
+            float w = (float)(element.ActualWidth > 0 ? element.ActualWidth
+                : element.Width > 0 ? element.Width : 96);
+            float h = (float)(element.ActualHeight > 0 ? element.ActualHeight
+                : element.Height > 0 ? element.Height : 96);
+            visual.CenterPoint = new Vector3(w / 2f, h / 2f, 0);
+            // Opposite the mark's -90°: Tools turns the other way so the two Home motions
+            // don't look like copies of each other.
+            visual.RotationAngleInDegrees = 90f;
+            visual.Scale = new Vector3(0.45f, 0.45f, 1);
+            visual.Opacity = 0;
+
+            var compositor = visual.Compositor;
+            var spin = compositor.CreateSpringScalarAnimation();
+            spin.FinalValue = 0f;
+            spin.DampingRatio = 0.62f;
+            spin.Period = TimeSpan.FromMilliseconds(220);
+            visual.StartAnimation("RotationAngleInDegrees", spin);
+
+            var grow = compositor.CreateSpringVector3Animation();
+            grow.FinalValue = Vector3.One;
+            grow.DampingRatio = 0.62f;
+            grow.Period = TimeSpan.FromMilliseconds(220);
+            visual.StartAnimation("Scale", grow);
+
+            var fade = compositor.CreateScalarKeyFrameAnimation();
+            fade.InsertKeyFrame(1, 1);
+            fade.Duration = TimeSpan.FromMilliseconds(220);
+            visual.StartAnimation("Opacity", fade);
+        }
+        catch
+        {
+            // Composition can throw if the element has no compositor yet; the next timer tick retries.
+        }
+    }
+
+    /// <summary>
+    /// The four petals as a hot-corner picker: top-left / top-right / bottom-right / bottom-left
+    /// leaves map onto those screen corners. The selected leaf is full strength; the other three
+    /// sit dimmed so the mark still reads as the logo. When <paramref name="onPicked"/> is set,
+    /// each leaf is a hit target; otherwise this is a static glyph (the orbit preview's corner
+    /// button).
+    /// </summary>
+    public static FrameworkElement CreateCornerGlyph(
+        double size, HotCorner selected, Action<HotCorner>? onPicked = null)
+    {
+        double edge = size > 0 ? size : NominalSize;
+        var canvas = new Canvas
+        {
+            Width = NominalSize,
+            Height = NominalSize,
+            IsHitTestVisible = false,
+        };
+
+        void AddPetal(int column, int row, Windows.UI.Color outer, Windows.UI.Color inner, HotCorner corner)
+        {
+            var petal = Petal(column, row, outer, inner);
+            petal.Opacity = corner == selected ? 1 : 0.32;
+            petal.IsHitTestVisible = false;
+            canvas.Children.Add(petal);
+        }
+
+        AddPetal(0, 0, PinkOuter, AmberInner, HotCorner.TopLeft);
+        AddPetal(1, 0, TealOuter, BlueInner, HotCorner.TopRight);
+        AddPetal(1, 1, MagentaOuter, SteelInner, HotCorner.BottomRight);
+        AddPetal(0, 1, TealOuter, BlueInner, HotCorner.BottomLeft);
+
+        var art = new Viewbox
+        {
+            Width = edge,
+            Height = edge,
+            Stretch = Stretch.Uniform,
+            Child = canvas,
+            IsHitTestVisible = false,
+        };
+
+        if (onPicked is null)
+            return art;
+
+        var root = new Grid { Width = edge, Height = edge };
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetColumnSpan(art, 2);
+        Grid.SetRowSpan(art, 2);
+        root.Children.Add(art);
+
+        void AddHit(int column, int row, HotCorner corner, string name)
+        {
+            var hit = new Button
+            {
+                Padding = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+            };
+            var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            hit.Resources["ButtonBackground"] = transparent;
+            hit.Resources["ButtonBackgroundPointerOver"] = transparent;
+            hit.Resources["ButtonBackgroundPressed"] = transparent;
+            hit.Resources["ButtonBorderBrush"] = transparent;
+            hit.Resources["ButtonBorderBrushPointerOver"] = transparent;
+            hit.Resources["ButtonBorderBrushPressed"] = transparent;
+            ToolTipService.SetToolTip(hit, name);
+            AutomationProperties.SetName(hit, name);
+            var picked = corner;
+            hit.Click += (_, _) => onPicked(picked);
+            Grid.SetColumn(hit, column);
+            Grid.SetRow(hit, row);
+            root.Children.Add(hit);
+        }
+
+        AddHit(0, 0, HotCorner.TopLeft, "Top left");
+        AddHit(1, 0, HotCorner.TopRight, "Top right");
+        AddHit(0, 1, HotCorner.BottomLeft, "Bottom left");
+        AddHit(1, 1, HotCorner.BottomRight, "Bottom right");
+        return root;
+    }
 
     // ---- Shapes -----------------------------------------------------------
 
@@ -327,11 +462,35 @@ public static class AppLogo
         public static readonly int EntranceSpanMs =
             PetalStaggerMs * (Quadrants.Length - 1) + SpringPeriodMs * 2;
 
+        // Home Orbit idle: small fixed hub + eight dock bubbles on a ring that slowly revolves.
+        // Overlay lives in DIP space beside the Viewbox so bubble offsets are not Viewbox-scaled
+        // when the hub shrinks.
+        private const float DockHubScale = 0.18f;
+        private const int DockRevolveMs = 16000;
+        private const double DockRadiusDesign = 19d;
+        private const double DockBubbleDesign = 4.4d;
+
+        // Home Tools idle: 4×4 grid is the rest mark; cells tile-spin then settle.
+        private const int EncodeMs = 3000;
+        private const int EncodeCellStaggerMs = 35;
+        private const double EncodeCellDesign = 11.2d;
+        private const double EncodeCellStepDesign = 12d;
+        private const double EncodeCellInsetDesign = 0.4d;
+        private const double EncodeCellRadiusDesign = 1.8d;
+
         private readonly double _edge;
+        private readonly float _unit;
         private readonly Viewbox _art;
         private readonly ShapePath[] _petals;
         private readonly Border? _shadowHost;
         private bool _shadowAttached;
+
+        private Canvas? _overlay;
+        private Canvas? _dockRing;
+        private Ellipse? _orbitGuide;
+        private Ellipse[]? _dockBubbles;
+        private Border[]? _encodeCells;
+        private bool _dockIdleActive;
 
         internal Mark(double size, bool floating)
         {
@@ -339,6 +498,7 @@ public static class AppLogo
             // box so a miscalculated hub radius shows an odd-looking logo instead of taking the orbit
             // down.
             _edge = size > 0 ? size : NominalSize;
+            _unit = (float)(_edge / NominalSize);
             Width = _edge;
             Height = _edge;
             // The orbit hub underneath owns pointer input; the mark must never intercept a click.
@@ -462,6 +622,195 @@ public static class AppLogo
         }
 
         /// <summary>
+        /// A full clockwise turn of the whole mark, petals breathing in reverse order — the Home
+        /// Tools replay, so it is the same pinwheel as Customize without the same entrance.
+        /// </summary>
+        public void PlayPulse()
+        {
+            try
+            {
+                Reset();
+
+                var art = ArtVisual();
+                var compositor = art.Compositor;
+
+                var spin = compositor.CreateScalarKeyFrameAnimation();
+                spin.InsertKeyFrame(0, 0);
+                spin.InsertKeyFrame(1, 360f);
+                spin.Duration = TimeSpan.FromMilliseconds(720);
+                art.StartAnimation("RotationAngleInDegrees", spin);
+
+                int last = _petals.Length - 1;
+                for (int i = 0; i < _petals.Length; i++)
+                {
+                    var petal = PetalVisual(i);
+                    var delay = TimeSpan.FromMilliseconds((last - i) * PetalStaggerMs);
+
+                    var breathe = compositor.CreateVector3KeyFrameAnimation();
+                    breathe.InsertKeyFrame(0, Vector3.One);
+                    breathe.InsertKeyFrame(0.4f, new Vector3(0.58f, 0.58f, 1));
+                    breathe.InsertKeyFrame(1, Vector3.One);
+                    breathe.Duration = TimeSpan.FromMilliseconds(520);
+                    breathe.DelayTime = delay;
+                    petal.StartAnimation("Scale", breathe);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        /// <summary>
+        /// Home Orbit idle: hub stays small and fixed at the ring centre; eight dock bubbles
+        /// slowly revolve — matching the “Slow drift” mockup (no join-back).
+        /// </summary>
+        public void PlayOrbitDock()
+        {
+            try
+            {
+                // Continuous drift: do not restart a ring that is already revolving.
+                if (_dockIdleActive) return;
+
+                Reset();
+                EnsureOverlay();
+                ShowDockOverlay();
+
+                var art = ArtVisual();
+                var hubScale = new Vector3(DockHubScale, DockHubScale, 1);
+                art.Scale = hubScale;
+
+                if (_shadowHost is not null)
+                {
+                    var shadow = ElementCompositionPreview.GetElementVisual(_shadowHost);
+                    shadow.CenterPoint = new Vector3((float)(_edge / 2), (float)(_edge / 2), 0);
+                    shadow.Scale = hubScale;
+                }
+
+                float hub = (float)_edge / 2f;
+                float bubbleR = (float)(DockBubbleDesign * _unit);
+                float radius = (float)(DockRadiusDesign * _unit);
+
+                for (int i = 0; i < OrbitMetrics.SlotCount; i++)
+                {
+                    var ellipse = _dockBubbles![i];
+                    double angle = OrbitMetrics.SlotAngleRad(i);
+                    float cx = hub + radius * (float)Math.Cos(angle);
+                    float cy = hub + radius * (float)Math.Sin(angle);
+                    Canvas.SetLeft(ellipse, cx - bubbleR);
+                    Canvas.SetTop(ellipse, cy - bubbleR);
+                    ellipse.Opacity = 1;
+
+                    var visual = ElementCompositionPreview.GetElementVisual(ellipse);
+                    visual.Offset = Vector3.Zero;
+                    visual.Scale = Vector3.One;
+                    visual.Opacity = 1;
+                }
+
+                if (_orbitGuide is not null)
+                {
+                    _orbitGuide.Opacity = 0.85;
+                    var guide = ElementCompositionPreview.GetElementVisual(_orbitGuide);
+                    guide.Opacity = 0.85f;
+                }
+
+                var ring = ElementCompositionPreview.GetElementVisual(_dockRing!);
+                ring.CenterPoint = new Vector3(hub, hub, 0);
+                ring.RotationAngleInDegrees = 0;
+
+                var spin = ring.Compositor.CreateScalarKeyFrameAnimation();
+                spin.InsertKeyFrame(0f, 0f);
+                spin.InsertKeyFrame(1f, 360f);
+                spin.Duration = TimeSpan.FromMilliseconds(DockRevolveMs);
+                spin.IterationBehavior = AnimationIterationBehavior.Forever;
+                ring.StartAnimation("RotationAngleInDegrees", spin);
+
+                _dockIdleActive = true;
+            }
+            catch
+            {
+                // Motion is decoration: a mark that cannot animate still has to draw.
+            }
+        }
+
+        /// <summary>
+        /// Home Tools idle: the 4×4 grid is the rest mark; each cell quarter-turns then settles
+        /// — matching the “Tile spin” mockup.
+        /// </summary>
+        public void PlayEncode()
+        {
+            try
+            {
+                Reset();
+                EnsureOverlay();
+                ShowEncodeOverlay();
+
+                // Grid is the mark — hide the petals for the whole idle.
+                for (int i = 0; i < _petals.Length; i++)
+                {
+                    var petal = PetalVisual(i);
+                    petal.Opacity = 0;
+                }
+
+                var art = ArtVisual();
+                var compositor = art.Compositor;
+                var ease = compositor.CreateCubicBezierEasingFunction(
+                    new Vector2(0.4f, 0f), new Vector2(0.2f, 1f));
+
+                float cell = (float)(EncodeCellDesign * _unit);
+                float half = cell / 2f;
+                float step = (float)(EncodeCellStepDesign * _unit);
+                float inset = (float)(EncodeCellInsetDesign * _unit);
+                var duration = TimeSpan.FromMilliseconds(EncodeMs);
+
+                for (int k = 0; k < 16; k++)
+                {
+                    int col = k % 4;
+                    int row = k / 4;
+                    var border = _encodeCells![k];
+                    var visual = ElementCompositionPreview.GetElementVisual(border);
+                    visual.CenterPoint = new Vector3(half, half, 0);
+
+                    float x = inset + col * step;
+                    float y = inset + row * step;
+                    visual.Offset = new Vector3(x, y, 0);
+                    visual.Opacity = 1;
+                    visual.Scale = Vector3.One;
+                    visual.RotationAngleInDegrees = 0;
+                    border.Opacity = 1;
+
+                    var delay = TimeSpan.FromMilliseconds(k * EncodeCellStaggerMs);
+
+                    // cell-spin: hold → 90° + scale 0.9 → settle
+                    var spin = compositor.CreateScalarKeyFrameAnimation();
+                    spin.InsertKeyFrame(0f, 0f);
+                    spin.InsertKeyFrame(0.10f, 0f);
+                    spin.InsertKeyFrame(0.35f, 90f, ease);
+                    spin.InsertKeyFrame(0.55f, 0f, ease);
+                    spin.InsertKeyFrame(1f, 0f);
+                    spin.Duration = duration;
+                    spin.DelayTime = delay;
+
+                    var scale = compositor.CreateVector3KeyFrameAnimation();
+                    scale.InsertKeyFrame(0f, Vector3.One);
+                    scale.InsertKeyFrame(0.10f, Vector3.One);
+                    scale.InsertKeyFrame(0.35f, new Vector3(0.9f, 0.9f, 1), ease);
+                    scale.InsertKeyFrame(0.55f, Vector3.One, ease);
+                    scale.InsertKeyFrame(1f, Vector3.One);
+                    scale.Duration = duration;
+                    scale.DelayTime = delay;
+
+                    visual.StartAnimation("RotationAngleInDegrees", spin);
+                    visual.StartAnimation("Scale", scale);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        /// <summary>
         /// Plays the mark back out — <see cref="PlayEntrance"/> rewound, last petal in first out.
         /// <para>
         /// Deliberately does <em>not</em> stop what is playing first, unlike <see cref="PlayEntrance"/>.
@@ -538,7 +887,16 @@ public static class AppLogo
             {
                 var art = ArtVisual();
                 art.StopAnimation("RotationAngleInDegrees");
+                art.StopAnimation("Scale");
                 art.RotationAngleInDegrees = 0;
+                art.Scale = Vector3.One;
+
+                if (_shadowHost is not null)
+                {
+                    var shadow = ElementCompositionPreview.GetElementVisual(_shadowHost);
+                    shadow.StopAnimation("Scale");
+                    shadow.Scale = Vector3.One;
+                }
 
                 for (int i = 0; i < _petals.Length; i++)
                 {
@@ -550,10 +908,204 @@ public static class AppLogo
                     petal.Scale = Vector3.One;
                     petal.Opacity = 1;
                 }
+
+                HideOverlays();
             }
             catch
             {
                 // ignore
+            }
+        }
+
+        /// <summary>
+        /// DIP-space overlay beside the Viewbox so dock bubbles and encode cells keep absolute
+        /// offsets while the petal layer scales. Built once on first Home idle play.
+        /// </summary>
+        private void EnsureOverlay()
+        {
+            if (_overlay is not null) return;
+
+            _overlay = new Canvas
+            {
+                Width = _edge,
+                Height = _edge,
+                IsHitTestVisible = false,
+            };
+
+            float bubble = (float)(DockBubbleDesign * _unit * 2);
+            float hub = (float)_edge / 2f;
+            float orbitR = (float)(DockRadiusDesign * _unit);
+
+            _dockRing = new Canvas
+            {
+                Width = _edge,
+                Height = _edge,
+                IsHitTestVisible = false,
+            };
+
+            _orbitGuide = new Ellipse
+            {
+                Width = orbitR * 2,
+                Height = orbitR * 2,
+                Stroke = new SolidColorBrush(Rgb(0x80, 0x80, 0x90)),
+                StrokeThickness = Math.Max(1, _unit * 0.35),
+                StrokeDashArray = new DoubleCollection { 1.2, 1.6 },
+                Opacity = 0,
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(_orbitGuide, hub - orbitR);
+            Canvas.SetTop(_orbitGuide, hub - orbitR);
+            _dockRing.Children.Add(_orbitGuide);
+
+            _dockBubbles = new Ellipse[OrbitMetrics.SlotCount];
+            for (int i = 0; i < OrbitMetrics.SlotCount; i++)
+            {
+                int q = i % Quadrants.Length;
+                var (column, row, outer, inner) = Quadrants[q];
+                var ellipse = new Ellipse
+                {
+                    Width = bubble,
+                    Height = bubble,
+                    Fill = PetalGradient(new Point(column, row), new Point(1 - column, 1 - row), outer, inner),
+                    Opacity = 0,
+                    IsHitTestVisible = false,
+                };
+                Canvas.SetLeft(ellipse, 0);
+                Canvas.SetTop(ellipse, 0);
+                _dockBubbles[i] = ellipse;
+                _dockRing.Children.Add(ellipse);
+            }
+
+            _overlay.Children.Add(_dockRing);
+
+            float cell = (float)(EncodeCellDesign * _unit);
+            float radius = (float)(EncodeCellRadiusDesign * _unit);
+            _encodeCells = new Border[16];
+            for (int k = 0; k < 16; k++)
+            {
+                int col = k % 4;
+                int row = k / 4;
+                // Quadrant fill: TL/TR on top row-pair, BL/BR on bottom — same as the HTML mockup.
+                int q = row < 2 ? (col < 2 ? 0 : 1) : (col < 2 ? 3 : 2);
+                var (c, r, outer, inner) = Quadrants[q];
+                var border = new Border
+                {
+                    Width = cell,
+                    Height = cell,
+                    CornerRadius = new CornerRadius(radius),
+                    Background = PetalGradient(new Point(c, r), new Point(1 - c, 1 - r), outer, inner),
+                    Opacity = 0,
+                    IsHitTestVisible = false,
+                };
+                Canvas.SetLeft(border, 0);
+                Canvas.SetTop(border, 0);
+                _encodeCells[k] = border;
+                _overlay.Children.Add(border);
+            }
+
+            Children.Add(_overlay);
+        }
+
+        private void ShowDockOverlay()
+        {
+            if (_overlay is null || _dockRing is null || _dockBubbles is null) return;
+            _overlay.Visibility = Visibility.Visible;
+            _dockRing.Visibility = Visibility.Visible;
+            if (_orbitGuide is not null)
+                _orbitGuide.Visibility = Visibility.Visible;
+            foreach (var bubble in _dockBubbles)
+                bubble.Visibility = Visibility.Visible;
+            if (_encodeCells is not null)
+            {
+                foreach (var cell in _encodeCells)
+                    cell.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void ShowEncodeOverlay()
+        {
+            if (_overlay is null || _encodeCells is null) return;
+            _overlay.Visibility = Visibility.Visible;
+            if (_dockRing is not null)
+                _dockRing.Visibility = Visibility.Collapsed;
+            if (_orbitGuide is not null)
+                _orbitGuide.Visibility = Visibility.Collapsed;
+            if (_dockBubbles is not null)
+            {
+                foreach (var bubble in _dockBubbles)
+                    bubble.Visibility = Visibility.Collapsed;
+            }
+            foreach (var cell in _encodeCells)
+                cell.Visibility = Visibility.Visible;
+        }
+
+        private void HideOverlays()
+        {
+            if (_overlay is null)
+            {
+                _dockIdleActive = false;
+                return;
+            }
+
+            try
+            {
+                if (_dockRing is not null)
+                {
+                    var ring = ElementCompositionPreview.GetElementVisual(_dockRing);
+                    ring.StopAnimation("RotationAngleInDegrees");
+                    ring.RotationAngleInDegrees = 0;
+                    _dockRing.Visibility = Visibility.Collapsed;
+                }
+
+                if (_orbitGuide is not null)
+                {
+                    var guide = ElementCompositionPreview.GetElementVisual(_orbitGuide);
+                    guide.StopAnimation("Opacity");
+                    guide.Opacity = 0;
+                    _orbitGuide.Opacity = 0;
+                    _orbitGuide.Visibility = Visibility.Collapsed;
+                }
+
+                if (_dockBubbles is not null)
+                {
+                    foreach (var bubble in _dockBubbles)
+                    {
+                        var visual = ElementCompositionPreview.GetElementVisual(bubble);
+                        visual.StopAnimation("Offset");
+                        visual.StopAnimation("Scale");
+                        visual.StopAnimation("Opacity");
+                        visual.Opacity = 0;
+                        visual.Scale = Vector3.One;
+                        visual.Offset = Vector3.Zero;
+                        bubble.Opacity = 0;
+                        bubble.Visibility = Visibility.Collapsed;
+                    }
+                }
+
+                if (_encodeCells is not null)
+                {
+                    foreach (var cell in _encodeCells)
+                    {
+                        var visual = ElementCompositionPreview.GetElementVisual(cell);
+                        visual.StopAnimation("Offset");
+                        visual.StopAnimation("Scale");
+                        visual.StopAnimation("Opacity");
+                        visual.StopAnimation("RotationAngleInDegrees");
+                        visual.Opacity = 0;
+                        visual.Scale = Vector3.One;
+                        visual.Offset = Vector3.Zero;
+                        visual.RotationAngleInDegrees = 0;
+                        cell.Opacity = 0;
+                        cell.Visibility = Visibility.Collapsed;
+                    }
+                }
+
+                _overlay.Visibility = Visibility.Collapsed;
+                _dockIdleActive = false;
+            }
+            catch
+            {
+                _dockIdleActive = false;
             }
         }
 

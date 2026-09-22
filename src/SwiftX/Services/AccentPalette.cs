@@ -22,11 +22,11 @@ namespace SwiftX.Services;
 /// and has nothing to do with the colour the user chose.
 /// </para>
 /// <para>
-/// <b>SettingsWindow still carries its own private copy of all of this</b> — its
-/// <c>CurrentAccentColor</c>, <c>ResolveIsDark</c>, <c>TryParseHexColor</c> and <c>Blend</c>, and
-/// its own <c>DefaultAccentHexDark</c>/<c>DefaultAccentHexLight</c> constants. That file was left
-/// untouched deliberately, so it should be migrated onto this class; until it is, the two default
-/// hex values exist in two places and have to be changed together.
+/// <c>ShellWindow</c> resolves through this class rather than keeping its own copy — see its
+/// <c>CurrentAccentColor</c>. The only other place these two hex values appear is
+/// <c>SettingsAccentBrush</c>/<c>SettingsAccentHoverBrush</c> in <c>Themes/Colors.xaml</c>, which
+/// is what an element resolves before <c>ApplyAccentColorOverride</c> has run; the two have to be
+/// changed together.
 /// </para>
 /// </summary>
 public static class AccentPalette
@@ -34,10 +34,12 @@ public static class AccentPalette
     /// <summary>
     /// The built-in accent, per theme, used whenever <see cref="AppConfig.AccentColorHex"/> is
     /// unset or unparsable. Must track <c>SettingsAccentBrush</c>/<c>SettingsAccentHoverBrush</c>
-    /// in <c>Themes/Colors.xaml</c> — and, for now, SettingsWindow's own copies of these two
-    /// constants (see the class remarks). Two values rather than one because the same teal cannot
-    /// carry a dark surface and a light one: the bright mint reads as a highlight on black and as
-    /// a smear on white, so light gets the deeper, more saturated variant.
+    /// in <c>Themes/Colors.xaml</c>. Two values rather than one because the same teal cannot
+    /// carry a dark surface and a light one: the bright one reads as a highlight on black and as a
+    /// smear on white, so light gets the deeper variant (<c>#0B7C7C</c> holds about 5:1 as link
+    /// text on white). Hover brushes are <see cref="PointerOver"/> of these.
+    /// A colour already stored in <see cref="AppConfig.AccentColorHex"/> is the user's own pick
+    /// and is left alone; these are only the fallback for an unset value.
     /// </summary>
     public const string DefaultHexDark = "#3DDCD3";
 

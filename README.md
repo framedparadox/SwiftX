@@ -13,13 +13,11 @@ and links from it; pop groups open into an outer orbit; and reach a set of built
 Everything runs on your own machine. There is no account, no telemetry, and nothing is uploaded.
 
 <p align="center">
-  <img src="img/SxiftX_Full.png" alt="The orbit open on the desktop" width="49%">
-  <img src="img/SwiftX_HotCorner.png" alt="The hot corner quadrant" width="49%">
+  <img src="img/SwiftX2_OrbitDock.png" alt="The orbit open on the desktop" width="70%">
+  <br><sub><em>The orbit, summoned over the desktop — items on eight slots around a floating hub.</em></sub>
 </p>
-<p align="center">
-  <img src="img/SwiftX_Settings_Home.png" alt="Settings — Home, the live orbit customizer" width="49%">
-  <img src="img/SwiftX_Settings_General.png" alt="Settings — General" width="49%">
-</p>
+
+More screenshots are spread through the sections below, next to what they show.
 
 ---
 
@@ -89,7 +87,7 @@ cover the screen without getting in the way of it.
 | **Hub** | The app mark at the center, floating on a soft drop shadow rather than sitting flat on the wallpaper. Not a button for launching — clicking it closes an open group, or dismisses the orbit when none is open. Fixed size; no setting scales it. It turns a quarter turn as the orbit is summoned, its four petals unfurling clockwise a beat apart, and unwinds the same way on dismissal. |
 | **Slots** | Eight positions around the orbit, 45° apart, slot 0 straight up and advancing clockwise. |
 | **User slots** | The first six. Filled from your items in order; empty ones are simply not drawn. |
-| **Settings** | Always slot 7. A group: hovering it pops out its **Add new** quick action; clicking it opens the Settings window. |
+| **Settings** | Always slot 7. A group: hovering it pops out its **Add new** quick action; clicking it opens the SwiftX app window. |
 | **Close** | Always slot 8. Quits SwiftX. It shrinks rather than grows under the pointer, so it never reads as an invitation. |
 | **Tools** | One of the six user slots by default — a single group holding every built-in tool. |
 | **Flyout** | A group opens into a *concentric outer orbit* around the one already on screen, up to eight children. The inner orbit never moves, so you keep your bearings. |
@@ -104,7 +102,7 @@ link's own site icon, or from a Segoe Fluent glyph you pick.
 
 ### Keyboard
 
-`Ctrl+Shift+S` by default; press again to dismiss. Remap it in **Settings → General → Invoke** by
+`Ctrl+Shift+X` by default; press again to dismiss. Remap it in **Settings → General → Invoke** by
 clicking the capture button and pressing the combination you want.
 
 - A shortcut must include **Ctrl, Alt, or Win** — Shift alone is not enough for a system-wide key.
@@ -144,6 +142,12 @@ dropdown, and two choices for the shape —
 - **Orbit** (default) — the whole orbit, drawn at the corner.
 - **Quadrant** — four items only, on a quarter circle centered on the corner itself: QuickAccess,
   Notepad, Tools, and Settings by default (see [The corner quadrant](#the-corner-quadrant)).
+
+<p align="center">
+  <img src="img/SwiftX2_HotCorner.png" alt="The hot corner, opened in its Orbit shape" width="60%">
+  <br><sub><em>The top-left corner fired, drawing the whole orbit anchored to that corner instead of
+  the screen's center.</em></sub>
+</p>
 
 ---
 
@@ -203,31 +207,169 @@ back inside the quarter if it would otherwise throw half of them off the screen.
 
 ---
 
-## Settings
+## The SwiftX app
 
-Reached from the orbit's Settings item, or the tray menu.
+The companion window behind the orbit's Settings item — where you customize what the orbit holds,
+tweak its look, manage the built-in tools, and change app-wide settings. Reached from the orbit's
+Settings item, the tray menu, or by launching SwiftX again.
 
-### Home
+The window is built on the Logi Options+ reference app in
+[`framedparadox/windows-app-mx`](https://github.com/framedparadox/windows-app-mx) (branch
+`logiApp/dotnet`) — its `MainPage` header supplies Home, its `SettingsPage` supplies Settings
+measure for measure, and its `Settings*` colour tokens are carried into `Themes/Colors.xaml` as the
+`Shell*` family. The mockups it is built to are in [`docs/images/`](docs/images); the plan behind
+them is [`docs/swiftx-app-shell.md`](docs/swiftx-app-shell.md).
 
-The live orbit customizer — what it shows is what the orbit draws, at the current size and radius.
+**Home** is a greeting header — the time of day, at 30px — with a theme-cycle button and a settings
+gear on the right, over three portrait boxes:
+
+| Box | Opens |
+|-----|-------|
+| **Orbit** | The live orbit customizer: arrange the orbit, set its size, radius, hover style and hot corner |
+| **Tools** | The built-in developer tools, and which of them show on the orbit |
+| **Elements** | The apps, files, folders, links and groups on the orbit |
+
+<p align="center">
+  <img src="img/SwiftX2_Home.png" alt="Home — the Orbit and Dev Tools boxes" width="70%">
+  <br><sub><em>Home, with its two main boxes open onto the orbit customizer and the built-in tools.</em></sub>
+</p>
+
+A slim tab on Home's right edge, halfway down, opens a **How to** guide: a drawer that slides over
+the Home screen with four topics (setting up the dock, how to invoke it, how to use the hot corner,
+how to change items). It is written from your own configuration, so it names the shortcut and the
+corner you actually chose and says so plainly when either is switched off, and each topic has a
+button that goes to the place it describes. The topics are one scrolling list, and nothing dims the
+Home screen behind it. Esc or the close button closes it.
+
+<p align="center">
+  <img src="img/SwiftX2_HowToPanel.png" alt="The How to guide, open over Home" width="70%">
+  <br><sub><em>The How to drawer, mid-slide over Home — each topic links straight to the screen it explains.</em></sub>
+</p>
+
+The gear opens **Settings**, which is a screen of its own rather than the window itself: a 270px
+rail with four sections — General, Feedback & Support, Privacy & Data, About. Every sub-screen has
+a back arrow that returns to Home.
+
+### First run
+
+The first launch on a machine opens a three-step set-up guide instead of the app window: a welcome,
+a picker for what goes on the orbit (stock Windows apps, your own folders, a couple of links, the
+built-in tools, plus **Add your own…** for anything else), and the keyboard shortcut and hot corner
+that summon it — along with *Start with Windows* and *Desktop shortcut*.
+
+<p align="center">
+  <img src="img/SwiftX2_OnBoarding.png" alt="Step 1 of the first-run set-up guide" width="60%">
+  <br><sub><em>Step 1 of 3 — the welcome step. Steps 2 and 3 pick the orbit's starting items and the
+  shortcut/hot corner that summon it.</em></sub>
+</p>
+
+Nothing is written until **Finish**. Dismissing the guide leaves the orbit exactly as it shipped,
+because the default six items are seeded before the guide opens and the guide only ever replaces
+them; its own tick-boxes start on that same six, so finishing without touching anything is a no-op.
+Re-run it any time from **Settings → General → Set-up guide**.
+
+### Orbit
+
+The screen behind Home's **Orbit** box: a live preview of your orbit on the left, and a sidebar on
+the right that either edits its settings or adds items to it. It is Logi's `ActionRingPage` layout
+view, built to [`docs/images/17-app-ring.svg`](docs/images/17-app-ring.svg): a canvas column — a
+68px header, the ring, a 60px toolbar over a hairline — beside a fixed 320px sidebar, in the ring
+canvas's own darker palette rather than the app chrome's (see
+[`docs/full-app-mockups-logi-base.md`](docs/full-app-mockups-logi-base.md) for why those are two
+palettes and not one). What it shows is what the orbit draws, at the current size and radius.
+
+<p align="center">
+  <img src="img/SwiftX2_CustomizeOrbit_Settings.png" alt="The Orbit screen, sidebar on its Settings panel" width="70%">
+  <br><sub><em>The canvas with the sidebar's default panel: item size, shape, radius, hot corner and
+  hover style, all live against the preview on the left.</em></sub>
+</p>
 
 **The canvas**
 
 - **Click an empty slot** (or its `+`) to add an item there.
-- **Click an item** to see its name and target below the size/radius cards.
-- **Click a group** to reveal its children in a strip under the canvas; drag them to reorder inside
-  the group.
+- **Click an item** for a details card anchored where you clicked: its kind, its name, what it
+  points at, and its icon — with a pencil that opens a glyph picker, a **Use a picture…** entry for
+  your own image, and a **Reset** that hands the icon back to whatever the target resolves to.
+  Clicking the same item again closes the card.
+- **Click a group** and the canvas becomes that group: its own mark at the centre and its children
+  fanned on an arc around it, at the same bubble size and angular spacing the real orbit opens a
+  group with. The toolbar's **Orbit Layout** title gives way to that group's name while it is open,
+  and the header's Home button stays put as on every other screen. The way out is the group's own
+  mark at the centre: it turns into a close mark under the pointer, and a click returns to the
+  whole orbit. A dashed slot at each end of the arc adds to the group.
 - **Drag an item** to another slot to rearrange. A drop lands on the nearest slot, even out past
   the bubbles — the intent is the nearest place, not a pixel-perfect landing.
 - **Right-click an item** for **Replace…** and **Delete**. Replace opens the same form the `+`
   does and puts what you add into that same slot; a group goes with its children either way. The
   built-in tools are the Tools page's — right-clicking one offers nothing, since a tool leaves the
   orbit by being switched off there.
-- **Add item… / Reset defaults** sit on the canvas itself, centered under the orbit.
+- **Add item… / Reset defaults** sit at the right of the toolbar along the bottom, where Logi puts
+  its own tools bar. They are hidden inside a group: both act on the top-level orbit, and a Reset
+  that reads as scoped to the group you are looking at would be the wrong kind of surprise.
+- **A gear and a wrench** sit at the left of that toolbar — Settings, and a help menu. The menu is
+  the reference's How To / Support / What's New, re-pointed at things this app actually has: the
+  set-up guide, the Edit panel, the README, the issue tracker and the releases page.
 
-**Size** — Small / Medium / Large. Scales the items around the orbit; the hub is unaffected.
+Each filled slot wears an outward **name pill** — Logi's own 30px, 6-corner, 12px SemiBold pill,
+placed by Logi's own rule rather than a polar formula: the top and bottom slots take theirs above
+and below, the other six out to the side. They are drawn on a second canvas behind the bubbles with
+hit-testing off, which is what lets a pill overlap a node without ever becoming a drag target; they
+hide for the duration of a drag, since they do not follow a bubble, and come back on the drop. A
+name takes a drop exactly as its icon does: drag something from the Edit panel, or in from Explorer
+or a browser, onto the name and it lands in that item's slot.
+Nothing is drawn under them: like Logi's, the ring is implied by where its nodes sit.
+
+**The sidebar** has two modes, and the **Edit** button in the header swaps between them. This is
+where the screen departs from Logi deliberately: Logi's sidebar is only ever its drag-source
+accordion, and its ring settings are a separate screen behind a nav button. SwiftX has one screen
+for the orbit, so the sidebar is what changes.
+
+By default it is the orbit's own settings — Item size, Item shape, Orbit radius, Hot corner and
+Hover style. Pressing **Edit** swaps it for **Apps /
+Shortcuts / Links / Tools**, an accordion of things that can go on the orbit: the apps, folders and
+links this machine actually has (the same existence-checked catalog the first-run guide offers
+from) and the built-in tools. Click a row to put it in the first free slot; anything already on the
+orbit is shown ticked and does nothing. **Add something else…** at the bottom opens the full add
+dialog. The swap is a visibility change between two panels, not a navigation, so the canvas keeps
+its selection and its drag state across it.
+
+<p align="center">
+  <img src="img/SwiftX2_CustomizeOrbit_Add.png" alt="The Orbit screen, sidebar swapped to Add to orbit" width="70%">
+  <br><sub><em>The same canvas after pressing Edit — the sidebar becomes the Apps/Shortcuts/Folders/
+  Links/Groups/Tools accordion, with what's already on the orbit ticked off.</em></sub>
+</p>
+
+**Size** — Small / Medium / Large, on one row. Scales the items around the orbit; the hub is
+unaffected.
+
+**Shape** — Circle, Squircle or Square. A separate axis from size: how much room an item takes is
+one question, what fills it is another. One place turns the setting into geometry
+(`OrbitMetrics.CornerRadiusFor`), expressed as a fraction of the bubble rather than a fixed corner,
+so the orbit, its flyout band, the corner quadrant and this preview cannot drift into drawing three
+different shapes from one setting.
 
 **Radius** — 80–220 px from the hub to each item's center.
+
+**Hover style** — **Invert**, **Zoom**, **Tint** or **Animate**: how an item reads as under the pointer. Invert
+swaps its fill to the opposite theme color and grows it slightly. **Zoom** keeps the fill and changes
+only the size, **Tint** keeps the size and fills the item with a color you choose, and **Animate** plays a motion while the pointer is on the item. Zoom, Tint and Animate
+are split buttons: unselected they are a single pill, and selecting one splits it into two adjoining
+pills, the option's own name on the left (70%) and its setting on the right (30%).
+
+- **Zoom** — the right pill reads **In** (the item grows, the default) or **Out** (it shrinks);
+  pressing it flips between them. The left part keeps Zoom selected and does nothing more.
+- **Tint** — the right pill is a swatch of the current hover color, black by default. Pressing it
+  opens a color picker with a **Reset to default** button; the choice applies to the orbit as you
+  drag. The glyph on the tinted item is black or white, whichever contrasts better with the color
+  picked, so any color stays readable. Under High Contrast the chosen color is not applied and Tint
+  behaves as Invert, so an item never gives no sign at all that it is under the pointer.
+- **Animate** - the right pill shows the symbol of the chosen motion; pressing it opens a picker of
+  six: **Pulse** (the default), **Bounce**, **Wobble**, **Shake**, **Spin** (one full turn) and
+  **Float**. Hovering an option in the picker plays that motion on its symbol, so the choice can be
+  seen from Settings. The motion repeats for as long as the pointer stays on the item, then the item
+  glides back to rest. With animations switched off in Windows, Animate behaves as Zoom.
+
+Close goes red under the pointer whichever style is set.
 
 **Hot corner** — one section, two rows:
 
@@ -251,47 +393,71 @@ Nothing else is drawn: no guide arc through the places, and no remove badge pinn
 "Reset defaults" clears your corner arrangement along with the orbit, putting the corner back to
 following it.
 
-### General
+### Settings → General
+
+App-wide preferences — theme, accent colour, language, the summon shortcut, and startup — reached
+from Home's gear icon.
+
+<p align="center">
+  <img src="img/SwiftX2_Settings.png" alt="Settings — General" width="70%">
+  <br><sub><em>Settings → General: the five theme cards, accent colour, language, and the Invoke
+  shortcut card.</em></sub>
+</p>
 
 | Setting | What it does |
 |---------|--------------|
-| **Theme** | Light, Dark, **Midnight**, or System. Dark is layered dark plates over the Settings window's Mica; Midnight replaces them with one flat near-black; Light is opaque, with cards recessed into a white canvas. The orbit's own bubbles are live acrylic in every theme. See [Theme](#theme). |
-| **Accent colour** | A swatch and colour picker, directly under Theme. Defaults to teal (`#3DDCD3` dark / `#0B7C7C` light) and colours Settings' toggles, radio buttons, the Radius slider, the rating stars, the nav selection indicator, and the Feedback links — Settings only. **Reset to default** sits in the picker's flyout. |
+| **Theme** | Light, Dark, **Midnight**, **Frosted glass**, or System — five preview cards in Logi's own 145x130 geometry, not a dropdown. Dark is layered dark plates over the window's Mica; Midnight replaces them with one flat near-black; Frosted glass drops them to a low-alpha wash over a real acrylic so the desktop reads through the window; Light is opaque. The orbit's own bubbles are live acrylic in every theme. See [Theme](#theme). |
+| **Accent colour** | A swatch and colour picker, directly under Theme. Defaults to Logi's violet (`#8A67FF` dark / `#6C47FF` light) and colours the app window's toggles, radio buttons, the Radius slider, the rating stars, the Settings rail and the selected theme card, plus the Feedback links. **Reset to default** sits in the picker's flyout. |
 | **Language** | 19 languages plus System (follows Windows). The tool windows (Data Formatter, Secure values, Base64, Certificate) and the tray menu pick it up the next time they open; everything else applies on restart. Right-to-left languages (Arabic, Hebrew) mirror the tool windows' layout. See [Language](#language) for the full list. |
-| **Hover style** | **Invert** (default) swaps an item's fill to the opposite theme color under the pointer, growing it slightly. **Zoom** keeps the item's resting color and just shrinks it slightly instead. Close is unaffected either way — it always goes red. |
 | **Invoke** | The summon shortcut, its capture button, and an on/off switch. Reports whether Windows accepted the combination. |
 | **Start with Windows** | Per-user autostart. Unpackaged builds use the `HKCU\...\Run` key (no elevation); the MSIX build uses a declared startup task, so Windows lists it in Task Manager's Startup tab and honors a user override there. |
 | **Backup & restore** | Export the whole configuration to JSON, or import one back. |
 | **Reset** | Restores theme, accent colour, hover style, item size, radius, shortcut, hot corner, tools, and orbit items to defaults. |
+| **Set-up guide** | Re-runs the first-run guide against the orbit as it stands. It writes nothing unless you press Finish. |
 
-### Apps & links
+**Hover style** moved out of General to the Orbit Settings screen, beside size and radius — it is a
+property of the orbit, not of the app.
 
-A flat list of your orbit items — show/hide each one, or delete it. Groups are listed with their
-children beneath them. Built-in tools are not listed here (the Tools page owns them), and neither
+### Elements
+
+A card per orbit item — show/hide each one, edit it, or delete it. Groups are listed with their
+children beneath them. **Edit** reopens the add dialog on the item as it already is, carrying its
+id, its hidden state and the fields the form has no box for (arguments, a custom icon) across the
+save, so an edit really does edit rather than replace. Built-in tools are not listed here (the Tools page owns them), and neither
 are Settings and Close, which the orbit always draws itself.
 
 Its own **Add item…** button opens the same dialog as the orbit's "Add to orbit" quick action, but
 titled "Add item" and without the Tool tile — a built-in tool already has its own home on the
 Tools page, so that tile only makes sense from an orbit or corner slot that can actually hold one.
 
-### Tools page
+### Tools
 
-One row per built-in tool: a switch that puts it in the orbit's Tools item or takes it out, an
-open button, and a drag handle. Dragging reorders the tools inside that group.
+The screen behind Home's **Dev Tools** box: one card per built-in tool, describing what it does,
+with a switch that puts it in the orbit's Tools item or takes it out, and an open button. The cards
+do not reorder — the order is the catalog's, and a tool's place inside the Tools group was never
+something worth dragging for.
 
-### Feedback & Support
+<p align="center">
+  <img src="img/SwiftX2_DevTools.png" alt="The Dev Tools screen" width="70%">
+  <br><sub><em>Every built-in tool — Data formatter, Quick Format, Secure values, Base64 and
+  Certificate — each with its own open button.</em></sub>
+</p>
+
+### Settings → Feedback & Support
 
 Three cards — general feedback, a star rating, and issue reporting — each with a link that opens in
 your browser. SwiftX sends nothing on its own: the stars are stored locally as `FeedbackRating` and
 never leave the device, so the links are the only thing that actually reaches anyone. Its links and
 stars are the most visible place the [accent colour](#accent-colour) shows up.
 
-### About
+### Settings → About
 
-The app mark, what the app is, and its version, with links to the terms and conditions (which open
-in the browser) and to the Privacy page of this same window.
+Logi's own two-card About: a hero card with the app mark at 72px, the name, the version and what
+the app is, plus links to the terms and conditions (which open in the browser) and to Privacy &
+Data; then a spec card — Windows build, UI framework, managed runtime, and whether this is the MSIX
+or the portable build. Every value in it is read at runtime rather than written into the markup.
 
-### Privacy
+### Settings → Privacy & Data
 
 What happens to what you put into SwiftX, in plain terms: everything stays on the device, no
 tracking or analytics, secure values encrypted for your account, the tools running offline, the one
@@ -381,16 +547,21 @@ pre-rename build is a file you can still pick.
 |-----|------|---------|---------|
 | `Orbits` | array | one profile | Orbit profiles. Only the first is used today; it holds your items. |
 | `LaunchAtStartup` | bool | `false` | Mirrors the "Start with Windows" switch. |
-| `Theme` | `Light`/`Dark`/`Black`/`System` | `Dark` | Window and orbit theme. `Black` is the one shown in Settings as **Midnight** — the enum member keeps its original name because it is persisted by name, and renaming it would strand configs that already carry `"Black"`. |
-| `AccentColorHex` | `"#RRGGBB"` or null | `null` | Settings' accent colour. `null` means the built-in teal for the theme in play. Anything that doesn't parse falls back the same way. |
+| `Theme` | `Light`/`Dark`/`Black`/`FrostedGlass`/`System` | `Dark` | Window and orbit theme. `Black` is the one shown in Settings as **Midnight** — the enum member keeps its original name because it is persisted by name, and renaming it would strand configs that already carry `"Black"`. `FrostedGlass` is shown as **Frosted glass**. |
+| `FrostedGlass` | `Light`/`Medium`/`Dark` | `Light` | How much frost the **Frosted glass** theme uses. Read only while `Theme` is `FrostedGlass`, but kept either way so switching away and back returns the frost you had. |
+| `AccentColorHex` | `"#RRGGBB"` or null | `null` | The app's accent colour. `null` means the built-in violet for the theme in play. Anything that doesn't parse falls back the same way. |
 | `Language` | `System`/`EnglishUS`/`EnglishUK`/`French`/`German`/`Spanish`/`Italian`/`PortugueseBR`/`PortuguesePT`/`Dutch`/`Polish`/`Turkish`/`Russian`/`Arabic`/`Hebrew`/`Hindi`/`Japanese`/`ChineseSimplified`/`ChineseTraditional`/`Korean` | `System` | UI language. `System` follows Windows' own UI language, falling back to English (US). |
-| `HoverStyle` | `Invert`/`Zoom` | `Invert` | How an orbit item reacts to the pointer — swap to the opposite color, or keep color and shrink slightly. |
-| `Hotkey` | string | `"Ctrl+Shift+S"` | Summon shortcut, in readable form so a hand-edited file stays legible. |
+| `HoverStyle` | `Invert`/`Zoom`/`Tint`/`Animate` | `Invert` | How an orbit item reacts to the pointer: `Invert` swaps to the opposite color and grows, `Zoom` keeps its color and changes size (see `HoverZoomDirection`), `Tint` keeps its size and fills with `HoverTintColorHex`, `Animate` plays the motion `HoverAnimation` names. An unknown name reads as `Invert` rather than discarding the config. |
+| `HoverZoomDirection` | `In`/`Out` | `In` | Which way `Zoom` moves an item — `In` grows it, `Out` shrinks it. Read only while `HoverStyle` is `Zoom`, but kept either way. An unknown name reads as `In`. |
+| `HoverTintColorHex` | `"#RRGGBB"` or null | `null` | The fill `Tint` paints under the pointer. `null` means black. Anything that doesn't parse falls back the same way. |
+| `HoverAnimation` | `Pulse`/`Bounce`/`Wobble`/`Shake`/`Spin`/`Float` | `Pulse` | The motion `Animate` plays. Read only while `HoverStyle` is `Animate`, but kept either way. An unknown name reads as `Pulse` rather than discarding the config. |
+| `Hotkey` | string | `"Ctrl+Shift+X"` | Summon shortcut, in readable form so a hand-edited file stays legible. |
 | `HotkeyEnabled` | bool | `true` | Whether the shortcut is registered at all. |
 | `HotCornerEnabled` | bool | `true` | Whether a screen corner summons the orbit. |
 | `HotCorner` | `TopLeft`/`TopRight`/`BottomLeft`/`BottomRight` | `TopLeft` | Which corner. |
 | `HotCornerLayout` | `Orbit`/`Quadrant` | `Orbit` | Whether that corner opens the whole orbit or the quarter circle. |
 | `HotCornerOrbit` | array | empty | Your corner arrangement. Empty means "follow the orbit" — see below. |
+| `ItemShape` | `Circle`/`Squircle`/`Square` | `Circle` | The outline orbit items are drawn with. |
 | `ItemSize` | `Small`/`Medium`/`Large` | `Medium` | How large orbit items are drawn. |
 | `OrbitRadius` | number or null | `null` (100) | Distance from hub to item centers, 80–220. |
 | `ShowDataTool` | bool | `true` | Data Formatter in the orbit's Tools item. |
@@ -459,7 +630,8 @@ src/SwiftX/
   App.xaml.cs              Startup, single-instance lock, unhandled-exception guard
   OrbitManager.cs           Owns config, tray, hotkey, hot corner, windows, activation
   OrbitWindow.xaml(.cs)     The orbit itself: layout, animation, hover, flyout, input
-  SettingsWindow.xaml(.cs) Settings shell and every page in it
+  ShellWindow.xaml(.cs)    The SwiftX app window: Home, Orbit, Tools, Elements, Settings
+  OnboardingWindow.xaml(.cs) The first-run set-up guide
   AddItemWindow.xaml(.cs)  "Add to orbit" / "Add item", including drag-and-drop from Explorer
 
   Models/
@@ -485,6 +657,8 @@ src/SwiftX/
     Launcher.cs            Starting whatever an item points at
     SecureValueStore.cs    DPAPI-protected key/secret storage
     AppLogo.cs             The SwiftX mark, as vector geometry (see Brand and assets)
+    Greeting.cs            The Home screen's time-of-day line
+    OnboardingCatalog.cs   What the set-up guide offers, existence-checked per machine
     Formats/, Syntax/      JSON/XML parsing, validation, tokenizing
   ToolPages/               The four tool UIs
   Controls/AppTitleBar.cs  Title bar for the app's own and the tool windows
@@ -495,6 +669,7 @@ src/SwiftX/
 
 img/SwiftX.png             Master art every raster asset is generated from
 TERMS.md                   Terms and conditions, linked from Settings > About
+docs/                      Design standards, the Logi-based shell plan, and the mockups
 notes/                     Internal design/review notes (not shipped, not linked from the app)
 tools/                     One-off maintenance scripts (brand asset generation)
 ```
@@ -554,46 +729,88 @@ without the redirect would replace the running user's real store outright, with 
 
 ## Theme
 
-**Settings → General → Theme**, with the accent colour directly beneath it. Four choices, not
+**Settings → General → Theme**, with the accent colour directly beneath it. Five choices, not
 three:
 
 | Choice | What it paints |
 |--------|----------------|
-| **Dark** (default) | Layered dark plates — a `#222222` canvas, a `#1A1A1A` nav pane beside it, `#2C2C2C` cards, and a `#202020` "tray" for the Home page's orbit preview — each carrying alpha (`#D9…`, ~85%) so the Settings window's Mica shows through every one of them. |
-| **Light** | Fully opaque, and inverted from what Light used to be: a pure `#FFFFFF` canvas with cards and nav pane a cool `#F0F4F8` *darker* than it. Nothing shows through anything. |
+| **Dark** (default) | Logi's own `#2B2B2B` page under `#333333` cards on `#444444` edges, each carrying alpha (`#D9…`, ~85%) so the app window's Mica shows through them, plus a `#202020` "tray" for the Orbit Settings screen's preview canvas. |
+| **Light** | Logi's Light dictionary verbatim and fully opaque: an `#F2F2F2` page, `#FFFFFF` cards, `#E0E0E0` edges. Nothing shows through anything. |
 | **Midnight** | Dark's own native chrome with every SwiftX surface replaced by one flat, near-opaque black (`#E6000000`). No raised/recessed steps — once the anchor colour is already pure black there is no lighter tone left to graduate through, so the card strokes carry the structure instead. |
-| **System** | Follows Windows and re-themes open windows as it changes. Resolves to Light or Dark only: Midnight is not an OS theme, so System can never land on it. |
+| **Frosted glass** | Dark's native chrome again, but the page goes fully transparent and every plate drops to a low-alpha wash with thin white borders, over a real thin acrylic backdrop. The desktop reads *through* the window rather than around it. Comes in three frost levels — see below. |
+| **System** | Follows Windows and re-themes open windows as it changes. Resolves to Light or Dark only: neither Midnight nor Frosted glass is an OS theme, so System can never land on one. |
 
-Midnight is the odd one out under the hood. `AppTheme` has a fourth member — `Black`, shown to
-users as **Midnight** — but WinUI only ever resolves `{ThemeResource}` against Light, Dark and
-Default, so Midnight cannot be a theme dictionary of its own. It rides **Dark's** `ElementTheme`
-(native chrome, title bar and stock controls stay dark-themed) and is told apart at the brush level
-instead: `SettingsWindow.ApplyBlackOverrides` shadows the Settings surface keys with element-local
-entries in the window root's own resources, and `ThemeHelper.ColorFor`'s `isBlack` overload deepens
-the orbit bubbles' glass tint. The enum member keeps the name `Black` because
-`JsonStringEnumConverter` persists it by name — renaming it would strand every config that already
-has `"Black"` written into `orbit.json`.
+Midnight and Frosted glass are the odd ones out under the hood. WinUI only ever resolves
+`{ThemeResource}` against Light, Dark and Default, so neither can be a theme dictionary of its own.
+Both ride **Dark's** `ElementTheme` (native chrome, title bar and stock controls stay dark-themed)
+and are told apart at the brush level instead: `ShellWindow.ApplySurfaceOverrides` shadows the
+shell's surface keys with element-local entries in the window root's own resources, and
+`ThemeHelper.ColorFor`'s `AppTheme` overload answers for everything painted straight onto an element
+— which is the same set of values, and has to agree with that table by hand. The `Black` enum member
+keeps its name because `JsonStringEnumConverter` persists it by name, and renaming it would strand
+every config that already has `"Black"` written into `orbit.json`.
+
+#### Frost level
+
+Frosted glass carries a **Frost** setting of its own — **Light**, **Medium**, **Dark** — shown in
+Settings → General directly under the theme cards, and only while that card is the one selected.
+Light is what the theme shipped as; the two above it put progressively more frost between the
+window and the desktop.
+
+| Level | Backdrop opacity | Card fill |
+|-------|------------------|-----------|
+| **Light** (default) | 0.65 | `#59181820` |
+| **Medium** | 0.80 | `#6B181820` |
+| **Dark** | 0.95 | `#7C181820` |
+
+It is a setting beside the theme rather than three more `AppTheme` members: the theme is persisted
+by name and already drawn as a card, so splitting it in three would strand every config carrying
+`"FrostedGlass"` and put three near-identical cards in a row. The level lives in
+`FrostedGlassBackdrop.Level` — static, app-wide state set by `OrbitManager`, the same shape
+`OrbitMetrics` holds the orbit's geometry in, and for the same reason: it is read from static
+colour lookups that have no config reference to carry. Changing it writes one float onto the live
+acrylic controller rather than rebuilding the backdrop, which would tear down its composition
+target and flicker the window.
+
+Where Midnight's colours are a fixed table, Frosted glass's are computed: `FrostedGlassPalette`
+carries the source theme's own affine alpha curves (`opacity * slope + offset`, clamped) and both
+the resource override and `ThemeHelper` resolve from it, so a card painted in code and the card
+beside it painted from a `{ThemeResource}` cannot disagree. Both the palette and
+`FrostedGlassBackdrop` are ports of windows-app-mx's `logiApp/dotnet` branch, which is itself that
+repo's port of its own `add_acrylic_frosted_theme` work.
 
 That override is also why switching between Dark and Midnight needs a nudge. `RequestedTheme` never
 changes value between the two, and WinUI only re-walks `{ThemeResource}` lookups when it does, so
 `ForceThemeResourceRefresh` flips the window root to the other theme and straight back. Without it
 the swap looked like it did nothing until some unrelated theme change came along later.
 
-### Mica — the Settings window, and nothing else
+A `{ThemeResource}` re-resolution reaches only what is *bound*. A brush written straight onto an
+element — the Elements and Tools screens build every card that way — is a local value no dictionary
+can reach, so `ShellWindow.RepaintThemedContent` re-runs all of those builders on every theme change
+as well. Leaving it out is what once made a theme switch look dead on those two screens while the
+rest of the window moved.
 
-`SettingsWindow`'s constructor attaches a real `MicaBackdrop` (`MicaKind.BaseAlt`), regardless of
-theme. It is visible only where a surface above it is translucent, which in practice means Dark:
+### Mica — every window but the orbit overlay and the Add-item dialog
+
+`ShellWindow`, `OnboardingWindow` and every tool window (`ToolWindowBase.ApplyBackdrop`) each attach
+a real `MicaBackdrop` (`MicaKind.BaseAlt`) for every theme but Frosted glass, which gets a thin
+`DesktopAcrylicController` instead (`FrostedGlassBackdrop`); `ApplyBackdrop` swaps between the two
+and is guarded on the type already attached, since rebuilding a backdrop tears down its composition
+target and flickers. Mica is visible only where a surface above it is translucent, which in practice
+means Dark:
 Dark's plates are `#D9…`, so Mica's wallpaper-derived tint reads as a subtle wash through each of
 them while the four still differ enough to keep their raised/recessed hierarchy. Light's brushes are
 100% opaque, so Mica is attached there too and simply never shows through anything; Midnight's flat
-`#E6` black lets the barest hint through.
+`#E6` black lets the barest hint through. A tool window's own page paints onto that same four-brush
+family (`ShellCardBackgroundBrush`/`ShellPillBrush` for its panes, `ShellBackgroundBrush` for its
+root), so Mica reads through a tool window's content exactly the same way it does the app window's.
 
-It reaches **only** that window. The orbit overlay, the Add-item dialog and the four tool windows
-carry no Mica. The overlay's backdrop is `TransparentBackdrop`, which contributes no pixels of its
-own — attaching *a* backdrop is what stops WinUI clearing the window to an opaque plate, so an empty
-one is the whole point — and the dialog and tool windows are plain opaque surfaces. That split is
-deliberate: Settings follows a palette of its own, while everything else keeps the app's shared
-black/white identity.
+The orbit overlay and the Add-item dialog carry no Mica. The overlay's backdrop is
+`TransparentBackdrop`, which contributes no pixels of its own — attaching *a* backdrop is what stops
+WinUI clearing the window to an opaque plate, so an empty one is the whole point — and the dialog is
+a plain opaque surface. That split is deliberate: Settings follows a palette of its own, while
+everything else — the app window and every tool window alike — keeps the app's shared black/white
+identity.
 
 ### Acrylic — the orbit's own bubbles
 
@@ -617,7 +834,10 @@ way: an opaque fill fades the acrylic disc out along with it, since nothing show
 circle anyway.
 
 Hover under **Invert** swaps the tint to a fully opaque inverted fill; under **Zoom** the tint never
-changes at all and the scale is the only cue. Close is the exception to both and goes red
+changes at all and the scale is the only cue (it grows for **In**, shrinks for **Out**); under **Tint**
+the tint becomes the user's own opaque color and the scale does not move. An opaque tint takes the
+acrylic disc out with it, as inversion does, and its glyph is black or white by the color's own
+contrast rather than by theme. Close is the exception to all three and goes red
 (`#EF6F6F`) in either theme. Neither the hub nor the hover pill is glass — the hub paints nothing
 (the mark floats straight on the desktop on its own drop shadow) and the pill is a solid plate with
 a one-pixel border.
@@ -643,24 +863,38 @@ pane and canvas indistinguishable now that the canvas is pure white.
 
 **Settings → General → Accent colour**, directly under Theme — a swatch that opens a colour picker
 with live preview and a **Reset to default**. Stored as `AccentColorHex`; `null` means "use the
-built-in default", which is teal: `#3DDCD3` on dark surfaces and a deepened `#0B7C7C` on light ones
-(the bright teal lands near 1.8:1 as link text on a white card, well under WCAG AA, where the
-deepened one holds the same hue at about 5:1).
+built-in default", which is Logi's own violet: `#8A67FF` on dark surfaces and a deepened `#6C47FF`
+on light ones.
+
+SwiftX shipped a teal default before the app shell landed (`#3DDCD3` / `#0B7C7C`). The violet
+replaced it when the window was rebuilt on Logi's design, and only as the *fallback* for an unset
+value — a colour already stored in `AccentColorHex` is untouched, and the old teal is one click away
+in the picker for anyone who wants it back.
 
 `ApplyAccentColorOverride` paints it — always, the default included, because falling through to the
-framework does not reach SwiftX's teal at all: left unset, those brush keys resolve to WinUI's
+framework does not reach SwiftX's own accent at all: left unset, those brush keys resolve to WinUI's
 `AccentFillColorDefaultBrush`, which is the *Windows* accent. One stored colour becomes three states
 everywhere it lands: the colour itself, an 18% lighter hover, and an 18% darker pressed.
 
-It reaches Settings' toggle switches, radio buttons, the Radius slider (track and thumb), the
-Feedback page's rating stars, the nav pane's selection indicator, and the Feedback & Support links.
-It deliberately reaches nothing else:
+It reaches the app window's toggle switches, radio buttons, the Radius slider (track and thumb), the
+Feedback section's rating stars, the Settings rail's 4px indicator and active label, the selected
+theme card's border, the Home screen's box glyphs and OPEN bars, the set-up guide's step dots and
+commit button, and the Feedback & Support links (`ShellWindow.ApplyAccentColorOverride`); the
+Add-item dialog's own accent-tinted controls (`AddItemWindow.ApplyAccentColorOverride`); and, in
+every tool window, whichever action button's hover tint isn't one of the two fixed colours below —
+Open file, Format, Encode/Decode, Save, Edit, Unlock and the rest
+(`EditorToolPage.ApplyHoverIconColor`, reading `AccentPalette.Resolve` directly rather than through a
+resource-dictionary override, since a page built entirely in code has no dictionary for
+`{ThemeResource}` bindings to shadow in the first place). It deliberately reaches nothing else:
 
-- The orbit, the Add-item dialog and the four tool windows have no accent concept at all.
-- Secure values' **Copy** stays a fixed communication blue (`#60CDFF` dark / `#0078D4` light). It
-  has to read as *blue* whatever the accent is set to, the same way a critical red never tracks the
-  accent either.
-- The orbit's Close item is always `#EF6F6F` under the pointer.
+- The orbit has no accent concept at all — its canvas keeps Logi's own fixed teal
+  (`OrbitCanvasAccentBrush`) regardless of what the user has picked.
+- Every tool page's own **Copy** stays a fixed communication blue (`#60CDFF` dark / `#0078D4` light,
+  `SwiftXCopyHoverBrush`). It has to read as *blue* whatever the accent is set to, the same way a
+  critical red never tracks the accent either.
+- The orbit's Close item is always `#EF6F6F` under the pointer, and every tool page's own
+  Delete/Clear is always `ToolCriticalBrush` (Fluent's usual critical red) under the pointer, for
+  the same reason.
 
 ### High contrast
 
@@ -862,6 +1096,12 @@ at). The next launch reseeds the defaults.
 ## Roadmap
 
 Not started; noted here as candidates.
+
+**Next**
+
+- Customizable orbit items
+- Customizable orbit design: chemical-formula layout
+- Orbit item shape — hexagon
 
 **Application**
 

@@ -75,15 +75,16 @@ public static class OrbitStore
         return new AppConfig().EnsurePrimary();
     }
 
+    /// <summary>Serializes writers against each other — see <see cref="AtomicWrite.Publish"/>.</summary>
+    private static readonly object SaveGate = new();
+
     public static void Save(AppConfig config)
     {
         try
         {
-            Directory.CreateDirectory(DataDirectory);
             var json = JsonSerializer.Serialize(config, Options);
-            var tmp = FilePath + ".tmp";
-            File.WriteAllText(tmp, json);
-            File.Move(tmp, FilePath, overwrite: true);
+            lock (SaveGate)
+                AtomicWrite.Publish(FilePath, json);
         }
         catch (Exception ex)
         {

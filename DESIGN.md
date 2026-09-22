@@ -81,7 +81,7 @@ The radial orbit is centered dynamically around the mouse cursor or screen midpo
 
 - **Hub**: Fixed-size center circular emblem. Clicking the hub closes any open outer flyout orbit or dismisses the overlay.
 - **Slots 0 to 5 (User Slots)**: Filled sequentially from the user's item list (`OrbitProfile.Items`). Empty slots are omitted from the draw pass.
-- **Slot 6 (Settings Group / Quick Action)**: System-synthesized entry. Hovering reveals the **Add New** action; clicking opens the Settings window.
+- **Slot 6 (Settings Group / Quick Action)**: System-synthesized entry. Hovering reveals the **Add New** action; clicking opens the SwiftX app window (`ShellWindow`) on its Home screen.
 - **Slot 7 (Close Action)**: System-synthesized entry. Quits the application. Features a unique inverted hover behavior (shrinks under cursor rather than grows; turns critical red).
 - **Concentric Flyout (Outer Orbit)**: When hovering a group item, an outer concentric orbit fans open with up to 8 child items. The inner orbit remains stationary to preserve muscle memory.
 
@@ -108,7 +108,7 @@ When configured for **Quadrant Mode**, the orbit adapts into a $90^\circ$ quarte
   1. `QuickAccess`: Live aggregation of all web links and shortcuts on the orbit.
   2. `Notepad`: Dedicated launcher or system fallback.
   3. `Tools`: Built-in developer tools group.
-  4. `Settings`: Configuration shell.
+  4. `Settings`: The SwiftX app window.
 
 ---
 
@@ -161,6 +161,7 @@ To guarantee that SwiftX never crashes, hangs, or exhausts system resources:
 | **Custom Icon Ingestion** | $16\text{ MB}$ | Pre-decode image header boundary check |
 | **Config Import** | $8\text{ MB}$ | Pre-parse JSON size limit |
 | **Editor Syntax Highlighting** | $100{,}000\text{ chars}$ | Skips syntax tokens above ceiling; falls back to raw monospace |
+| **Quick Format Auto-Run** | $2{,}000{,}000\text{ chars}$ | `InputLimits.MaxQuickFormatChars`; refused with a message pointing at the Data Formatter, since this is the one tool that formats unprompted |
 | **JSON Parser Depth** | $256\text{ levels}$ | `JsonDocumentOptions.MaxDepth = 256` with diagnostic capture |
 | **XML Entity Characters** | $1{,}024\text{ chars}$ | `XmlReaderSettings.MaxCharactersFromEntities = 1024` |
 
@@ -192,27 +193,30 @@ Read-time only, and only when `orbit.json` is absent: a pre-rename `ring.json` i
 
 ### 8.1 Theme Matrix
 
-`AppTheme` carries **four** members — `Light`, `Dark`, `Black`, `System` — where `Black` is surfaced to the user as **Midnight**. The Settings window follows a palette of its own (`Themes/Colors.xaml`); the orbit, `AddItemWindow`, and the four tool windows keep the app's shared black/white identity.
+`AppTheme` carries **four** members — `Light`, `Dark`, `Black`, `System` — where `Black` is surfaced to the user as **Midnight**. The app window (`ShellWindow`) and the first-run guide (`OnboardingWindow`) follow a palette of their own (`Themes/Colors.xaml`); the orbit, `AddItemWindow`, and the four tool windows keep the app's shared black/white identity.
 
-| Surface (Settings) | Light | Dark | Midnight |
+The `Shell*` family is Logi Options+'s own `AppBackgroundBrush` / `SettingsCardBackgroundBrush` / `SettingsCardBorderBrush`, ported hue-for-hue from `windows-app-mx`'s `LogiApp/Themes/AppThemeResources.xaml` (branch `logiApp/dotnet`). The one adaptation is opacity: Logi paints these flat, SwiftX carries them at the same `0xD9` alpha as every other Dark plate here so Mica still reads through. The older `SwiftX*` / `Settings*` surface keys stay as they are — `AddItemWindow` and the tool windows share them.
+
+| Surface (app window) | Light | Dark | Midnight |
 | :--- | :--- | :--- | :--- |
-| **Content canvas** | `#FFFFFF` | `#D9222222` | `#E6000000` |
-| **Navigation pane** | `#F0F4F8` | `#D91A1A1A` | `#E6000000` |
-| **Card / container** | `#F0F4F8` (stroke `#DDE4EC`) | `#D92C2C2C` (stroke `#3A3A3A`) | `#E6000000` (stroke `#3A3A3A`) |
+| **Page** (`ShellBackgroundBrush`) | `#F2F2F2` | `#D92B2B2B` | `#E6000000` |
+| **Card** (`ShellCardBackgroundBrush`) | `#FFFFFF` (stroke `#E0E0E0`) | `#D9333333` (stroke `#444444`) | `#E6121212` (stroke `#2A2A2A`) |
+| **Icon medallion** (`ShellMedallionBrush`) | `#F4F6F9` | `#D9242424` | `#E60A0A0A` |
+| **Meta pill** (`ShellPillBrush`) | `#EDEFF2` | `#D93A3A3A` | `#E61A1A1A` |
 | **Recessed orbit tray** | `#E7EDF3` | `#D9202020` | `#E6000000` |
-| **Accent (default)** | `#0B7C7C` | `#3DDCD3` | `#3DDCD3` |
+| **Accent (default)** | `#6C47FF` | `#8A67FF` | `#8A67FF` |
 
 - **Light Inversion**: Light is the reverse of its earlier form — cards are a cool tint *darker* than a pure-white canvas (recessed panels), where they were previously pure `#FFFFFF` raised off `#F3F3F3`. Nav selection fills are explicitly enumerated (`#DCE5EE` / `#D2DDE8` / `#C8D5E2`) rather than inherited from WinUI `SubtleFill*` tokens, which Windows accent personalization can tint.
-- **Mica Composition**: `SettingsWindow` attaches `MicaBackdrop { Kind = MicaKind.BaseAlt }` unconditionally. Dark's plates carry an `0xD9` (~85%) alpha so the wallpaper-derived tint reads through each layer while the raised/recessed hierarchy survives; Light's brushes are fully opaque, so the backdrop is inert there. Scoped strictly to this window — no other window carries Mica.
+- **Mica Composition**: `ShellWindow` attaches `MicaBackdrop { Kind = MicaKind.BaseAlt }` unconditionally. Dark's plates carry an `0xD9` (~85%) alpha so the wallpaper-derived tint reads through each layer while the raised/recessed hierarchy survives; Light's brushes are fully opaque, so the backdrop is inert there. Scoped strictly to this window — no other window carries Mica.
 - **Per-Bubble Acrylic**: Orbit items composite a `SystemBackdropElement` (`DesktopAcrylicBackdrop`) beneath a theme tint (`#66000000` Dark / `#66FFFFFF` Light / `#CC000000` Midnight), inset by $0.5\text{ px}$ (`BackdropInset`) so the backdrop's unfeathered composition clip never breaches the XAML-antialiased tint edge. The overlay window itself remains fully transparent (`TransparentBackdrop`).
-- **Midnight Resolution**: WinUI resolves `{ThemeResource}` against Light/Dark/Default only, so Midnight cannot be a theme dictionary. `ThemeHelper.Resolve` maps it onto Dark's `ElementTheme`; `SettingsWindow.ApplyBlackOverrides` shadows the surface keys in the window root's own `Resources`, and `ForceThemeResourceRefresh` toggles `RequestedTheme` off and back to force a re-walk, since the Dark↔Midnight transition never changes `RequestedTheme`'s value. `System` can never resolve to Midnight — there is no OS-level equivalent.
-- **Accent Override**: `AccentColorHex` (nullable; `null` = built-in teal per theme) is applied by `ApplyAccentColorOverride` to the WinUI control keys Settings actually uses — toggle switch, radio button, slider track/thumb, rating control, and nav selection indicator — in (default, pointer-over, pressed) triples derived by blending $\pm 18\%$ toward white/black. Applied unconditionally, including for the default, because unset keys resolve to the Windows system accent rather than to SwiftX's teal.
+- **Midnight Resolution**: WinUI resolves `{ThemeResource}` against Light/Dark/Default only, so Midnight cannot be a theme dictionary. `ThemeHelper.Resolve` maps it onto Dark's `ElementTheme`; `ShellWindow.ApplyBlackOverrides` shadows the surface keys in the window root's own `Resources` — per-key rather than one flat black, because the shell's card, medallion and pill would otherwise collapse into each other and leave a nav box reading as a bare outline — and `ForceThemeResourceRefresh` toggles `RequestedTheme` off and back to force a re-walk, since the Dark↔Midnight transition never changes `RequestedTheme`'s value. `System` can never resolve to Midnight — there is no OS-level equivalent.
+- **Accent Override**: `AccentColorHex` (nullable; `null` = built-in violet per theme — Logi's `#8A67FF` / `#6C47FF`, which replaced SwiftX's shipped teal `#3DDCD3` / `#0B7C7C` when the window was rebuilt on Logi's design; a stored value is untouched by that change) is applied by `ApplyAccentColorOverride` to the WinUI control keys the window actually uses — toggle switch, radio button, slider track/thumb, rating control — in (default, pointer-over, pressed) triples derived by blending $\pm 18\%$ toward white/black. Logi's three accent-derived tokens (`SettingsNavActiveBrush`, `SettingsNavIndicatorBrush`, `SettingsCardSelectedBorderBrush`) are `StaticResource` aliases inside each theme dictionary and so resolve once at parse time; they are shadowed here as well, and the rail and theme cards — whose selected state is a brush written straight onto the element — are repainted in the same pass. Applied unconditionally, including for the default, because unset keys resolve to the Windows system accent rather than to SwiftX's own.
 - **High Contrast Precedence (§13.3)**: When Windows High Contrast is active (`HighContrast.IsActive()`), custom syntax palettes and status colors are suppressed in favor of system-provided theme tokens — `CodeView` and `CodeEditor` fall back to the control's theme-resolved foreground, and `ToolStatusBar` clears its error red. Custom surface brushes are not special-cased; the rule is to stop painting, not to repaint.
 
 ### 8.2 Keyboard & Automation
 - **Narrator**: Full UI Automation tree coverage via `AutomationProperties.SetName` and `AutomationProperties.SetAutomationId`.
 - **Keyboard Accelerators**:
-  - `Ctrl+Shift+S`: Toggle Orbit Overlay
+  - `Ctrl+Shift+X`: Toggle Orbit Overlay
   - `Ctrl+Enter`: Format Active Document
   - `Ctrl+F`: Open Code Search Bar
   - `Ctrl++` / `Ctrl+-` / `Ctrl+Wheel`: Monospace Font Zoom In / Out
