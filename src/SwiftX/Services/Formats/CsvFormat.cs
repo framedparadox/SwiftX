@@ -33,6 +33,7 @@ public sealed class CsvFormat : IDataFormat
         if (first is '{' or '[' or '<') return 0;
 
         int lines = 0;
+        int proseLines = 0;
         int? firstCount = null;
         bool consistent = true;
 
@@ -40,6 +41,7 @@ public sealed class CsvFormat : IDataFormat
         {
             if (lineSpan.IsWhiteSpace()) continue;
             lines++;
+            if (LooksLikeSentence(lineSpan)) proseLines++;
             int commas = CountTopLevelCommas(lineSpan);
             if (commas == 0) { consistent = false; continue; }
             if (firstCount is null) firstCount = commas;
@@ -50,7 +52,37 @@ public sealed class CsvFormat : IDataFormat
         // world") — CSV's defining feature is tabular *rows*, so this format only ever claims
         // multi-line input, however many commas one line happens to contain.
         if (lines < 2 || firstCount is null) return 0;
+
+        // Prose that happens to contain commas is not a table, and claiming it is does visible
+        // damage rather than nothing: Quick Format runs this on the clipboard with no confirmation
+        // step, and a CSV round trip re-quotes every field it re-emits, so
+        //     He said, "hello", then left.
+        // comes back as
+        //     He said," ""hello""", then left.
+        // This is the same guard — and the same tell — YamlFormat.LooksLikeSentenceValue already
+        // applies for the identical reason; CSV simply never had its half of it.
+        if (proseLines * 2 > lines) return 0;
+        if (!consistent && proseLines > 0) return 0;
+
         return consistent ? 65 : 25;
+    }
+
+    /// <summary>
+    /// Whether a line reads as a sentence rather than a row: it ends in sentence-terminal
+    /// punctuation and has a space in it somewhere. Both halves matter — <c>3.14</c> ends in a
+    /// full stop and is a perfectly ordinary cell, and a row of one-word cells never ends in one.
+    /// <para>
+    /// Deliberately narrow. The cost of scoring a real ragged CSV at 0 is that it shows as plain
+    /// text until the user picks CSV in the Data Formatter, where the round trip is close to a
+    /// no-op anyway; the cost of the reverse is silently rewriting someone's clipboard.
+    /// </para>
+    /// </summary>
+    private static bool LooksLikeSentence(ReadOnlySpan<char> line)
+    {
+        var trimmed = line.TrimEnd();
+        if (trimmed.Length == 0) return false;
+        char last = trimmed[^1];
+        return (last == '.' || last == '!' || last == '?') && trimmed.Contains(' ');
     }
 
     private static int CountTopLevelCommas(ReadOnlySpan<char> line)
@@ -136,15 +168,24 @@ public sealed class CsvFormat : IDataFormat
                         if (seen.Add(key)) headers.Add(key);
 
                 var rows = new List<List<string>> { headers };
+                var byKey = new Dictionary<string, DataNode>(StringComparer.Ordinal);
                 foreach (var item in arr.Items)
                 {
                     var obj = (ObjectNode)item;
+                    // One index per record rather than a linear scan of its members per cell.
+                    // The scan made the write quadratic in the column count, and the column count
+                    // here is the union of every record's keys — so a JSON array whose records
+                    // carry distinct keys (an export keyed by id, a sparse log) had the header
+                    // grow with the row count and every cell scan against it. TryAdd, not the
+                    // indexer: a duplicate key has to resolve to the first member, which is what
+                    // the FirstOrDefault this replaces did.
+                    byKey.Clear();
+                    foreach (var (key, value) in obj.Members)
+                        byKey.TryAdd(key, value);
+
                     var row = new List<string>(headers.Count);
                     foreach (var header in headers)
-                    {
-                        var match = obj.Members.FirstOrDefault(m => m.Key == header);
-                        row.Add(CellText(match.Value));
-                    }
+                        row.Add(CellText(byKey.GetValueOrDefault(header)));
                     rows.Add(row);
                 }
                 return rows;

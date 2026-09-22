@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace SwiftX.Services;
 
@@ -56,7 +57,12 @@ public static class Diag
 
                 line += "\n";
                 File.AppendAllText(LogPath, line);
-                _written += line.Length;
+                // Bytes, not characters. AppendAllText writes UTF-8, and what gets logged here is
+                // item names, targets and exception messages — all of which carry whatever
+                // alphabet the user's files and Windows locale use. Counting UTF-16 code units
+                // let the file run to three times MaxBytes on a CJK or Cyrillic system, so the
+                // one number this ceiling is stated in was the one it was not measured in.
+                _written += Encoding.UTF8.GetByteCount(line);
             }
         }
         catch { /* ignore */ }
@@ -68,6 +74,6 @@ public static class Diag
     {
         var header = $"=== SwiftX {reason} {DateTime.Now:O} ===\n";
         File.WriteAllText(LogPath, header);
-        _written = header.Length;
+        _written = Encoding.UTF8.GetByteCount(header);
     }
 }
