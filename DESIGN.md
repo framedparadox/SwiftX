@@ -216,7 +216,7 @@ The `Shell*` family is Logi Options+'s own `AppBackgroundBrush` / `SettingsCardB
 ### 8.2 Keyboard & Automation
 - **Narrator**: Full UI Automation tree coverage via `AutomationProperties.SetName` and `AutomationProperties.SetAutomationId`.
 - **Keyboard Accelerators**:
-  - `Ctrl+Shift+S`: Toggle Orbit Overlay
+  - `Ctrl+Shift+X`: Toggle Orbit Overlay
   - `Ctrl+Enter`: Format Active Document
   - `Ctrl+F`: Open Code Search Bar
   - `Ctrl++` / `Ctrl+-` / `Ctrl+Wheel`: Monospace Font Zoom In / Out

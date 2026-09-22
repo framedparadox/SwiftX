@@ -34,23 +34,17 @@ public static class AccentPalette
     /// <summary>
     /// The built-in accent, per theme, used whenever <see cref="AppConfig.AccentColorHex"/> is
     /// unset or unparsable. Must track <c>SettingsAccentBrush</c>/<c>SettingsAccentHoverBrush</c>
-    /// in <c>Themes/Colors.xaml</c>. Two values rather than one because the same violet cannot
+    /// in <c>Themes/Colors.xaml</c>. Two values rather than one because the same teal cannot
     /// carry a dark surface and a light one: the bright one reads as a highlight on black and as a
-    /// smear on white, so light gets the deeper, more saturated variant.
-    /// <para>
-    /// These are Logi's own <c>SettingsAccentBrush</c> values, taken verbatim from
-    /// windows-app-mx's <c>LogiApp/Themes/AppThemeResources.xaml</c> (branch <c>logiApp/dotnet</c>)
-    /// when the app shell was rebuilt on Logi's design — see <c>docs/full-app-mockups-logi-base.md</c>.
-    /// They replaced SwiftX's own teal (<c>#3DDCD3</c> Dark / <c>#0B7C7C</c> Light), which is
-    /// still one click away for anyone who wants it: the accent has always been the user's to
-    /// pick, and a colour already stored in <see cref="AppConfig.AccentColorHex"/> is untouched
-    /// by this change, since these are only the fallback for an unset value.
-    /// </para>
+    /// smear on white, so light gets the deeper variant (<c>#0B7C7C</c> holds about 5:1 as link
+    /// text on white). Hover brushes are <see cref="PointerOver"/> of these.
+    /// A colour already stored in <see cref="AppConfig.AccentColorHex"/> is the user's own pick
+    /// and is left alone; these are only the fallback for an unset value.
     /// </summary>
-    public const string DefaultHexDark = "#8A67FF";
+    public const string DefaultHexDark = "#3DDCD3";
 
     /// <inheritdoc cref="DefaultHexDark"/>
-    public const string DefaultHexLight = "#6C47FF";
+    public const string DefaultHexLight = "#0B7C7C";
 
     /// <summary>
     /// How far <see cref="PointerOver"/> and <see cref="Pressed"/> move off the base accent,

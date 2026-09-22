@@ -13,13 +13,11 @@ and links from it; pop groups open into an outer orbit; and reach a set of built
 Everything runs on your own machine. There is no account, no telemetry, and nothing is uploaded.
 
 <p align="center">
-  <img src="img/SxiftX_Full.png" alt="The orbit open on the desktop" width="49%">
-  <img src="img/SwiftX_HotCorner.png" alt="The hot corner quadrant" width="49%">
+  <img src="img/SwiftX2_OrbitDock.png" alt="The orbit open on the desktop" width="70%">
+  <br><sub><em>The orbit, summoned over the desktop — items on eight slots around a floating hub.</em></sub>
 </p>
-<p align="center">
-  <img src="img/SwiftX_Settings_Home.png" alt="Settings — Home, the live orbit customizer" width="49%">
-  <img src="img/SwiftX_Settings_General.png" alt="Settings — General" width="49%">
-</p>
+
+More screenshots are spread through the sections below, next to what they show.
 
 ---
 
@@ -104,7 +102,7 @@ link's own site icon, or from a Segoe Fluent glyph you pick.
 
 ### Keyboard
 
-`Ctrl+Shift+S` by default; press again to dismiss. Remap it in **Settings → General → Invoke** by
+`Ctrl+Shift+X` by default; press again to dismiss. Remap it in **Settings → General → Invoke** by
 clicking the capture button and pressing the combination you want.
 
 - A shortcut must include **Ctrl, Alt, or Win** — Shift alone is not enough for a system-wide key.
@@ -144,6 +142,12 @@ dropdown, and two choices for the shape —
 - **Orbit** (default) — the whole orbit, drawn at the corner.
 - **Quadrant** — four items only, on a quarter circle centered on the corner itself: QuickAccess,
   Notepad, Tools, and Settings by default (see [The corner quadrant](#the-corner-quadrant)).
+
+<p align="center">
+  <img src="img/SwiftX2_HotCorner.png" alt="The hot corner, opened in its Orbit shape" width="60%">
+  <br><sub><em>The top-left corner fired, drawing the whole orbit anchored to that corner instead of
+  the screen's center.</em></sub>
+</p>
 
 ---
 
@@ -205,7 +209,9 @@ back inside the quarter if it would otherwise throw half of them off the screen.
 
 ## The SwiftX app
 
-Reached from the orbit's Settings item, the tray menu, or by launching SwiftX again.
+The companion window behind the orbit's Settings item — where you customize what the orbit holds,
+tweak its look, manage the built-in tools, and change app-wide settings. Reached from the orbit's
+Settings item, the tray menu, or by launching SwiftX again.
 
 The window is built on the Logi Options+ reference app in
 [`framedparadox/windows-app-mx`](https://github.com/framedparadox/windows-app-mx) (branch
@@ -223,12 +229,22 @@ gear on the right, over three portrait boxes:
 | **Tools** | The built-in developer tools, and which of them show on the orbit |
 | **Elements** | The apps, files, folders, links and groups on the orbit |
 
+<p align="center">
+  <img src="img/SwiftX2_Home.png" alt="Home — the Orbit and Dev Tools boxes" width="70%">
+  <br><sub><em>Home, with its two main boxes open onto the orbit customizer and the built-in tools.</em></sub>
+</p>
+
 A slim tab on Home's right edge, halfway down, opens a **How to** guide: a drawer that slides over
 the Home screen with four topics (setting up the dock, how to invoke it, how to use the hot corner,
 how to change items). It is written from your own configuration, so it names the shortcut and the
 corner you actually chose and says so plainly when either is switched off, and each topic has a
 button that goes to the place it describes. The topics are one scrolling list, and nothing dims the
 Home screen behind it. Esc or the close button closes it.
+
+<p align="center">
+  <img src="img/SwiftX2_HowToPanel.png" alt="The How to guide, open over Home" width="70%">
+  <br><sub><em>The How to drawer, mid-slide over Home — each topic links straight to the screen it explains.</em></sub>
+</p>
 
 The gear opens **Settings**, which is a screen of its own rather than the window itself: a 270px
 rail with four sections — General, Feedback & Support, Privacy & Data, About. Every sub-screen has
@@ -241,6 +257,12 @@ a picker for what goes on the orbit (stock Windows apps, your own folders, a cou
 built-in tools, plus **Add your own…** for anything else), and the keyboard shortcut and hot corner
 that summon it — along with *Start with Windows* and *Desktop shortcut*.
 
+<p align="center">
+  <img src="img/SwiftX2_OnBoarding.png" alt="Step 1 of the first-run set-up guide" width="60%">
+  <br><sub><em>Step 1 of 3 — the welcome step. Steps 2 and 3 pick the orbit's starting items and the
+  shortcut/hot corner that summon it.</em></sub>
+</p>
+
 Nothing is written until **Finish**. Dismissing the guide leaves the orbit exactly as it shipped,
 because the default six items are seeded before the guide opens and the guide only ever replaces
 them; its own tick-boxes start on that same six, so finishing without touching anything is a no-op.
@@ -248,11 +270,19 @@ Re-run it any time from **Settings → General → Set-up guide**.
 
 ### Orbit
 
-Logi's `ActionRingPage` layout view, built to [`docs/images/17-app-ring.svg`](docs/images/17-app-ring.svg):
-a canvas column — a 68px header, the ring, a 60px toolbar over a hairline — beside a fixed 320px
-sidebar, in the ring canvas's own darker palette rather than the app chrome's (see
+The screen behind Home's **Orbit** box: a live preview of your orbit on the left, and a sidebar on
+the right that either edits its settings or adds items to it. It is Logi's `ActionRingPage` layout
+view, built to [`docs/images/17-app-ring.svg`](docs/images/17-app-ring.svg): a canvas column — a
+68px header, the ring, a 60px toolbar over a hairline — beside a fixed 320px sidebar, in the ring
+canvas's own darker palette rather than the app chrome's (see
 [`docs/full-app-mockups-logi-base.md`](docs/full-app-mockups-logi-base.md) for why those are two
 palettes and not one). What it shows is what the orbit draws, at the current size and radius.
+
+<p align="center">
+  <img src="img/SwiftX2_CustomizeOrbit_Settings.png" alt="The Orbit screen, sidebar on its Settings panel" width="70%">
+  <br><sub><em>The canvas with the sidebar's default panel: item size, shape, radius, hot corner and
+  hover style, all live against the preview on the left.</em></sub>
+</p>
 
 **The canvas**
 
@@ -302,6 +332,12 @@ from) and the built-in tools. Click a row to put it in the first free slot; anyt
 orbit is shown ticked and does nothing. **Add something else…** at the bottom opens the full add
 dialog. The swap is a visibility change between two panels, not a navigation, so the canvas keeps
 its selection and its drag state across it.
+
+<p align="center">
+  <img src="img/SwiftX2_CustomizeOrbit_Add.png" alt="The Orbit screen, sidebar swapped to Add to orbit" width="70%">
+  <br><sub><em>The same canvas after pressing Edit — the sidebar becomes the Apps/Shortcuts/Folders/
+  Links/Groups/Tools accordion, with what's already on the orbit ticked off.</em></sub>
+</p>
 
 **Size** — Small / Medium / Large, on one row. Scales the items around the orbit; the hub is
 unaffected.
@@ -359,6 +395,15 @@ following it.
 
 ### Settings → General
 
+App-wide preferences — theme, accent colour, language, the summon shortcut, and startup — reached
+from Home's gear icon.
+
+<p align="center">
+  <img src="img/SwiftX2_Settings.png" alt="Settings — General" width="70%">
+  <br><sub><em>Settings → General: the five theme cards, accent colour, language, and the Invoke
+  shortcut card.</em></sub>
+</p>
+
 | Setting | What it does |
 |---------|--------------|
 | **Theme** | Light, Dark, **Midnight**, **Frosted glass**, or System — five preview cards in Logi's own 145x130 geometry, not a dropdown. Dark is layered dark plates over the window's Mica; Midnight replaces them with one flat near-black; Frosted glass drops them to a low-alpha wash over a real acrylic so the desktop reads through the window; Light is opaque. The orbit's own bubbles are live acrylic in every theme. See [Theme](#theme). |
@@ -387,9 +432,16 @@ Tools page, so that tile only makes sense from an orbit or corner slot that can 
 
 ### Tools
 
-One card per built-in tool: a switch that puts it in the orbit's Tools item or takes it out, and
-an open button. The cards do not reorder — the order is the catalog's, and a tool's place inside
-the Tools group was never something worth dragging for.
+The screen behind Home's **Dev Tools** box: one card per built-in tool, describing what it does,
+with a switch that puts it in the orbit's Tools item or takes it out, and an open button. The cards
+do not reorder — the order is the catalog's, and a tool's place inside the Tools group was never
+something worth dragging for.
+
+<p align="center">
+  <img src="img/SwiftX2_DevTools.png" alt="The Dev Tools screen" width="70%">
+  <br><sub><em>Every built-in tool — Data formatter, Quick Format, Secure values, Base64 and
+  Certificate — each with its own open button.</em></sub>
+</p>
 
 ### Settings → Feedback & Support
 
@@ -503,7 +555,7 @@ pre-rename build is a file you can still pick.
 | `HoverZoomDirection` | `In`/`Out` | `In` | Which way `Zoom` moves an item — `In` grows it, `Out` shrinks it. Read only while `HoverStyle` is `Zoom`, but kept either way. An unknown name reads as `In`. |
 | `HoverTintColorHex` | `"#RRGGBB"` or null | `null` | The fill `Tint` paints under the pointer. `null` means black. Anything that doesn't parse falls back the same way. |
 | `HoverAnimation` | `Pulse`/`Bounce`/`Wobble`/`Shake`/`Spin`/`Float` | `Pulse` | The motion `Animate` plays. Read only while `HoverStyle` is `Animate`, but kept either way. An unknown name reads as `Pulse` rather than discarding the config. |
-| `Hotkey` | string | `"Ctrl+Shift+S"` | Summon shortcut, in readable form so a hand-edited file stays legible. |
+| `Hotkey` | string | `"Ctrl+Shift+X"` | Summon shortcut, in readable form so a hand-edited file stays legible. |
 | `HotkeyEnabled` | bool | `true` | Whether the shortcut is registered at all. |
 | `HotCornerEnabled` | bool | `true` | Whether a screen corner summons the orbit. |
 | `HotCorner` | `TopLeft`/`TopRight`/`BottomLeft`/`BottomRight` | `TopLeft` | Which corner. |

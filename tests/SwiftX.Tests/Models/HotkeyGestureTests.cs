@@ -6,9 +6,9 @@ namespace SwiftX.Tests.Models;
 public class HotkeyGestureTests
 {
     [Fact]
-    public void Default_is_Ctrl_Shift_S()
+    public void Default_is_Ctrl_Shift_X()
     {
-        Assert.Equal("Ctrl+Shift+S", HotkeyGesture.Default.ToString());
+        Assert.Equal("Ctrl+Shift+X", HotkeyGesture.Default.ToString());
         Assert.True(HotkeyGesture.Default.IsValid);
     }
 

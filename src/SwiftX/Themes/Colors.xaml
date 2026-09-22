@@ -133,8 +133,8 @@
                  non-monochrome color the app has ever painted — see the Feedback & Support page's
                  links in ShellWindow.xaml, its only consumer today. -->
             <SolidColorBrush x:Key="SettingsSecondaryTextBrush" Color="#AAAAAA"/>
-            <SolidColorBrush x:Key="SettingsAccentBrush" Color="#8A67FF"/>
-            <SolidColorBrush x:Key="SettingsAccentHoverBrush" Color="#9F82FF"/>
+            <SolidColorBrush x:Key="SettingsAccentBrush" Color="#3DDCD3"/>
+            <SolidColorBrush x:Key="SettingsAccentHoverBrush" Color="#5FE2DA"/>
             <!-- HyperlinkButton drives its colour from these four framework keys in every visual
                  state, so a Foreground set on the control (or in a Style) is honoured at rest and
                  then discarded on hover. Overriding them is the only way to hold the accent through
@@ -305,8 +305,8 @@
                  bright teal lands near 1.8:1, well under WCAG AA, while #0B7C7C holds the same hue
                  at ~5:1. -->
             <SolidColorBrush x:Key="SettingsSecondaryTextBrush" Color="#555555"/>
-            <SolidColorBrush x:Key="SettingsAccentBrush" Color="#6C47FF"/>
-            <SolidColorBrush x:Key="SettingsAccentHoverBrush" Color="#8668FF"/>
+            <SolidColorBrush x:Key="SettingsAccentBrush" Color="#0B7C7C"/>
+            <SolidColorBrush x:Key="SettingsAccentHoverBrush" Color="#369393"/>
             <!-- See the matching comment in the Dark dictionary above. -->
             <StaticResource x:Key="HyperlinkButtonForeground" ResourceKey="SettingsAccentBrush"/>
             <StaticResource x:Key="HyperlinkButtonForegroundPointerOver" ResourceKey="SettingsAccentHoverBrush"/>
@@ -409,8 +409,8 @@
                  unconditionally from ShellWindow.xaml and must exist here too. -->
             <SolidColorBrush x:Key="SwiftXOrbitCanvasBrush" Color="#D9202020"/>
             <SolidColorBrush x:Key="SettingsSecondaryTextBrush" Color="#AAAAAA"/>
-            <SolidColorBrush x:Key="SettingsAccentBrush" Color="#8A67FF"/>
-            <SolidColorBrush x:Key="SettingsAccentHoverBrush" Color="#9F82FF"/>
+            <SolidColorBrush x:Key="SettingsAccentBrush" Color="#3DDCD3"/>
+            <SolidColorBrush x:Key="SettingsAccentHoverBrush" Color="#5FE2DA"/>
             <!-- See the matching comment in the Dark dictionary above. -->
             <StaticResource x:Key="HyperlinkButtonForeground" ResourceKey="SettingsAccentBrush"/>
             <StaticResource x:Key="HyperlinkButtonForegroundPointerOver" ResourceKey="SettingsAccentHoverBrush"/>

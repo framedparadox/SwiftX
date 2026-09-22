@@ -1502,7 +1502,7 @@
                                                                 Background="#FFFFFF" Padding="6,8,0,0">
                                                             <StackPanel Spacing="6">
                                                                 <Border Height="3" Width="30" CornerRadius="1.5"
-                                                                        Background="#6C47FF" HorizontalAlignment="Left" />
+                                                                        Background="#0B7C7C" HorizontalAlignment="Left" />
                                                                 <Border Height="3" Width="20" CornerRadius="1.5"
                                                                         Background="#CCCCCC" HorizontalAlignment="Left" />
                                                             </StackPanel>
@@ -1513,7 +1513,7 @@
                                                                 Background="#1A1A1A" Padding="0,8,6,0">
                                                             <StackPanel Spacing="4" Margin="6,0,0,0">
                                                                 <Border Height="3" Width="22" CornerRadius="1.5"
-                                                                        Background="#8A67FF" HorizontalAlignment="Left" />
+                                                                        Background="#3DDCD3" HorizontalAlignment="Left" />
                                                                 <Border Height="3" Width="30" CornerRadius="1.5"
                                                                         Background="#555555" HorizontalAlignment="Left" />
                                                             </StackPanel>
@@ -1552,7 +1552,7 @@
                                                             Background="#FFFFFF" Padding="8,8,8,0">
                                                         <StackPanel Spacing="5">
                                                             <Border Height="3" Width="28" CornerRadius="1.5"
-                                                                    Background="#6C47FF" HorizontalAlignment="Left" />
+                                                                    Background="#0B7C7C" HorizontalAlignment="Left" />
                                                             <Border Height="3" Width="38" CornerRadius="1.5"
                                                                     Background="#DDDDDD" HorizontalAlignment="Left" />
                                                         </StackPanel>
@@ -1590,7 +1590,7 @@
                                                             Background="#141414" Padding="8,8,8,0">
                                                         <StackPanel Spacing="5">
                                                             <Border Height="3" Width="28" CornerRadius="1.5"
-                                                                    Background="#8A67FF" HorizontalAlignment="Left" />
+                                                                    Background="#3DDCD3" HorizontalAlignment="Left" />
                                                             <Border Height="3" Width="38" CornerRadius="1.5"
                                                                     Background="#3E3E3E" HorizontalAlignment="Left" />
                                                         </StackPanel>
@@ -1628,7 +1628,7 @@
                                                             Background="#000000" Padding="8,8,8,0">
                                                         <StackPanel Spacing="5">
                                                             <Border Height="3" Width="28" CornerRadius="1.5"
-                                                                    Background="#8A67FF" HorizontalAlignment="Left" />
+                                                                    Background="#3DDCD3" HorizontalAlignment="Left" />
                                                             <Border Height="3" Width="38" CornerRadius="1.5"
                                                                     Background="#2A2A2A" HorizontalAlignment="Left" />
                                                         </StackPanel>
@@ -1687,7 +1687,7 @@
                                                             Padding="8,8,8,0">
                                                         <StackPanel Spacing="5">
                                                             <Border Height="3" Width="28" CornerRadius="1.5"
-                                                                    Background="#8A67FF" HorizontalAlignment="Left" />
+                                                                    Background="#3DDCD3" HorizontalAlignment="Left" />
                                                             <Border Height="3" Width="38" CornerRadius="1.5"
                                                                     Background="#66FFFFFF" HorizontalAlignment="Left" />
                                                         </StackPanel>

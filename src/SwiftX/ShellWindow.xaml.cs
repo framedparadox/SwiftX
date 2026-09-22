@@ -669,7 +669,7 @@ public sealed partial class ShellWindow : Window
         // Logi's three accent-derived Settings tokens. They are StaticResource aliases inside each
         // theme dictionary (Themes/Colors.xaml), and a StaticResource alias resolves once, at the
         // point that dictionary is parsed — so shadowing SettingsAccentBrush above does not reach
-        // them and they would have stayed on the built-in violet while every other accented control
+        // them and they would have stayed on the built-in teal while every other accented control
         // moved to the user's colour. Shadowing them here is the other half.
         Root.Resources["SettingsNavActiveBrush"] = normal;
         Root.Resources["SettingsNavIndicatorBrush"] = normal;
@@ -1836,8 +1836,8 @@ public sealed partial class ShellWindow : Window
     /// canvas corner that matches the chosen screen one, and switching the canvas between the
     /// orbit and what that corner would actually show.
     /// <para>
-    /// The mark is the whole logo at full strength, with the chosen corner outlined — the same
-    /// glyph the sidebar picker uses. While the quadrant preview is up, it swaps to a back
+    /// The mark is the four logo leaves, with the selected corner's leaf at full strength — the
+    /// same glyph the sidebar picker uses. While the quadrant preview is up, it swaps to a back
     /// chevron so the button reads as a way out rather than as another pointer at the corner it
     /// is already sitting in.
     /// </para>
@@ -1863,10 +1863,7 @@ public sealed partial class ShellWindow : Window
                     Glyph = "\uE72B",
                     FontSize = 14,
                 }
-                : AppLogo.CreateCornerGlyph(
-                    28,
-                    corner,
-                    selectionStroke: ThemeHelper.Brush(Root, "SettingsHeaderBrush")),
+                : AppLogo.CreateCornerGlyph(28, corner),
         };
         WireOrbitGlyphHover(button);
 
@@ -1887,9 +1884,8 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// Orbit canvas chrome (Elements, Settings, info, reset): no disc on hover. The glyph tints
-    /// to the accent. The hot-corner logo is the exception — its petals stay the brand mark and
-    /// the highlight is the whole logo at full strength.
+    /// Orbit canvas chrome (hot corner, Elements, Settings, info, reset): no disc on hover.
+    /// The glyph / logo tints to the accent instead.
     /// </summary>
     private void WireOrbitGlyphHover(Button button)
     {
@@ -1924,13 +1920,6 @@ public sealed partial class ShellWindow : Window
             }
             else if (node is Shape shape)
             {
-                // Logo petals (the hot-corner mark) keep their own gradients. Highlight
-                // means the whole logo at full strength, not a petal painted in the accent.
-                if (shape.Fill is LinearGradientBrush)
-                {
-                    shape.Opacity = 1;
-                    continue;
-                }
                 saved.Add((shape, shape.Fill));
                 shape.Fill = accent;
             }
@@ -6118,7 +6107,7 @@ public sealed partial class ShellWindow : Window
             _manager.ApplyHotCorner();
             RebuildHotCornerPicker(picked);
             RenderPreview();
-        }, ThemeHelper.Brush(Root, "SettingsHeaderBrush"));
+        });
     }
 
     private void SelectHotCornerLayout(HotCornerLayout layout)
