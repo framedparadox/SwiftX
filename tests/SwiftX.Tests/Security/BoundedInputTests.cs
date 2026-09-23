@@ -22,6 +22,7 @@ namespace SwiftX.Tests.Security;
 /// what was allocated.
 /// </para>
 /// </summary>
+[Collection(SharedDataDirectoryCollection.Name)]
 public class BoundedInputTests
 {
     private static string TempFile(string name) =>

@@ -9,6 +9,7 @@ namespace SwiftX.Tests.Services;
 /// <see cref="AppLanguage.EnglishUS"/> in a <c>finally</c> — leaving it pointed at whatever a test
 /// last selected would leak into whichever test (in this class or another) runs next.
 /// </summary>
+[Collection(LocalizationCollection.Name)]
 public class LocTests
 {
     [Fact]

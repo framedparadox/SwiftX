@@ -132,10 +132,18 @@ public sealed class TrayIconService : IDisposable
         if (Environment.ProcessPath is { Length: > 0 } exe &&
             NativeMethods.ExtractIconEx(exe, 0, out var large, out var small, 1) > 0)
         {
-            if (large != nint.Zero && large != small)
-                NativeMethods.DestroyIcon(large);
+            // Prefer the small icon — this is a tray icon — but take the large one rather than
+            // nothing when the module carries no small frame. Destroying `large` unconditionally
+            // and then testing `small` meant an executable with only a large icon threw away a
+            // perfectly good icon and fell through to the generic one below.
             if (small != nint.Zero)
+            {
+                if (large != nint.Zero && large != small)
+                    NativeMethods.DestroyIcon(large);
                 return (small, false);
+            }
+            if (large != nint.Zero)
+                return (large, false);
         }
 
         Diag.Log("Tray: falling back to the generic application icon");

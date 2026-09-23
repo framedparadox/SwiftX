@@ -601,16 +601,30 @@
                         </StackPanel>
 
                         <!-- Elements reveals the "ADD TO ORBIT" sidebar (SetOrbitEditing(true))
-                             and Settings reveals the orbit's own settings sidebar. -->
+                             and Settings reveals the orbit's own settings sidebar.
+
+                             Elements carries its label inside the button rather than beside it, so
+                             the words are part of the click target and share the glyph's hover and
+                             active tint (OrbitGlyph_PointerEntered tints TextBlocks as well as icons;
+                             UpdateElementsGlyphs paints both for the active state). Width is let go
+                             of the chrome style's fixed 36 so the pill grows to fit the text. -->
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="0"
                                     VerticalAlignment="Center">
                             <Button x:Name="OrbitElementsButton" Style="{StaticResource ChromeIconButton}"
+                                    Width="Auto" Padding="10,0,12,0"
                                     Click="OrbitElementsButton_Click"
-                                    AutomationProperties.Name="Elements"
+                                    AutomationProperties.Name="Add to Orbit"
                                     ToolTipService.ToolTip="Show the things you can put on the orbit">
-                                <PathIcon x:Name="OrbitElementsGlyph" Width="16" Height="16"
-                                          Data="M 8,0.5 L 15.5,4.5 L 15.5,11.5 L 8,15.5 L 0.5,11.5 L 0.5,4.5 Z"
-                                          Foreground="{ThemeResource SettingsHeaderBrush}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <PathIcon x:Name="OrbitElementsGlyph" Width="16" Height="16"
+                                              VerticalAlignment="Center"
+                                              Data="M 8,0.5 L 15.5,4.5 L 15.5,11.5 L 8,15.5 L 0.5,11.5 L 0.5,4.5 Z"
+                                              Foreground="{ThemeResource SettingsHeaderBrush}" />
+                                    <TextBlock x:Name="OrbitElementsLabel" Text="Add to Orbit"
+                                               FontSize="13" FontWeight="SemiBold"
+                                               VerticalAlignment="Center"
+                                               Foreground="{ThemeResource SettingsHeaderBrush}" />
+                                </StackPanel>
                             </Button>
                             <Border Style="{StaticResource HeaderToolbarDivider}" />
                             <Button x:Name="OrbitSidebarSettingsButton" Style="{StaticResource ChromeIconButton}"

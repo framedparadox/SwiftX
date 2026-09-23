@@ -12,7 +12,7 @@ public enum AppTheme
     /// (ApplyBlackOverrides). Never reachable via System — there is no OS-level "Black".
     /// <para>
     /// Shown to the user as "Midnight" (see the theme cards in ShellWindow.xaml). The enum
-    /// member itself stays <c>Black</c> — it's persisted by name via JsonStringEnumConverter, so
+    /// member itself stays <c>Black</c> — it's persisted by name (see <c>OrbitStore</c>), so
     /// renaming it would strand every config that already has "Black" written into orbit.json.
     /// </para>
     /// </summary>
@@ -152,6 +152,15 @@ public sealed class AppConfig
     /// </summary>
     public bool DesktopShortcut { get; set; }
 
+    /// <summary>
+    /// Carries its own converter only to name a fallback: every enum in this file is read
+    /// tolerantly through <see cref="Services.TolerantEnumConverterFactory"/>, which falls back to
+    /// the first declared member, and <see cref="AppTheme"/>'s first member is
+    /// <see cref="AppTheme.Light"/> while this setting's default is <see cref="AppTheme.Dark"/>.
+    /// An unknown theme name has to come back as the dark window the user had, not as a light one
+    /// they never chose.
+    /// </summary>
+    [JsonConverter(typeof(Services.TolerantAppThemeConverter))]
     public AppTheme Theme { get; set; } = AppTheme.Dark;
 
     /// <summary>
@@ -168,14 +177,13 @@ public sealed class AppConfig
     /// <summary>
     /// How orbit items respond to the pointer. See <see cref="OrbitHoverStyle"/>.
     /// <para>
-    /// Read through <see cref="Services.TolerantEnumConverter{T}"/> rather than the app-wide
-    /// <c>JsonStringEnumConverter</c>: that one throws on a name it does not know, and
-    /// <c>OrbitStore.Load</c> answers a throw by starting from a blank configuration, so a single
-    /// hand-edited word here would otherwise cost the user their whole orbit. An unknown value
-    /// reads as <see cref="OrbitHoverStyle.Invert"/>.
+    /// Like every enum here, read tolerantly (see
+    /// <see cref="Services.TolerantEnumConverterFactory"/>): a name this build does not know reads
+    /// as <see cref="OrbitHoverStyle.Invert"/> rather than throwing, because
+    /// <c>OrbitStore.Load</c> answers a throw by starting from a blank configuration and a single
+    /// hand-edited word here would otherwise cost the user their whole orbit.
     /// </para>
     /// </summary>
-    [JsonConverter(typeof(Services.TolerantEnumConverter<OrbitHoverStyle>))]
     public OrbitHoverStyle HoverStyle { get; set; } = OrbitHoverStyle.Invert;
 
     /// <summary>
@@ -185,7 +193,6 @@ public sealed class AppConfig
     /// back returns you to the direction you had. Tolerant of an unknown name for the same reason
     /// <see cref="HoverStyle"/> is.
     /// </summary>
-    [JsonConverter(typeof(Services.TolerantEnumConverter<HoverZoomDirection>))]
     public HoverZoomDirection HoverZoomDirection { get; set; } = HoverZoomDirection.In;
 
     /// <summary>
@@ -205,7 +212,6 @@ public sealed class AppConfig
     /// the same reason <see cref="HoverStyle"/> is; an unknown one reads as
     /// <see cref="Models.HoverAnimation.Pulse"/>.
     /// </summary>
-    [JsonConverter(typeof(Services.TolerantEnumConverter<HoverAnimation>))]
     public HoverAnimation HoverAnimation { get; set; } = HoverAnimation.Pulse;
 
     public string Hotkey { get; set; } = HotkeyGesture.Default.ToString();
@@ -229,7 +235,15 @@ public sealed class AppConfig
 
     public bool Seeded { get; set; }
 
-    /// <summary>How large the items around the orbit are drawn. The hub is fixed and unaffected.</summary>
+    /// <summary>
+    /// How large the items around the orbit are drawn. The hub is fixed and unaffected.
+    /// <para>
+    /// Names its own fallback for the same reason <see cref="Theme"/> does:
+    /// <see cref="OrbitItemSize"/> leads with <see cref="OrbitItemSize.Small"/> and this setting
+    /// defaults to <see cref="OrbitItemSize.Medium"/>.
+    /// </para>
+    /// </summary>
+    [JsonConverter(typeof(Services.TolerantOrbitItemSizeConverter))]
     public OrbitItemSize ItemSize { get; set; } = OrbitItemSize.Medium;
 
     /// <summary>
@@ -345,7 +359,13 @@ public sealed class AppConfig
         HotCornerEnabled = other.HotCornerEnabled;
         HotCorner = other.HotCorner;
         HotCornerLayout = other.HotCornerLayout;
-        HotCornerOrbit = other.HotCornerOrbit;
+        // Copied, not aliased. Every other field here is a value type or an immutable string, so
+        // assigning the reference would quietly make this the one line where two AppConfig
+        // instances share mutable state: HotCornerItems.Edit and Reset both mutate this list in
+        // place, so an edit to the live configuration would reach back into whatever was copied
+        // from. The only caller today (Settings' Import) discards its source immediately, which is
+        // exactly why this would have gone unnoticed until the second one did not.
+        HotCornerOrbit = new List<OrbitItem>(other.HotCornerOrbit);
         ItemSize = other.ItemSize;
         ItemShape = other.ItemShape;
         OrbitRadius = other.OrbitRadius;

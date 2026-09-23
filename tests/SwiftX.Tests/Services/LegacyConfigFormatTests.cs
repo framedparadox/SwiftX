@@ -11,6 +11,7 @@ namespace SwiftX.Tests.Services;
 /// rides on this mapping. These are data-loss regression tests, not shape tests: each one asserts
 /// that something a real pre-rename config carried still arrives intact on the other side.
 /// </summary>
+[Collection(SharedDataDirectoryCollection.Name)]
 public class LegacyConfigFormatTests
 {
     /// <summary>The same options <see cref="OrbitStore"/> reads configurations with — the enum

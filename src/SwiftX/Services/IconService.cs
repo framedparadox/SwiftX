@@ -225,6 +225,14 @@ public static class IconService
     /// bitmap isn't a plain 32bpp DIB (a handful of legacy icons only carry an XOR/AND mask, no
     /// true color+alpha bitmap), leaving the caller to fall back to the GDI+ path.
     /// </summary>
+    /// <summary>
+    /// The largest icon edge <see cref="TryEncodeIconPng"/> will decode. Windows' own largest
+    /// shell icon — the SHIL_JUMBO frame this service prefers — is 256x256; anything claiming to
+    /// be four times that in each direction is not an icon SwiftX has any use for at the 44 px it
+    /// draws them, and is refused before it sizes an allocation. See the check's own note.
+    /// </summary>
+    internal const int MaxIconPixelDimension = 2048;
+
     private static byte[]? TryEncodeIconPng(nint hIcon)
     {
         if (!NativeMethods.GetIconInfo(hIcon, out var info))
@@ -240,6 +248,20 @@ public static class IconService
                 return null;
             if (bm.bmBitsPixel != 32 || bm.bmWidth <= 0 || bm.bmHeight <= 0)
                 return null;
+            // The dimensions come out of a bitmap handle, and one of the two callers feeds this
+            // icons extracted from a module the user browsed to with "Select an app or DLL…" —
+            // i.e. an arbitrary .exe/.dll whose resources SwiftX did not author. Sizing two
+            // allocations (the pixel array and the GDI+ bitmap, 4 bytes per pixel each) from an
+            // unbounded pair of numbers is the classic way that turns into an
+            // OutOfMemoryException, and at 32-bit extremes `bmWidth * bmHeight * 4` overflows int
+            // and asks for a negative array instead. The shell's own jumbo list tops out at
+            // 256x256, so this ceiling is four times larger than any icon Windows itself will
+            // hand back and still bounds the pair at 16 MB apiece.
+            if (bm.bmWidth > MaxIconPixelDimension || bm.bmHeight > MaxIconPixelDimension)
+            {
+                Diag.Log($"IconService: ignoring a {bm.bmWidth}x{bm.bmHeight} icon bitmap — past the {MaxIconPixelDimension}px ceiling");
+                return null;
+            }
 
             int width = bm.bmWidth;
             int height = bm.bmHeight;

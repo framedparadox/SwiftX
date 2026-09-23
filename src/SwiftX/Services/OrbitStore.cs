@@ -43,7 +43,14 @@ public static class OrbitStore
     {
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        Converters = { new JsonStringEnumConverter() },
+        // Tolerant rather than JsonStringEnumConverter: that one throws on an enum name it does
+        // not know, and Load answers a throw by starting from a blank configuration that the next
+        // save then writes over the real one. A single unrecognized word — a config touched by a
+        // newer build and then opened by an older one, a hand edit, a member renamed in some
+        // future version — therefore cost the user every orbit item they had arranged. An unknown
+        // name now reads as that setting's default and everything else in the file survives. See
+        // TolerantEnumConverterFactory for why this is app-wide rather than per-property.
+        Converters = { new TolerantEnumConverterFactory() },
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 

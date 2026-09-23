@@ -11,6 +11,7 @@ namespace SwiftX.Tests.Services;
 /// <summary>
 /// Stress and resilience testing for SecureValueStore, CertificateReader, and InputLimits.
 /// </summary>
+[Collection(SharedDataDirectoryCollection.Name)]
 public class SecureValuesAndCertStressTests
 {
     // =========================================================================

@@ -11,16 +11,25 @@ namespace SwiftX.Services;
 /// (<c>Rings</c>, <c>RingRadius</c>, <c>HotCornerRing</c>) and one enum <em>value</em>
 /// (<c>HotCornerLayout: "Ring"</c>) are written into the config file by name, so a rename without
 /// this pass would not degrade gracefully — it would silently discard every orbit item the user
-/// had arranged, and <c>JsonStringEnumConverter</c> would <em>throw</em> on the stale
-/// <c>"Ring"</c> value, which <see cref="OrbitStore.Load"/> catches by falling back to a blank
-/// configuration. Losing a user's whole dock on upgrade is the failure this file exists to
+/// had arranged. Losing a user's whole dock on upgrade is the failure this file exists to
 /// prevent.
 /// </para>
 /// <para>
+/// The property renames are the load-bearing half and always were: nothing downstream can recover
+/// <c>Rings</c> once it has been read as an unknown key and dropped. The stale
+/// <c>HotCornerLayout: "Ring"</c> is now also caught a second time further down — since
+/// <see cref="TolerantEnumConverterFactory"/> replaced the throwing built-in converter, an
+/// unrecognized enum name reads as that setting's default instead of taking
+/// <see cref="OrbitStore.Load"/> down to a blank configuration. Mapping it here is still what
+/// makes it read as the <em>right</em> value (<c>Orbit</c>, which is what the user had) rather
+/// than merely a harmless one, and the two guards are independent: this one is a fact about the
+/// rename, that one is a floor under every enum in the file.
+/// </para>
+/// <para>
 /// Deliberately a pre-deserialization pass over the JSON itself rather than legacy properties on
-/// <see cref="Models.AppConfig"/>: the enum value cannot be fixed from a property setter (the
-/// converter throws before any setter runs), and keeping the compatibility shim out of the model
-/// means the model reads as the shape the app actually has today.
+/// <see cref="Models.AppConfig"/>: a converter runs before any property setter would, so the enum
+/// value cannot be fixed from one, and keeping the compatibility shim out of the model means the
+/// model reads as the shape the app actually has today.
 /// </para>
 /// </summary>
 internal static class LegacyConfigFormat

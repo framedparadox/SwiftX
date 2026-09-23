@@ -8,13 +8,16 @@ namespace SwiftX.Tests.Services;
 /// The hover settings as they cross the persistence boundary: defaults, copy, the on-disk form, and
 /// what a config that is old, newer than this build, or hand-edited does to them.
 /// <para>
-/// The last of those is the reason <see cref="TolerantEnumConverter{T}"/> exists. The app-wide
-/// <c>JsonStringEnumConverter</c> throws on a name it does not know, and <c>OrbitStore.Load</c> answers
-/// a throw by starting from a blank configuration, so an unrecognised hover word used to be able to
-/// cost a user their whole orbit. Every "falls back" test below therefore also checks that a setting
-/// stored <em>alongside</em> the bad one survived, which is the actual point.
+/// The last of those is the reason <see cref="TolerantEnumConverter{T}"/> exists. The built-in
+/// <c>JsonStringEnumConverter</c> it replaced throws on a name it does not know, and
+/// <c>OrbitStore.Load</c> answers a throw by starting from a blank configuration, so an
+/// unrecognised hover word used to be able to cost a user their whole orbit. Every "falls back"
+/// test below therefore also checks that a setting stored <em>alongside</em> the bad one survived,
+/// which is the actual point. <see cref="TolerantEnumConfigTests"/> covers the same property for
+/// the rest of the config's enums, which used to have no such guard at all.
 /// </para>
 /// </summary>
+[Collection(SharedDataDirectoryCollection.Name)]
 public class HoverConfigTests : IDisposable
 {
     private readonly string _directory =

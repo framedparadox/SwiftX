@@ -165,8 +165,17 @@ public static class AppLogo
         void AddPetal(int column, int row, Windows.UI.Color outer, Windows.UI.Color inner, HotCorner corner)
         {
             var petal = Petal(column, row, outer, inner);
-            petal.Opacity = corner == selected ? 1 : 0.32;
+            bool isSelected = corner == selected;
+            petal.Opacity = isSelected ? 1 : DimmedPetalOpacity;
             petal.IsHitTestVisible = false;
+            // Read back by SetCornerGlyphHighlighted, which has to know which leaf to leave lit
+            // when the pointer goes away.
+            petal.Tag = isSelected ? SelectedPetalTag : null;
+            // The static form is the orbit canvas's corner button, whose leaves fade up to the
+            // whole logo on hover (see SetCornerGlyphHighlighted). Assigned before the petal is in
+            // the tree, so the opacity above is not itself animated in.
+            if (onPicked is null)
+                petal.OpacityTransition = new ScalarTransition { Duration = PetalHighlightDuration };
             canvas.Children.Add(petal);
         }
 
@@ -225,6 +234,41 @@ public static class AppLogo
         AddHit(0, 1, HotCorner.BottomLeft, "Bottom left");
         AddHit(1, 1, HotCorner.BottomRight, "Bottom right");
         return root;
+    }
+
+    /// <summary>How strongly the three unselected leaves of a corner glyph are drawn at rest.</summary>
+    private const double DimmedPetalOpacity = 0.32;
+
+    /// <summary>The fade between a corner glyph's resting and highlighted states.</summary>
+    private static readonly TimeSpan PetalHighlightDuration = TimeSpan.FromMilliseconds(140);
+
+    /// <summary>Marks the selected leaf, so un-highlighting knows which one stays lit.</summary>
+    private static readonly object SelectedPetalTag = new();
+
+    /// <summary>
+    /// Lights all four leaves of a static <see cref="CreateCornerGlyph"/> — the full-colour logo —
+    /// or returns it to rest, where only the selected corner's leaf is at full strength.
+    /// <para>
+    /// This is the orbit canvas corner button's hover. It deliberately keeps each leaf's own
+    /// gradient rather than repainting the mark in the accent colour the canvas's other glyph
+    /// buttons tint to: a flat accent fill turned the one piece of branding on the canvas into a
+    /// single-colour silhouette, and the dimmed leaves stayed dimmed, so the hover read as a
+    /// recolour of the corner picker rather than as the logo lighting up.
+    /// </para>
+    /// </summary>
+    /// <param name="glyph">A glyph from <see cref="CreateCornerGlyph"/> with no picker attached.
+    /// Anything else is left untouched.</param>
+    public static void SetCornerGlyphHighlighted(FrameworkElement glyph, bool highlighted)
+    {
+        if (glyph is not Viewbox { Child: Canvas canvas })
+            return;
+        foreach (var child in canvas.Children)
+        {
+            if (child is ShapePath petal)
+                petal.Opacity = highlighted || ReferenceEquals(petal.Tag, SelectedPetalTag)
+                    ? 1
+                    : DimmedPetalOpacity;
+        }
     }
 
     // ---- Shapes -----------------------------------------------------------

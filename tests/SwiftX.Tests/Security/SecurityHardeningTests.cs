@@ -25,6 +25,7 @@ namespace SwiftX.Tests.Security;
 /// object or a caught exception type, not merely for the absence of the attack's effect.
 /// </para>
 /// </summary>
+[Collection(SharedDataDirectoryCollection.Name)]
 public class SecurityHardeningTests
 {
     // =========================================================================================
@@ -401,7 +402,6 @@ public class SecurityHardeningTests
     [InlineData("{\"Orbits\":[]}")]
     [InlineData("{\"Orbits\":null}")]
     [InlineData("not json")]
-    [InlineData("{\"Orbits\":[{\"Items\":[{\"Kind\":\"NotARealKind\"}]}]}")]
     public void OrbitStore_ImportingAMalformedConfiguration_ReturnsNullRatherThanThrowing(string contents)
     {
         var path = Path.Combine(OrbitStore.DataDirectory, "import-" + Guid.NewGuid().ToString("N") + ".json");
@@ -411,6 +411,52 @@ public class SecurityHardeningTests
 
         Assert.Null(thrown);
         Assert.Null(OrbitStore.ImportFrom(path));
+    }
+
+    /// <summary>
+    /// An unrecognised enum <em>value</em> is not malformedness and no longer refuses the file —
+    /// it degrades that one setting and imports the rest.
+    /// <para>
+    /// This case used to sit in the theory above, and it passed for the wrong reason: the enum
+    /// converter threw, <c>ImportFrom</c> caught, and the whole configuration came back as null.
+    /// The same throw on the same value reached <c>OrbitStore.Load</c> from <c>orbit.json</c>,
+    /// where "null" means a blank <see cref="AppConfig"/> that the next save writes over the real
+    /// file — so the behaviour this assertion was pinning was, on the other code path, total
+    /// silent data loss. Both paths now read enums tolerantly (see
+    /// <c>Services.TolerantEnumConverterFactory</c>).
+    /// </para>
+    /// <para>
+    /// Nothing is given up on the security side by accepting it. <see cref="OrbitItemKind"/> gates
+    /// no privilege — what an item does when launched is decided by its <c>Target</c>, which is an
+    /// arbitrary string under either reading — so refusing an unknown kind never stopped a hostile
+    /// file, which would simply write <c>"Application"</c> and be believed. It only ever punished
+    /// honest version skew: a config written by a build with one more kind in the enum than this
+    /// one has.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void OrbitStore_ImportingAnUnknownItemKind_KeepsTheItemRatherThanRefusingTheFile()
+    {
+        var path = Path.Combine(OrbitStore.DataDirectory, "import-" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(path,
+            "{\"Orbits\":[{\"Items\":[" +
+            "{\"Kind\":\"NotARealKind\",\"DisplayName\":\"Mystery\",\"Target\":\"C:\\\\tool.exe\"}," +
+            "{\"Kind\":\"WebLink\",\"DisplayName\":\"Docs\",\"Target\":\"https://example.com\"}" +
+            "]}]}");
+
+        var config = OrbitStore.ImportFrom(path);
+
+        Assert.NotNull(config);
+        Assert.Equal(2, config!.Primary.Items.Count);
+
+        // The unknown kind reads as the enum's first member, and keeps everything else it carried.
+        Assert.Equal(OrbitItemKind.Application, config.Primary.Items[0].Kind);
+        Assert.Equal("Mystery", config.Primary.Items[0].DisplayName);
+        Assert.Equal("C:\\tool.exe", config.Primary.Items[0].Target);
+
+        // And the item beside it — the actual point. One unreadable word must not cost the rest.
+        Assert.Equal(OrbitItemKind.WebLink, config.Primary.Items[1].Kind);
+        Assert.Equal("https://example.com", config.Primary.Items[1].Target);
     }
 
     /// <summary>A path that does not exist is the same "no" as a malformed file, not an

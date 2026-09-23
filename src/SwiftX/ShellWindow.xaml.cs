@@ -75,6 +75,10 @@ public sealed partial class ShellWindow : Window
     private AppLogo.Mark? _homeOrbitMark;
     private AppLogo.Mark? _homeToolsMark;
     private DispatcherTimer? _homeHoverHideTimer;
+
+    /// <summary>The one-shot behind <see cref="FlashGroupNotice"/>, tracked for the same reason
+    /// the two above are: so <c>Closed</c> can stop it before it ticks at a window that is gone.</summary>
+    private DispatcherTimer? _groupNoticeTimer;
     private bool _homeOrbitHoverOpen;
     private bool _homeToolsHoverOpen;
     private readonly Dictionary<Button, List<(DependencyObject Target, Brush? Brush)>> _orbitGlyphRest = new();
@@ -278,6 +282,7 @@ public sealed partial class ShellWindow : Window
         {
             StopHomeOrbitMark();
             CancelHomeHoverHide();
+            StopGroupNoticeFlash();
             OrbitMetrics.Changed -= OnMetricsChanged;
         };
 
@@ -326,7 +331,7 @@ public sealed partial class ShellWindow : Window
             SyncAccentControls();
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             SyncDesktopShortcutToggle();
-            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0");
+            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.0");
             FillAboutDetails();
             // Wired here rather than in XAML because ThemeShadow.Receivers is a collection with no
             // XAML syntax of its own on a shared resource. Without a receiver the Home tiles
@@ -933,6 +938,8 @@ public sealed partial class ShellWindow : Window
             ElementsShortcutGlyph.Foreground = _currentScreen == ScreenElements ? accent : rest;
         if (OrbitElementsGlyph is not null)
             OrbitElementsGlyph.Foreground = _orbitEditing ? accent : rest;
+        if (OrbitElementsLabel is not null)
+            OrbitElementsLabel.Foreground = _orbitEditing ? accent : rest;
     }
 
     private void HomeOrbitHover_PointerEntered(object sender, PointerRoutedEventArgs e)
@@ -1851,21 +1858,38 @@ public sealed partial class ShellWindow : Window
         const double inset = 2;
         var corner = _manager.Config.HotCorner;
 
+        var logo = _previewQuadrant ? null : AppLogo.CreateCornerGlyph(28, corner);
         var button = new Button
         {
             Width = diameter,
             Height = diameter,
             Padding = new Thickness(0),
             CornerRadius = new CornerRadius(diameter / 2),
-            Content = _previewQuadrant
-                ? new FontIcon
-                {
-                    Glyph = "\uE72B",
-                    FontSize = 14,
-                }
-                : AppLogo.CreateCornerGlyph(28, corner),
+            Content = logo ?? new FontIcon
+            {
+                Glyph = "\uE72B",
+                FontSize = 14,
+            },
         };
-        WireOrbitGlyphHover(button);
+
+        if (logo is null)
+        {
+            // The back chevron is an ordinary glyph, so it tints to the accent like the canvas's
+            // other chrome buttons.
+            WireOrbitGlyphHover(button);
+        }
+        else
+        {
+            // The logo does not: an accent fill flattened it to one colour and left three leaves
+            // dimmed. Hover lights the whole mark in its own colours instead \u2014 see
+            // AppLogo.SetCornerGlyphHighlighted. Still no disc behind it, same as the others.
+            SuppressChromeFill(button);
+            void Highlight(object sender, PointerRoutedEventArgs e) => AppLogo.SetCornerGlyphHighlighted(logo, true);
+            void Rest(object sender, PointerRoutedEventArgs e) => AppLogo.SetCornerGlyphHighlighted(logo, false);
+            button.PointerEntered += Highlight;
+            button.PointerExited += Rest;
+            button.PointerCanceled += Rest;
+        }
 
         ToolTipService.SetToolTip(button, _previewQuadrant
             ? "Back to the full orbit"
@@ -1884,8 +1908,9 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// Orbit canvas chrome (hot corner, Elements, Settings, info, reset): no disc on hover.
-    /// The glyph / logo tints to the accent instead.
+    /// Orbit canvas chrome (Elements, Settings, info, reset, and the hot corner's back chevron):
+    /// no disc on hover. The glyph tints to the accent instead. The hot corner's logo is the one
+    /// exception — it lights up in its own colours; see <see cref="AddHotCornerButton"/>.
     /// </summary>
     private void WireOrbitGlyphHover(Button button)
     {
@@ -1949,6 +1974,16 @@ public sealed partial class ShellWindow : Window
             else if (target is TextBlock text)
                 text.Foreground = brush;
         }
+
+        // What was saved on entry is the colour from *before* the hover, and a click in between
+        // can change what the resting colour should be. Elements is the case that bites: clicking
+        // it opens the Add to Orbit sidebar and UpdateElementsGlyphs paints it in the accent to
+        // show it is active — then the pointer leaves and the restore above puts back the
+        // inactive colour it saved, so the button reads as off while its sidebar is open. The
+        // active state is re-derived from _orbitEditing / _currentScreen rather than trusted to
+        // the snapshot.
+        if (button == OrbitElementsButton || button == ElementsShortcutButton)
+            UpdateElementsGlyphs();
     }
 
     private static IEnumerable<DependencyObject> WalkContent(DependencyObject node)
@@ -5053,19 +5088,37 @@ public sealed partial class ShellWindow : Window
     /// colour, then puts the count back. The row is where the user is looking when a drop is
     /// refused, whereas the sidebar's summary line may be scrolled out of sight above it.
     /// </summary>
+    /// <remarks>
+    /// The timer is tracked and stopped on <c>Closed</c> alongside the window's other two (see the
+    /// constructor). It is a 2.5-second one-shot on a control in this window's tree, so closing
+    /// Settings within 2.5 seconds of a refused drop — which is an entirely ordinary thing to do,
+    /// the refusal being a reason to give up on the drag — left it to fire against a torn-down
+    /// tree and read <c>Root</c> for a brush, out of a <c>Tick</c> handler where a throw is an
+    /// unhandled exception rather than something a <c>try</c> here would catch.
+    /// </remarks>
     private void FlashGroupNotice(TextBlock count, OrbitItem group, string text)
     {
         count.Text = text;
         count.Foreground = ThemeHelper.Brush(Root, "ToolCriticalBrush");
 
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
-        timer.Tick += (_, _) =>
+        // One at a time: a second refused drop while the first notice is still showing restarts
+        // the clock rather than leaving two timers to put two different counts back.
+        StopGroupNoticeFlash();
+        _groupNoticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+        _groupNoticeTimer.Tick += (_, _) =>
         {
-            timer.Stop();
+            StopGroupNoticeFlash();
             count.Text = GroupCountText(group);
             count.Foreground = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
         };
-        timer.Start();
+        _groupNoticeTimer.Start();
+    }
+
+    private void StopGroupNoticeFlash()
+    {
+        if (_groupNoticeTimer is null) return;
+        _groupNoticeTimer.Stop();
+        _groupNoticeTimer = null;
     }
 
     /// <summary>

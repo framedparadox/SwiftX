@@ -67,7 +67,7 @@ public class ToolsGroupTests
 
         Assert.True(ToolCatalog.EnsureToolsGroup(items));
 
-        Assert.Single(items.Where(i => i.IsGroup));
+        Assert.Single(items, i => i.IsGroup);
         Assert.Equal(ToolCatalog.ToolsGroupTarget, devTools.Target);
         // Renaming it is the user's business; only the target is stamped on.
         Assert.Equal("Dev tools", devTools.DisplayName);

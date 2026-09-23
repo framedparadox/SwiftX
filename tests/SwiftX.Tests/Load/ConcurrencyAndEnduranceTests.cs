@@ -32,6 +32,7 @@ namespace SwiftX.Tests.Load;
 /// repeat the real cycle enough times for retention to show up as heap growth.
 /// </para>
 /// </summary>
+[Collection(SharedDataDirectoryCollection.Name)]
 public class ConcurrencyAndEnduranceTests(ITestOutputHelper output)
 {
     /// <summary>Enough threads to genuinely overlap on any developer machine, without making the
@@ -366,9 +367,18 @@ public class ConcurrencyAndEnduranceTests(ITestOutputHelper output)
                         Value = new string('v', 100 + worker * 50),
                     }).ToList());
                 }
-                catch (IOException)
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     // A lost publish, not a torn one — see the remarks.
+                    //
+                    // UnauthorizedAccessException belongs here as much as IOException does, and
+                    // catching only the latter is what made this test fail outright rather than
+                    // record a lost write: replacing a file another thread currently has open is
+                    // a sharing violation on the *destination*, and Windows reports that as an
+                    // access denial, not an I/O error. AtomicWrite now rides out that window, so
+                    // reaching this catch at all is rare — but "rare" is the whole reason to state
+                    // which exceptions are the benign outcome instead of discovering it on a red
+                    // build.
                 }
                 catch (Exception ex)
                 {
@@ -443,7 +453,14 @@ public class ConcurrencyAndEnduranceTests(ITestOutputHelper output)
                 AtomicWrite.Publish(target, payload);
                 return;
             }
-            catch (IOException) when (attempt < 20)
+            // UnauthorizedAccessException as well as IOException: a sharing violation on the
+            // *destination* of a replace is reported by Windows as an access denial, so catching
+            // only IOException left this loop blind to the exact failure it was written to absorb
+            // — and the test failed outright under the contention it deliberately creates.
+            // AtomicWrite has its own bounded retry now; this one stays because the load here
+            // (every core, twenty rounds, one file) is far past anything a real user produces and
+            // is meant to be survivable rather than representative.
+            catch (Exception ex) when (attempt < 20 && ex is IOException or UnauthorizedAccessException)
             {
                 Thread.Sleep(1);
             }

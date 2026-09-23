@@ -13,7 +13,7 @@ public enum OrbitItemSize
 /// which says how much room an item takes rather than what fills it.
 /// <para>
 /// Persisted by name (see <see cref="AppConfig.ItemShape"/> and <c>OrbitStore</c>'s
-/// <c>JsonStringEnumConverter</c>), so these member names are part of the on-disk format and
+/// converters), so these member names are part of the on-disk format and
 /// cannot be renamed without stranding every config that already carries one.
 /// </para>
 /// </summary>

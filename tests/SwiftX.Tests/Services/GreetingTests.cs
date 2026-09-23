@@ -14,6 +14,7 @@ namespace SwiftX.Tests.Services;
 /// in a <c>finally</c>, the same way <see cref="LocTests"/> does.
 /// </para>
 /// </summary>
+[Collection(LocalizationCollection.Name)]
 public class GreetingTests
 {
     [Theory]

@@ -4,6 +4,7 @@ using Xunit;
 
 namespace SwiftX.Tests.Services;
 
+[Collection(SharedDataDirectoryCollection.Name)]
 public class OrbitStoreTests : IDisposable
 {
     private readonly string _directory =
