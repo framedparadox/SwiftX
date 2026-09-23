@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SwiftX — four-petal animation mockups</title>
+  <style>
+    :root {
+      --bg: #1a1a1a;
+      --canvas: #222222;
+      --card: #2c2c2c;
+      --card-border: #3a3a3a;
+      --text: #f3f3f3;
+      --muted: #9a9a9a;
+      --accent: #ffffff;
+      --chip: #3a3a3a;
+      --chip-on: #ffffff;
+      --chip-on-fg: #111;
+      --shadow: rgba(0, 0, 0, 0.45);
+      --rate: 1;
+      --stagger: calc(34ms / var(--rate));
+      --spring: calc(440ms / var(--rate));
+      --exit: calc(180ms / var(--rate));
+    }
+    html[data-theme="light"] {
+      --bg: #e8eef4;
+      --canvas: #ffffff;
+      --card: #f0f4f8;
+      --card-border: #d5dde6;
+      --text: #1a1a1a;
+      --muted: #5c6570;
+      --accent: #111;
+      --chip: #dde5ee;
+      --chip-on: #111;
+      --chip-on-fg: #fff;
+      --shadow: rgba(20, 30, 40, 0.18);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: "Segoe UI", Cambria, Georgia, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    a { color: inherit; }
+
+    .top {
+      position: sticky; top: 0; z-index: 20;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--card-border);
+    }
+    .top-inner {
+      max-width: 1280px; margin: 0 auto;
+      padding: 10px 28px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    }
+    .wordmark {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 26px; font-weight: 700; letter-spacing: -0.04em;
+    }
+    .wordmark .mark-host { width: 30px; height: 30px; margin: 2px 0 0 2px; }
+    .top-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .page-nav { display: flex; gap: 6px; }
+    .page-nav a {
+      text-decoration: none; font-size: 13px; padding: 7px 12px;
+      border-radius: 8px; border: 1px solid var(--card-border);
+      background: var(--card); color: var(--text);
+    }
+    .page-nav a[aria-current="page"] {
+      background: var(--chip-on); color: var(--chip-on-fg); border-color: transparent; font-weight: 600;
+    }
+    button, select {
+      font: inherit; color: var(--text);
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: 8px; padding: 7px 12px; cursor: pointer;
+    }
+    button:hover { border-color: color-mix(in srgb, var(--text) 35%, var(--card-border)); }
+    button.primary { background: var(--chip-on); color: var(--chip-on-fg); border-color: transparent; font-weight: 600; }
+
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 28px 80px; }
+
+    .lede { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0 0 20px; max-width: 72ch; }
+    .home {
+      background: var(--canvas);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 8px 24px 28px;
+      margin-bottom: 28px;
+      box-shadow: 0 18px 40px var(--shadow);
+    }
+    .home-bar {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 12px 8px 8px;
+    }
+    .home-stage {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 36px 96px;
+      padding: 20px 12px 8px;
+    }
+    .home-slot { text-align: center; width: 260px; }
+    .home-slot .mark-host { width: 160px; height: 160px; margin: 0 auto; overflow: visible; }
+    .home-slot h2 {
+      margin: 18px 0 0; font-size: 22px; font-weight: 700;
+    }
+    .home-slot .pick {
+      margin-top: 12px; display: flex; flex-direction: column; gap: 6px; align-items: center;
+    }
+    .home-slot select { min-width: 240px; }
+    .hint { font-size: 12px; color: var(--muted); margin: 0; }
+    .home-note {
+      text-align: center; color: var(--muted); font-size: 13px; margin: 8px 0 0;
+    }
+
+    .filters {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin: 0 0 18px; position: sticky; top: 52px; z-index: 10;
+      padding: 8px 0;
+      background: color-mix(in srgb, var(--bg) 80%, transparent);
+      backdrop-filter: blur(10px);
+    }
+    .chip {
+      border-radius: 999px; padding: 6px 12px; font-size: 13px;
+      background: var(--chip); border: 0; color: var(--text);
+    }
+    .chip[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-fg); }
+
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 14px 14px 12px;
+      display: flex; flex-direction: column; gap: 8px;
+      min-height: 280px;
+      scroll-margin-top: 130px;
+    }
+    .card.hidden { display: none; }
+    .preview {
+      height: 188px; display: grid; place-items: center;
+      overflow: visible;
+    }
+    .card h3 { margin: 0; font-size: 15px; font-weight: 650; }
+    .card p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; flex: 1; }
+    .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .tag {
+      font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 3px 7px; border-radius: 999px;
+      background: color-mix(in srgb, var(--text) 8%, transparent);
+      color: var(--muted);
+    }
+    .tag.in-app { background: #2cd09833; color: #2cd098; }
+    .tag.home { background: #ff0a7630; color: #ff7ab3; }
+    html[data-theme="light"] .tag.in-app { color: #0f7a58; }
+    html[data-theme="light"] .tag.home { color: #c4005c; }
+    .card-actions { display: flex; gap: 6px; }
+    .card-actions button { padding: 5px 8px; font-size: 11px; }
+
+    .notes {
+      margin-top: 36px;
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 800px) {
+      .notes { grid-template-columns: 1fr; }
+    }
+    .notes article {
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: 14px; padding: 18px 20px;
+    }
+    .notes h2 { margin: 0 0 8px; font-size: 16px; }
+    .notes p, .notes li { color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+    .notes ul { margin: 8px 0 0; padding-left: 18px; }
+    code { font-family: ui-monospace, Consolas, monospace; font-size: 0.92em; }
+
+    /* ---- Mark geometry (48-unit design box, CSS % of viewBox) ---- */
+    .mark-host { display: grid; place-items: center; }
+    .stage {
+      --mark: 112px;
+      width: var(--mark); height: var(--mark);
+      overflow: visible;
+      filter: drop-shadow(0 calc(var(--mark) * 0.07) calc(var(--mark) * 0.26) rgba(0,0,0,.5));
+    }
+    .stage.lg { --mark: 160px; }
+    .stage.sm { --mark: 30px; filter: none; }
+    .mark {
+      transform-box: view-box;
+      transform-origin: 50% 50%;
+    }
+    .slot {
+      transform-box: view-box;
+      transform-origin: 0 0;
+      transform: translate(var(--tx), var(--ty));
+    }
+    .s0 { --tx: 0%; --ty: 0%; --ox: -5%; --oy: -5%; --i: 0; }
+    .s1 { --tx: 51.25%; --ty: 0%; --ox: 5%; --oy: -5%; --i: 1; }
+    .s2 { --tx: 51.25%; --ty: 51.25%; --ox: 5%; --oy: 5%; --i: 2; }
+    .s3 { --tx: 0%; --ty: 51.25%; --ox: -5%; --oy: 5%; --i: 3; }
+    .petal {
+      transform-box: fill-box;
+      transform-origin: center;
+      transform: rotate(0deg) scale(1);
+      opacity: 1;
+    }
+    .p0 { --i: 0; }
+    .p1 { --i: 1; }
+    .p2 { --i: 2; }
+    .p3 { --i: 3; }
+
+    .order-ccw .p0 { --i: 0; } .order-ccw .p3 { --i: 1; }
+    .order-ccw .p2 { --i: 2; } .order-ccw .p1 { --i: 3; }
+    .order-reverse .p0 { --i: 3; } .order-reverse .p1 { --i: 2; }
+    .order-reverse .p2 { --i: 1; } .order-reverse .p3 { --i: 0; }
+    .order-together .petal { --i: 0; }
+    .order-diag .p0, .order-diag .p2 { --i: 0; }
+    .order-diag .p1, .order-diag .p3 { --i: 1; }
+    .order-rows .p0, .order-rows .p1 { --i: 0; }
+    .order-rows .p3, .order-rows .p2 { --i: 1; }
+    .order-cols .p0, .order-cols .p3 { --i: 0; }
+    .order-cols .p1, .order-cols .p2 { --i: 1; }
+    .order-zipper .p0 { --i: 0; } .order-zipper .p1 { --i: 1; }
+    .order-zipper .p3 { --i: 2; } .order-zipper .p2 { --i: 3; }
+
+    @property --cx { syntax: "<number>"; inherits: false; initial-value: 24; }
+    @property --cy { syntax: "<number>"; inherits: false; initial-value: 24; }
+    @property --cr { syntax: "<number>"; inherits: false; initial-value: 4.6; }
+
+    .orbit-guide {
+      fill: none;
+      stroke: color-mix(in srgb, var(--text) 28%, transparent);
+      stroke-width: 0.55;
+      stroke-dasharray: 1.2 1.6;
+      opacity: 0;
+    }
+    .bubble {
+      opacity: 0;
+      cx: var(--cx);
+      cy: var(--cy);
+      r: var(--cr);
+      filter: drop-shadow(0 0.6px 0.8px rgba(0,0,0,.35));
+    }
+    .is-playing.anim-orbit-split .orbit-guide {
+      animation: dock-guide calc(5200ms / var(--rate)) both infinite;
+    }
+    .is-playing.anim-orbit-split .mark {
+      animation: dock-hub calc(5200ms / var(--rate)) both infinite;
+    }
+    .is-playing.anim-orbit-split .from-petal {
+      animation: dock-from-petal calc(5200ms / var(--rate)) both infinite;
+    }
+    .is-playing.anim-orbit-split .from-hub {
+      animation: dock-from-hub calc(5200ms / var(--rate)) both infinite;
+    }
+
+    .is-playing.anim-entrance .mark,
+    .is-playing.anim-unfurl-ccw .mark,
+    .is-playing.anim-pairs-diag .mark,
+    .is-playing.anim-pairs-rows .mark,
+    .is-playing.anim-pairs-cols .mark,
+    .is-playing.anim-scale-only .mark,
+    .is-playing.anim-twist-only .mark,
+    .is-playing.anim-fade-cascade .mark,
+    .is-playing.anim-elastic .mark,
+    .is-playing.anim-spiral .mark,
+    .is-playing.anim-zipper .mark {
+      animation: mark-spin-in var(--spring) both;
+    }
+    .is-playing.anim-unfurl-ccw .mark { animation-name: mark-spin-ccw; }
+    .is-playing.anim-entrance .petal,
+    .is-playing.anim-unfurl-ccw .petal,
+    .is-playing.anim-pairs-diag .petal,
+    .is-playing.anim-pairs-rows .petal,
+    .is-playing.anim-pairs-cols .petal,
+    .is-playing.anim-zipper .petal {
+      animation: petal-unfurl var(--spring) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+    .is-playing.anim-pop .petal {
+      animation: petal-unfurl var(--spring) both;
+    }
+    .is-playing.anim-pop .mark { animation: mark-spin-in var(--spring) both; }
+    .is-playing.anim-scale-only .petal {
+      animation: petal-scale-in var(--spring) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+    .is-playing.anim-twist-only .petal {
+      animation: petal-twist-in var(--spring) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+    .is-playing.anim-fade-cascade .petal {
+      animation: petal-fade-in var(--spring) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+    .is-playing.anim-elastic .petal {
+      animation: petal-elastic var(--spring) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+    .is-playing.anim-glyph .mark {
+      animation: glyph-in var(--spring) both;
+    }
+
+    .is-playing.anim-pulse .mark { animation: mark-360 calc(720ms / var(--rate)) linear both; }
+    .is-playing.anim-pulse .petal {
+      animation: petal-breathe calc(520ms / var(--rate)) both;
+      animation-delay: calc((3 - var(--i)) * var(--stagger));
+    }
+
+    .is-playing.anim-exit .mark { animation: mark-spin-out calc(1400ms / var(--rate)) cubic-bezier(.3,0,.2,1) both; }
+    .is-playing.anim-exit .petal {
+      animation: petal-exit calc(1400ms / var(--rate)) cubic-bezier(.3,0,.2,1) both;
+      animation-delay: calc((3 - var(--i)) * 24ms / var(--rate));
+    }
+
+    .is-playing.anim-summon .mark { animation: summon-mark calc(3200ms / var(--rate)) both infinite; }
+    .is-playing.anim-summon .petal {
+      animation: summon-petal calc(3200ms / var(--rate)) both infinite;
+      animation-delay: calc(var(--i) * 34ms / var(--rate));
+    }
+
+    .is-playing.anim-converge .slot {
+      animation: slot-converge var(--spring) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+    .is-playing.anim-converge .petal {
+      animation: petal-fade-in var(--spring) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+    .is-playing.anim-explode .slot {
+      animation: slot-explode var(--spring) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+    .is-playing.anim-explode .petal {
+      animation: petal-unfurl var(--spring) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+    .is-playing.anim-drop .slot { animation: slot-drop var(--spring) both; animation-delay: calc(var(--i) * var(--stagger)); }
+    .is-playing.anim-rise .slot { animation: slot-rise var(--spring) both; animation-delay: calc(var(--i) * var(--stagger)); }
+    .is-playing.anim-drop .petal, .is-playing.anim-rise .petal {
+      animation: petal-fade-in calc(280ms / var(--rate)) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+
+    .is-playing.anim-fold .p0 { transform-origin: 100% 100%; }
+    .is-playing.anim-fold .p1 { transform-origin: 0% 100%; }
+    .is-playing.anim-fold .p2 { transform-origin: 0% 0%; }
+    .is-playing.anim-fold .p3 { transform-origin: 100% 0%; }
+    .is-playing.anim-fold .p0 { animation: fold-tl var(--spring) both; }
+    .is-playing.anim-fold .p1 { animation: fold-tr var(--spring) both; animation-delay: var(--stagger); }
+    .is-playing.anim-fold .p2 { animation: fold-br var(--spring) both; animation-delay: calc(2 * var(--stagger)); }
+    .is-playing.anim-fold .p3 { animation: fold-bl var(--spring) both; animation-delay: calc(3 * var(--stagger)); }
+
+    .is-playing.anim-peel .p0 { transform-origin: 0% 0%; }
+    .is-playing.anim-peel .p1 { transform-origin: 100% 0%; }
+    .is-playing.anim-peel .p2 { transform-origin: 100% 100%; }
+    .is-playing.anim-peel .p3 { transform-origin: 0% 100%; }
+    .is-playing.anim-peel .petal {
+      animation: peel-in var(--spring) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+
+    .is-playing.anim-bloom .p0 { transform-origin: 100% 100%; }
+    .is-playing.anim-bloom .p1 { transform-origin: 0% 100%; }
+    .is-playing.anim-bloom .p2 { transform-origin: 0% 0%; }
+    .is-playing.anim-bloom .p3 { transform-origin: 100% 0%; }
+    .is-playing.anim-bloom .petal {
+      animation: bloom-in var(--spring) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+
+    .is-playing.anim-spiral .slot {
+      animation: slot-spiral calc(700ms / var(--rate)) both;
+    }
+    .is-playing.anim-spiral .petal {
+      animation: petal-unfurl var(--spring) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+
+    .is-playing.anim-typewriter .petal {
+      animation: typewriter calc(240ms / var(--rate)) both;
+      animation-delay: calc(var(--i) * 180ms / var(--rate));
+    }
+    .is-playing.anim-loader-progress .petal {
+      animation: progress-fill calc(1600ms / var(--rate)) both infinite;
+      animation-delay: calc(var(--i) * 220ms / var(--rate));
+    }
+
+    .anim-breathe-cw.is-playing .petal,
+    .anim-breathe-all.is-playing .petal,
+    .anim-wave.is-playing .petal {
+      animation: petal-breathe calc(1400ms / var(--rate)) ease-in-out infinite;
+      animation-delay: calc(var(--i) * 140ms / var(--rate));
+    }
+    .anim-breathe-all.is-playing .petal { animation-delay: 0ms; }
+    .anim-heartbeat.is-playing .petal { animation: heartbeat calc(1200ms / var(--rate)) ease-in-out infinite; }
+    .anim-pulse-diag.is-playing .p0,
+    .anim-pulse-diag.is-playing .p2 { animation: petal-breathe calc(1100ms / var(--rate)) ease-in-out infinite; }
+    .anim-pulse-diag.is-playing .p1,
+    .anim-pulse-diag.is-playing .p3 { animation: petal-breathe calc(1100ms / var(--rate)) ease-in-out infinite; animation-delay: calc(550ms / var(--rate)); }
+    .anim-pulse-cross.is-playing .p0,
+    .anim-pulse-cross.is-playing .p1 { animation: petal-breathe calc(1100ms / var(--rate)) ease-in-out infinite; }
+    .anim-pulse-cross.is-playing .p2,
+    .anim-pulse-cross.is-playing .p3 { animation: petal-breathe calc(1100ms / var(--rate)) ease-in-out infinite; animation-delay: calc(550ms / var(--rate)); }
+
+    .anim-chase-opacity.is-playing .petal {
+      animation: chase-op calc(1400ms / var(--rate)) linear infinite;
+      animation-delay: calc(var(--i) * -350ms / var(--rate));
+    }
+    .anim-chase-highlight.is-playing .petal {
+      animation: chase-hi calc(1600ms / var(--rate)) linear infinite;
+      animation-delay: calc(var(--i) * -400ms / var(--rate));
+    }
+    .anim-pinwheel.is-playing .mark { animation: mark-360 calc(8s / var(--rate)) linear infinite; }
+    .anim-quarter-tick.is-playing .mark { animation: quarter-tick calc(4s / var(--rate)) steps(4) infinite; }
+    .anim-pendulum.is-playing .mark { animation: pendulum calc(2.4s / var(--rate)) ease-in-out infinite; }
+    .anim-float.is-playing .mark { animation: float-y calc(2.6s / var(--rate)) ease-in-out infinite; }
+    .anim-wiggle.is-playing .mark { animation: wiggle calc(900ms / var(--rate)) ease-in-out infinite; }
+    .anim-counter-spin.is-playing .p0,
+    .anim-counter-spin.is-playing .p2 { animation: spin-cw calc(3.2s / var(--rate)) linear infinite; }
+    .anim-counter-spin.is-playing .p1,
+    .anim-counter-spin.is-playing .p3 { animation: spin-ccw calc(3.2s / var(--rate)) linear infinite; }
+    .anim-orbit-slots.is-playing .mark { animation: mark-360 calc(6s / var(--rate)) linear infinite; }
+    .anim-gap-breathe.is-playing .slot { animation: gap-breathe calc(2.2s / var(--rate)) ease-in-out infinite; }
+    .anim-windmill.is-playing .petal { animation: spin-cw calc(2.8s / var(--rate)) linear infinite; }
+    .anim-ripple.is-playing .petal {
+      animation: ripple calc(1.6s / var(--rate)) ease-out infinite;
+      animation-delay: calc(var(--i) * 180ms / var(--rate));
+    }
+    .anim-sparkle.is-playing .petal {
+      animation: sparkle calc(2.4s / var(--rate)) ease-in-out infinite;
+      animation-delay: calc(var(--i) * 600ms / var(--rate));
+    }
+    .anim-in-out.is-playing .slot { animation: in-out-slot calc(2s / var(--rate)) ease-in-out infinite; }
+    .anim-shimmer.is-playing .petal {
+      animation: shimmer calc(2s / var(--rate)) ease-in-out infinite;
+      animation-delay: calc(var(--i) * 120ms / var(--rate));
+    }
+    .anim-wobble.is-playing .petal {
+      animation: wobble calc(1.8s / var(--rate)) ease-in-out infinite;
+      animation-delay: calc(var(--i) * 90ms / var(--rate));
+    }
+    .anim-yin-yang.is-playing .p0,
+    .anim-yin-yang.is-playing .p2 { animation: yin calc(1.8s / var(--rate)) ease-in-out infinite; }
+    .anim-yin-yang.is-playing .p1,
+    .anim-yin-yang.is-playing .p3 { animation: yin calc(1.8s / var(--rate)) ease-in-out infinite reverse; }
+    .anim-loader-spin.is-playing .petal {
+      animation: loader-seg calc(1.05s / var(--rate)) linear infinite;
+      animation-delay: calc(var(--i) * -0.2625s / var(--rate));
+    }
+    .anim-nudge.is-playing .mark { animation: nudge calc(5s / var(--rate)) ease-in-out infinite; }
+
+    .is-playing.anim-collapse .slot { animation: slot-collapse calc(1400ms / var(--rate)) cubic-bezier(.3,0,.2,1) both; animation-delay: calc((3 - var(--i)) * 24ms / var(--rate)); }
+    .is-playing.anim-collapse .petal { animation: petal-fade-out calc(1400ms / var(--rate)) both; animation-delay: calc((3 - var(--i)) * 24ms / var(--rate)); }
+    .is-playing.anim-fly-out .slot { animation: slot-fly calc(1400ms / var(--rate)) cubic-bezier(.3,0,.2,1) both; animation-delay: calc(var(--i) * 24ms / var(--rate)); }
+    .is-playing.anim-fly-out .petal { animation: petal-fade-out calc(1400ms / var(--rate)) both; animation-delay: calc(var(--i) * 24ms / var(--rate)); }
+    .is-playing.anim-scatter .slot { animation: slot-scatter calc(1400ms / var(--rate)) cubic-bezier(.2,.7,.2,1) both; animation-delay: calc(var(--i) * 20ms / var(--rate)); }
+    .is-playing.anim-scatter .petal { animation: scatter-petal calc(1400ms / var(--rate)) both; animation-delay: calc(var(--i) * 20ms / var(--rate)); }
+    .is-playing.anim-fade-out .petal { animation: petal-fade-out calc(1400ms / var(--rate)) both; }
+    .is-playing.anim-implode .mark { animation: mark-spin-out calc(1400ms / var(--rate)) both; }
+    .is-playing.anim-implode .slot { animation: slot-collapse calc(1400ms / var(--rate)) both; }
+    .is-playing.anim-implode .petal { animation: petal-exit calc(1400ms / var(--rate)) both; }
+    .is-playing.anim-fold-shut .p0 { transform-origin: 100% 100%; animation: fold-shut-tl calc(1400ms / var(--rate)) both; }
+    .is-playing.anim-fold-shut .p1 { transform-origin: 0% 100%; animation: fold-shut-tr calc(1400ms / var(--rate)) both; animation-delay: 24ms; }
+    .is-playing.anim-fold-shut .p2 { transform-origin: 0% 0%; animation: fold-shut-br calc(1400ms / var(--rate)) both; animation-delay: 48ms; }
+    .is-playing.anim-fold-shut .p3 { transform-origin: 100% 0%; animation: fold-shut-bl calc(1400ms / var(--rate)) both; animation-delay: 72ms; }
+
+    .anim-hover-lift .petal,
+    .anim-hover-highlight .petal,
+    .anim-click-squash .petal,
+    .anim-picker .petal,
+    .anim-magnetic .petal { pointer-events: auto; cursor: pointer; }
+    .stage { pointer-events: none; }
+    .anim-hover-lift, .anim-hover-highlight, .anim-click-squash, .anim-picker, .anim-magnetic { pointer-events: auto; }
+    .anim-hover-lift .petal { transition: transform 180ms cubic-bezier(.22,1.2,.36,1); }
+    .anim-hover-lift .petal:hover { transform: scale(1.12) translate(4%, -4%); }
+    .anim-hover-highlight .petal { transition: opacity 160ms ease, filter 160ms ease; opacity: 0.38; }
+    .anim-hover-highlight:hover .petal { opacity: 0.38; }
+    .anim-hover-highlight .petal:hover { opacity: 1; filter: brightness(1.08); }
+    .anim-click-squash .petal { transition: transform 120ms ease; cursor: pointer; }
+    .anim-click-squash .petal:active { transform: scale(0.82); }
+    .is-playing.anim-shake .mark { animation: shake calc(700ms / var(--rate)) both; }
+    .is-playing.anim-ping .petal {
+      animation: ping calc(900ms / var(--rate)) both;
+      animation-delay: calc(var(--i) * 90ms / var(--rate));
+    }
+    .anim-picker .petal { cursor: pointer; transition: opacity 160ms ease; }
+    .anim-picker .petal.is-dim { opacity: 0.32; }
+    .anim-magnetic .petal { transition: transform 80ms linear; }
+
+    @keyframes mark-spin-in {
+      from { transform: rotate(-90deg); }
+      55% { transform: rotate(8deg); }
+      78% { transform: rotate(-2deg); }
+      to { transform: rotate(0deg); }
+    }
+    @keyframes mark-spin-ccw {
+      from { transform: rotate(90deg); }
+      55% { transform: rotate(-8deg); }
+      78% { transform: rotate(2deg); }
+      to { transform: rotate(0deg); }
+    }
+    @keyframes mark-spin-out {
+      0%, 55% { transform: rotate(0deg); }
+      100% { transform: rotate(-90deg); }
+    }
+    @keyframes mark-360 { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes glyph-in {
+      from { transform: rotate(90deg) scale(0.45); opacity: 0; }
+      55% { transform: rotate(-6deg) scale(1.06); opacity: 1; }
+      to { transform: rotate(0deg) scale(1); opacity: 1; }
+    }
+    @keyframes petal-unfurl {
+      from { transform: rotate(-55deg) scale(0.45); opacity: 0; }
+      16% { opacity: 1; }
+      55% { transform: rotate(7deg) scale(1.07); opacity: 1; }
+      78% { transform: rotate(-2deg) scale(0.985); }
+      to { transform: rotate(0deg) scale(1); opacity: 1; }
+    }
+    @keyframes petal-scale-in {
+      from { transform: scale(0.45); opacity: 0; }
+      55% { transform: scale(1.08); opacity: 1; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    @keyframes petal-twist-in {
+      from { transform: rotate(-55deg); opacity: 0; }
+      to { transform: rotate(0deg); opacity: 1; }
+    }
+    @keyframes petal-fade-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes petal-fade-out { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes petal-elastic {
+      from { transform: scale(0.2) rotate(-20deg); opacity: 0; }
+      60% { transform: scale(1.18) rotate(8deg); opacity: 1; }
+      80% { transform: scale(0.94) rotate(-3deg); }
+      to { transform: scale(1) rotate(0deg); }
+    }
+    @keyframes petal-exit {
+      0%, 55% { transform: rotate(0deg) scale(1); opacity: 1; }
+      100% { transform: rotate(-55deg) scale(0.45); opacity: 0; }
+    }
+    @keyframes petal-breathe {
+      0%, 100% { transform: scale(1); }
+      40% { transform: scale(0.58); }
+    }
+    @keyframes heartbeat {
+      0%, 28%, 100% { transform: scale(1); }
+      12% { transform: scale(0.72); }
+      20% { transform: scale(1.06); }
+      36% { transform: scale(0.82); }
+      46% { transform: scale(1); }
+    }
+    @keyframes summon-mark {
+      0% { transform: rotate(-90deg); }
+      14% { transform: rotate(0deg); }
+      62% { transform: rotate(0deg); }
+      74% { transform: rotate(-90deg); }
+      100% { transform: rotate(-90deg); }
+    }
+    @keyframes summon-petal {
+      0% { transform: rotate(-55deg) scale(0.45); opacity: 0; }
+      14% { transform: rotate(0deg) scale(1); opacity: 1; }
+      62% { transform: rotate(0deg) scale(1); opacity: 1; }
+      74% { transform: rotate(-55deg) scale(0.45); opacity: 0; }
+      100% { transform: rotate(-55deg) scale(0.45); opacity: 0; }
+    }
+    @keyframes slot-converge {
+      from { transform: translate(calc(var(--tx) + var(--ox) * 6), calc(var(--ty) + var(--oy) * 6)); }
+      55% { transform: translate(calc(var(--tx) - var(--ox) * 0.4), calc(var(--ty) - var(--oy) * 0.4)); }
+      to { transform: translate(var(--tx), var(--ty)); }
+    }
+    @keyframes slot-explode {
+      from { transform: translate(25.625%, 25.625%) scale(0.2); }
+      60% { transform: translate(calc(var(--tx) + var(--ox) * 0.35), calc(var(--ty) + var(--oy) * 0.35)) scale(1.04); }
+      to { transform: translate(var(--tx), var(--ty)) scale(1); }
+    }
+    @keyframes slot-drop {
+      from { transform: translate(var(--tx), calc(var(--ty) - 28%)); }
+      to { transform: translate(var(--tx), var(--ty)); }
+    }
+    @keyframes slot-rise {
+      from { transform: translate(var(--tx), calc(var(--ty) + 28%)); }
+      to { transform: translate(var(--tx), var(--ty)); }
+    }
+    @keyframes slot-spiral {
+      from { transform: translate(25.625%, 25.625%) rotate(-120deg); }
+      to { transform: translate(var(--tx), var(--ty)) rotate(0deg); }
+    }
+    @keyframes slot-collapse {
+      0%, 55% { transform: translate(var(--tx), var(--ty)); }
+      100% { transform: translate(25.625%, 25.625%) scale(0.2); }
+    }
+    @keyframes slot-fly {
+      0%, 55% { transform: translate(var(--tx), var(--ty)); }
+      100% { transform: translate(calc(var(--tx) + var(--ox) * 8), calc(var(--ty) + var(--oy) * 8)); }
+    }
+    @keyframes slot-scatter {
+      0%, 55% { transform: translate(var(--tx), var(--ty)); }
+      100% { transform: translate(calc(var(--tx) + var(--ox) * 7), calc(var(--ty) + var(--oy) * 4)); }
+    }
+    @keyframes scatter-petal {
+      0%, 55% { transform: rotate(0deg) scale(1); opacity: 1; }
+      100% { transform: rotate(48deg) scale(0.6); opacity: 0; }
+    }
+    @keyframes fold-tl { from { transform: rotate(88deg) scale(0.35); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes fold-tr { from { transform: rotate(-88deg) scale(0.35); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes fold-br { from { transform: rotate(88deg) scale(0.35); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes fold-bl { from { transform: rotate(-88deg) scale(0.35); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes fold-shut-tl { 0%, 55% { transform: none; opacity: 1; } 100% { transform: rotate(88deg) scale(0.2); opacity: 0; } }
+    @keyframes fold-shut-tr { 0%, 55% { transform: none; opacity: 1; } 100% { transform: rotate(-88deg) scale(0.2); opacity: 0; } }
+    @keyframes fold-shut-br { 0%, 55% { transform: none; opacity: 1; } 100% { transform: rotate(88deg) scale(0.2); opacity: 0; } }
+    @keyframes fold-shut-bl { 0%, 55% { transform: none; opacity: 1; } 100% { transform: rotate(-88deg) scale(0.2); opacity: 0; } }
+    @keyframes peel-in { from { transform: rotate(-70deg); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes bloom-in { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    @keyframes typewriter { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+    @keyframes progress-fill {
+      0%, 8% { opacity: 0.18; }
+      18%, 70% { opacity: 1; }
+      82%, 100% { opacity: 0.18; }
+    }
+    @keyframes chase-op {
+      0%, 100% { opacity: 0.22; }
+      25% { opacity: 1; }
+      50% { opacity: 0.22; }
+    }
+    @keyframes chase-hi {
+      0%, 100% { opacity: 0.28; transform: scale(0.96); }
+      20% { opacity: 1; transform: scale(1.04); }
+      40% { opacity: 0.28; transform: scale(0.96); }
+    }
+    @keyframes quarter-tick {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes pendulum {
+      0%, 100% { transform: rotate(-12deg); }
+      50% { transform: rotate(12deg); }
+    }
+    @keyframes float-y {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6%); }
+    }
+    @keyframes wiggle {
+      0%, 100% { transform: rotate(0deg); }
+      25% { transform: rotate(-7deg); }
+      75% { transform: rotate(7deg); }
+    }
+    @keyframes spin-cw { to { transform: rotate(360deg); } }
+    @keyframes spin-ccw { to { transform: rotate(-360deg); } }
+    @keyframes gap-breathe {
+      0%, 100% { transform: translate(var(--tx), var(--ty)); }
+      50% { transform: translate(calc(var(--tx) + var(--ox)), calc(var(--ty) + var(--oy))); }
+    }
+    @keyframes ripple {
+      0%, 100% { transform: scale(1); }
+      30% { transform: scale(1.16); }
+      55% { transform: scale(0.92); }
+    }
+    @keyframes sparkle {
+      0%, 70%, 100% { opacity: 1; transform: scale(1); filter: brightness(1); }
+      78% { opacity: 1; transform: scale(1.1); filter: brightness(1.25); }
+      86% { opacity: 1; transform: scale(1); filter: brightness(1); }
+    }
+    @keyframes in-out-slot {
+      0%, 100% { transform: translate(var(--tx), var(--ty)); }
+      50% { transform: translate(calc(var(--tx) - var(--ox) * 0.9), calc(var(--ty) - var(--oy) * 0.9)); }
+    }
+    @keyframes shimmer {
+      0%, 100% { filter: brightness(1); opacity: 1; }
+      40% { filter: brightness(1.22); opacity: 1; }
+      55% { filter: brightness(0.9); }
+    }
+    @keyframes wobble {
+      0%, 100% { transform: rotate(0deg) translate(0, 0); }
+      33% { transform: rotate(-6deg) translate(-2%, 2%); }
+      66% { transform: rotate(6deg) translate(2%, -2%); }
+    }
+    @keyframes yin {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.22; transform: scale(0.92); }
+    }
+    @keyframes loader-seg {
+      0% { opacity: 1; }
+      25% { opacity: 0.15; }
+      100% { opacity: 1; }
+    }
+    @keyframes nudge {
+      0%, 70%, 100% { transform: rotate(0deg); }
+      78% { transform: rotate(-8deg); }
+      86% { transform: rotate(6deg); }
+      92% { transform: rotate(-2deg); }
+    }
+    @keyframes shake {
+      0%, 100% { transform: rotate(0); }
+      20% { transform: rotate(-10deg); }
+      40% { transform: rotate(9deg); }
+      60% { transform: rotate(-6deg); }
+      80% { transform: rotate(3deg); }
+    }
+    @keyframes ping {
+      0%, 100% { transform: scale(1); filter: brightness(1); }
+      35% { transform: scale(1.18); filter: brightness(1.2); }
+      70% { transform: scale(1); }
+    }
+    @keyframes dock-hub {
+      0%, 8% { transform: scale(1); }
+      30%, 68% { transform: scale(0.4); }
+      90%, 100% { transform: scale(1); }
+    }
+    @keyframes dock-guide {
+      0%, 14%, 84%, 100% { opacity: 0; }
+      30%, 68% { opacity: 1; }
+    }
+    @keyframes dock-from-petal {
+      0%, 6% { --cx: var(--sx); --cy: var(--sy); --cr: 2.2; opacity: 0; }
+      14% { --cx: var(--sx); --cy: var(--sy); --cr: 5.4; opacity: 1; }
+      30%, 68% { --cx: var(--ex); --cy: var(--ey); --cr: 4.6; opacity: 1; }
+      84% { --cx: var(--sx); --cy: var(--sy); --cr: 5.4; opacity: 1; }
+      94%, 100% { --cx: var(--sx); --cy: var(--sy); --cr: 2.2; opacity: 0; }
+    }
+    @keyframes dock-from-hub {
+      0%, 16% { --cx: 24; --cy: 24; --cr: 1.4; opacity: 0; }
+      30%, 68% { --cx: var(--ex); --cy: var(--ey); --cr: 4.6; opacity: 1; }
+      84%, 100% { --cx: 24; --cy: 24; --cr: 1.4; opacity: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .stage * { animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="g-tl" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#FF0A76" /><stop offset="1" stop-color="#FFD510" />
+      </linearGradient>
+      <linearGradient id="g-tr" x1="1" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#2CD098" /><stop offset="1" stop-color="#1D4ADB" />
+      </linearGradient>
+      <linearGradient id="g-br" x1="1" y1="1" x2="0" y2="0">
+        <stop offset="0" stop-color="#F1067E" /><stop offset="1" stop-color="#1A65B5" />
+      </linearGradient>
+      <linearGradient id="g-bl" x1="0" y1="1" x2="1" y2="0">
+        <stop offset="0" stop-color="#2CD098" /><stop offset="1" stop-color="#1D4ADB" />
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <header class="top">
+    <div class="top-inner">
+      <div class="wordmark">Swift<div class="mark-host" data-mark="sm"></div></div>
+      <div class="top-actions">
+        <label class="hint">Speed
+          <select id="rate">
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2">2×</option>
+          </select>
+        </label>
+        <nav class="page-nav" aria-label="Mockup pages">
+          <a href="logo-petal-animations.html" aria-current="page">Orbit</a>
+          <a href="tools-animations.html">Tools</a>
+        </nav>
+        <button id="theme" type="button">Light</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <p class="lede">Home-screen catalog of every distinct motion the four logo petals can do. Geometry matches <code>AppLogo.cs</code> (48-unit box, pinwheel leaves, cross gap). Current app: Orbit plays <strong>Unfurl clockwise</strong>, Tools plays <strong>Pulse spin</strong>, every 5 seconds. <strong>Split to orbit</strong> is the dock story: the mark becomes eight bubbles at 45° (slot 0 straight up), then joins back.</p>
+    <section class="home" aria-label="Home screen preview">
+      <div class="home-bar">
+        <div class="wordmark">Swift<div class="mark-host" data-mark="sm"></div></div>
+        <p class="hint">Preview at the real 160px home size. Assign any catalog motion to Orbit or Tools.</p>
+      </div>
+      <div class="home-stage">
+        <div class="home-slot">
+          <div class="mark-host" id="orbitMark" data-mark="lg"></div>
+          <h2>Orbit</h2>
+          <div class="pick">
+            <select id="orbitPick"></select>
+            <p class="hint">Ships today as PlayEntrance</p>
+          </div>
+        </div>
+        <div class="home-slot">
+          <div class="mark-host" id="toolsMark" data-mark="lg"></div>
+          <h2>Tools</h2>
+          <div class="pick">
+            <select id="toolsPick"></select>
+            <p class="hint">Ships today as PlayPulse</p>
+          </div>
+        </div>
+      </div>
+      <p class="home-note">Replay interval <label><select id="interval">
+        <option value="2500">2.5s</option>
+        <option value="5000" selected>5s (app)</option>
+        <option value="8000">8s</option>
+      </select></label> for one-shot motions. Idle loops run continuously.</p>
+    </section>
+
+    <nav class="filters" id="filters" aria-label="Filter animations"></nav>
+    <section class="gallery" id="gallery"></section>
+
+    <section class="notes">
+      <article>
+        <h2>Do you need individual petal files?</h2>
+        <p><strong>No — not for these animations.</strong> The in-app mark is already four independent vector paths. This page uses the same outlines and palette as <code>Services/AppLogo.cs</code>:</p>
+        <ul>
+          <li>Top-left / bottom-right: main-diagonal leaf (sharp corners on the ↘ diagonal), fills <code>#FF0A76→#FFD510</code> and <code>#F1067E→#1A65B5</code>.</li>
+          <li>Top-right / bottom-left: anti-diagonal leaf, both <code>#2CD098→#1D4ADB</code>.</li>
+          <li>Each petal is a 23.4-unit square, corner radius 46.6% of the edge, separated by a 1.2-unit cross gap.</li>
+        </ul>
+        <p>WinUI already animates each petal’s own composition visual (rotate, scale, opacity) plus the whole mark. Anything in this catalog ports as more composition animations on those four paths — not as four PNGs.</p>
+        <p>Separate petal SVGs would only help if you wanted to <em>redraw</em> the leaves in a design tool. They would not unlock a motion that the current geometry cannot do.</p>
+      </article>
+      <article>
+        <h2>What “all possible” means here</h2>
+        <p>Four independently transformable petals, plus the group, give a finite set of <em>motion families</em> rather than an infinite grid of delay × easing × property. This catalog covers every family that still reads as the SwiftX mark:</p>
+        <ul>
+          <li><strong>Assemble / dismiss</strong> — stagger order (clockwise, pairs, together) × property (scale, twist, fade, translate).</li>
+          <li><strong>Idle</strong> — breathe, chase, pinwheel, gap, loader, highlight (maps to hot corners).</li>
+          <li><strong>Interactive</strong> — hover a leaf, pick a corner, magnetic follow.</li>
+        </ul>
+        <p>Home wants two complementary motions so Orbit and Tools do not look like copies — that is why the shipping pair is unfurl vs pulse. <em>Split to orbit</em> is the one that literally becomes the dock: eight bubbles, 45° apart, hub in the middle. Pair it with a Tools motion from the <a href="tools-animations.html">Tools mockups</a> page (pretty-print, pipeline, encode) rather than another pinwheel.</p>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const NOMINAL = 48;
+    const HALF_GAP = 0.6;
+    const PETAL = (NOMINAL - 2 * HALF_GAP) / 2;
+    const RADIUS = PETAL * 0.466;
+    const FAR = PETAL + 2 * HALF_GAP;
+
+    function mainPath() {
+      const s = PETAL, r = RADIUS;
+      return `M 0 0 L ${s - r} 0 A ${r} ${r} 0 0 1 ${s} ${r} L ${s} ${s} L ${r} ${s} A ${r} ${r} 0 0 1 0 ${s - r} Z`;
+    }
+    function antiPath() {
+      const s = PETAL, r = RADIUS;
+      return `M ${s} 0 L ${s} ${s - r} A ${r} ${r} 0 0 1 ${s - r} ${s} L 0 ${s} L 0 ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
+    }
+
+    const PETALS = [
+      { cls: "p0", fill: "url(#g-tl)", d: mainPath() },
+      { cls: "p1", fill: "url(#g-tr)", d: antiPath() },
+      { cls: "p2", fill: "url(#g-br)", d: mainPath() },
+      { cls: "p3", fill: "url(#g-bl)", d: antiPath() },
+    ];
+
+    function markSvg(extraClass = "") {
+      const slots = PETALS.map((p, i) => `
+        <g class="slot s${i}">
+          <g class="petal ${p.cls}">
+            <path d="${p.d}" fill="${p.fill}" />
+          </g>
+        </g>`).join("");
+      const CX = 24, CY = 24, R = 20;
+      const petalStart = [
+        [PETAL / 2, PETAL / 2],
+        [FAR + PETAL / 2, PETAL / 2],
+        [FAR + PETAL / 2, FAR + PETAL / 2],
+        [PETAL / 2, FAR + PETAL / 2],
+      ];
+      const fromPetal = { 7: 0, 1: 1, 3: 2, 5: 3 };
+      const fills = ["url(#g-tl)", "url(#g-tr)", "url(#g-br)", "url(#g-bl)"];
+      const bubbles = Array.from({ length: 8 }, (_, i) => {
+        const rad = (-90 + i * 45) * Math.PI / 180;
+        const ex = CX + R * Math.cos(rad);
+        const ey = CY + R * Math.sin(rad);
+        const origin = fromPetal[i] != null ? petalStart[fromPetal[i]] : [CX, CY];
+        const kind = fromPetal[i] != null ? "from-petal" : "from-hub";
+        return `<circle class="bubble bb${i} ${kind}" cx="${origin[0]}" cy="${origin[1]}" r="4.6"
+          fill="${fills[i % 4]}"
+          style="--sx:${origin[0]}; --sy:${origin[1]}; --ex:${ex}; --ey:${ey}; --cx:${origin[0]}; --cy:${origin[1]};" />`;
+      }).join("");
+      return `<svg class="${extraClass}" viewBox="0 0 48 48" overflow="visible" aria-hidden="true">
+        <g class="mark">${slots}</g>
+        <g class="orbit-layer">
+          <circle class="orbit-guide" cx="24" cy="24" r="20" />
+          ${bubbles}
+        </g>
+      </svg>`;
+    }
+
+    const ANIMATIONS = [
+      { id: "rest", title: "Rest (static)", cat: "in-app", tags: ["in-app"], mode: "none",
+        desc: "The settled mark. Every other motion should return here. No animation." },
+      { id: "entrance", title: "Unfurl clockwise", cat: "in-app", tags: ["in-app", "assemble", "home"], mode: "replay", interval: 2800, order: "",
+        inApp: "PlayEntrance", home: "Orbit today",
+        desc: "Whole mark swings −90° while each petal, TL→TR→BR→BL a beat apart, untwists from −55° and grows from 0.45. Shipping Orbit motion." },
+      { id: "pulse", title: "Pulse spin", cat: "in-app", tags: ["in-app", "idle", "home"], mode: "replay", interval: 2200,
+        inApp: "PlayPulse", home: "Tools today",
+        desc: "Full 360° clockwise of the group; petals breathe 1→0.58→1 in reverse stagger. Shipping Tools motion so it is not a copy of Orbit." },
+      { id: "exit", title: "Rewind unfurl", cat: "in-app", tags: ["in-app", "exit"], mode: "replay", interval: 2200,
+        inApp: "PlayExit",
+        desc: "Entrance rewound, last petal out first, 180ms ease (no spring overshoot). Hub dismissal." },
+      { id: "glyph", title: "Glyph as one piece", cat: "in-app", tags: ["in-app", "assemble"], mode: "replay", interval: 2400,
+        inApp: "PlayGlyphEntrance",
+        desc: "The whole mark pops as a single glyph, +90°, scale 0.45. Used so a sibling control can rhyme without replaying four-petal choreography." },
+      { id: "summon", title: "Summon + dismiss", cat: "in-app", tags: ["in-app", "assemble", "exit"], mode: "infinite",
+        desc: "Entrance, hold, exit on one timeline — the orbit hub’s summon/dismiss as a single gesture." },
+      { id: "orbit-split", title: "Split to orbit", cat: "assemble", tags: ["assemble", "home", "idle"], mode: "infinite",
+        home: "Orbit dock",
+        desc: "The four leaves round into bubbles and take the diagonal slots; four more spawn from the hub onto N/E/S/W. Eight items at 45°, slot 0 straight up — OrbitMetrics.SlotCount. The mark shrinks to the hub, then everything joins back into the logo." },
+
+      { id: "unfurl-ccw", title: "Unfurl counter-clockwise", cat: "assemble", tags: ["assemble", "home"], mode: "replay", interval: 2800, order: "order-ccw",
+        desc: "Mirror of PlayEntrance: +90° group spin, petals TL→BL→BR→TR. Natural pair if Orbit keeps clockwise." },
+      { id: "pop", title: "Simultaneous pop", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2400, order: "order-together",
+        desc: "All four petals unfurl on the same beat. Cleaner, less pinwheel." },
+      { id: "pairs-diag", title: "Diagonal pairs", cat: "assemble", tags: ["assemble", "home"], mode: "replay", interval: 2600, order: "order-diag",
+        desc: "TL+BR, then TR+BL. Reads as the two gradient families taking turns." },
+      { id: "pairs-rows", title: "Top then bottom", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2600, order: "order-rows",
+        desc: "Upper leaves, then lower. Horizontal read." },
+      { id: "pairs-cols", title: "Left then right", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2600, order: "order-cols",
+        desc: "Left pair, then right. Vertical read." },
+      { id: "zipper", title: "Zipper (reading order)", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2800, order: "order-zipper",
+        desc: "TL, TR, BL, BR — not around the pinwheel. Feels like type setting rather than a flower." },
+      { id: "converge", title: "Converge from corners", cat: "assemble", tags: ["assemble", "home"], mode: "replay", interval: 2800,
+        desc: "Leaves fly in from outside their quadrants. Strong first-paint for Home." },
+      { id: "explode", title: "Explode from centre", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2800,
+        desc: "All four stacked on the hub, then shoot into quadrants." },
+      { id: "fold", title: "Fold from the gap", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2800,
+        desc: "Each leaf swings around the sharp inner corner, like opening from the cross." },
+      { id: "peel", title: "Peel from outer corners", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2800,
+        desc: "Leaves hinged on the mark’s four outer corners, peeling into place." },
+      { id: "bloom", title: "Bloom from inner corners", cat: "assemble", tags: ["assemble", "home"], mode: "replay", interval: 2800,
+        desc: "Scale 0→1 about the centre-facing corner. Flower opening, no twist." },
+      { id: "drop", title: "Drop in", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2600,
+        desc: "Petals fall into their quadrants, staggered clockwise." },
+      { id: "rise", title: "Rise in", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2600,
+        desc: "Petals rise from below. Softer than drop." },
+      { id: "fade-cascade", title: "Cascade fade", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2400,
+        desc: "Opacity only, clockwise. Quietest assemble." },
+      { id: "scale-only", title: "Scale stagger", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2600,
+        desc: "Grow from 0.45 with the group quarter-turn, no petal twist." },
+      { id: "twist-only", title: "Twist stagger", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2600,
+        desc: "Untwist from −55° with no scale. Isolates the pinwheel." },
+      { id: "elastic", title: "Elastic pop", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2600,
+        desc: "Heavier overshoot than the app spring (damping 0.62). Punchier, easier to tire of on a 5s loop." },
+      { id: "spiral", title: "Spiral into quadrants", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2800,
+        desc: "Slots rotate out from the stacked centre while petals unfurl." },
+      { id: "typewriter", title: "Typewriter reveal", cat: "assemble", tags: ["assemble"], mode: "replay", interval: 2200,
+        desc: "One leaf appears and stays, then the next. Loader-like." },
+      { id: "loader-progress", title: "Progress fill", cat: "idle", tags: ["idle", "assemble"], mode: "infinite",
+        desc: "Leaves fill 1–4 then clear. Honest loading indicator using the mark." },
+
+      { id: "breathe-cw", title: "Clockwise breathe", cat: "idle", tags: ["idle", "home"], mode: "infinite",
+        desc: "PlayPulse’s scale wave without the 360° spin. Good quiet Home idle." },
+      { id: "breathe-all", title: "Breathe together", cat: "idle", tags: ["idle", "home"], mode: "infinite",
+        desc: "All four scale in sync. Least distracting loop at 160px." },
+      { id: "heartbeat", title: "Heartbeat", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "Double-beat scale. Attention, not ambience." },
+      { id: "pulse-diag", title: "Diagonal pulse", cat: "idle", tags: ["idle", "home"], mode: "infinite",
+        desc: "Pink/magenta pair vs teal pair, alternating. Shows the two palettes." },
+      { id: "pulse-cross", title: "Row pulse", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "Top pair, then bottom pair." },
+      { id: "wave", title: "Scale wave", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "A scale ripple running clockwise forever." },
+      { id: "chase-opacity", title: "Opacity chase", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "One leaf bright, the others dim, running around. Activity spinner using identity." },
+      { id: "chase-highlight", title: "Highlight chase", cat: "idle", tags: ["idle", "home"], mode: "infinite",
+        desc: "Same chase with a scale kick. Maps onto hot corners — strongest conceptual fit for Orbit." },
+      { id: "pinwheel", title: "Slow pinwheel", cat: "idle", tags: ["idle", "home"], mode: "infinite",
+        desc: "Whole mark turns continuously, 8s/rev. Petals stay put in their box." },
+      { id: "quarter-tick", title: "Quarter-turn ticks", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "90° steps. Mechanical, clock-like." },
+      { id: "pendulum", title: "Pendulum", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "±12° sway of the group." },
+      { id: "float", title: "Float", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "Vertical bob. Depth cue; easy to read as a button." },
+      { id: "wiggle", title: "Wiggle", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "Small group wiggle. Attention, not Home idle." },
+      { id: "counter-spin", title: "Counter-spin diagonals", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "TL+BR spin one way, TR+BL the other, each about its own centre." },
+      { id: "orbit-slots", title: "Orbiting leaves", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "The four quadrants ride a slow group rotation — the pinwheel made literal." },
+      { id: "gap-breathe", title: "Gap breathe", cat: "idle", tags: ["idle", "home"], mode: "infinite",
+        desc: "Leaves ease slightly apart and back, widening the cross. Subtle and on-brand." },
+      { id: "windmill", title: "Windmill (in-place)", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "Each leaf spins about its own centre. Busy; identity starts to smear." },
+      { id: "ripple", title: "Ripple", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "Overshooting scale passed around the ring." },
+      { id: "sparkle", title: "Sparkle", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "One leaf at a time brightens. Twinkle, not a spin." },
+      { id: "in-out", title: "Inward / outward", cat: "idle", tags: ["idle", "home"], mode: "infinite",
+        desc: "Leaves pull toward the hub and push back to rest." },
+      { id: "shimmer", title: "Shimmer", cat: "idle", tags: ["idle", "home"], mode: "infinite",
+        desc: "Brightness sweep across the four fills. Keeps gradients alive without moving geometry." },
+      { id: "wobble", title: "Petal wobble", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "Each leaf fidgets in its quadrant. Organic, slightly messy." },
+      { id: "yin-yang", title: "Opposite pair", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "One diagonal full while the other dims, then swap." },
+      { id: "loader-spin", title: "Segment spinner", cat: "idle", tags: ["idle"], mode: "infinite",
+        desc: "Four-segment activity indicator. Useful if Home ever waits on config." },
+      { id: "nudge", title: "Occasional nudge", cat: "idle", tags: ["idle", "home"], mode: "infinite",
+        desc: "Long rest, then a tiny shake. Closest to “alive but not looping.”" },
+
+      { id: "collapse", title: "Collapse to centre", cat: "exit", tags: ["exit"], mode: "replay", interval: 2000,
+        desc: "Leaves suck into the hub and fade. Opposite of explode." },
+      { id: "fly-out", title: "Fly to corners", cat: "exit", tags: ["exit"], mode: "replay", interval: 2000,
+        desc: "Each leaf shoots toward its screen corner — hot-corner storytelling." },
+      { id: "scatter", title: "Scatter", cat: "exit", tags: ["exit"], mode: "replay", interval: 2000,
+        desc: "Leaves spin out on uneven vectors." },
+      { id: "fade-out", title: "Fade together", cat: "exit", tags: ["exit"], mode: "replay", interval: 1800,
+        desc: "Opacity only, no motion. Softest dismiss." },
+      { id: "implode", title: "Implode + spin", cat: "exit", tags: ["exit"], mode: "replay", interval: 2000,
+        desc: "Group −90°, petals twist-shrink, slots collapse. Maximal dismiss." },
+      { id: "fold-shut", title: "Fold shut", cat: "exit", tags: ["exit"], mode: "replay", interval: 2000,
+        desc: "Leaves fold back into the cross. Opposite of fold-open." },
+
+      { id: "hover-lift", title: "Hover lift a leaf", cat: "interactive", tags: ["interactive"], mode: "hover",
+        desc: "Pointer over a petal raises that leaf. Proves per-petal hit targets — same idea as the hot-corner picker." },
+      { id: "hover-highlight", title: "Hover highlight", cat: "interactive", tags: ["interactive", "home"], mode: "hover",
+        desc: "Other leaves dim to 32% (CreateCornerGlyph). Direct mock of picking a screen corner." },
+      { id: "click-squash", title: "Click squash", cat: "interactive", tags: ["interactive"], mode: "click",
+        desc: "Pressed leaf scales to 0.82. Click feedback if a petal is a button." },
+      { id: "shake", title: "Attention shake", cat: "interactive", tags: ["interactive"], mode: "replay", interval: 2200,
+        desc: "Group shake. Use once, not on a timer." },
+      { id: "ping", title: "Sequential ping", cat: "interactive", tags: ["interactive"], mode: "replay", interval: 2200,
+        desc: "Each leaf flashes in order. “Look at the four corners” tutorial beat." },
+      { id: "picker", title: "Corner picker", cat: "interactive", tags: ["interactive", "home"], mode: "interactive",
+        desc: "Click a leaf to select it; others stay at 32%. This is the hot-corner control drawn with the logo." },
+      { id: "magnetic", title: "Magnetic follow", cat: "interactive", tags: ["interactive"], mode: "interactive",
+        desc: "Leaves drift toward the pointer. Delightful, harder to port 1:1 than the rest." },
+    ];
+
+    const FILTERS = [
+      ["all", "All"],
+      ["in-app", "In the app"],
+      ["home", "Home-friendly"],
+      ["assemble", "Assemble"],
+      ["idle", "Idle / loop"],
+      ["exit", "Dismiss"],
+      ["interactive", "Interactive"],
+    ];
+
+    function mountMark(el) {
+      const size = el.dataset.mark === "lg" ? "lg" : el.dataset.mark === "sm" ? "sm" : "";
+      el.innerHTML = markSvg();
+      const stage = el.querySelector("svg");
+      stage.classList.add("stage");
+      if (size) stage.classList.add(size);
+      return stage;
+    }
+
+    document.querySelectorAll("[data-mark]").forEach(mountMark);
+
+    const gallery = document.getElementById("gallery");
+    const orbitPick = document.getElementById("orbitPick");
+    const toolsPick = document.getElementById("toolsPick");
+    const stages = new Map();
+
+    function applyAnim(stage, spec) {
+      if (stage._timer) { clearInterval(stage._timer); stage._timer = null; }
+      if (stage._onMove) {
+        stage.removeEventListener("mousemove", stage._onMove);
+        stage.removeEventListener("mouseleave", stage._onLeave);
+      }
+      [...stage.classList].forEach(c => {
+        if (c.startsWith("anim-") || c.startsWith("order-") || c === "is-playing") stage.classList.remove(c);
+      });
+      stage.classList.add("anim-" + spec.id);
+      if (spec.order) stage.classList.add(spec.order);
+      stage.querySelectorAll(".petal").forEach(p => {
+        p.classList.remove("is-dim");
+        p.onclick = null;
+        p.style.transform = "";
+      });
+      const play = () => {
+        stage.classList.remove("is-playing");
+        void stage.offsetWidth;
+        stage.classList.add("is-playing");
+      };
+      if (spec.mode === "infinite" || spec.mode === "hover" || spec.mode === "click" || spec.mode === "none") {
+        if (spec.mode !== "none") stage.classList.add("is-playing");
+        return;
+      }
+      if (spec.mode === "interactive") {
+        stage.classList.add("is-playing");
+        if (spec.id === "picker") {
+          const petals = [...stage.querySelectorAll(".petal")];
+          petals.forEach((p, i) => {
+            p.onclick = () => petals.forEach((q, j) => q.classList.toggle("is-dim", j !== i));
+          });
+          petals.forEach((q, j) => q.classList.toggle("is-dim", j !== 0));
+        }
+        if (spec.id === "magnetic") {
+          const petals = [...stage.querySelectorAll(".petal")];
+          stage._onMove = (e) => {
+            const r = stage.getBoundingClientRect();
+            const x = ((e.clientX - r.left) / r.width - 0.5) * 10;
+            const y = ((e.clientY - r.top) / r.height - 0.5) * 10;
+            petals.forEach(p => { p.style.transform = `translate(${x}px, ${y}px)`; });
+          };
+          stage._onLeave = () => petals.forEach(p => { p.style.transform = ""; });
+          stage.addEventListener("mousemove", stage._onMove);
+          stage.addEventListener("mouseleave", stage._onLeave);
+        }
+        return;
+      }
+      play();
+      const ms = stage.classList.contains("lg")
+        ? (Number(document.getElementById("interval").value) || 5000)
+        : (spec.interval || 2800);
+      stage._timer = setInterval(play, ms);
+    }
+
+    ANIMATIONS.forEach(spec => {
+      const card = document.createElement("article");
+      card.className = "card";
+      card.dataset.tags = spec.tags.join(" ");
+      card.innerHTML = `
+        <div class="preview"></div>
+        <h3>${spec.title}</h3>
+        <p>${spec.desc}</p>
+        <div class="meta">
+          ${spec.inApp ? `<span class="tag in-app">${spec.inApp}</span>` : ""}
+          ${spec.home ? `<span class="tag home">${spec.home}</span>` : spec.tags.includes("home") ? `<span class="tag home">Home fit</span>` : ""}
+          <span class="tag">${spec.cat}</span>
+        </div>
+        <div class="card-actions">
+          <button type="button" data-replay>Replay</button>
+          <button type="button" data-orbit>Orbit</button>
+          <button type="button" data-tools>Tools</button>
+        </div>`;
+      const preview = card.querySelector(".preview");
+      preview.innerHTML = markSvg();
+      const stage = preview.querySelector("svg");
+      stage.classList.add("stage");
+      applyAnim(stage, spec);
+      stages.set(spec.id, { spec, stage, card });
+      card.querySelector("[data-replay]").onclick = () => applyAnim(stage, spec);
+      card.querySelector("[data-orbit]").onclick = () => assign("orbit", spec.id);
+      card.querySelector("[data-tools]").onclick = () => assign("tools", spec.id);
+      gallery.appendChild(card);
+
+      const opt = document.createElement("option");
+      opt.value = spec.id;
+      opt.textContent = spec.title;
+      orbitPick.appendChild(opt.cloneNode(true));
+      toolsPick.appendChild(opt);
+    });
+
+    const orbitStage = document.querySelector("#orbitMark svg");
+    const toolsStage = document.querySelector("#toolsMark svg");
+    orbitStage.classList.add("lg");
+    toolsStage.classList.add("lg");
+
+    function specById(id) { return ANIMATIONS.find(a => a.id === id); }
+
+    function assign(which, id) {
+      const spec = specById(id);
+      if (which === "orbit") {
+        orbitPick.value = id;
+        applyAnim(orbitStage, spec);
+      } else {
+        toolsPick.value = id;
+        applyAnim(toolsStage, spec);
+      }
+    }
+
+    orbitPick.value = "entrance";
+    toolsPick.value = "pulse";
+    applyAnim(orbitStage, specById("entrance"));
+    applyAnim(toolsStage, specById("pulse"));
+    orbitPick.onchange = () => assign("orbit", orbitPick.value);
+    toolsPick.onchange = () => assign("tools", toolsPick.value);
+    document.getElementById("interval").onchange = () => {
+      assign("orbit", orbitPick.value);
+      assign("tools", toolsPick.value);
+    };
+
+    const filters = document.getElementById("filters");
+    FILTERS.forEach(([id, label], i) => {
+      const b = document.createElement("button");
+      b.className = "chip";
+      b.type = "button";
+      b.textContent = label;
+      b.setAttribute("aria-pressed", i === 0 ? "true" : "false");
+      b.onclick = () => {
+        filters.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", "false"));
+        b.setAttribute("aria-pressed", "true");
+        gallery.querySelectorAll(".card").forEach(card => {
+          card.classList.toggle("hidden", id !== "all" && !card.dataset.tags.split(" ").includes(id));
+        });
+      };
+      filters.appendChild(b);
+    });
+
+    document.getElementById("rate").onchange = (e) => {
+      document.documentElement.style.setProperty("--rate", e.target.value);
+    };
+    document.getElementById("theme").onclick = () => {
+      const light = document.documentElement.getAttribute("data-theme") === "light";
+      document.documentElement.setAttribute("data-theme", light ? "dark" : "light");
+      document.getElementById("theme").textContent = light ? "Light" : "Dark";
+    };
+  </script>
+</body>
+</html>

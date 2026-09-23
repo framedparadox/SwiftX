@@ -4,39 +4,39 @@ using Xunit;
 namespace SwiftX.Tests.Models;
 
 /// <summary>
-/// Covers <see cref="ToolCatalog.EnsureToolsGroup"/>, the migration RingManager.Start runs on
+/// Covers <see cref="ToolCatalog.EnsureToolsGroup"/>, the migration OrbitManager.Start runs on
 /// every load: every built-in tool belongs inside the one Tools group, wherever an older config
 /// happened to leave them.
 /// </summary>
 public class ToolsGroupTests
 {
-    private static RingItem App(string name) => new()
+    private static OrbitItem App(string name) => new()
     {
-        Kind = RingItemKind.Application,
+        Kind = OrbitItemKind.Application,
         DisplayName = name,
         Target = @"C:\Windows\System32\" + name + ".exe",
     };
 
-    private static RingItem Tool(string target) => new()
+    private static OrbitItem Tool(string target) => new()
     {
-        Kind = RingItemKind.Tool,
+        Kind = OrbitItemKind.Tool,
         DisplayName = target,
         Target = target,
     };
 
-    private static RingItem Group(string name, params RingItem[] children)
+    private static OrbitItem Group(string name, params OrbitItem[] children)
     {
-        var group = new RingItem { Kind = RingItemKind.Group, DisplayName = name };
+        var group = new OrbitItem { Kind = OrbitItemKind.Group, DisplayName = name };
         group.Children.AddRange(children);
         return group;
     }
 
-    private static IEnumerable<string> Targets(IEnumerable<RingItem> items) => items.Select(i => i.Target);
+    private static IEnumerable<string> Targets(IEnumerable<OrbitItem> items) => items.Select(i => i.Target);
 
     [Fact]
     public void The_seeded_group_already_holds_every_tool()
     {
-        var items = new List<RingItem> { App("notepad"), ToolCatalog.CreateToolsGroup() };
+        var items = new List<OrbitItem> { App("notepad"), ToolCatalog.CreateToolsGroup() };
 
         // Nothing to move and nothing missing, so nothing to persist either.
         Assert.False(ToolCatalog.EnsureToolsGroup(items));
@@ -46,10 +46,10 @@ public class ToolsGroupTests
     }
 
     [Fact]
-    public void Loose_tools_move_into_the_group_and_take_no_ring_slot_of_their_own()
+    public void Loose_tools_move_into_the_group_and_take_no_orbit_slot_of_their_own()
     {
         var group = Group("Tools");
-        var items = new List<RingItem> { Tool("Data"), App("notepad"), group, Tool("Base64") };
+        var items = new List<OrbitItem> { Tool("Data"), App("notepad"), group, Tool("Base64") };
 
         Assert.True(ToolCatalog.EnsureToolsGroup(items));
 
@@ -63,11 +63,11 @@ public class ToolsGroupTests
     {
         // The shape earlier builds seeded: a group called "Dev tools" with no stable target.
         var devTools = Group("Dev tools", Tool("Data"), Tool("SecureValues"));
-        var items = new List<RingItem> { App("notepad"), devTools, Tool("Certificate") };
+        var items = new List<OrbitItem> { App("notepad"), devTools, Tool("Certificate") };
 
         Assert.True(ToolCatalog.EnsureToolsGroup(items));
 
-        Assert.Single(items.Where(i => i.IsGroup));
+        Assert.Single(items, i => i.IsGroup);
         Assert.Equal(ToolCatalog.ToolsGroupTarget, devTools.Target);
         // Renaming it is the user's business; only the target is stamped on.
         Assert.Equal("Dev tools", devTools.DisplayName);
@@ -77,10 +77,10 @@ public class ToolsGroupTests
     [Fact]
     public void Every_built_in_tool_ends_up_in_the_group_exactly_once()
     {
-        // A tool at the top level, the same tool again inside another group, and two the ring
+        // A tool at the top level, the same tool again inside another group, and two the orbit
         // never had at all.
         var nested = Group("Work", Tool("Data"), App("calc"));
-        var items = new List<RingItem> { Tool("Data"), nested, Group("Tools", Tool("Base64")) };
+        var items = new List<OrbitItem> { Tool("Data"), nested, Group("Tools", Tool("Base64")) };
 
         Assert.True(ToolCatalog.EnsureToolsGroup(items));
 
@@ -95,7 +95,7 @@ public class ToolsGroupTests
     [Fact]
     public void A_group_created_here_takes_the_slot_of_the_first_tool_it_absorbed()
     {
-        var items = new List<RingItem> { App("notepad"), Tool("Data"), App("calc") };
+        var items = new List<OrbitItem> { App("notepad"), Tool("Data"), App("calc") };
 
         Assert.True(ToolCatalog.EnsureToolsGroup(items));
 
@@ -105,11 +105,11 @@ public class ToolsGroupTests
     }
 
     [Fact]
-    public void A_ring_with_no_tools_and_no_group_is_left_exactly_as_it_is()
+    public void A_orbit_with_no_tools_and_no_group_is_left_exactly_as_it_is()
     {
         // Someone who deleted the group and its tools outright should not find them back on the
         // next launch.
-        var items = new List<RingItem> { App("notepad"), Group("Work", App("calc")) };
+        var items = new List<OrbitItem> { App("notepad"), Group("Work", App("calc")) };
 
         Assert.False(ToolCatalog.EnsureToolsGroup(items));
         Assert.Equal(new[] { "notepad", "Work" }, items.Select(i => i.DisplayName));

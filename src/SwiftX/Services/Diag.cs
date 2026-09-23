@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace SwiftX.Services;
 
@@ -8,7 +9,7 @@ namespace SwiftX.Services;
 /// The file is truncated at startup and again whenever it passes <see cref="MaxBytes"/>, so a
 /// SwiftX left running for weeks in the tray cannot grow one. Unbounded was survivable while the
 /// log only recorded startup and failures, but the app logs every launch and every failed icon
-/// resolution, and the two feeders that never stop — the hot corner's 20 Hz poll and the ring's
+/// resolution, and the two feeders that never stop — the hot corner's 20 Hz poll and the orbit's
 /// outside-click timer — each log on fault. A repeating fault therefore wrote until the disk
 /// said no, on the user's system drive, for a diagnostic nobody had asked for.
 /// </para>
@@ -56,7 +57,12 @@ public static class Diag
 
                 line += "\n";
                 File.AppendAllText(LogPath, line);
-                _written += line.Length;
+                // Bytes, not characters. AppendAllText writes UTF-8, and what gets logged here is
+                // item names, targets and exception messages — all of which carry whatever
+                // alphabet the user's files and Windows locale use. Counting UTF-16 code units
+                // let the file run to three times MaxBytes on a CJK or Cyrillic system, so the
+                // one number this ceiling is stated in was the one it was not measured in.
+                _written += Encoding.UTF8.GetByteCount(line);
             }
         }
         catch { /* ignore */ }
@@ -68,6 +74,6 @@ public static class Diag
     {
         var header = $"=== SwiftX {reason} {DateTime.Now:O} ===\n";
         File.WriteAllText(LogPath, header);
-        _written = header.Length;
+        _written = Encoding.UTF8.GetByteCount(header);
     }
 }

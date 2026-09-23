@@ -47,7 +47,7 @@ public sealed class Base64Page : EditorToolPage
     private bool _replacing;
     private readonly DispatcherQueueTimer _detectTimer;
 
-    public Base64Page()
+    public Base64Page(OrbitManager manager) : base(manager)
     {
         _editor.PlaceholderText = Loc.Get("Base64.InputPlaceholder");
         _editor.AccessibleName = Loc.Get("Common.Input");
@@ -56,6 +56,12 @@ public sealed class Base64Page : EditorToolPage
         _detectTimer.Interval = TimeSpan.FromMilliseconds(280);
         _detectTimer.IsRepeating = false;
         _detectTimer.Tick += (_, _) => RefreshDetection();
+
+        // Same closed-window race as CodeEditor.Highlight (see FormatterPage's identical guard):
+        // typing then closing the window within the 280ms debounce can leave this tick queued
+        // against a RichEditBox whose native document is already gone by the time it fires.
+        // Stopping the timer here narrows the window; RefreshDetection's own try/catch closes it.
+        PageClosing.Register(() => _detectTimer.Stop());
 
         _editor.TextChanged += (_, _) =>
         {
@@ -154,12 +160,24 @@ public sealed class Base64Page : EditorToolPage
         StatusBar.SetMessage(Loc.Get("Base64.Decoded"), isError: false);
     }
 
+    /// <summary>
+    /// Runs on every keystroke's debounce tick, whose one caller is a dispatcher tick with no
+    /// caller to catch what it throws — see <see cref="FormatterPage.RefreshDetection"/> for the
+    /// identical guard and the closed-window race it exists for.
+    /// </summary>
     private void RefreshDetection()
     {
-        var text = _editor.Text;
-        _detectedLabel.Text = text.Length == 0
-            ? ""
-            : Base64Codec.IsLikelyBase64(text) ? Loc.Get("Base64.DetectedBase64") : Loc.Get("Base64.DetectedText");
+        try
+        {
+            var text = _editor.Text;
+            _detectedLabel.Text = text.Length == 0
+                ? ""
+                : Base64Codec.IsLikelyBase64(text) ? Loc.Get("Base64.DetectedBase64") : Loc.Get("Base64.DetectedText");
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("Base64Page.RefreshDetection: document unavailable: " + ex.Message);
+        }
     }
 
     private void CopyOutput()

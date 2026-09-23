@@ -1,7 +1,7 @@
 namespace SwiftX.Models;
 
 /// <summary>
-/// Where the items go when a hot corner summons the quarter-circle ring: the center sits on the
+/// Where the items go when a hot corner summons the quarter-circle orbit: the center sits on the
 /// screen corner itself and the items fan out along the quarter arc that is actually on screen.
 /// <para>
 /// Two things have to hold at once, and both depend on the radius: neighbouring items must not
@@ -11,23 +11,23 @@ namespace SwiftX.Models;
 /// </para>
 /// <para>
 /// Pure geometry, in physical-ish DIP units and free of any windowing type, so the rule can be
-/// reasoned about (and tested) on its own — RingWindow supplies the numbers and draws the result.
+/// reasoned about (and tested) on its own — OrbitWindow supplies the numbers and draws the result.
 /// </para>
 /// </summary>
 public static class QuadrantLayout
 {
-    /// <summary>Items a quadrant shows: QuickAccess, Notepad, the ring's Tools item, and Settings.</summary>
+    /// <summary>Items a quadrant shows: QuickAccess, Notepad, the orbit's Tools item, and Settings.</summary>
     public const int ItemCount = 4;
 
     /// <summary>Stable marker target for the synthesized QuickAccess group — see
-    /// <see cref="BuildQuickAccess"/>. Not a real, stored ring item (nothing is ever added to the
-    /// ring itself), so this exists purely so <see cref="HotCornerItems"/> can recognize a stored
+    /// <see cref="BuildQuickAccess"/>. Not a real, stored orbit item (nothing is ever added to the
+    /// orbit itself), so this exists purely so <see cref="HotCornerItems"/> can recognize a stored
     /// entry as "the links and shortcuts group" and re-synthesize it fresh on every resolve,
-    /// exactly the way it already does for the ring's own Tools group.</summary>
+    /// exactly the way it already does for the orbit's own Tools group.</summary>
     public const string QuickAccessTarget = "swiftx:quickaccess";
 
     /// <summary>Glyph the QuickAccess group wears on a quadrant — the same one a lone Shortcut
-    /// item falls back to (see <see cref="RingItem.Glyph"/>), since the group is exactly that
+    /// item falls back to (see <see cref="OrbitItem.Glyph"/>), since the group is exactly that
     /// kind of item, gathered up.</summary>
     public const string QuickAccessGlyph = "\uE71B";
 
@@ -92,7 +92,7 @@ public static class QuadrantLayout
 
     /// <summary>
     /// The same angle in the canvas's own frame, where 0 points right (+x) and angles advance
-    /// clockwise because y grows downward — the convention every other ring angle uses. Each
+    /// clockwise because y grows downward — the convention every other orbit angle uses. Each
     /// corner mirrors the quarter into the screen: from the top-left it sweeps right-to-down,
     /// from the bottom-right left-to-up.
     /// </summary>
@@ -139,39 +139,39 @@ public static class QuadrantLayout
 
     /// <summary>
     /// Which items a quadrant shows, in arc order: QuickAccess (every web link and shortcut on the
-    /// ring, gathered into one group), then Notepad, then the ring's Tools item, then Settings —
-    /// content first, built-ins last, the same convention the full ring reads in with Settings and
+    /// orbit, gathered into one group), then Notepad, then the orbit's Tools item, then Settings —
+    /// content first, built-ins last, the same convention the full orbit reads in with Settings and
     /// Close pinned to its own last two slots, so the two layouts never disagree about where
     /// anything is.
     /// <para>
     /// QuickAccess drops out entirely when there is nothing to gather (see
     /// <see cref="BuildQuickAccess"/>) rather than taking a place for an empty group, and Notepad
-    /// falls back to the ring's own default entry when the ring has none of its own — see
+    /// falls back to the orbit's own default entry when the orbit has none of its own — see
     /// <see cref="FindOrDefaultNotepad"/>. Both are a starting point, not a fixture: once the
     /// corner is edited by hand (<see cref="HotCornerItems.Edit"/>), any of the four can be
     /// swapped for anything else.
     /// </para>
     /// <para>
     /// Close is deliberately absent. There are only <see cref="ItemCount"/> places, and a
-    /// quadrant is dismissed the way the ring always was: Esc, or a click anywhere off it.
+    /// quadrant is dismissed the way the orbit always was: Esc, or a click anywhere off it.
     /// </para>
     /// </summary>
-    /// <param name="ringItems">The profile's own items, in ring order.</param>
-    /// <param name="settings">The synthesized Settings entry — see <see cref="SystemRingItems"/>.</param>
-    public static List<RingItem> Compose(IEnumerable<RingItem> ringItems, RingItem settings)
+    /// <param name="orbitItems">The profile's own items, in orbit order.</param>
+    /// <param name="settings">The synthesized Settings entry — see <see cref="SystemOrbitItems"/>.</param>
+    public static List<OrbitItem> Compose(IEnumerable<OrbitItem> orbitItems, OrbitItem settings)
     {
-        var visible = ringItems.Where(i => !i.Hidden).ToList();
+        var visible = orbitItems.Where(i => !i.Hidden).ToList();
         var tools = visible.FirstOrDefault(
             i => i.IsGroup &&
                  string.Equals(i.Target, ToolCatalog.ToolsGroupTarget, StringComparison.OrdinalIgnoreCase));
 
         // Built from the back: whatever places the built-ins don't take go to the content items.
-        var tail = new List<RingItem>();
+        var tail = new List<OrbitItem>();
         if (tools is not null)
             tail.Add(tools);
         tail.Add(settings);
 
-        var head = new List<RingItem>();
+        var head = new List<OrbitItem>();
         var quickAccess = BuildQuickAccess(visible);
         if (quickAccess is not null)
             head.Add(quickAccess);
@@ -183,40 +183,40 @@ public static class QuadrantLayout
     }
 
     /// <summary>
-    /// Gathers every <see cref="RingItemKind.WebLink"/> and <see cref="RingItemKind.Shortcut"/>
-    /// item anywhere on the ring — top level or nested inside a user's own group — into one
+    /// Gathers every <see cref="OrbitItemKind.WebLink"/> and <see cref="OrbitItemKind.Shortcut"/>
+    /// item anywhere on the orbit — top level or nested inside a user's own group — into one
     /// synthesized group, in the order they appear. Standing in for "the user's own items" the
     /// way <see cref="ToolCatalog"/>'s group stands in for the built-in tools, and re-synthesized
     /// by <see cref="HotCornerItems"/> on every resolve so it stays live even once the corner has
     /// been customized. Null when there is nothing to gather, so an empty group never occupies
     /// one of the corner's four places for nothing.
     /// </summary>
-    public static RingItem? BuildQuickAccess(IEnumerable<RingItem> ringItems)
+    public static OrbitItem? BuildQuickAccess(IEnumerable<OrbitItem> orbitItems)
     {
-        var children = new List<RingItem>();
-        void Collect(IEnumerable<RingItem> items)
+        var children = new List<OrbitItem>();
+        void Collect(IEnumerable<OrbitItem> items)
         {
             foreach (var item in items)
             {
                 // A hidden group's children never surface via its own flyout either (see
-                // RingWindow.ExpandFlyout's matching filter), so a hidden item — group or leaf —
+                // OrbitWindow.ExpandFlyout's matching filter), so a hidden item — group or leaf —
                 // takes the rest of its subtree out of the gathering with it.
                 if (item.Hidden)
                     continue;
-                if (item.Kind is RingItemKind.WebLink or RingItemKind.Shortcut)
+                if (item.Kind is OrbitItemKind.WebLink or OrbitItemKind.Shortcut)
                     children.Add(item);
                 if (item.Children.Count > 0)
                     Collect(item.Children);
             }
         }
-        Collect(ringItems);
+        Collect(orbitItems);
 
         if (children.Count == 0)
             return null;
 
-        return new RingItem
+        return new OrbitItem
         {
-            Kind = RingItemKind.Group,
+            Kind = OrbitItemKind.Group,
             DisplayName = "QuickAccess",
             Target = QuickAccessTarget,
             CustomGlyph = QuickAccessGlyph,
@@ -225,20 +225,20 @@ public static class QuadrantLayout
     }
 
     /// <summary>
-    /// The ring's own Notepad, if it has one — matched by the target's file name so a renamed
+    /// The orbit's own Notepad, if it has one — matched by the target's file name so a renamed
     /// item still counts, and found wherever it sits, nested or not — or else the same entry
-    /// <c>RingManager.SeedDefaults</c> plants on a fresh ring, so the fourth place always opens to
-    /// something useful even on a ring that never had one.
+    /// <c>OrbitManager.SeedDefaults</c> plants on a fresh orbit, so the fourth place always opens to
+    /// something useful even on an orbit that never had one.
     /// </summary>
-    public static RingItem FindOrDefaultNotepad(IEnumerable<RingItem> ringItems)
+    public static OrbitItem FindOrDefaultNotepad(IEnumerable<OrbitItem> orbitItems)
     {
-        RingItem? Find(IEnumerable<RingItem> items)
+        OrbitItem? Find(IEnumerable<OrbitItem> items)
         {
             foreach (var item in items)
             {
                 if (item.Hidden)
                     continue;
-                if (item.Kind == RingItemKind.Application &&
+                if (item.Kind == OrbitItemKind.Application &&
                     string.Equals(Path.GetFileName(item.Target), "notepad.exe", StringComparison.OrdinalIgnoreCase))
                     return item;
                 if (item.Children.Count > 0 && Find(item.Children) is { } nested)
@@ -247,9 +247,9 @@ public static class QuadrantLayout
             return null;
         }
 
-        return Find(ringItems) ?? new RingItem
+        return Find(orbitItems) ?? new OrbitItem
         {
-            Kind = RingItemKind.Application,
+            Kind = OrbitItemKind.Application,
             DisplayName = "Notepad",
             Target = Path.Combine(Environment.SystemDirectory, "notepad.exe"),
         };

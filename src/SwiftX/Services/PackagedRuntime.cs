@@ -19,7 +19,7 @@ namespace SwiftX.Services;
 ///   <item><description><b>The update check.</b> The Store delivers updates itself, so a packaged
 ///   SwiftX pointing users at a GitHub release would be both redundant and a distribution route
 ///   outside the Store. The whole feature is therefore hidden when packaged — see
-///   <see cref="RingManager.UpdateChecksSupported"/>.</description></item>
+///   <see cref="OrbitManager.UpdateChecksSupported"/>.</description></item>
 /// </list>
 /// <para>
 /// Resolved once: package identity cannot change while a process runs.

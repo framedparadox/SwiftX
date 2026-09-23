@@ -19,14 +19,14 @@ public enum HotkeyModifiers
 
 /// <summary>
 /// A system-wide keyboard shortcut — one or more modifiers plus a key — stored in the config as
-/// a readable string such as <c>"Ctrl+Alt+A"</c> so a hand-edited <c>ring.json</c> stays legible.
+/// a readable string such as <c>"Ctrl+Alt+A"</c> so a hand-edited <c>orbit.json</c> stays legible.
 /// Immutable; parse with <see cref="TryParse"/> and render with <see cref="ToString"/>.
 /// </summary>
 public sealed class HotkeyGesture : IEquatable<HotkeyGesture>
 {
-    /// <summary>The shortcut SwiftX ships with: Ctrl+Shift+S.</summary>
+    /// <summary>The shortcut SwiftX ships with: Ctrl+Shift+X.</summary>
     public static HotkeyGesture Default { get; } =
-        new(HotkeyModifiers.Control | HotkeyModifiers.Shift, 0x53);
+        new(HotkeyModifiers.Control | HotkeyModifiers.Shift, 0x58);
 
     public HotkeyGesture(HotkeyModifiers modifiers, uint key)
     {

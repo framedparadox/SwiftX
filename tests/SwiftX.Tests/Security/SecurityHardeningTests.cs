@@ -25,6 +25,7 @@ namespace SwiftX.Tests.Security;
 /// object or a caught exception type, not merely for the absence of the attack's effect.
 /// </para>
 /// </summary>
+[Collection(SharedDataDirectoryCollection.Name)]
 public class SecurityHardeningTests
 {
     // =========================================================================================
@@ -169,7 +170,7 @@ public class SecurityHardeningTests
             new SecureValueEntry { Id = "a", Key = tellTaleKey, Value = tellTaleValue },
         ]);
 
-        var path = Path.Combine(RingStore.DataDirectory, "secure-values.json");
+        var path = Path.Combine(OrbitStore.DataDirectory, "secure-values.json");
         Assert.True(File.Exists(path));
 
         var raw = File.ReadAllText(path);
@@ -200,7 +201,7 @@ public class SecurityHardeningTests
     public void SecureValues_WithATamperedBlob_LoadEmptyRatherThanThrowing()
     {
         SecureValueStore.Save([new SecureValueEntry { Id = "a", Key = "k", Value = "v" }]);
-        var path = Path.Combine(RingStore.DataDirectory, "secure-values.json");
+        var path = Path.Combine(OrbitStore.DataDirectory, "secure-values.json");
 
         using (var document = JsonDocument.Parse(File.ReadAllText(path)))
         {
@@ -231,8 +232,8 @@ public class SecurityHardeningTests
     [InlineData("")]
     public void SecureValues_WithAMalformedFile_LoadEmptyRatherThanThrowing(string contents)
     {
-        var path = Path.Combine(RingStore.DataDirectory, "secure-values.json");
-        Directory.CreateDirectory(RingStore.DataDirectory);
+        var path = Path.Combine(OrbitStore.DataDirectory, "secure-values.json");
+        Directory.CreateDirectory(OrbitStore.DataDirectory);
         File.WriteAllText(path, contents);
 
         var thrown = Record.Exception(() => SecureValueStore.Load());
@@ -398,30 +399,75 @@ public class SecurityHardeningTests
     [InlineData("null")]
     [InlineData("[]")]
     [InlineData("{}")]
-    [InlineData("{\"Rings\":[]}")]
-    [InlineData("{\"Rings\":null}")]
+    [InlineData("{\"Orbits\":[]}")]
+    [InlineData("{\"Orbits\":null}")]
     [InlineData("not json")]
-    [InlineData("{\"Rings\":[{\"Items\":[{\"Kind\":\"NotARealKind\"}]}]}")]
-    public void RingStore_ImportingAMalformedConfiguration_ReturnsNullRatherThanThrowing(string contents)
+    public void OrbitStore_ImportingAMalformedConfiguration_ReturnsNullRatherThanThrowing(string contents)
     {
-        var path = Path.Combine(RingStore.DataDirectory, "import-" + Guid.NewGuid().ToString("N") + ".json");
+        var path = Path.Combine(OrbitStore.DataDirectory, "import-" + Guid.NewGuid().ToString("N") + ".json");
         File.WriteAllText(path, contents);
 
-        var thrown = Record.Exception(() => RingStore.ImportFrom(path));
+        var thrown = Record.Exception(() => OrbitStore.ImportFrom(path));
 
         Assert.Null(thrown);
-        Assert.Null(RingStore.ImportFrom(path));
+        Assert.Null(OrbitStore.ImportFrom(path));
+    }
+
+    /// <summary>
+    /// An unrecognised enum <em>value</em> is not malformedness and no longer refuses the file —
+    /// it degrades that one setting and imports the rest.
+    /// <para>
+    /// This case used to sit in the theory above, and it passed for the wrong reason: the enum
+    /// converter threw, <c>ImportFrom</c> caught, and the whole configuration came back as null.
+    /// The same throw on the same value reached <c>OrbitStore.Load</c> from <c>orbit.json</c>,
+    /// where "null" means a blank <see cref="AppConfig"/> that the next save writes over the real
+    /// file — so the behaviour this assertion was pinning was, on the other code path, total
+    /// silent data loss. Both paths now read enums tolerantly (see
+    /// <c>Services.TolerantEnumConverterFactory</c>).
+    /// </para>
+    /// <para>
+    /// Nothing is given up on the security side by accepting it. <see cref="OrbitItemKind"/> gates
+    /// no privilege — what an item does when launched is decided by its <c>Target</c>, which is an
+    /// arbitrary string under either reading — so refusing an unknown kind never stopped a hostile
+    /// file, which would simply write <c>"Application"</c> and be believed. It only ever punished
+    /// honest version skew: a config written by a build with one more kind in the enum than this
+    /// one has.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void OrbitStore_ImportingAnUnknownItemKind_KeepsTheItemRatherThanRefusingTheFile()
+    {
+        var path = Path.Combine(OrbitStore.DataDirectory, "import-" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(path,
+            "{\"Orbits\":[{\"Items\":[" +
+            "{\"Kind\":\"NotARealKind\",\"DisplayName\":\"Mystery\",\"Target\":\"C:\\\\tool.exe\"}," +
+            "{\"Kind\":\"WebLink\",\"DisplayName\":\"Docs\",\"Target\":\"https://example.com\"}" +
+            "]}]}");
+
+        var config = OrbitStore.ImportFrom(path);
+
+        Assert.NotNull(config);
+        Assert.Equal(2, config!.Primary.Items.Count);
+
+        // The unknown kind reads as the enum's first member, and keeps everything else it carried.
+        Assert.Equal(OrbitItemKind.Application, config.Primary.Items[0].Kind);
+        Assert.Equal("Mystery", config.Primary.Items[0].DisplayName);
+        Assert.Equal("C:\\tool.exe", config.Primary.Items[0].Target);
+
+        // And the item beside it — the actual point. One unreadable word must not cost the rest.
+        Assert.Equal(OrbitItemKind.WebLink, config.Primary.Items[1].Kind);
+        Assert.Equal("https://example.com", config.Primary.Items[1].Target);
     }
 
     /// <summary>A path that does not exist is the same "no" as a malformed file, not an
     /// exception.</summary>
     [Fact]
-    public void RingStore_ImportingAMissingFile_ReturnsNull()
+    public void OrbitStore_ImportingAMissingFile_ReturnsNull()
     {
-        var missing = Path.Combine(RingStore.DataDirectory, "definitely-not-here.json");
+        var missing = Path.Combine(OrbitStore.DataDirectory, "definitely-not-here.json");
 
-        Assert.Null(Record.Exception(() => RingStore.ImportFrom(missing)));
-        Assert.Null(RingStore.ImportFrom(missing));
+        Assert.Null(Record.Exception(() => OrbitStore.ImportFrom(missing)));
+        Assert.Null(OrbitStore.ImportFrom(missing));
     }
 
     /// <summary>
@@ -430,15 +476,15 @@ public class SecurityHardeningTests
     /// the same null rather than as a throw out of <c>Load</c>.
     /// </summary>
     [Fact]
-    public void RingStore_ImportingADepthBomb_ReturnsNullRatherThanThrowing()
+    public void OrbitStore_ImportingADepthBomb_ReturnsNullRatherThanThrowing()
     {
         var bomb = string.Concat(Enumerable.Repeat("{\"a\":", 20_000)) + "1" +
                    string.Concat(Enumerable.Repeat("}", 20_000));
-        var path = Path.Combine(RingStore.DataDirectory, "bomb.json");
+        var path = Path.Combine(OrbitStore.DataDirectory, "bomb.json");
         File.WriteAllText(path, bomb);
 
-        Assert.Null(Record.Exception(() => RingStore.ImportFrom(path)));
-        Assert.Null(RingStore.ImportFrom(path));
+        Assert.Null(Record.Exception(() => OrbitStore.ImportFrom(path)));
+        Assert.Null(OrbitStore.ImportFrom(path));
     }
 
     // =========================================================================================
@@ -509,7 +555,7 @@ public class SecurityHardeningTests
     [Fact]
     public async Task InputLimits_RefuseAnOversizedFile_WithoutReadingIt()
     {
-        var path = Path.Combine(RingStore.DataDirectory, "oversized.bin");
+        var path = Path.Combine(OrbitStore.DataDirectory, "oversized.bin");
 
         // A sparse-ish file: set the length without writing the bytes, so the test stays quick
         // while the metadata the guard reads says it is past the ceiling.
@@ -528,7 +574,7 @@ public class SecurityHardeningTests
     [Fact]
     public async Task InputLimits_ReadAFileInsideTheCeiling_Normally()
     {
-        var path = Path.Combine(RingStore.DataDirectory, "small.json");
+        var path = Path.Combine(OrbitStore.DataDirectory, "small.json");
         await File.WriteAllTextAsync(path, "{\"ok\":true}");
 
         var result = await InputLimits.ReadTextAsync(path);
@@ -543,7 +589,7 @@ public class SecurityHardeningTests
     public async Task InputLimits_OnAMissingFile_ReportRatherThanThrow()
     {
         var result = await InputLimits.ReadTextAsync(
-            Path.Combine(RingStore.DataDirectory, "no-such-file.txt"));
+            Path.Combine(OrbitStore.DataDirectory, "no-such-file.txt"));
 
         Assert.False(result.Ok);
         Assert.NotEmpty(result.Error);

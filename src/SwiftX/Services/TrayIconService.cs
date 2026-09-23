@@ -4,11 +4,11 @@ using SwiftX.Interop;
 namespace SwiftX.Services;
 
 /// <summary>
-/// SwiftX notification-area (system tray) icon: the app has no taskbar button — the ring is a
+/// SwiftX notification-area (system tray) icon: the app has no taskbar button — the orbit is a
 /// borderless tool window by design — so the tray icon is what tells you it's running and gives
-/// you a way back when the ring is dismissed.
+/// you a way back when the orbit is dismissed.
 /// <list type="bullet">
-/// <item>Left-click (or double-click) summons the ring.</item>
+/// <item>Left-click (or double-click) summons the orbit.</item>
 /// <item>Right-click opens a native menu: show/hide, add an item, settings, quit.</item>
 /// </list>
 /// Uses a native popup menu rather than a XAML flyout because the icon's owner window
@@ -38,13 +38,13 @@ public sealed class TrayIconService : IDisposable
     private bool _disposed;
     private bool _menuOpen;
 
-    /// <summary>Left-click / double-click: summon the ring.</summary>
+    /// <summary>Left-click / double-click: summon the orbit.</summary>
     public event Action? Activated;
 
-    /// <summary>Menu: show the ring if hidden, hide it if shown.</summary>
+    /// <summary>Menu: show the orbit if hidden, hide it if shown.</summary>
     public event Action? ShowHideRequested;
 
-    /// <summary>Menu: open the "Add to ring" window.</summary>
+    /// <summary>Menu: open the "Add to orbit" window.</summary>
     public event Action? AddNewRequested;
 
     /// <summary>Menu: open Settings.</summary>
@@ -132,10 +132,18 @@ public sealed class TrayIconService : IDisposable
         if (Environment.ProcessPath is { Length: > 0 } exe &&
             NativeMethods.ExtractIconEx(exe, 0, out var large, out var small, 1) > 0)
         {
-            if (large != nint.Zero && large != small)
-                NativeMethods.DestroyIcon(large);
+            // Prefer the small icon — this is a tray icon — but take the large one rather than
+            // nothing when the module carries no small frame. Destroying `large` unconditionally
+            // and then testing `small` meant an executable with only a large icon threw away a
+            // perfectly good icon and fell through to the generic one below.
             if (small != nint.Zero)
+            {
+                if (large != nint.Zero && large != small)
+                    NativeMethods.DestroyIcon(large);
                 return (small, false);
+            }
+            if (large != nint.Zero)
+                return (large, false);
         }
 
         Diag.Log("Tray: falling back to the generic application icon");

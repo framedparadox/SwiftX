@@ -11,8 +11,8 @@ public static partial class Loc
     private static readonly Dictionary<string, string> Arabic = new(StringComparer.Ordinal)
     {
         ["Tray.Tooltip"] = "SwiftX",
-        ["Tray.Show"] = "إظهار الحلقة",
-        ["Tray.HideDock"] = "إخفاء الحلقة",
+        ["Tray.Show"] = "إظهار المدار",
+        ["Tray.HideDock"] = "إخفاء المدار",
         ["Tray.AddNew"] = "إضافة عنصر…",
         ["Tray.Settings"] = "الإعدادات",
         ["Tray.Quit"] = "إنهاء",

@@ -7,3 +7,6 @@ obj/
 packages/
 TestResults/
 /tmp/
+
+# Isolated worktrees used by background agents. Never part of the tree itself.
+.claude/worktrees/

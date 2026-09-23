@@ -15,7 +15,7 @@
 1. **Zero External Dependencies / Self-Contained**: 100% local processing; zero telemetry, zero cloud calls, zero accounts.
 2. **Transparent, Input-Preserving Overlay**: Renders as a full-screen borderless window that passes all non-item mouse clicks directly to underlying applications using Win32 elliptical clipping.
 3. **Rigorous Defensive Engineering**: Strict parse-bomb ceilings (§22), entity expansion mitigations (§21), and debounced asynchronous pipelines (§10.2).
-4. **Adaptive Geometry**: Unified radial math derived from a single anchor radius for both full-circle rings and screen-corner quadrants.
+4. **Adaptive Geometry**: Unified radial math derived from a single anchor radius for both full-circle orbits and screen-corner quadrants.
 5. **Windows 11 Fluent Standards**: System-integrated theme tracking, strict accessibility contracts, Narrator automation naming, and full High Contrast support (§13.3).
 
 ---
@@ -26,18 +26,18 @@
 graph TD
     subgraph Core ["Host & Lifecycle"]
         App["App.xaml.cs\nSingle-Instance Lock\nUnhandled Exception Guard"]
-        RM["RingManager\nState Coordinator\nEvent Broker"]
+        RM["OrbitManager\nState Coordinator\nEvent Broker"]
         MW["MessageWindow (HWND)\nTray Callbacks\nWM_HOTKEY / WM_TIMER"]
     end
 
     subgraph Overlay ["Radial Overlay UI"]
-        RW["RingWindow.xaml.cs\nFull-Screen Click-Through Overlay"]
-        RM_GEO["RingMetrics / QuadrantLayout\nRadial Trigonometry & Edge Clearance"]
+        RW["OrbitWindow.xaml.cs\nFull-Screen Click-Through Overlay"]
+        RM_GEO["OrbitMetrics / QuadrantLayout\nRadial Trigonometry & Edge Clearance"]
         HCW["HotCornerWatcher\n50ms Pointer Polling & 250ms Dwell"]
     end
 
     subgraph Storage ["Configuration & Security"]
-        RS["RingStore\nAtomic Save / Load / Migrations"]
+        RS["OrbitStore\nAtomic Save / Load / Migrations"]
         SVS["SecureValueStore\nDPAPI ProtectedData (CurrentUser)"]
     end
 
@@ -60,10 +60,10 @@ graph TD
 
 ---
 
-## 3. The Radial Ring Engine
+## 3. The Radial Orbit Engine
 
-### 3.1 Slot Distribution & Ring Topology
-The radial ring is centered dynamically around the mouse cursor or screen midpoint. It features **8 slots** spaced $45^\circ$ apart, beginning at Slot 0 (straight up, $0^\circ / 12\text{ o'clock}$) and advancing clockwise:
+### 3.1 Slot Distribution & Orbit Topology
+The radial orbit is centered dynamically around the mouse cursor or screen midpoint. It features **8 slots** spaced $45^\circ$ apart, beginning at Slot 0 (straight up, $0^\circ / 12\text{ o'clock}$) and advancing clockwise:
 
 ```
                   Slot 0 (0°)
@@ -79,11 +79,11 @@ The radial ring is centered dynamically around the mouse cursor or screen midpoi
                   Slot 4 (180°)
 ```
 
-- **Hub**: Fixed-size center circular emblem. Clicking the hub closes any open outer flyout ring or dismisses the overlay.
-- **Slots 0 to 5 (User Slots)**: Filled sequentially from the user's item list (`RingProfile.Items`). Empty slots are omitted from the draw pass.
-- **Slot 6 (Settings Group / Quick Action)**: System-synthesized entry. Hovering reveals the **Add New** action; clicking opens the Settings window.
+- **Hub**: Fixed-size center circular emblem. Clicking the hub closes any open outer flyout orbit or dismisses the overlay.
+- **Slots 0 to 5 (User Slots)**: Filled sequentially from the user's item list (`OrbitProfile.Items`). Empty slots are omitted from the draw pass.
+- **Slot 6 (Settings Group / Quick Action)**: System-synthesized entry. Hovering reveals the **Add New** action; clicking opens the SwiftX app window (`ShellWindow`) on its Home screen.
 - **Slot 7 (Close Action)**: System-synthesized entry. Quits the application. Features a unique inverted hover behavior (shrinks under cursor rather than grows; turns critical red).
-- **Concentric Flyout (Outer Ring)**: When hovering a group item, an outer concentric ring fans open with up to 8 child items. The inner ring remains stationary to preserve muscle memory.
+- **Concentric Flyout (Outer Orbit)**: When hovering a group item, an outer concentric orbit fans open with up to 8 child items. The inner orbit remains stationary to preserve muscle memory.
 
 ### 3.2 Overlay Input & Hit-Testing (§9)
 - **Problem**: Full-screen transparent overlay windows in Windows normally capture all mouse input, blocking user interactions with applications underneath.
@@ -102,13 +102,13 @@ The radial ring is centered dynamically around the mouse cursor or screen midpoi
 - **Polling**: Lightweight $50\text{ ms}$ timer on `MessageWindow` (no global low-level mouse hook).
 
 ### 4.2 Quadrant Geometry (`QuadrantLayout.cs`)
-When configured for **Quadrant Mode**, the ring adapts into a $90^\circ$ quarter-circle centered directly on the screen corner:
+When configured for **Quadrant Mode**, the orbit adapts into a $90^\circ$ quarter-circle centered directly on the screen corner:
 - **Dynamic Arc Expansion**: Starts at base radius ($100\text{ px}$) and dynamically expands until adjacent items maintain minimum separation ($8\text{ px}$) and boundary items clear monitor edges ($12\text{ px}$).
 - **Default 4 Items**:
-  1. `QuickAccess`: Live aggregation of all web links and shortcuts on the ring.
+  1. `QuickAccess`: Live aggregation of all web links and shortcuts on the orbit.
   2. `Notepad`: Dedicated launcher or system fallback.
   3. `Tools`: Built-in developer tools group.
-  4. `Settings`: Configuration shell.
+  4. `Settings`: The SwiftX app window.
 
 ---
 
@@ -161,23 +161,27 @@ To guarantee that SwiftX never crashes, hangs, or exhausts system resources:
 | **Custom Icon Ingestion** | $16\text{ MB}$ | Pre-decode image header boundary check |
 | **Config Import** | $8\text{ MB}$ | Pre-parse JSON size limit |
 | **Editor Syntax Highlighting** | $100{,}000\text{ chars}$ | Skips syntax tokens above ceiling; falls back to raw monospace |
+| **Quick Format Auto-Run** | $2{,}000{,}000\text{ chars}$ | `InputLimits.MaxQuickFormatChars`; refused with a message pointing at the Data Formatter, since this is the one tool that formats unprompted |
 | **JSON Parser Depth** | $256\text{ levels}$ | `JsonDocumentOptions.MaxDepth = 256` with diagnostic capture |
 | **XML Entity Characters** | $1{,}024\text{ chars}$ | `XmlReaderSettings.MaxCharactersFromEntities = 1024` |
 
 ---
 
-## 7. Configuration & Storage (`RingStore.cs`, `AppConfig.cs`)
+## 7. Configuration & Storage (`OrbitStore.cs`, `AppConfig.cs`)
 
 ### 7.1 File Location & Portability
-- Default path: `%AppData%\SwiftX\ring.json`.
+- Default path: `%AppData%\SwiftX\orbit.json`.
 - Override: `SWIFTX_DATA_DIR` environment variable allows full portability and side-by-side test instances.
 
 ### 7.2 Atomic Write Protocol
-1. Configuration serialized to `ring.json.tmp`.
+1. Configuration serialized to `orbit.json.tmp`.
 2. Flushed to disk.
 3. Native atomic move `File.Move(tmp, path, overwrite: true)`.
 
-### 7.3 Startup Migrations
+### 7.3 Legacy Format Forward-Mapping (`LegacyConfigFormat.cs`)
+Read-time only, and only when `orbit.json` is absent: a pre-rename `ring.json` is rewritten as a pass over the `JsonNode` tree *before* deserialization — `Rings` $\rightarrow$ `Orbits`, `RingRadius` $\rightarrow$ `OrbitRadius`, `HotCornerRing` $\rightarrow$ `HotCornerOrbit`, and the `HotCornerLayout` value `"Ring"` $\rightarrow$ `"Orbit"`. The enum value cannot be repaired from a property setter (`JsonStringEnumConverter` throws before any setter runs), so the shim stays out of `AppConfig`. Malformed input is returned unchanged, leaving `Load`'s deserialize as the single diagnosis point. The legacy file is never written back to; the first `Save` lands on `orbit.json`. The same pass runs on configuration import.
+
+### 7.4 Startup Migrations
 1. Legacy Settings / Close stored items stripped (now synthesized).
 2. Legacy `Json`/`Xml` tool targets mapped to unified `Data` tool.
 3. Dispersed tools gathered into a unified `Tools` group (`swiftx:toolsgroup`).
@@ -188,14 +192,31 @@ To guarantee that SwiftX never crashes, hangs, or exhausts system resources:
 ## 8. Windows Design & Accessibility Standards (§13)
 
 ### 8.1 Theme Matrix
-- **Dark Mode**: `#000000` content canvas, `#141414` sidebar, `#202020` card surfaces.
-- **Light Mode**: `#FFFFFF` content canvas, `#F3F3F3` sidebar, `#F2F2F2` card surfaces.
-- **High Contrast Precedence (§13.3)**: When Windows High Contrast is active (`HighContrast.IsActive()`), custom theme brushes and syntax color palettes are disabled in favor of system-provided theme tokens (`TextControlForeground`, etc.).
+
+`AppTheme` carries **four** members — `Light`, `Dark`, `Black`, `System` — where `Black` is surfaced to the user as **Midnight**. The app window (`ShellWindow`) and the first-run guide (`OnboardingWindow`) follow a palette of their own (`Themes/Colors.xaml`); the orbit, `AddItemWindow`, and the four tool windows keep the app's shared black/white identity.
+
+The `Shell*` family is Logi Options+'s own `AppBackgroundBrush` / `SettingsCardBackgroundBrush` / `SettingsCardBorderBrush`, ported hue-for-hue from `windows-app-mx`'s `LogiApp/Themes/AppThemeResources.xaml` (branch `logiApp/dotnet`). The one adaptation is opacity: Logi paints these flat, SwiftX carries them at the same `0xD9` alpha as every other Dark plate here so Mica still reads through. The older `SwiftX*` / `Settings*` surface keys stay as they are — `AddItemWindow` and the tool windows share them.
+
+| Surface (app window) | Light | Dark | Midnight |
+| :--- | :--- | :--- | :--- |
+| **Page** (`ShellBackgroundBrush`) | `#F2F2F2` | `#D92B2B2B` | `#E6000000` |
+| **Card** (`ShellCardBackgroundBrush`) | `#FFFFFF` (stroke `#E0E0E0`) | `#D9333333` (stroke `#444444`) | `#E6121212` (stroke `#2A2A2A`) |
+| **Icon medallion** (`ShellMedallionBrush`) | `#F4F6F9` | `#D9242424` | `#E60A0A0A` |
+| **Meta pill** (`ShellPillBrush`) | `#EDEFF2` | `#D93A3A3A` | `#E61A1A1A` |
+| **Recessed orbit tray** | `#E7EDF3` | `#D9202020` | `#E6000000` |
+| **Accent (default)** | `#6C47FF` | `#8A67FF` | `#8A67FF` |
+
+- **Light Inversion**: Light is the reverse of its earlier form — cards are a cool tint *darker* than a pure-white canvas (recessed panels), where they were previously pure `#FFFFFF` raised off `#F3F3F3`. Nav selection fills are explicitly enumerated (`#DCE5EE` / `#D2DDE8` / `#C8D5E2`) rather than inherited from WinUI `SubtleFill*` tokens, which Windows accent personalization can tint.
+- **Mica Composition**: `ShellWindow` attaches `MicaBackdrop { Kind = MicaKind.BaseAlt }` unconditionally. Dark's plates carry an `0xD9` (~85%) alpha so the wallpaper-derived tint reads through each layer while the raised/recessed hierarchy survives; Light's brushes are fully opaque, so the backdrop is inert there. Scoped strictly to this window — no other window carries Mica.
+- **Per-Bubble Acrylic**: Orbit items composite a `SystemBackdropElement` (`DesktopAcrylicBackdrop`) beneath a theme tint (`#66000000` Dark / `#66FFFFFF` Light / `#CC000000` Midnight), inset by $0.5\text{ px}$ (`BackdropInset`) so the backdrop's unfeathered composition clip never breaches the XAML-antialiased tint edge. The overlay window itself remains fully transparent (`TransparentBackdrop`).
+- **Midnight Resolution**: WinUI resolves `{ThemeResource}` against Light/Dark/Default only, so Midnight cannot be a theme dictionary. `ThemeHelper.Resolve` maps it onto Dark's `ElementTheme`; `ShellWindow.ApplyBlackOverrides` shadows the surface keys in the window root's own `Resources` — per-key rather than one flat black, because the shell's card, medallion and pill would otherwise collapse into each other and leave a nav box reading as a bare outline — and `ForceThemeResourceRefresh` toggles `RequestedTheme` off and back to force a re-walk, since the Dark↔Midnight transition never changes `RequestedTheme`'s value. `System` can never resolve to Midnight — there is no OS-level equivalent.
+- **Accent Override**: `AccentColorHex` (nullable; `null` = built-in violet per theme — Logi's `#8A67FF` / `#6C47FF`, which replaced SwiftX's shipped teal `#3DDCD3` / `#0B7C7C` when the window was rebuilt on Logi's design; a stored value is untouched by that change) is applied by `ApplyAccentColorOverride` to the WinUI control keys the window actually uses — toggle switch, radio button, slider track/thumb, rating control — in (default, pointer-over, pressed) triples derived by blending $\pm 18\%$ toward white/black. Logi's three accent-derived tokens (`SettingsNavActiveBrush`, `SettingsNavIndicatorBrush`, `SettingsCardSelectedBorderBrush`) are `StaticResource` aliases inside each theme dictionary and so resolve once at parse time; they are shadowed here as well, and the rail and theme cards — whose selected state is a brush written straight onto the element — are repainted in the same pass. Applied unconditionally, including for the default, because unset keys resolve to the Windows system accent rather than to SwiftX's own.
+- **High Contrast Precedence (§13.3)**: When Windows High Contrast is active (`HighContrast.IsActive()`), custom syntax palettes and status colors are suppressed in favor of system-provided theme tokens — `CodeView` and `CodeEditor` fall back to the control's theme-resolved foreground, and `ToolStatusBar` clears its error red. Custom surface brushes are not special-cased; the rule is to stop painting, not to repaint.
 
 ### 8.2 Keyboard & Automation
 - **Narrator**: Full UI Automation tree coverage via `AutomationProperties.SetName` and `AutomationProperties.SetAutomationId`.
 - **Keyboard Accelerators**:
-  - `Ctrl+Shift+S`: Toggle Ring Overlay
+  - `Ctrl+Shift+X`: Toggle Orbit Overlay
   - `Ctrl+Enter`: Format Active Document
   - `Ctrl+F`: Open Code Search Bar
   - `Ctrl++` / `Ctrl+-` / `Ctrl+Wheel`: Monospace Font Zoom In / Out
@@ -206,7 +227,7 @@ To guarantee that SwiftX never crashes, hangs, or exhausts system resources:
 ## 9. Verification & Test Architecture
 
 SwiftX maintains a 100% automated test suite:
-- **Geometry & Math Tests**: `QuadrantLayoutTests`, `HotCornerZoneTests`, `RingMetrics`.
+- **Geometry & Math Tests**: `QuadrantLayoutTests`, `HotCornerZoneTests`, `OrbitMetrics`.
 - **Security & Hardening Tests**: `XmlFormatSecurityTests`, `InputSanitizerTests`.
 - **Load & Endurance Tests**: `ToolLoadAndStressTests` (heavy JSON/XML cycles, deep nesting, rapid copy/minify loops).
 - **Crypto & Binary Tests**: `SecureValuesAndCertStressTests`, `CertificateReaderTests`, `Base64CodecTests`.

@@ -26,6 +26,8 @@ public sealed partial class HotkeyCaptureButton : Button
 
     public HotkeyCaptureButton()
     {
+        CornerRadius = new CornerRadius(8);
+        Padding = new Thickness(14, 6, 14, 6);
         Render();
         Click += (_, _) => BeginCapture();
         PreviewKeyDown += OnPreviewKeyDown;

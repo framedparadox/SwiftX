@@ -4,9 +4,11 @@ using SwiftX.Models;
 using SwiftX.Services;
 using SwiftX.ToolPages;
 using Microsoft.UI;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace SwiftX.ToolWindows;
 
@@ -15,7 +17,7 @@ public sealed class ToolWindowBase : Window
 {
     private readonly nint _hwnd;
     private readonly AppWindow _appWindow;
-    private readonly RingManager _manager;
+    private readonly OrbitManager _manager;
     private readonly Grid _root = new();
     private bool _forceClose;
     private bool _askingToDiscard;
@@ -23,7 +25,7 @@ public sealed class ToolWindowBase : Window
     public ToolPage Page { get; }
     public ToolKind Kind { get; }
 
-    public ToolWindowBase(RingManager manager, ToolPage page, ToolDefinition definition)
+    public ToolWindowBase(OrbitManager manager, ToolPage page, ToolDefinition definition)
     {
         _manager = manager;
         Page = page;
@@ -33,14 +35,12 @@ public sealed class ToolWindowBase : Window
         var windowId = Win32Interop.GetWindowIdFromWindow(_hwnd);
         _appWindow = AppWindow.GetFromWindowId(windowId);
         page.HostHwnd = _hwnd;
-        page.HostManager = manager;
 
         Title = definition.DisplayName;
         ExtendsContentIntoTitleBar = true;
 
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _root.Background = ThemeHelper.Brush(_root, "SwiftXSurfaceBrush");
 
         // Mirror the whole window for right-to-left languages (Arabic, Hebrew). The tool page's
         // contents are localized and built fresh each time the window opens (see
@@ -51,7 +51,7 @@ public sealed class ToolWindowBase : Window
             ? FlowDirection.RightToLeft
             : FlowDirection.LeftToRight;
 
-        var titleBar = new AppTitleBar(definition.Glyph, definition.DisplayName, page.HeaderActions);
+        var titleBar = new AppTitleBar(definition.Glyph, page.HeaderActions);
         Grid.SetRow(titleBar, 0);
         Grid.SetRow(page, 1);
         _root.Children.Add(titleBar);
@@ -75,7 +75,17 @@ public sealed class ToolWindowBase : Window
         WindowChrome.CenterOnCursor(_appWindow, windowId);
 
         Activated += (_, _) => ApplyChromeTheme();
-        _root.ActualThemeChanged += (_, _) => ApplyChromeTheme();
+        // The page as well as the chrome. An OS light/dark flip under the System theme is the one
+        // theme change that does not come through OrbitManager.ApplyTheme (no choice was made, so
+        // nothing fans out), and the chrome alone left the page wearing the local brushes it was
+        // built with until the window was closed and reopened. The accent too: the built-in default
+        // is a different colour either side of the flip.
+        _root.ActualThemeChanged += (_, _) =>
+        {
+            ApplyChromeTheme();
+            Page.ApplyTheme();
+            Page.ApplyAccent();
+        };
         ApplyChromeTheme();
 
         _appWindow.Closing += OnClosing;
@@ -88,19 +98,64 @@ public sealed class ToolWindowBase : Window
         manager.ToolWindows.Register(this);
     }
 
+    /// <summary>
+    /// Repaints this window's own chrome (background, backdrop, title bar/border theme) and then
+    /// <see cref="Page"/>'s — the same order <c>OrbitManager.ApplyTheme</c>'s fan-out already
+    /// expects, chrome first so the page's own <c>ActualTheme</c> is settled before it paints
+    /// anything that reads it.
+    /// </summary>
     public void ApplyTheme()
     {
         _root.RequestedTheme = ThemeHelper.Resolve(_manager.Config.Theme);
-        _root.Background = ThemeHelper.Brush(_root, "SwiftXSurfaceBrush");
+        _root.Background = ThemeHelper.Brush(_root, _manager.Config.Theme, "ShellBackgroundBrush");
+        ApplyBackdrop();
         ApplyChromeTheme();
+        Page.ApplyTheme();
+    }
+
+    /// <summary>
+    /// The lighter counterpart <c>OrbitManager.ApplyAccentColour</c> calls on every open tool
+    /// window during a live colour-picker drag — see <see cref="ToolPage.ApplyAccent"/>'s own
+    /// remarks for why this never touches background/backdrop/chrome, only <see cref="Page"/>'s
+    /// accent-tinted controls.
+    /// </summary>
+    public void ApplyAccent() => Page.ApplyAccent();
+
+    /// <summary>
+    /// Frosted glass wants a real thin acrylic where every other theme wants Mica — the same split
+    /// <c>ShellWindow</c>/<c>OnboardingWindow</c> make for their own backdrop, guarded on the
+    /// already-attached type so a re-apply (this runs on every theme change, not just the first)
+    /// does not tear the composition target down and flicker the window.
+    /// </summary>
+    private void ApplyBackdrop()
+    {
+        if (_manager.Config.Theme == AppTheme.FrostedGlass)
+        {
+            if (SystemBackdrop is FrostedGlassBackdrop frosted)
+                frosted.UpdateProperties();
+            else
+                SystemBackdrop = new FrostedGlassBackdrop();
+        }
+        else if (SystemBackdrop is not MicaBackdrop)
+        {
+            SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+        }
     }
 
     private void ApplyChromeTheme()
     {
         bool dark = ThemeHelper.IsDark(_root);
-        _root.Background = ThemeHelper.Brush(_root, "SwiftXSurfaceBrush");
-        WindowChrome.SetTitleBarTheme(_appWindow, dark);
-        WindowChrome.HideWindowBorder(_hwnd, dark);
+        _root.Background = ThemeHelper.Brush(_root, _manager.Config.Theme, "ShellBackgroundBrush");
+        int rim = _manager.Config.Theme switch
+        {
+            AppTheme.Black => 0x00000000,
+            AppTheme.FrostedGlass => 0x00161010,
+            _ => dark ? 0x002B2B2B : 0x00F2F2F2,
+        };
+        WindowChrome.ApplyShellFrame(
+            _appWindow, _hwnd, dark,
+            frosted: _manager.Config.Theme == AppTheme.FrostedGlass,
+            rim);
     }
 
     public void BringToFront()
@@ -185,7 +240,7 @@ public sealed class ToolWindowBase : Window
     }
 
     // Built from the codepoint, not a literal character in source — see the memory note on PUA
-    // glyph corruption from a stray copy/paste. The same "X" glyph the ring's own Close item and
+    // glyph corruption from a stray copy/paste. The same "X" glyph the orbit's own Close item and
     // Certificate's invalid badge already use elsewhere in this app.
     private static readonly string CloseGlyph = char.ConvertFromUtf32(0xE711);
 

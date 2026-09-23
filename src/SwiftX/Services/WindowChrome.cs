@@ -12,6 +12,7 @@ public static class WindowChrome
 {
     private const nuint NoEraseSubclassId = 0x53774658; // 'SwfX'
     private static readonly Dictionary<nint, NativeMethods.SubclassProc> NoEraseSubclassCallbacks = new();
+    private static readonly HashSet<nint> FrostedHwnds = new();
 
     /// <summary>Sizes a window's client area given a size in device-independent pixels.</summary>
     public static void SetClientSizeDip(AppWindow appWindow, nint hwnd, double dipW, double dipH)
@@ -26,9 +27,9 @@ public static class WindowChrome
     /// prove the request rides on a real input event (see the doc comment on
     /// <see cref="NativeMethods.AttachThreadInput"/>).
     /// <para>
-    /// This matters for the ring specifically because its own "click anywhere to dismiss" only
+    /// This matters for the orbit specifically because its own "click anywhere to dismiss" only
     /// fires when it loses activation it genuinely had — a summon that silently failed to become
-    /// foreground can never later fire that transition, leaving the ring stuck on screen through a
+    /// foreground can never later fire that transition, leaving the orbit stuck on screen through a
     /// click elsewhere. A hotkey press or a tray click already carry real input and would likely
     /// succeed on their own, but routing every summon through here costs nothing and removes the
     /// one summon path — the hot corner's <c>WM_TIMER</c> poll — that provably would not.
@@ -103,7 +104,19 @@ public static class WindowChrome
     /// </summary>
     public static void SetTitleBarTheme(AppWindow appWindow, bool dark)
     {
-        appWindow.TitleBar.PreferredTheme = dark ? TitleBarTheme.Dark : TitleBarTheme.Light;
+        var titleBar = appWindow.TitleBar;
+        titleBar.PreferredTheme = dark ? TitleBarTheme.Dark : TitleBarTheme.Light;
+
+        // ExtendsContentIntoTitleBar leaves the OS caption plate in place unless these are
+        // cleared. Unset, that plate is opaque white (or the inactive-caption grey) and reads as
+        // a hard line along the top of a frosted / acrylic window.
+        var clear = Microsoft.UI.Colors.Transparent;
+        titleBar.BackgroundColor = clear;
+        titleBar.InactiveBackgroundColor = clear;
+        titleBar.ButtonBackgroundColor = clear;
+        titleBar.ButtonInactiveBackgroundColor = clear;
+        titleBar.ButtonHoverBackgroundColor = clear;
+        titleBar.ButtonPressedBackgroundColor = clear;
     }
 
     /// <summary>
@@ -134,46 +147,57 @@ public static class WindowChrome
     private const int SurfaceDark = 0x00000000;
 
     /// <summary>
-    /// Makes the DWM window rim invisible by painting it the window's own surface color for the
-    /// current theme. The immersive-dark-mode flag is tracked to the theme too (see
-    /// <see cref="SetFrameTheme"/>) so DWM renders the window edge / corner anti-aliasing for the
-    /// right background.
+    /// Makes the DWM window rim invisible — for opaque themes by painting it the window's own
+    /// surface color, for Frosted Glass by painting the backdrop's own tint. The
+    /// immersive-dark-mode flag is tracked to the theme too (see <see cref="SetFrameTheme"/>) so
+    /// DWM renders the window edge / corner anti-aliasing for the right background.
     /// <para>
-    /// Used by every SwiftX window. On the ring it hides a rim that would otherwise read as a
+    /// Used by every SwiftX window. On the orbit it hides a rim that would otherwise read as a
     /// rectangle drawn around the rounded glass strip. On the Mica dialogs it hides the one piece
     /// of rim those windows still show: they extend their content into the title bar, so the top
     /// edge is all that is left of the frame, and anything that doesn't match the surface reads as
     /// a stray line above the title bar.
     /// </para>
     /// <para>
-    /// Painting it is the only option — a rim of zero width is not something DWM offers.
-    /// <c>DWMWA_VISIBLE_FRAME_BORDER_THICKNESS</c> is retrieve-only and rejects a set with
-    /// <c>E_INVALIDARG</c>, and the <c>DWMWA_COLOR_NONE</c> sentinel does not mean "draw nothing"
-    /// here: on a window whose content is extended into the title bar it renders the top edge as
-    /// flat white or flat black, following the immersive-dark-mode flag. That is worse than the
-    /// default rim, and it is what put a hard white line above a light window and a hard black one
-    /// above a dark window — the "residual border" this replaces. Measured, not inferred: with the
-    /// sentinel the top row of the frame comes back <c>#FFFFFF</c> in light and <c>#000000</c> in
-    /// dark, against Mica surfaces of roughly <c>#F9F0F4</c> and <c>#271C22</c>.
+    /// Opaque themes (Black / Dark / Light) must paint a solid COLORREF that matches the surface.
+    /// A rim of zero width is not something DWM offers — <c>DWMWA_VISIBLE_FRAME_BORDER_THICKNESS</c>
+    /// is retrieve-only and rejects a set with <c>E_INVALIDARG</c>. On those windows,
+    /// <see cref="NativeMethods.DWMWA_COLOR_NONE"/> is the wrong tool: with content extended into
+    /// the title bar it renders the top edge as flat white or flat black, following the
+    /// immersive-dark-mode flag. That is worse than the default rim, and it is what put a hard
+    /// white line above a light window and a hard black one above a dark window — the "residual
+    /// border" surface-matching replaces. Measured, not inferred: with the sentinel the top row of
+    /// the frame comes back <c>#FFFFFF</c> in light and <c>#000000</c> in dark, against Mica
+    /// surfaces of roughly <c>#F9F0F4</c> and <c>#271C22</c>.
     /// </para>
     /// <para>
-    /// An explicit color is also the only one of the two that survives a theme switch: DWM
-    /// re-composes the frame for it immediately, with no move, resize or re-activation needed and
-    /// nothing left over from the previous theme.
+    /// Frosted Glass is the exception. Its acrylic / frosted surface is translucent, so a pure
+    /// black COLORREF on the rim reads as a hard black frame. Pass the backdrop's own tint
+    /// (<c>#101016</c> as COLORREF <c>0x00161010</c>) instead — close enough to the glass that
+    /// the 1px top edge disappears into it, which
+    /// <see cref="NativeMethods.DWMWA_COLOR_NONE"/> does not: that sentinel, with content
+    /// extended into the title bar, paints the caption as flat white.
     /// </para>
     /// <para>
-    /// A flat COLORREF is all the attribute accepts, while Mica is a blur of the wallpaper and so
-    /// varies across the width of the window. The match is therefore very close rather than exact
-    /// — single digits per channel, against the tens-to-hundreds that made the old rim obvious.
+    /// An explicit color is also the only one of the two that survives a theme switch on opaque
+    /// windows: DWM re-composes the frame for it immediately, with no move, resize or re-activation
+    /// needed and nothing left over from the previous theme.
+    /// </para>
+    /// <para>
+    /// A flat COLORREF is all the attribute accepts for opaque themes, while Mica is a blur of the
+    /// wallpaper and so varies across the width of the window. The match is therefore very close
+    /// rather than exact — single digits per channel, against the tens-to-hundreds that made the
+    /// old rim obvious.
     /// </para>
     /// </summary>
     /// <param name="surfaceOverride">
     /// A COLORREF (0x00BBGGRR) to paint the rim instead of the theme's flat <see cref="SurfaceDark"/>/
-    /// <see cref="SurfaceLight"/>, for a window whose surface is not that flat color. Settings in
-    /// Dark is the one such window: its root now resolves to a lighter, design-colours.md-anchored
-    /// surface (#202020, see SettingsSurfaceBrush in Themes/Colors.xaml) rather than the shared
-    /// #000000 every other window still uses, so painting the rim pure black would draw a hard edge
-    /// around the window instead of disappearing into it.
+    /// <see cref="SurfaceLight"/>, for a window whose surface is not that flat color. Frosted Glass
+    /// passes the acrylic tint (<c>0x00161010</c>). Settings in Dark is the one opaque such window:
+    /// its root now resolves to a lighter, design-colours.md-anchored surface (#202020, see
+    /// SettingsSurfaceBrush in Themes/Colors.xaml) rather than the shared #000000 every other
+    /// window still uses, so painting the rim pure black would draw a hard edge around the window
+    /// instead of disappearing into it.
     /// </param>
     public static void HideWindowBorder(nint hwnd, bool dark, int? surfaceOverride = null)
     {
@@ -182,7 +206,114 @@ public static class WindowChrome
         int surface = surfaceOverride ?? (dark ? SurfaceDark : SurfaceLight);
         NativeMethods.DwmSetWindowAttribute(
             hwnd, NativeMethods.DWMWA_BORDER_COLOR, ref surface, sizeof(int));
+        // Caption is a separate DWM colour from the rim. Leaving it at the system default is what
+        // drew a white strip along the top of an extended-into-title-bar window, even when the
+        // border itself matched the surface.
+        NativeMethods.DwmSetWindowAttribute(
+            hwnd, NativeMethods.DWMWA_CAPTION_COLOR, ref surface, sizeof(int));
     }
+
+    /// <summary>
+    /// Frosted Glass has no DWM frame: no 1px white/black rim, no caption plate. Opaque themes
+    /// keep the usual surface-matched rim.
+    /// <para>
+    /// <see cref="NativeMethods.DWMWA_COLOR_NONE"/> paints a white caption. A solid COLORREF on
+    /// acrylic paints a black (or tinted) one. The combination that actually removes the line is
+    /// to drop WinUI's border, zero the non-client metrics so DWM has nothing to stroke, skip NC
+    /// paint, and reset any leftover border/caption colour to the DWM default.
+    /// </para>
+    /// </summary>
+    public static void ApplyShellFrame(AppWindow appWindow, nint hwnd, bool dark, bool frosted, int rim)
+    {
+        SetTitleBarTheme(appWindow, dark);
+        SetRoundedCorners(hwnd);
+
+        try
+        {
+            if (appWindow.Presenter is OverlappedPresenter presenter)
+            {
+                presenter.SetBorderAndTitleBar(hasBorder: !frosted, hasTitleBar: true);
+                presenter.IsResizable = true;
+            }
+        }
+        catch
+        {
+            // Some presenters reject a borderless title bar; the DWM calls below still run.
+        }
+
+        SetFrostedNonClient(hwnd, frosted);
+
+        if (frosted)
+        {
+            var glass = new NativeMethods.MARGINS
+            {
+                cxLeftWidth = -1,
+                cxRightWidth = -1,
+                cyTopHeight = -1,
+                cyBottomHeight = -1,
+            };
+            NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref glass);
+
+            // COLOR_NONE is the white top edge. A tint COLORREF is the black one. Default, on a
+            // window whose NC metrics are already zero, leaves nothing to stroke.
+            int reset = NativeMethods.DWMWA_COLOR_DEFAULT;
+            NativeMethods.DwmSetWindowAttribute(
+                hwnd, NativeMethods.DWMWA_BORDER_COLOR, ref reset, sizeof(int));
+            NativeMethods.DwmSetWindowAttribute(
+                hwnd, NativeMethods.DWMWA_CAPTION_COLOR, ref reset, sizeof(int));
+
+            int ncOff = NativeMethods.DWMNCRP_DISABLED;
+            NativeMethods.DwmSetWindowAttribute(
+                hwnd, NativeMethods.DWMWA_NCRENDERING_POLICY, ref ncOff, sizeof(int));
+
+            StripEdgeStyles(hwnd);
+            SetFrameTheme(hwnd, dark);
+            SuppressClientErase(hwnd);
+            NotifyFrameChanged(hwnd);
+            return;
+        }
+
+        int ncOn = NativeMethods.DWMNCRP_USEWINDOWSTYLE;
+        NativeMethods.DwmSetWindowAttribute(
+            hwnd, NativeMethods.DWMWA_NCRENDERING_POLICY, ref ncOn, sizeof(int));
+
+        var zero = new NativeMethods.MARGINS();
+        NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref zero);
+        HideWindowBorder(hwnd, dark, rim);
+        NotifyFrameChanged(hwnd);
+    }
+
+    private static void SetFrostedNonClient(nint hwnd, bool frosted)
+    {
+        if (frosted)
+            FrostedHwnds.Add(hwnd);
+        else
+            FrostedHwnds.Remove(hwnd);
+    }
+
+    private static void StripEdgeStyles(nint hwnd)
+    {
+        long ex = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE);
+        long stripped = ex & ~(NativeMethods.WS_EX_CLIENTEDGE | NativeMethods.WS_EX_WINDOWEDGE |
+                               NativeMethods.WS_EX_DLGMODALFRAME | NativeMethods.WS_EX_STATICEDGE);
+        if (stripped != ex)
+            NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE, (nint)stripped);
+    }
+
+    private static void NotifyFrameChanged(nint hwnd)
+    {
+        NativeMethods.SetWindowPos(hwnd, 0, 0, 0, 0, 0,
+            NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE |
+            NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE |
+            NativeMethods.SWP_FRAMECHANGED);
+    }
+
+    /// <summary>
+    /// Stops Win32 from filling the client with the class background brush. On a frosted/acrylic
+    /// window that fill is opaque black, and it shows up as a rim around the rounded glass.
+    /// Idempotent — the subclass is installed once.
+    /// </summary>
+    public static void SuppressClientErase(nint hwnd) => InstallNoEraseSubclass(hwnd);
 
     /// <summary>
     /// Strips the non-client window frame (caption / resize border) so the client area — and
@@ -226,7 +357,7 @@ public static class WindowChrome
     /// <para>
     /// Nothing else contributes, so nothing else is done. Empty-region
     /// <c>DwmEnableBlurBehindWindow</c> and <c>DwmExtendFrameIntoClientArea</c> were both tried
-    /// and make no difference — the ring renders pixel-identical with and without them.
+    /// and make no difference — the orbit renders pixel-identical with and without them.
     /// </para>
     /// </summary>
     public static void MakeTransparentOverlay(Window window, nint hwnd)
@@ -263,6 +394,13 @@ public static class WindowChrome
     private static nint NoEraseSubclassProc(
         nint hwnd, uint msg, nint wParam, nint lParam, nuint id, nint data)
     {
+        if (FrostedHwnds.Contains(hwnd))
+        {
+            // Zero NC metrics so DWM has no 1px rim to stroke, and skip painting that rim.
+            if (msg == NativeMethods.WM_NCCALCSIZE || msg == NativeMethods.WM_NCPAINT)
+                return 0;
+        }
+
         // Non-zero says "background erased" — with nothing painted, which is the point.
         if (msg == NativeMethods.WM_ERASEBKGND)
             return 1;
@@ -297,7 +435,7 @@ public static class WindowChrome
 
         // SetWindowRgn takes ownership of the region handle — but only when it succeeds. On
         // failure the caller still owns it, and this runs on every render and every hover pill,
-        // so a handle dropped here would leak GDI objects for as long as the ring is used. The
+        // so a handle dropped here would leak GDI objects for as long as the orbit is used. The
         // process-wide GDI limit is 10 000.
         if (NativeMethods.SetWindowRgn(hwnd, combined, true) == 0)
         {

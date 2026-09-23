@@ -12,6 +12,19 @@ namespace SwiftX.ToolPages;
 /// </summary>
 public abstract class ToolPage : UserControl
 {
+    /// <summary>
+    /// Every concrete page passes its <see cref="OrbitManager"/> straight through to here before
+    /// building a single control — that ordering is what lets <see cref="EditorToolPage"/>'s
+    /// shared chrome (panes, hover-accent buttons, the privacy bubble) read the live theme and
+    /// accent colour off <see cref="HostManager"/> from its very first line, rather than being
+    /// built with some placeholder colour and repainted later once a host got around to handing
+    /// the manager over.
+    /// </summary>
+    protected ToolPage(OrbitManager manager)
+    {
+        HostManager = manager;
+    }
+
     public abstract ToolKind Kind { get; }
 
     /// <summary>True while the page holds content the user has not saved or copied out. Drives
@@ -35,13 +48,37 @@ public abstract class ToolPage : UserControl
     public nint HostHwnd { get; internal set; }
 
     /// <summary>
-    /// The <see cref="RingManager"/> that owns this page's hosting window, set once at
-    /// construction — lets a page open another built-in tool the same way the ring itself does
-    /// (see <see cref="RingManager.OpenTool"/>; Quick Format's "open Data Formatter" button is the
-    /// first user of this). Null only for the brief window before <c>ToolWindowBase</c>'s own
-    /// constructor finishes — every click handler that reads it runs well after that.
+    /// The <see cref="OrbitManager"/> that owns this page's hosting window — set by the base
+    /// constructor, so it is real (never null) for the whole of a page's life, construction
+    /// included. Lets a page open another built-in tool the same way the orbit itself does (see
+    /// <see cref="OrbitManager.OpenTool"/>; Quick Format's "open Data Formatter" button is the
+    /// first user of this) and read the live theme/accent it is meant to draw itself in.
     /// </summary>
-    public RingManager? HostManager { get; internal set; }
+    public OrbitManager HostManager { get; }
+
+    /// <summary>
+    /// Re-reads the app theme (light/dark/Midnight/Frosted glass) and repaints whatever the page
+    /// built with it — called by <c>ToolWindowBase.ApplyTheme</c> after it has repainted its own
+    /// chrome, and fanned out to every open tool window by
+    /// <see cref="Services.ToolWindowManager.ApplyThemeToAll"/> whenever the theme changes anywhere
+    /// in the app, this window included or not.
+    /// <para>
+    /// The base implementation repaints <see cref="EditorToolPage"/>'s own shared chrome; a page
+    /// with content built from a live re-render (<c>CertificatePage</c>'s last-read certificate,
+    /// <c>SecureValuesPage</c>'s row list) overrides this to re-run that render, which is what
+    /// carries the new theme onto content this class has no way to reach on its own.
+    /// </para>
+    /// </summary>
+    public virtual void ApplyTheme() { }
+
+    /// <summary>
+    /// The lighter counterpart to <see cref="ApplyTheme"/>, for a live accent-colour change alone
+    /// (Settings' colour picker fires continuously while the user drags it — see
+    /// <c>AddItemWindow.ApplyAccent</c>'s own note on the same trade-off). Repaints only what
+    /// reads the accent; unlike <see cref="ApplyTheme"/> it must never re-run a page's own render,
+    /// which is exactly the per-frame cost this exists to avoid.
+    /// </summary>
+    public virtual void ApplyAccent() { }
 
     /// <summary>Seed the page from a dropped file or a picker.</summary>
     public virtual Task LoadFileAsync(string path) => Task.CompletedTask;

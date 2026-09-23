@@ -1,18 +1,32 @@
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace SwiftX.Interop;
 
 /// <summary>
-/// Thin Win32 / DWM interop surface. Kept small and focused on what the ring needs:
+/// Thin Win32 / DWM interop surface. Kept small and focused on what the orbit needs:
 /// rounded window corners, tool-window styling, transparent click-through chrome, and
 /// cursor probing for placement at the pointer.
 /// </summary>
 internal static partial class NativeMethods
 {
     // ---- DWM window attributes --------------------------------------------
+    public const int DWMWA_NCRENDERING_POLICY = 2;
+    public const int DWMNCRP_USEWINDOWSTYLE = 0;
+    public const int DWMNCRP_DISABLED = 1;
     public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     public const int DWMWA_BORDER_COLOR = 34;
+    public const int DWMWA_CAPTION_COLOR = 35;
+
+    /// <summary>
+    /// DWM "no custom border color" sentinel for <see cref="DWMWA_BORDER_COLOR"/>.
+    /// Pass this instead of a solid COLORREF when a translucent window must not paint a custom rim.
+    /// </summary>
+    public const int DWMWA_COLOR_NONE = unchecked((int)0xFFFFFFFE);
+
+    /// <summary>DWM default border-color sentinel for <see cref="DWMWA_BORDER_COLOR"/>.</summary>
+    public const int DWMWA_COLOR_DEFAULT = unchecked((int)0xFFFFFFFF);
 
     // DWM_WINDOW_CORNER_PREFERENCE
     public const int DWMWCP_DONOTROUND = 1;
@@ -21,6 +35,8 @@ internal static partial class NativeMethods
 
     // ---- Background erase suppression (see WindowChrome.MakeTransparentOverlay) ----
     public const uint WM_ERASEBKGND = 0x0014;
+    public const uint WM_NCCALCSIZE = 0x0083;
+    public const uint WM_NCPAINT = 0x0085;
 
     public delegate nint SubclassProc(nint hwnd, uint msg, nint wParam, nint lParam, nuint id, nint data);
 
@@ -34,7 +50,19 @@ internal static partial class NativeMethods
     [LibraryImport("dwmapi.dll")]
     public static partial int DwmSetWindowAttribute(nint hwnd, int attribute, ref int value, int size);
 
-    // ---- GDI regions (round hit-testing region for the ring) --------------
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MARGINS
+    {
+        public int cxLeftWidth;
+        public int cxRightWidth;
+        public int cyTopHeight;
+        public int cyBottomHeight;
+    }
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmExtendFrameIntoClientArea(nint hwnd, ref MARGINS margins);
+
+    // ---- GDI regions (round hit-testing region for the orbit) --------------
     [DllImport("gdi32.dll")]
     public static extern nint CreateRectRgn(int x1, int y1, int x2, int y2);
 
@@ -66,6 +94,10 @@ internal static partial class NativeMethods
     // ---- Extended window styles (tool window: off taskbar & alt-tab) ------
     public const int GWL_EXSTYLE = -20;
     public const long WS_EX_TOOLWINDOW = 0x00000080;
+    public const long WS_EX_DLGMODALFRAME = 0x00000001;
+    public const long WS_EX_WINDOWEDGE = 0x00000100;
+    public const long WS_EX_CLIENTEDGE = 0x00000200;
+    public const long WS_EX_STATICEDGE = 0x00020000;
 
     // ---- Window styles (strip the non-client frame / resize border) -------
     public const int GWL_STYLE = -16;
@@ -101,7 +133,7 @@ internal static partial class NativeMethods
 
     // Mouse buttons, read through the same GetAsyncKeyState below. The hot-corner watcher needs
     // them: a pointer arriving at a corner with a button held is a drag — a window being thrown
-    // at a corner for Windows' own snap, or a selection — not a request to summon the ring.
+    // at a corner for Windows' own snap, or a selection — not a request to summon the orbit.
     public const int VK_LBUTTON = 0x01;
     public const int VK_RBUTTON = 0x02;
     public const int VK_MBUTTON = 0x04;
@@ -228,44 +260,36 @@ internal static partial class NativeMethods
 
     public static readonly Guid IID_IImageList = new("46EB5926-582E-4017-9FDF-E8998DAA0950");
 
-    [ComImport]
-    [Guid("46EB5926-582E-4017-9FDF-E8998DAA0950")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IImageList
-    {
-        [PreserveSig] int Add(nint hbmImage, nint hbmMask, out int pi);
-        [PreserveSig] int ReplaceIcon(int i, nint hicon, out int pi);
-        [PreserveSig] int SetOverlayImage(int iImage, int iOverlay);
-        [PreserveSig] int Replace(int i, nint hbmImage, nint hbmMask);
-        [PreserveSig] int AddMasked(nint hbmImage, int crMask, out int pi);
-        [PreserveSig] int Draw(nint pimldp);
-        [PreserveSig] int Remove(int i);
-        [PreserveSig] int GetIcon(int i, int flags, out nint picon);
-        [PreserveSig] int GetImageInfo(int i, nint pImageInfo);
-        [PreserveSig] int Copy(int iDst, IImageList punkSrc, int iSrc, int uFlags);
-        [PreserveSig] int Merge(int i1, IImageList punk2, int i2, int dx, int dy, ref Guid riid, out nint ppv);
-        [PreserveSig] int Clone(ref Guid riid, out nint ppv);
-        [PreserveSig] int GetImageRect(int i, nint prc);
-        [PreserveSig] int GetIconSize(out int cx, out int cy);
-        [PreserveSig] int SetIconSize(int cx, int cy);
-        [PreserveSig] int GetImageCount(out int pi);
-        [PreserveSig] int SetImageCount(int uNewCount);
-        [PreserveSig] int SetBkColor(int clrBk, out int pclr);
-        [PreserveSig] int GetBkColor(out int pclr);
-        [PreserveSig] int BeginDrag(int iTrack, int dxHotspot, int dyHotspot);
-        [PreserveSig] int EndDrag();
-        [PreserveSig] int DragEnter(nint hwndLock, int x, int y);
-        [PreserveSig] int DragLeave(nint hwndLock);
-        [PreserveSig] int DragMove(int x, int y);
-        [PreserveSig] int SetDragCursorImage(IImageList punk, int iDrag, int dxHotspot, int dyHotspot);
-        [PreserveSig] int DragShowNolock(int fShow);
-        [PreserveSig] int GetDragImage(nint ppt, nint pptHotspot, ref Guid riid, out nint ppv);
-        [PreserveSig] int GetItemFlags(int i, out int dwFlags);
-        [PreserveSig] int GetOverlayImage(int iOverlay, out int piIndex);
-    }
+    // The image list is used through its raw COM pointer, not as a managed [ComImport] interface.
+    // Declaring it as `out IImageList ppv` makes the CLR build a managed wrapper around the returned
+    // pointer (System.StubHelpers.InterfaceMarshaler.ConvertToManaged), and in this app that step
+    // fails fast with a stowed E_UNEXPECTED (0xc000027b, exception code 8000ffff): every crash dump
+    // from it ends in that call. Nothing about the wrapper is needed, since the only thing ever
+    // done with the list is one GetIcon call, so the pointer is taken as-is, GetIcon is called
+    // through the interface's vtable, and the reference is released by hand.
+    [DllImport("shell32.dll", EntryPoint = "SHGetImageList")]
+    public static extern int SHGetImageList(int iImageList, ref Guid riid, out nint ppv);
 
-    [DllImport("shell32.dll")]
-    public static extern int SHGetImageList(int iImageList, ref Guid riid, out IImageList ppv);
+    /// <summary>
+    /// Position of <c>IImageList::GetIcon</c> in the interface's vtable: the three IUnknown methods,
+    /// then Add, ReplaceIcon, SetOverlayImage, Replace, AddMasked, Draw and Remove, in the order
+    /// commoncontrols.h declares them.
+    /// </summary>
+    private const int ImageListGetIconSlot = 10;
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int ImageListGetIconFn(nint self, int index, int flags, out nint hIcon);
+
+    /// <summary>
+    /// <c>IImageList::GetIcon</c> on a raw image-list pointer from <see cref="SHGetImageList"/>.
+    /// Returns the HRESULT; on success <paramref name="hIcon"/> is an icon the caller must destroy.
+    /// </summary>
+    public static int ImageListGetIcon(nint imageList, int index, int flags, out nint hIcon)
+    {
+        nint vtable = Marshal.ReadIntPtr(imageList);
+        nint method = Marshal.ReadIntPtr(vtable, ImageListGetIconSlot * nint.Size);
+        return Marshal.GetDelegateForFunctionPointer<ImageListGetIconFn>(method)(imageList, index, flags, out hIcon);
+    }
 
     // ---- Hidden helper window (tray callbacks + global hotkeys) ------------
     //
@@ -414,18 +438,47 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool PostMessage(nint hwnd, uint msg, nint wParam, nint lParam);
 
+    /// <summary>
+    /// Pseudo-handle for <see cref="PostMessage"/> that delivers to every top-level window in the
+    /// session. Used by <see cref="Services.SingleInstanceSignal"/> to reach an already-running
+    /// SwiftX: the hidden sink's window class name deliberately carries the owning process id
+    /// (see <see cref="Services.MessageWindow"/>), so a second instance has no class or title to
+    /// hand <c>FindWindow</c> and a broadcast is the only route left. Safe because the message id
+    /// itself comes from <see cref="RegisterWindowMessage"/>, so no window that isn't ours can
+    /// mistake it for one of its own.
+    /// </summary>
+    public static readonly nint HWND_BROADCAST = 0xFFFF;
+
     // ---- Foreground / show (bring the dock to the front) -------------------
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetForegroundWindow(nint hwnd);
 
+    /// <summary>Hands the foreground right to any process, rather than one named pid.</summary>
+    public static readonly uint ASFW_ANY = 0xFFFFFFFF;
+
+    /// <summary>
+    /// Lets this process give away its own right to steal the foreground.
+    /// <para>
+    /// Needed by the second-instance handoff: Windows grants foreground rights to the process the
+    /// user just launched from the shell, and denies them to the long-running instance sitting in
+    /// the tray. Without this call the running instance's <c>SetForegroundWindow</c> is silently
+    /// downgraded to a taskbar flash, and Settings comes up behind whatever the user was looking
+    /// at. Calling it here transfers the right the new process legitimately holds to the one that
+    /// is actually going to show the window, which is exactly what the API is for.
+    /// </para>
+    /// </summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool AllowSetForegroundWindow(uint processId);
+
     // A plain SetForegroundWindow is honored unconditionally only when Windows can see it was
     // triggered by a real input event on the calling thread — a keypress, a mouse click. The hot
     // corner's summon is neither: it fires from a WM_TIMER on the message window's own thread, so
     // Windows' foreground-lock can silently downgrade the request to a flashing taskbar icon
     // instead of true activation. That matters here specifically because "click anywhere to
-    // dismiss" (RingWindow_Activated) fires on losing activation — a window that was never truly
+    // dismiss" (OrbitWindow_Activated) fires on losing activation — a window that was never truly
     // activated can never fire that transition, so a corner-summoned dock would stay stuck on
     // screen through a click elsewhere. AttachThreadInput temporarily shares input state with
     // whichever thread currently owns the foreground, which is the documented, widely-used way to
@@ -485,4 +538,86 @@ internal static partial class NativeMethods
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     public static extern int GetCurrentPackageFullName(
         ref uint packageFullNameLength, [Out] char[]? packageFullName);
+
+    // ---- Writing a shortcut (.lnk) -----------------------------------------
+    //
+    // The desktop-shortcut option in Settings (see Services/DesktopShortcutService.cs) has to
+    // author a .lnk, and there has never been a managed API for that: the shell's own
+    // IShellLinkW + IPersistFile is the only way, the same pair Explorer uses when you drag an
+    // app out of Start.
+    //
+    // Services/ShortcutResolver.cs already declares a cut-down, *read-only* slice of the same two
+    // interfaces privately (GetPath and Load, nothing more). That was deliberate there and is
+    // left alone: this file is the app's P/Invoke surface, so the full, writable declaration
+    // belongs here, and duplicating three vtable slots is cheaper than making the read path
+    // depend on the write path. If the two ever need to converge, ShortcutResolver is the one
+    // that should move.
+
+    /// <summary>The shell's shortcut object (CLSID_ShellLink). Cast to
+    /// <see cref="IShellLinkW"/> to describe the shortcut and <see cref="IPersistFile"/> to write
+    /// it out.</summary>
+    [ComImport]
+    [Guid("00021401-0000-0000-C000-000000000046")]
+    public class ShellLink
+    {
+    }
+
+    /// <summary>
+    /// <c>IShellLinkW</c>, declared in full.
+    /// <para>
+    /// Every slot is present even though only SetPath / SetArguments / SetDescription /
+    /// SetWorkingDirectory / SetIconLocation and GetDescription are ever called: COM dispatches by
+    /// vtable index, so an omitted or reordered member silently calls the wrong function. The
+    /// order below is <c>ShObjIdl_core.h</c>'s, and SetPath really is last.
+    /// </para>
+    /// </summary>
+    [ComImport]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("000214F9-0000-0000-C000-000000000046")]
+    public interface IShellLinkW
+    {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder file, int fileLength,
+            nint findData, uint flags);
+        void GetIDList(out nint idList);
+        void SetIDList(nint idList);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder name, int nameLength);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string name);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder dir, int dirLength);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string dir);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder args, int argsLength);
+        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string args);
+        void GetHotkey(out short hotkey);
+        void SetHotkey(short hotkey);
+        void GetShowCmd(out int showCmd);
+        void SetShowCmd(int showCmd);
+        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder iconPath,
+            int iconPathLength, out int iconIndex);
+        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string iconPath, int iconIndex);
+        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pathRel, uint reserved);
+        void Resolve(nint hwnd, uint flags);
+        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string file);
+    }
+
+    /// <summary>
+    /// <c>IPersistFile</c>, far enough down the vtable to reach <c>Save</c>. The first two members
+    /// are <c>IPersist</c>'s and <c>IPersistFile</c>'s own, and precede it in the vtable, so they
+    /// have to be here even though nothing calls them.
+    /// </summary>
+    [ComImport]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("0000010b-0000-0000-C000-000000000046")]
+    public interface IPersistFile
+    {
+        void GetClassID(out Guid classId);
+
+        [PreserveSig]
+        int IsDirty();
+
+        void Load([MarshalAs(UnmanagedType.LPWStr)] string fileName, uint mode);
+
+        /// <param name="remember">Passing true would make this the object's new "current" file.
+        /// SwiftX writes once and releases, so false — there is nothing left to remember.</param>
+        void Save([MarshalAs(UnmanagedType.LPWStr)] string fileName,
+            [MarshalAs(UnmanagedType.Bool)] bool remember);
+    }
 }

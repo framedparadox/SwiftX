@@ -19,9 +19,9 @@ public static class IconService
     // reject "no user agent" requests.
     private static readonly HttpClient Http = CreateClient();
 
-    // Alongside ring.json, so an override of SwiftX's data directory takes the cache with it
-    // rather than leaving downloaded favicons in the real profile (see RingStore.DataDirectory).
-    private static readonly string CacheDir = Path.Combine(RingStore.DataDirectory, "IconCache");
+    // Alongside orbit.json, so an override of SwiftX's data directory takes the cache with it
+    // rather than leaving downloaded favicons in the real profile (see OrbitStore.DataDirectory).
+    private static readonly string CacheDir = Path.Combine(OrbitStore.DataDirectory, "IconCache");
 
     private static HttpClient CreateClient()
     {
@@ -32,7 +32,7 @@ public static class IconService
         return c;
     }
 
-    public static async Task<ImageSource?> LoadIconAsync(RingItem item)
+    public static async Task<ImageSource?> LoadIconAsync(OrbitItem item)
     {
         try
         {
@@ -45,30 +45,45 @@ public static class IconService
             // 1. Explicit user-supplied icon wins — but only if it actually decodes. A path that
             // has since been deleted, or an image the XAML stack can't read, falls through to the
             // normal resolution below rather than leaving the item blank.
-            if (!string.IsNullOrWhiteSpace(item.CustomIconPath) && File.Exists(item.CustomIconPath))
+            //
+            // Two shapes share this field: a plain image file (png/jpg/ico/bmp), and — the same
+            // "path,index" form a Windows shortcut's own icon location uses — one of the icons
+            // embedded in a module the "Select an app or DLL…" picker browsed to.
+            if (!string.IsNullOrWhiteSpace(item.CustomIconPath))
             {
-                var custom = await FromFileAsync(item.CustomIconPath!);
-                if (custom is not null)
-                    return custom;
-                Diag.Log($"IconService: custom icon '{item.CustomIconPath}' didn't decode — using the default");
+                var (modulePath, moduleIndex) = SplitModuleIconPath(item.CustomIconPath!);
+                if (moduleIndex is { } index && File.Exists(modulePath))
+                {
+                    var moduleIcon = await LoadModuleIconAsync(modulePath, index);
+                    if (moduleIcon is not null)
+                        return moduleIcon;
+                    Diag.Log($"IconService: module icon '{item.CustomIconPath}' didn't decode — using the default");
+                }
+                else if (File.Exists(item.CustomIconPath))
+                {
+                    var custom = await FromFileAsync(item.CustomIconPath!);
+                    if (custom is not null)
+                        return custom;
+                    Diag.Log($"IconService: custom icon '{item.CustomIconPath}' didn't decode — using the default");
+                }
             }
 
             // 2. Kind-specific resolution.
             switch (item.Kind)
             {
-                case RingItemKind.Application:
-                case RingItemKind.File:
-                case RingItemKind.Shortcut:
+                case OrbitItemKind.Application:
+                case OrbitItemKind.File:
+                case OrbitItemKind.Shortcut:
                     if (File.Exists(item.Target))
                         return await ShellIconAsync(item.Target);
                     break;
 
-                case RingItemKind.Folder:
+                case OrbitItemKind.Folder:
                     if (Directory.Exists(item.Target))
                         return await ShellIconAsync(item.Target);
                     break;
 
-                case RingItemKind.WebLink:
+                case OrbitItemKind.WebLink:
                     return await FaviconAsync(item.Target);
             }
         }
@@ -102,24 +117,102 @@ public static class IconService
 
         try
         {
-            byte[]? png = TryEncodeIconPng(hIcon);
-            if (png is null)
-            {
-                // Fallback for the rare icon GetDIBits can't read as plain 32bpp (e.g. a legacy
-                // icon with no real color bitmap) — the GDI+ path, buggy on jumbo/PNG-compressed
-                // icons but otherwise fine, and better than nothing here.
-                using var icon = System.Drawing.Icon.FromHandle(hIcon);
-                using var bitmap = icon.ToBitmap();
-                using var ms = new MemoryStream();
-                bitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
-                png = ms.ToArray();
-            }
-            return await DecodeAsync(png);
+            return await DecodeHIconAsync(hIcon);
         }
         finally
         {
             NativeMethods.DestroyIcon(hIcon);
         }
+    }
+
+    /// <summary>
+    /// Turns a live icon handle into a decoded image — the tail end <see cref="ShellIconAsync"/>
+    /// and <see cref="LoadModuleIconAsync"/> both need once they each have an <c>HICON</c> from
+    /// their own different source (the shell's image list, or a module's embedded resources).
+    /// Neither owns the handle: the caller extracted or looked it up and is the one that has to
+    /// destroy it.
+    /// </summary>
+    private static async Task<ImageSource?> DecodeHIconAsync(nint hIcon)
+    {
+        byte[]? png = TryEncodeIconPng(hIcon);
+        if (png is null)
+        {
+            // Fallback for the rare icon GetDIBits can't read as plain 32bpp (e.g. a legacy
+            // icon with no real color bitmap) — the GDI+ path, buggy on jumbo/PNG-compressed
+            // icons but otherwise fine, and better than nothing here.
+            using var icon = System.Drawing.Icon.FromHandle(hIcon);
+            using var bitmap = icon.ToBitmap();
+            using var ms = new MemoryStream();
+            bitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+            png = ms.ToArray();
+        }
+        return await DecodeAsync(png);
+    }
+
+    /// <summary>
+    /// How many icons a module (an .exe or .dll) carries — <c>ExtractIconEx</c>'s documented
+    /// trick of asking for icon index -1, which returns a count instead of extracting anything.
+    /// Used by the icon picker's "Select an app or DLL…" to know how many entries its gallery has
+    /// to offer; zero (a module with no icon resources, or one that couldn't be opened at all)
+    /// means there is nothing to choose there.
+    /// </summary>
+    public static int CountModuleIcons(string path)
+    {
+        try
+        {
+            return (int)NativeMethods.ExtractIconEx(path, -1, out _, out _, 0);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log($"IconService: icon count failed for '{path}': {ex.GetType().Name}: {ex.Message}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Extracts one icon out of a module by index (see <see cref="CountModuleIcons"/>) and decodes
+    /// it — the module counterpart of <see cref="ShellIconAsync"/>'s shell lookup, for an icon the
+    /// user picked directly out of an .exe or .dll rather than the file the orbit item itself
+    /// launches. <see cref="OrbitItem.CustomIconPath"/> stores the choice as "path,index", the same
+    /// form a Windows shortcut's own icon location field uses, so it round-trips through the same
+    /// property a plain image file already does.
+    /// </summary>
+    public static async Task<ImageSource?> LoadModuleIconAsync(string path, int index)
+    {
+        if (NativeMethods.ExtractIconEx(path, index, out nint large, out nint small, 1) == 0)
+            return null;
+
+        nint hIcon = large != nint.Zero ? large : small;
+        if (hIcon == nint.Zero)
+            return null;
+
+        try
+        {
+            return await DecodeHIconAsync(hIcon);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log($"IconService: module icon failed for '{path}[{index}]': {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+        finally
+        {
+            if (large != nint.Zero) NativeMethods.DestroyIcon(large);
+            if (small != nint.Zero && small != large) NativeMethods.DestroyIcon(small);
+        }
+    }
+
+    /// <summary>
+    /// Splits the "path,index" form <see cref="OrbitItem.CustomIconPath"/> carries for a module
+    /// icon back into its parts. A plain image path — no trailing ",N", or one that doesn't parse
+    /// as a number — comes back with a null index, read as an ordinary file instead.
+    /// </summary>
+    private static (string Path, int? Index) SplitModuleIconPath(string raw)
+    {
+        int comma = raw.LastIndexOf(',');
+        if (comma > 0 && int.TryParse(raw.AsSpan(comma + 1), out int index))
+            return (raw[..comma], index);
+        return (raw, null);
     }
 
     /// <summary>
@@ -132,6 +225,14 @@ public static class IconService
     /// bitmap isn't a plain 32bpp DIB (a handful of legacy icons only carry an XOR/AND mask, no
     /// true color+alpha bitmap), leaving the caller to fall back to the GDI+ path.
     /// </summary>
+    /// <summary>
+    /// The largest icon edge <see cref="TryEncodeIconPng"/> will decode. Windows' own largest
+    /// shell icon — the SHIL_JUMBO frame this service prefers — is 256x256; anything claiming to
+    /// be four times that in each direction is not an icon SwiftX has any use for at the 44 px it
+    /// draws them, and is refused before it sizes an allocation. See the check's own note.
+    /// </summary>
+    internal const int MaxIconPixelDimension = 2048;
+
     private static byte[]? TryEncodeIconPng(nint hIcon)
     {
         if (!NativeMethods.GetIconInfo(hIcon, out var info))
@@ -147,6 +248,20 @@ public static class IconService
                 return null;
             if (bm.bmBitsPixel != 32 || bm.bmWidth <= 0 || bm.bmHeight <= 0)
                 return null;
+            // The dimensions come out of a bitmap handle, and one of the two callers feeds this
+            // icons extracted from a module the user browsed to with "Select an app or DLL…" —
+            // i.e. an arbitrary .exe/.dll whose resources SwiftX did not author. Sizing two
+            // allocations (the pixel array and the GDI+ bitmap, 4 bytes per pixel each) from an
+            // unbounded pair of numbers is the classic way that turns into an
+            // OutOfMemoryException, and at 32-bit extremes `bmWidth * bmHeight * 4` overflows int
+            // and asks for a negative array instead. The shell's own jumbo list tops out at
+            // 256x256, so this ceiling is four times larger than any icon Windows itself will
+            // hand back and still bounds the pair at 16 MB apiece.
+            if (bm.bmWidth > MaxIconPixelDimension || bm.bmHeight > MaxIconPixelDimension)
+            {
+                Diag.Log($"IconService: ignoring a {bm.bmWidth}x{bm.bmHeight} icon bitmap — past the {MaxIconPixelDimension}px ceiling");
+                return null;
+            }
 
             int width = bm.bmWidth;
             int height = bm.bmHeight;
@@ -218,12 +333,24 @@ public static class IconService
             return nint.Zero;
 
         var iid = NativeMethods.IID_IImageList;
-        if (NativeMethods.SHGetImageList(NativeMethods.SHIL_JUMBO, ref iid, out var imageList) != 0)
+        if (NativeMethods.SHGetImageList(NativeMethods.SHIL_JUMBO, ref iid, out nint imageList) != 0
+            || imageList == nint.Zero)
             return nint.Zero;
 
-        return imageList.GetIcon(info.iIcon, NativeMethods.ILD_TRANSPARENT, out nint hIcon) == 0
-            ? hIcon
-            : nint.Zero;
+        // The raw pointer, not a managed interface: see the note above SHGetImageList. That also
+        // makes the reference ours to release, which a wrapper's finalizer used to do, later and on
+        // a thread of its choosing.
+        try
+        {
+            return NativeMethods.ImageListGetIcon(
+                imageList, info.iIcon, NativeMethods.ILD_TRANSPARENT, out nint hIcon) == 0
+                ? hIcon
+                : nint.Zero;
+        }
+        finally
+        {
+            Marshal.Release(imageList);
+        }
     }
 
     /// <summary>
@@ -234,7 +361,7 @@ public static class IconService
     /// the read. The ceiling had been declared for this caller and never applied, which left the
     /// one icon path that takes an arbitrary user-chosen file reading it whole with
     /// <c>File.ReadAllBytesAsync</c> — and doing so once per item on every render, so a 4 GB file
-    /// picked as an icon was an <see cref="OutOfMemoryException"/> every time the ring came up.
+    /// picked as an icon was an <see cref="OutOfMemoryException"/> every time the orbit came up.
     /// A custom icon is drawn at 44 px; anything past the ceiling is not one.
     /// </para>
     /// </summary>
@@ -265,12 +392,24 @@ public static class IconService
         string scheme = uri.Scheme is "http" or "https" ? uri.Scheme : "https";
         string cacheFile = Path.Combine(CacheDir, Sanitize(host) + ".ico");
 
-        // 1. Cached copy.
+        // 1. Cached copy. Bounded on the way back in, not only on the way out: what this cache
+        // holds is whatever was written to a predictable path under the user's own data directory,
+        // and the ceiling that kept the download small is no help at all against a file that did
+        // not arrive as a download. ReadAllBytesAsync on it was the one unbounded read left on the
+        // icon path.
         if (File.Exists(cacheFile))
         {
-            var cached = await DecodeAsync(await File.ReadAllBytesAsync(cacheFile));
-            if (cached is not null)
-                return cached;
+            var read = await InputLimits.ReadBytesAsync(cacheFile, MaxFaviconBytes);
+            if (read.Ok)
+            {
+                var cached = await DecodeAsync(read.Bytes);
+                if (cached is not null)
+                    return cached;
+            }
+            else
+            {
+                Diag.Log($"IconService: cached favicon '{cacheFile}' not read: {read.Error}");
+            }
         }
 
         // 2. Fetch, preferring the site's own favicon (no third party), then a service fallback.
@@ -358,16 +497,38 @@ public static class IconService
         return buffer.Length > 0 ? buffer.ToArray() : null;
     }
 
+    /// <summary>
+    /// How long the decode confirmation below is waited for before the icon is given up on.
+    /// <para>
+    /// A <see cref="BitmapImage"/> reports its outcome by raising exactly one of
+    /// <c>ImageOpened</c> / <c>ImageFailed</c> — so awaiting that pair is how the decode is
+    /// confirmed, and awaiting it <em>unbounded</em> is a bet that one of them always arrives.
+    /// Nothing in the contract guarantees it: the events are raised on the dispatcher after
+    /// <c>SetSourceAsync</c> returns, so an image whose window is torn down in between, or a
+    /// decoder that answers neither way, leaves the await pending for the life of the process.
+    /// That is one orphaned task and one held <see cref="BitmapImage"/> per item, and
+    /// <c>LoadIconAsync</c> runs once per item on every render — so the accumulation is per
+    /// summon, not one-off. A ceiling turns "never answers" into "answers no", which is what the
+    /// caller already handles (the glyph fallback).
+    /// </para>
+    /// </summary>
+    private static readonly TimeSpan DecodeTimeout = TimeSpan.FromSeconds(5);
+
     /// <summary>Decodes raw bytes into a BitmapImage, confirming the decode actually succeeded
     /// (so a 200-OK HTML error page never gets shown as a broken image).</summary>
     private static async Task<ImageSource?> DecodeAsync(byte[] bytes)
     {
+        // Declared out here so the finally can detach them, constructed inside the try so that a
+        // BitmapImage refused on the calling thread is still the caught "no icon" this method has
+        // always returned rather than a throw out of an icon load.
+        BitmapImage? bmp = null;
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnOpened(object s, Microsoft.UI.Xaml.RoutedEventArgs e) => tcs.TrySetResult(true);
+        void OnFailed(object s, Microsoft.UI.Xaml.ExceptionRoutedEventArgs e) => tcs.TrySetResult(false);
+
         try
         {
-            var bmp = new BitmapImage();
-            var tcs = new TaskCompletionSource<bool>();
-            void OnOpened(object s, Microsoft.UI.Xaml.RoutedEventArgs e) => tcs.TrySetResult(true);
-            void OnFailed(object s, Microsoft.UI.Xaml.ExceptionRoutedEventArgs e) => tcs.TrySetResult(false);
+            bmp = new BitmapImage();
             bmp.ImageOpened += OnOpened;
             bmp.ImageFailed += OnFailed;
 
@@ -384,15 +545,27 @@ public static class IconService
                 await bmp.SetSourceAsync(ras);
             }
 
-            bool ok = await tcs.Task;
-            bmp.ImageOpened -= OnOpened;
-            bmp.ImageFailed -= OnFailed;
-            return ok ? bmp : null;
+            if (await Task.WhenAny(tcs.Task, Task.Delay(DecodeTimeout)) != tcs.Task)
+            {
+                Diag.Log($"IconService: decode of {bytes.Length} bytes reported neither opened nor failed within {DecodeTimeout.TotalSeconds}s — using the default");
+                return null;
+            }
+            return await tcs.Task ? bmp : null;
         }
         catch (Exception ex)
         {
             Diag.Log($"IconService: decode failed ({bytes.Length} bytes): {ex.GetType().Name}: {ex.Message}");
             return null;
+        }
+        finally
+        {
+            // In a finally, not on the success path alone: the throwing and timing-out paths are
+            // exactly the ones that leave the handlers attached to a bitmap nothing else reaches.
+            if (bmp is not null)
+            {
+                bmp.ImageOpened -= OnOpened;
+                bmp.ImageFailed -= OnFailed;
+            }
         }
     }
 

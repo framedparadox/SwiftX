@@ -5,8 +5,8 @@ public static partial class Loc
     private static readonly Dictionary<string, string> Dutch = new(StringComparer.Ordinal)
     {
         ["Tray.Tooltip"] = "SwiftX",
-        ["Tray.Show"] = "Ring tonen",
-        ["Tray.HideDock"] = "Ring verbergen",
+        ["Tray.Show"] = "Orbit tonen",
+        ["Tray.HideDock"] = "Orbit verbergen",
         ["Tray.AddNew"] = "Item toevoegen…",
         ["Tray.Settings"] = "Instellingen",
         ["Tray.Quit"] = "Afsluiten",

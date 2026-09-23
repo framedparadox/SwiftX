@@ -19,7 +19,7 @@ namespace SwiftX.Services;
 /// that calls <see cref="Get"/>/<see cref="Format"/> when it builds its UI — the tool pages
 /// (Formatter, Base64, Certificate, Secure values) construct fresh each time their window opens, and
 /// the tray menu rebuilds on every click, so both already re-read this table live. Windows built
-/// once from XAML with literal English text (Settings itself, Add item, the ring's own tooltips)
+/// once from XAML with literal English text (Settings itself, Add item, the orbit's own tooltips)
 /// do not — those still need a restart to pick up a language change.
 /// </para>
 /// </summary>

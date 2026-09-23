@@ -3,7 +3,7 @@ using SwiftX.ToolWindows;
 
 namespace SwiftX.Services;
 
-public sealed class ToolWindowLauncher(RingManager manager)
+public sealed class ToolWindowLauncher(OrbitManager manager)
 {
     public ToolWindowBase? Open(ToolDefinition definition, string? seedFilePath = null, bool forceNewInstance = false)
     {
@@ -11,7 +11,7 @@ public sealed class ToolWindowLauncher(RingManager manager)
             manager.ToolWindows.TryFocusMostRecent(definition.Kind))
             return null;
 
-        var page = definition.Factory();
+        var page = definition.Factory(manager);
         var window = new ToolWindowBase(manager, page, definition);
         window.Activate();
         window.BringToFront();

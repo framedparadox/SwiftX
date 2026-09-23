@@ -29,7 +29,7 @@ public sealed class CertificatePage : EditorToolPage
     private byte[]? _lastBytes;
     private CertificateReader.ReadOutcome? _lastOutcome;
 
-    public CertificatePage()
+    public CertificatePage(OrbitManager manager) : base(manager)
     {
         var scroller = new ScrollViewer
         {
@@ -55,6 +55,26 @@ public sealed class CertificatePage : EditorToolPage
         // sanctioned place for a page to let go of what it owns. Certificates and the keystore
         // bytes behind them should not outlive the window that was showing them.
         PageClosing.Register(ReleaseLoadedFile);
+    }
+
+    /// <summary>
+    /// Re-renders whatever this page is currently showing, so the certificate cards' backgrounds,
+    /// pills and validity badges pick up a live theme change rather than staying on whatever they
+    /// were painted with when the file was first opened.
+    /// <para>
+    /// Deliberately does not touch the password-prompt state: rebuilding it would replace the
+    /// <see cref="PasswordBox"/> the user may already be typing into, and losing a half-typed
+    /// keystore password to a theme flip made in a different window is a worse outcome than a
+    /// stale colour on a control that is about to be torn down anyway once they submit it.
+    /// </para>
+    /// </summary>
+    public override void ApplyTheme()
+    {
+        base.ApplyTheme();
+        if (_lastOutcome is { Success: true })
+            Render(_lastOutcome);
+        else if (_lastBytes is null)
+            RenderEmpty();
     }
 
     public override ToolKind Kind => ToolKind.Certificate;
@@ -104,13 +124,13 @@ public sealed class CertificatePage : EditorToolPage
     private void Body_DragEnter(object sender, DragEventArgs e)
     {
         if (sender is Border border && e.DataView.Contains(StandardDataFormats.StorageItems))
-            border.BorderBrush = ThemeBrush("AccentFillColorDefaultBrush") ?? border.BorderBrush;
+            border.BorderBrush = new SolidColorBrush(CurrentAccentColor());
     }
 
     private void Body_DragLeave(object sender, DragEventArgs e)
     {
         if (sender is Border border)
-            border.BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush");
+            border.BorderBrush = ThemeBrush("ShellCardBorderBrush");
     }
 
     private void Body_DragOver(object sender, DragEventArgs e)
@@ -122,7 +142,7 @@ public sealed class CertificatePage : EditorToolPage
     private async void Body_Drop(object sender, DragEventArgs e)
     {
         if (sender is Border border)
-            border.BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush");
+            border.BorderBrush = ThemeBrush("ShellCardBorderBrush");
 
         if (!e.DataView.Contains(StandardDataFormats.StorageItems))
             return;
@@ -277,8 +297,8 @@ public sealed class CertificatePage : EditorToolPage
         {
             Child = stack,
             Padding = new Thickness(14, 12, 14, 12),
-            Background = ThemeBrush("CardBackgroundFillColorDefaultBrush"),
-            BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush"),
+            Background = ThemeBrush("ShellCardBackgroundBrush"),
+            BorderBrush = ThemeBrush("ShellCardBorderBrush"),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
         };
@@ -327,22 +347,22 @@ public sealed class CertificatePage : EditorToolPage
         {
             Child = form,
             Padding = new Thickness(12, 0, 12, 0),
-            Background = ThemeBrush("CardBackgroundFillColorSecondaryBrush"),
-            BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush"),
+            Background = ThemeBrush("ShellPillBrush"),
+            BorderBrush = ThemeBrush("ShellCardBorderBrush"),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
         };
     }
 
-    private static FrameworkElement FormRow(FrameworkElement content, bool isLast) => new Border
+    private FrameworkElement FormRow(FrameworkElement content, bool isLast) => new Border
     {
         Child = content,
         Padding = new Thickness(0, 8, 0, 8),
         BorderThickness = isLast ? new Thickness(0) : new Thickness(0, 0, 0, 1),
-        BorderBrush = ThemeBrush("DividerStrokeColorDefaultBrush") ?? ThemeBrush("CardStrokeColorDefaultBrush"),
+        BorderBrush = ThemeBrush("ShellDividerBrush"),
     };
 
-    private static FrameworkElement BuildTypePill(string text) => new Border
+    private FrameworkElement BuildTypePill(string text) => new Border
     {
         Child = new TextBlock
         {
@@ -350,8 +370,8 @@ public sealed class CertificatePage : EditorToolPage
             Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
             VerticalAlignment = VerticalAlignment.Center,
         },
-        Background = ThemeBrush("ControlFillColorSecondaryBrush"),
-        BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush"),
+        Background = ThemeBrush("ShellPillBrush"),
+        BorderBrush = ThemeBrush("ShellCardBorderBrush"),
         BorderThickness = new Thickness(1),
         CornerRadius = new CornerRadius(10),
         Padding = new Thickness(8, 2, 8, 2),
@@ -359,12 +379,12 @@ public sealed class CertificatePage : EditorToolPage
     };
 
     // Built from the codepoint, not a literal character in source — see the memory note on PUA
-    // glyph corruption from a stray copy/paste. The X is the same glyph SystemRingItems already
-    // uses for the ring's "Close" item, so it's a codepoint this app already ships and renders.
+    // glyph corruption from a stray copy/paste. The X is the same glyph SystemOrbitItems already
+    // uses for the orbit's "Close" item, so it's a codepoint this app already ships and renders.
     private static readonly string ValidCheckGlyph = char.ConvertFromUtf32(0xE8FB);
     private static readonly string InvalidGlyph = char.ConvertFromUtf32(0xE711);
 
-    private static FrameworkElement BuildValidityBadge(ValidityState state, X509Certificate2 cert)
+    private FrameworkElement BuildValidityBadge(ValidityState state, X509Certificate2 cert)
     {
         bool valid = state == ValidityState.Valid;
         var icon = new FontIcon
@@ -375,8 +395,8 @@ public sealed class CertificatePage : EditorToolPage
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = valid
-                ? ThemeBrush("SystemFillColorSuccessBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Green)
-                : ThemeBrush("SystemFillColorCriticalBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Red),
+                ? ThemeBrush("ToolSuccessBrush")
+                : ThemeBrush("ToolCriticalBrush"),
         };
         var badge = new Border
         {
@@ -385,8 +405,8 @@ public sealed class CertificatePage : EditorToolPage
             Height = 24,
             CornerRadius = new CornerRadius(12),
             Background = valid
-                ? ThemeBrush("SystemFillColorSuccessBackgroundBrush")
-                : ThemeBrush("SystemFillColorCriticalBackgroundBrush"),
+                ? ThemeBrush("ToolSuccessBackgroundBrush")
+                : ThemeBrush("ToolCriticalBackgroundBrush"),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -399,7 +419,7 @@ public sealed class CertificatePage : EditorToolPage
         return badge;
     }
 
-    private static FrameworkElement DetailRow(string label, string value, bool highlightRed = false)
+    private FrameworkElement DetailRow(string label, string value, bool highlightRed = false)
     {
         var grid = new Grid { ColumnSpacing = 12 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
@@ -415,7 +435,7 @@ public sealed class CertificatePage : EditorToolPage
             FontSize = 12,
         };
         if (highlightRed)
-            valueBlock.Foreground = ThemeBrush("SystemFillColorCriticalBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Red);
+            valueBlock.Foreground = ThemeBrush("ToolCriticalBrush");
 
         Grid.SetColumn(labelBlock, 0);
         Grid.SetColumn(valueBlock, 1);
@@ -434,7 +454,7 @@ public sealed class CertificatePage : EditorToolPage
     /// carrying the check/cross: same glyphs and theme brushes as <see cref="BuildValidityBadge"/>'s
     /// title-row badge, just an inline pill instead of a circle, since this one sits beside text
     /// rather than beside the type tag.</summary>
-    private static FrameworkElement DetailRowWithValidity(string label, string value, bool valid)
+    private FrameworkElement DetailRowWithValidity(string label, string value, bool valid)
     {
         var grid = new Grid { ColumnSpacing = 12 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
@@ -453,11 +473,11 @@ public sealed class CertificatePage : EditorToolPage
         };
 
         var badgeForeground = valid
-            ? ThemeBrush("SystemFillColorSuccessBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Green)
-            : ThemeBrush("SystemFillColorCriticalBrush") ?? new SolidColorBrush(Microsoft.UI.Colors.Red);
+            ? ThemeBrush("ToolSuccessBrush")
+            : ThemeBrush("ToolCriticalBrush");
         var badgeBackground = valid
-            ? ThemeBrush("SystemFillColorSuccessBackgroundBrush")
-            : ThemeBrush("SystemFillColorCriticalBackgroundBrush");
+            ? ThemeBrush("ToolSuccessBackgroundBrush")
+            : ThemeBrush("ToolCriticalBackgroundBrush");
 
         var icon = new FontIcon
         {
@@ -689,6 +709,4 @@ public sealed class CertificatePage : EditorToolPage
         _lastBytes = null;
     }
 
-    private static Brush? ThemeBrush(string key) =>
-        Application.Current.Resources.TryGetValue(key, out var value) ? value as Brush : null;
 }
