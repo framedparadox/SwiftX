@@ -2348,12 +2348,12 @@ public sealed partial class ShellWindow : Window
         }
         else if (slot < OrbitMetrics.UserSlotCount)
         {
-            _manager.OpenAddItem(added =>
-            {
-                _manager.Config.Primary.Items.Add(added);
-                _manager.NotifyItemsChanged();
-                RenderPreview();
-            }, _manager.Config.Primary.Items);
+            // The ring's own "+" opens the "ADD TO ORBIT" sidebar, the same place the Elements
+            // button goes, rather than the add dialog in a second window. The dialog stays one
+            // click away through the sidebar's "Add something else…" row.
+            EndReplace();
+            SetOrbitEditing(true);
+            UpdateOrbitEditSummary();
         }
     }
 
@@ -2406,6 +2406,8 @@ public sealed partial class ShellWindow : Window
         // not added beside, and a tool is not swappable at all (see DropOntoPreviewSlot) — so the
         // drag says no over one rather than accepting a drop it would then quietly ignore.
         var occupant = border?.Tag as OrbitItem;
+        bool intoGroup = !_previewQuadrant && occupant is { IsGroup: true } &&
+                         !ElementLibrary.IsBuiltInToolsGroup(occupant);
         bool blocked = occupant is { IsTool: true };
         e.AcceptedOperation = blocked ? DataPackageOperation.None : DataPackageOperation.Copy;
         if (e.DragUIOverride is { } ui)
@@ -2414,7 +2416,9 @@ public sealed partial class ShellWindow : Window
                 ? "Drop to add to the orbit"
                 : blocked
                     ? $"{occupant.DisplayName} is a tool — switch it off instead"
-                    : $"Drop to replace {occupant.DisplayName}";
+                    : intoGroup
+                        ? $"Drop to add to {occupant.DisplayName}"
+                        : $"Drop to replace {occupant.DisplayName}";
             ui.IsCaptionVisible = true;
             ui.IsGlyphVisible = true;
         }
@@ -2537,6 +2541,21 @@ public sealed partial class ShellWindow : Window
         if (_slotBorders[slot]?.Tag is OrbitItem item)
         {
             if (item.IsTool) return;
+
+            // A group on the ring is a place to put things, not something to swap out: dropping
+            // on it adds to it (a group taking a group, a full group, or a duplicate is refused
+            // by GroupDropRules and leaves everything as it was).
+            if (item.IsGroup && !ElementLibrary.IsBuiltInToolsGroup(item))
+            {
+                if (GroupDropRules.TryAdd(item, added) != GroupDropVerdict.Allowed) return;
+                _manager.NotifyItemsChanged();
+                EndArmedReplaceAfterDrop();
+                RenderPreview();
+                RebuildItemsList();
+                DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
+                return;
+            }
+
             int at = items.IndexOf(item);
             if (at < 0) return;
             items[at] = added;
@@ -4332,8 +4351,6 @@ public sealed partial class ShellWindow : Window
         {
             if (items.Count(i => !i.Hidden) >= OrbitMetrics.UserSlotCount)
                 break;
-            if (OrbitHasTarget(items, target))
-                continue;
             var item = OrbitItemFactory.FromTarget(target);
             items.Add(item);
             added = true;
@@ -4461,17 +4478,13 @@ public sealed partial class ShellWindow : Window
             iconSource: template);
 
         ToolTipService.SetToolTip(row, present
-            ? $"{template.DisplayName} is already on the orbit"
+            ? $"{template.DisplayName} is already on the orbit. Drag it onto the ring or a group to add another."
             : $"Add {template.DisplayName} to the orbit");
 
-        if (!present)
-        {
-            WireEditRow(row, template);
-        }
-        else
-        {
-            row.IsEnabled = false;
-        }
+        // Always draggable, ticked or not: the tick says it is already on the orbit, not that it
+        // may not go anywhere else. Only the click is held back for a ticked row, so a stray click
+        // does not put a second copy in the next free slot.
+        WireEditRow(row, template, clickAdds: !present);
 
         return row;
     }
@@ -4496,7 +4509,7 @@ public sealed partial class ShellWindow : Window
     /// text put on the package only exists to give the OS a real drag operation to run.
     /// </para>
     /// </summary>
-    private void WireEditRow(Button row, OrbitItem template)
+    private void WireEditRow(Button row, OrbitItem template, bool clickAdds = true)
     {
         // Per row rather than on the window: a drag and the click it must suppress belong to the
         // same row, and none of this outlives the sidebar rebuild that replaces that row.
@@ -4513,7 +4526,8 @@ public sealed partial class ShellWindow : Window
                 dragged = false;
                 return;
             }
-            AddToOrbitFromSidebar(template);
+            if (clickAdds)
+                AddToOrbitFromSidebar(template);
         };
 
         row.CanDrag = true;
