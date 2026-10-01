@@ -74,6 +74,15 @@ public sealed partial class OnboardingWindow : Window
 
     private bool _finished;
 
+    private void OnWindowActivated(object sender, WindowActivatedEventArgs args) => ApplyChromeTheme();
+
+    private void OnWindowClosed(object sender, WindowEventArgs args)
+    {
+        Closed -= OnWindowClosed;
+        Activated -= OnWindowActivated;
+        Completed?.Invoke(_finished);
+    }
+
     public OnboardingWindow(OrbitManager manager)
     {
         _manager = manager;
@@ -109,9 +118,11 @@ public sealed partial class OnboardingWindow : Window
             ApplyChromeTheme();
             UpdateStepDots();
         };
-        Activated += (_, _) => ApplyChromeTheme();
-
-        Closed += (_, _) => Completed?.Invoke(_finished);
+        // Named, and removed again in OnWindowClosed: a Window that leaves a handler of its own
+        // method on its own Activated or Closed is never garbage collected — see
+        // ShellWindow.OnWindowClosed for the measurement.
+        Activated += OnWindowActivated;
+        Closed += OnWindowClosed;
 
         Root.Loaded += async (_, _) =>
         {

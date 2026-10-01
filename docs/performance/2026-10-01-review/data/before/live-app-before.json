@@ -1,0 +1,1032 @@
+{
+  "generated": "2026-10-01T00:26:22.3038278-04:00",
+  "exe": "%USERPROFILE%\\AppData\\Local\\Temp\\claude\\c--Git-SwiftX\\1efb7ac8-d270-4159-abb1-9c64fc9234e0\\scratchpad\\perf-review\\workspace\\src\\SwiftX\\bin\\x64\\Release\\net10.0-windows10.0.26100.0\\win-x64\\SwiftX.exe",
+  "runFolder": "%USERPROFILE%\\AppData\\Local\\Temp\\claude\\c--Git-SwiftX\\1efb7ac8-d270-4159-abb1-9c64fc9234e0\\scratchpad\\perf-review\\live\\20261001-002622-live",
+  "facts": {
+    "timestamp": "2026-10-01T00:26:24.8854423-04:00",
+    "machine": "<machine>",
+    "os": "Microsoft Windows 11 Home 10.0.26200",
+    "cpu": "13th Gen Intel(R) Core(TM) i5-1334U",
+    "logicalCores": 12,
+    "ramGb": 15.7,
+    "powerPlan": "Balanced",
+    "onBattery": false,
+    "dotnetSdk": "10.0.301",
+    "git": {
+      "sha": "852cf87",
+      "branch": "develop",
+      "dirtyFiles": 3
+    },
+    "runningSwiftXPids": []
+  },
+  "cores": 12,
+  "phases": {
+    "startup": {
+      "runs": [
+        {
+          "run": 1,
+          "trayReadyMs": 442.5,
+          "settingsVisibleMs": 1032.4,
+          "cpuQuietAfterSec": null,
+          "cpuSecondsToSettle": 9.36,
+          "peakWsMb": 208.1,
+          "wsMb": 200.6,
+          "privMb": 103.2,
+          "handles": 1386,
+          "gdi": 153,
+          "user": 42,
+          "threads": 37,
+          "crashed": false,
+          "exitCode": null,
+          "newDumps": null,
+          "appLogFaults": [
+            "00:26:28.133 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+            "00:26:28.381 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)"
+          ]
+        },
+        {
+          "run": 2,
+          "trayReadyMs": 456.0,
+          "settingsVisibleMs": 1253.0,
+          "cpuQuietAfterSec": null,
+          "cpuSecondsToSettle": 9.91,
+          "peakWsMb": 209.6,
+          "wsMb": 200.4,
+          "privMb": 103.1,
+          "handles": 1367,
+          "gdi": 103,
+          "user": 44,
+          "threads": 37,
+          "crashed": false,
+          "exitCode": null,
+          "newDumps": null,
+          "appLogFaults": [
+            "00:26:56.766 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+            "00:26:57.246 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)"
+          ]
+        },
+        {
+          "run": 3,
+          "trayReadyMs": 2065.9,
+          "settingsVisibleMs": 3198.4,
+          "cpuQuietAfterSec": null,
+          "cpuSecondsToSettle": 10.2,
+          "peakWsMb": 208.8,
+          "wsMb": 199.7,
+          "privMb": 103.6,
+          "handles": 1341,
+          "gdi": 109,
+          "user": 43,
+          "threads": 36,
+          "crashed": false,
+          "exitCode": null,
+          "newDumps": null,
+          "appLogFaults": [
+            "00:27:26.996 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+            "00:27:27.867 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)"
+          ]
+        }
+      ],
+      "coldSettingsVisibleMs": 1032.4,
+      "warmSettingsVisibleMedianMs": 2225.7,
+      "warmSettingsVisibleMaxMs": 3198.4,
+      "warmTrayReadyMedianMs": 1261.0,
+      "medianPrivMb": 103.2,
+      "medianHandles": 1367.0,
+      "phaseSeconds": 87.0
+    },
+    "idle": {
+      "default": {
+        "variant": "default",
+        "seconds": 30,
+        "cpuPercentOfOneCore": 0.629,
+        "cpuPercentOfMachine": 0.052,
+        "wsMbStart": 147.0,
+        "wsMbEnd": 147.9,
+        "privMbStart": 80.1,
+        "privMbEnd": 80.9,
+        "handles": 883,
+        "threads": 23,
+        "gdi": 51,
+        "user": 25,
+        "crashed": false,
+        "exitCode": null,
+        "appLogFaults": null
+      },
+      "hotCornerOff": {
+        "variant": "hotcorner-off",
+        "seconds": 30,
+        "cpuPercentOfOneCore": 0.0,
+        "cpuPercentOfMachine": 0.0,
+        "wsMbStart": 145.9,
+        "wsMbEnd": 145.9,
+        "privMbStart": 79.2,
+        "privMbEnd": 79.1,
+        "handles": 886,
+        "threads": 21,
+        "gdi": 57,
+        "user": 24,
+        "crashed": false,
+        "exitCode": null,
+        "appLogFaults": null
+      },
+      "settingsOpen": {
+        "variant": "settings-open",
+        "seconds": 30,
+        "cpuPercentOfOneCore": 25.582,
+        "cpuPercentOfMachine": 2.132,
+        "wsMbStart": 207.8,
+        "wsMbEnd": 199.6,
+        "privMbStart": 111.9,
+        "privMbEnd": 103.6,
+        "handles": 1352,
+        "threads": 37,
+        "gdi": 95,
+        "user": 44,
+        "crashed": false,
+        "exitCode": null,
+        "appLogFaults": [
+          "00:29:22.151 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+          "00:29:22.511 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)"
+        ]
+      },
+      "hotCornerCostPercentOfOneCore": 0.629,
+      "budgetPercentOfOneCore": 1.0,
+      "phaseSeconds": 131.0
+    },
+    "summon": {
+      "cyclesRequested": 150,
+      "cyclesCompleted": 150,
+      "failures": 0,
+      "summonMs": {
+        "p50": 16.3,
+        "p95": 19.4,
+        "max": 20.9,
+        "first": 18.8
+      },
+      "dismissMs": {
+        "p50": 471.4,
+        "p95": 485.7,
+        "max": 715.5
+      },
+      "uiThread": {
+        "pings": 4016,
+        "p50Ms": 1.4,
+        "p95Ms": 8.6,
+        "p99Ms": 27.9,
+        "maxMs": 463.0,
+        "timeouts": 0,
+        "stalls": 1,
+        "longestStallMs": 463.0,
+        "stallBudgetMs": 250,
+        "stallList": [
+          {
+            "atSec": 0.0,
+            "ms": 463.0
+          }
+        ]
+      },
+      "crashed": false,
+      "exitCode": null,
+      "newDumps": null,
+      "appLogFaults": [
+        "00:30:12.886 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:30:13.509 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:30:14.341 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:30:15.213 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:30:16.092 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:30:16.978 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:30:17.835 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:30:18.696 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:30:19.519 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:30:20.386 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:30:21.291 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:30:22.129 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)"
+      ],
+      "drift": {
+        "privMb": {
+          "slopePer100": -5.25,
+          "early": 110.2,
+          "late": 104.8,
+          "delta": -5.4,
+          "samples": 26
+        },
+        "wsMb": {
+          "slopePer100": -3.32,
+          "early": 204.9,
+          "late": 201.3,
+          "delta": -3.6,
+          "samples": 26
+        },
+        "handles": {
+          "slopePer100": 106.67,
+          "early": 1486.5,
+          "late": 1607.0,
+          "delta": 120.5,
+          "samples": 26
+        },
+        "gdi": {
+          "slopePer100": 0.0,
+          "early": 98.0,
+          "late": 98.0,
+          "delta": 0.0,
+          "samples": 26
+        },
+        "user": {
+          "slopePer100": 0.0,
+          "early": 38.0,
+          "late": 38.0,
+          "delta": 0.0,
+          "samples": 26
+        },
+        "threads": {
+          "slopePer100": -8.74,
+          "early": 37.0,
+          "late": 30.0,
+          "delta": -7.0,
+          "samples": 26
+        }
+      },
+      "driftVerdict": {
+        "privMb": "stable",
+        "wsMb": "stable",
+        "handles": "GROWING",
+        "gdi": "stable",
+        "user": "stable",
+        "threads": "stable"
+      },
+      "samples": [
+        {
+          "t": 1.11,
+          "wsMb": 179.8,
+          "privMb": 94.8,
+          "handles": 1168,
+          "threads": 35,
+          "gdi": 98,
+          "user": 35,
+          "cpuSec": 2.297,
+          "cycle": 1
+        },
+        {
+          "t": 4.58,
+          "wsMb": 192.3,
+          "privMb": 100.8,
+          "handles": 1383,
+          "threads": 37,
+          "gdi": 98,
+          "user": 36,
+          "cpuSec": 4.469,
+          "cycle": 5
+        },
+        {
+          "t": 8.9,
+          "wsMb": 199.9,
+          "privMb": 106.2,
+          "handles": 1488,
+          "threads": 37,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 6.828,
+          "cycle": 10
+        },
+        {
+          "t": 13.25,
+          "wsMb": 196.9,
+          "privMb": 105.2,
+          "handles": 1494,
+          "threads": 37,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 9.016,
+          "cycle": 15
+        },
+        {
+          "t": 17.6,
+          "wsMb": 203.5,
+          "privMb": 108.6,
+          "handles": 1499,
+          "threads": 37,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 11.391,
+          "cycle": 20
+        },
+        {
+          "t": 21.92,
+          "wsMb": 198.8,
+          "privMb": 104.5,
+          "handles": 1504,
+          "threads": 37,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 13.188,
+          "cycle": 25
+        },
+        {
+          "t": 26.24,
+          "wsMb": 201.5,
+          "privMb": 106.7,
+          "handles": 1497,
+          "threads": 37,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 15.047,
+          "cycle": 30
+        },
+        {
+          "t": 30.54,
+          "wsMb": 205.5,
+          "privMb": 109.4,
+          "handles": 1502,
+          "threads": 37,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 17.344,
+          "cycle": 35
+        },
+        {
+          "t": 34.85,
+          "wsMb": 206.9,
+          "privMb": 110.6,
+          "handles": 1491,
+          "threads": 37,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 18.953,
+          "cycle": 40
+        },
+        {
+          "t": 39.22,
+          "wsMb": 203.7,
+          "privMb": 109.8,
+          "handles": 1481,
+          "threads": 37,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 20.344,
+          "cycle": 45
+        },
+        {
+          "t": 43.54,
+          "wsMb": 204.6,
+          "privMb": 110.5,
+          "handles": 1482,
+          "threads": 37,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 21.922,
+          "cycle": 50
+        },
+        {
+          "t": 47.87,
+          "wsMb": 205.2,
+          "privMb": 111.0,
+          "handles": 1471,
+          "threads": 37,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 23.469,
+          "cycle": 55
+        },
+        {
+          "t": 52.23,
+          "wsMb": 206.2,
+          "privMb": 111.2,
+          "handles": 1556,
+          "threads": 37,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 25.219,
+          "cycle": 60
+        },
+        {
+          "t": 56.6,
+          "wsMb": 211.1,
+          "privMb": 114.5,
+          "handles": 1557,
+          "threads": 34,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 27.594,
+          "cycle": 65
+        },
+        {
+          "t": 60.9,
+          "wsMb": 210.8,
+          "privMb": 114.2,
+          "handles": 1546,
+          "threads": 34,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 29.281,
+          "cycle": 70
+        },
+        {
+          "t": 65.24,
+          "wsMb": 201.0,
+          "privMb": 105.3,
+          "handles": 1551,
+          "threads": 34,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 30.797,
+          "cycle": 75
+        },
+        {
+          "t": 69.6,
+          "wsMb": 199.4,
+          "privMb": 103.0,
+          "handles": 1540,
+          "threads": 30,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 32.453,
+          "cycle": 80
+        },
+        {
+          "t": 73.91,
+          "wsMb": 199.5,
+          "privMb": 103.2,
+          "handles": 1547,
+          "threads": 30,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 34.0,
+          "cycle": 85
+        },
+        {
+          "t": 78.21,
+          "wsMb": 200.5,
+          "privMb": 104.1,
+          "handles": 1534,
+          "threads": 30,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 35.609,
+          "cycle": 90
+        },
+        {
+          "t": 82.5,
+          "wsMb": 200.6,
+          "privMb": 103.9,
+          "handles": 1541,
+          "threads": 30,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 37.109,
+          "cycle": 95
+        },
+        {
+          "t": 86.83,
+          "wsMb": 201.1,
+          "privMb": 104.2,
+          "handles": 1530,
+          "threads": 30,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 38.688,
+          "cycle": 100
+        },
+        {
+          "t": 91.17,
+          "wsMb": 201.0,
+          "privMb": 104.5,
+          "handles": 1532,
+          "threads": 29,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 40.281,
+          "cycle": 105
+        },
+        {
+          "t": 95.5,
+          "wsMb": 201.3,
+          "privMb": 104.8,
+          "handles": 1526,
+          "threads": 30,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 41.656,
+          "cycle": 110
+        },
+        {
+          "t": 99.87,
+          "wsMb": 201.3,
+          "privMb": 104.8,
+          "handles": 1609,
+          "threads": 30,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 43.344,
+          "cycle": 115
+        },
+        {
+          "t": 104.2,
+          "wsMb": 201.3,
+          "privMb": 104.7,
+          "handles": 1613,
+          "threads": 29,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 45.016,
+          "cycle": 120
+        },
+        {
+          "t": 108.49,
+          "wsMb": 201.3,
+          "privMb": 104.8,
+          "handles": 1602,
+          "threads": 30,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 46.562,
+          "cycle": 125
+        },
+        {
+          "t": 112.84,
+          "wsMb": 201.3,
+          "privMb": 104.8,
+          "handles": 1610,
+          "threads": 30,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 47.953,
+          "cycle": 130
+        },
+        {
+          "t": 117.17,
+          "wsMb": 201.3,
+          "privMb": 104.8,
+          "handles": 1596,
+          "threads": 30,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 49.406,
+          "cycle": 135
+        },
+        {
+          "t": 121.48,
+          "wsMb": 201.3,
+          "privMb": 104.8,
+          "handles": 1605,
+          "threads": 30,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 50.812,
+          "cycle": 140
+        },
+        {
+          "t": 125.78,
+          "wsMb": 201.3,
+          "privMb": 104.8,
+          "handles": 1594,
+          "threads": 30,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 52.359,
+          "cycle": 145
+        },
+        {
+          "t": 130.13,
+          "wsMb": 204.3,
+          "privMb": 106.3,
+          "handles": 1616,
+          "threads": 26,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 53.969,
+          "cycle": 150
+        },
+        {
+          "t": 133.15,
+          "wsMb": 204.3,
+          "privMb": 106.2,
+          "handles": 1609,
+          "threads": 25,
+          "gdi": 98,
+          "user": 38,
+          "cpuSec": 54.062,
+          "cycle": 151
+        }
+      ],
+      "phaseSeconds": 141.0
+    },
+    "settings": {
+      "cyclesRequested": 40,
+      "cyclesCompleted": 40,
+      "failures": 0,
+      "windowVisibleMs": {
+        "p50": 279.5,
+        "p95": 734.2,
+        "max": 930.6,
+        "first": 439.3
+      },
+      "interactiveMs": {
+        "p50": 760.8,
+        "p95": 1241.1,
+        "max": 1395.8
+      },
+      "closeMs": {
+        "p50": 51.3,
+        "p95": 69.4
+      },
+      "uiThread": {
+        "pings": 1007,
+        "p50Ms": 0.7,
+        "p95Ms": 245.0,
+        "p99Ms": 586.7,
+        "maxMs": 1063.9,
+        "timeouts": 0,
+        "stalls": 48,
+        "longestStallMs": 1063.9,
+        "stallBudgetMs": 250,
+        "stallList": [
+          {
+            "atSec": 0.0,
+            "ms": 556.4
+          },
+          {
+            "atSec": 0.6,
+            "ms": 271.3
+          },
+          {
+            "atSec": 2.1,
+            "ms": 295.9
+          },
+          {
+            "atSec": 3.4,
+            "ms": 278.3
+          },
+          {
+            "atSec": 4.6,
+            "ms": 310.6
+          },
+          {
+            "atSec": 6.0,
+            "ms": 274.3
+          },
+          {
+            "atSec": 7.4,
+            "ms": 316.9
+          },
+          {
+            "atSec": 8.8,
+            "ms": 416.2
+          },
+          {
+            "atSec": 10.2,
+            "ms": 368.3
+          },
+          {
+            "atSec": 11.3,
+            "ms": 257.2
+          },
+          {
+            "atSec": 11.8,
+            "ms": 272.2
+          },
+          {
+            "atSec": 13.4,
+            "ms": 271.7
+          },
+          {
+            "atSec": 16.0,
+            "ms": 445.9
+          },
+          {
+            "atSec": 17.6,
+            "ms": 287.3
+          },
+          {
+            "atSec": 19.1,
+            "ms": 281.5
+          }
+        ]
+      },
+      "crashed": false,
+      "exitCode": null,
+      "newDumps": null,
+      "appLogFaults": [
+        "00:32:32.736 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:32:33.420 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:32:34.557 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:32:34.774 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:32:36.023 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:32:36.040 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:32:37.090 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:32:37.373 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:32:38.451 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:32:38.798 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:32:39.876 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)",
+        "00:32:40.234 IconService: favicon fetch failed for 'http://127.0.0.1/favicon.ico': HttpRequestException: No connection could be made because the target machine actively refused it. (127.0.0.1:80)"
+      ],
+      "drift": {
+        "privMb": {
+          "slopePer100": 706.56,
+          "early": 197.2,
+          "late": 396.1,
+          "delta": 199.0,
+          "samples": 18
+        },
+        "wsMb": {
+          "slopePer100": 736.36,
+          "early": 301.0,
+          "late": 508.0,
+          "delta": 207.0,
+          "samples": 18
+        },
+        "handles": {
+          "slopePer100": 4905.48,
+          "early": 1838.0,
+          "late": 3212.5,
+          "delta": 1374.5,
+          "samples": 18
+        },
+        "gdi": {
+          "slopePer100": 3885.78,
+          "early": 492.0,
+          "late": 1576.0,
+          "delta": 1084.0,
+          "samples": 18
+        },
+        "user": {
+          "slopePer100": -0.16,
+          "early": 40.0,
+          "late": 40.0,
+          "delta": 0.0,
+          "samples": 18
+        },
+        "threads": {
+          "slopePer100": -17.06,
+          "early": 47.0,
+          "late": 42.0,
+          "delta": -5.0,
+          "samples": 18
+        }
+      },
+      "driftVerdict": {
+        "privMb": "GROWING",
+        "wsMb": "GROWING",
+        "handles": "GROWING",
+        "gdi": "GROWING",
+        "user": "stable",
+        "threads": "stable"
+      },
+      "samples": [
+        {
+          "t": 2.01,
+          "wsMb": 204.5,
+          "privMb": 111.1,
+          "handles": 1215,
+          "threads": 36,
+          "gdi": 117,
+          "user": 35,
+          "cpuSec": 2.328,
+          "cycle": 1
+        },
+        {
+          "t": 3.38,
+          "wsMb": 220.9,
+          "privMb": 122.9,
+          "handles": 1365,
+          "threads": 39,
+          "gdi": 153,
+          "user": 37,
+          "cpuSec": 3.516,
+          "cycle": 2
+        },
+        {
+          "t": 5.98,
+          "wsMb": 242.7,
+          "privMb": 143.2,
+          "handles": 1480,
+          "threads": 42,
+          "gdi": 231,
+          "user": 38,
+          "cpuSec": 5.859,
+          "cycle": 4
+        },
+        {
+          "t": 8.73,
+          "wsMb": 262.9,
+          "privMb": 161.1,
+          "handles": 1601,
+          "threads": 46,
+          "gdi": 309,
+          "user": 40,
+          "cpuSec": 8.484,
+          "cycle": 6
+        },
+        {
+          "t": 11.72,
+          "wsMb": 283.5,
+          "privMb": 180.7,
+          "handles": 1692,
+          "threads": 47,
+          "gdi": 379,
+          "user": 40,
+          "cpuSec": 11.109,
+          "cycle": 8
+        },
+        {
+          "t": 14.57,
+          "wsMb": 295.1,
+          "privMb": 191.5,
+          "handles": 1790,
+          "threads": 47,
+          "gdi": 455,
+          "user": 40,
+          "cpuSec": 13.688,
+          "cycle": 10
+        },
+        {
+          "t": 17.58,
+          "wsMb": 306.9,
+          "privMb": 202.8,
+          "handles": 1886,
+          "threads": 47,
+          "gdi": 529,
+          "user": 39,
+          "cpuSec": 15.922,
+          "cycle": 12
+        },
+        {
+          "t": 20.64,
+          "wsMb": 318.6,
+          "privMb": 214.1,
+          "handles": 1977,
+          "threads": 47,
+          "gdi": 601,
+          "user": 40,
+          "cpuSec": 18.0,
+          "cycle": 14
+        },
+        {
+          "t": 23.71,
+          "wsMb": 342.0,
+          "privMb": 236.4,
+          "handles": 2070,
+          "threads": 47,
+          "gdi": 671,
+          "user": 40,
+          "cpuSec": 20.484,
+          "cycle": 16
+        },
+        {
+          "t": 26.78,
+          "wsMb": 361.1,
+          "privMb": 255.0,
+          "handles": 2160,
+          "threads": 47,
+          "gdi": 739,
+          "user": 40,
+          "cpuSec": 22.906,
+          "cycle": 18
+        },
+        {
+          "t": 29.88,
+          "wsMb": 367.9,
+          "privMb": 260.5,
+          "handles": 2244,
+          "threads": 45,
+          "gdi": 815,
+          "user": 40,
+          "cpuSec": 24.828,
+          "cycle": 20
+        },
+        {
+          "t": 33.23,
+          "wsMb": 383.6,
+          "privMb": 276.2,
+          "handles": 2344,
+          "threads": 45,
+          "gdi": 891,
+          "user": 40,
+          "cpuSec": 27.375,
+          "cycle": 22
+        },
+        {
+          "t": 36.58,
+          "wsMb": 392.4,
+          "privMb": 283.3,
+          "handles": 2442,
+          "threads": 45,
+          "gdi": 969,
+          "user": 40,
+          "cpuSec": 29.812,
+          "cycle": 24
+        },
+        {
+          "t": 39.39,
+          "wsMb": 407.4,
+          "privMb": 298.2,
+          "handles": 2540,
+          "threads": 45,
+          "gdi": 1051,
+          "user": 40,
+          "cpuSec": 31.859,
+          "cycle": 26
+        },
+        {
+          "t": 42.99,
+          "wsMb": 421.4,
+          "privMb": 311.3,
+          "handles": 2671,
+          "threads": 45,
+          "gdi": 1157,
+          "user": 40,
+          "cpuSec": 34.266,
+          "cycle": 28
+        },
+        {
+          "t": 46.54,
+          "wsMb": 443.0,
+          "privMb": 331.7,
+          "handles": 2776,
+          "threads": 45,
+          "gdi": 1245,
+          "user": 40,
+          "cpuSec": 36.875,
+          "cycle": 30
+        },
+        {
+          "t": 49.82,
+          "wsMb": 467.5,
+          "privMb": 355.5,
+          "handles": 2876,
+          "threads": 45,
+          "gdi": 1321,
+          "user": 40,
+          "cpuSec": 39.766,
+          "cycle": 32
+        },
+        {
+          "t": 53.07,
+          "wsMb": 482.5,
+          "privMb": 372.0,
+          "handles": 2964,
+          "threads": 45,
+          "gdi": 1391,
+          "user": 40,
+          "cpuSec": 42.047,
+          "cycle": 34
+        },
+        {
+          "t": 57.08,
+          "wsMb": 486.9,
+          "privMb": 375.8,
+          "handles": 3072,
+          "threads": 42,
+          "gdi": 1469,
+          "user": 40,
+          "cpuSec": 45.172,
+          "cycle": 36
+        },
+        {
+          "t": 60.33,
+          "wsMb": 500.4,
+          "privMb": 388.6,
+          "handles": 3168,
+          "threads": 42,
+          "gdi": 1539,
+          "user": 40,
+          "cpuSec": 47.75,
+          "cycle": 38
+        },
+        {
+          "t": 63.82,
+          "wsMb": 515.8,
+          "privMb": 403.7,
+          "handles": 3262,
+          "threads": 42,
+          "gdi": 1613,
+          "user": 40,
+          "cpuSec": 50.203,
+          "cycle": 40
+        },
+        {
+          "t": 66.85,
+          "wsMb": 515.7,
+          "privMb": 403.6,
+          "handles": 3257,
+          "threads": 41,
+          "gdi": 1613,
+          "user": 39,
+          "cpuSec": 50.547,
+          "cycle": 41
+        }
+      ],
+      "phaseSeconds": 74.0
+    }
+  },
+  "findings": [
+    "summon : UI thread stalled up to 463 ms (budget 250 ms, 1 stall(s))",
+    "summon : handles GROWING at 106.67 per 100 cycles (early 1486.5 -> late 1607)",
+    "settings : UI thread stalled up to 1063.9 ms (budget 250 ms, 48 stall(s))",
+    "settings : privMb GROWING at 706.56 per 100 cycles (early 197.2 -> late 396.1)",
+    "settings : wsMb GROWING at 736.36 per 100 cycles (early 301 -> late 508)",
+    "settings : handles GROWING at 4905.48 per 100 cycles (early 1838 -> late 3212.5)",
+    "settings : gdi GROWING at 3885.78 per 100 cycles (early 492 -> late 1576)",
+    "idle (settingsOpen) : 25.582% of one core exceeds the 1% budget"
+  ]
+}

@@ -1,0 +1,293 @@
+{
+  "generated": "2026-10-01T00:15:07.5136061-04:00",
+  "process": "SwiftX",
+  "days": 90,
+  "crashEvents": 25,
+  "hangEvents": 0,
+  "managedUnhandledEvents": 3,
+  "crashBuckets": [
+    {
+      "module": "Windows.ApplicationModel.Store.dll",
+      "exceptionCode": "0xc0000005",
+      "offset": "0x00000000000b6902",
+      "count": 2,
+      "firstSeen": "2026-09-15 23:31",
+      "lastSeen": "2026-09-22 21:35",
+      "appVersions": [
+        "1.0.1.0",
+        "2.0.0.0"
+      ]
+    },
+    {
+      "module": "Microsoft.UI.Xaml.dll",
+      "exceptionCode": "0xc000027b",
+      "offset": "0x00000000003a9c5d",
+      "count": 11,
+      "firstSeen": "2026-09-13 18:34",
+      "lastSeen": "2026-09-19 18:28",
+      "appVersions": [
+        "1.0.1.0"
+      ]
+    },
+    {
+      "module": "CoreMessagingXP.dll",
+      "exceptionCode": "0xc000027b",
+      "offset": "0x0000000000097de6",
+      "count": 1,
+      "firstSeen": "2026-09-17 23:46",
+      "lastSeen": "2026-09-17 23:46",
+      "appVersions": [
+        "1.0.1.0"
+      ]
+    },
+    {
+      "module": "coreclr.dll",
+      "exceptionCode": "0xc0000005",
+      "offset": "0x0000000000356fef",
+      "count": 1,
+      "firstSeen": "2026-08-30 18:11",
+      "lastSeen": "2026-08-30 18:11",
+      "appVersions": [
+        "1.0.0.0"
+      ]
+    },
+    {
+      "module": "Microsoft.UI.Xaml.dll",
+      "exceptionCode": "0xc000027b",
+      "offset": "0x00000000003a6d95",
+      "count": 5,
+      "firstSeen": "2026-08-08 18:52",
+      "lastSeen": "2026-08-12 23:48",
+      "appVersions": [
+        "1.0.0.0"
+      ]
+    },
+    {
+      "module": "KERNELBASE.dll",
+      "exceptionCode": "0xc000041d",
+      "offset": "0x00000000000c187a",
+      "count": 3,
+      "firstSeen": "2026-08-08 17:05",
+      "lastSeen": "2026-08-08 17:52",
+      "appVersions": [
+        "1.0.0.0"
+      ]
+    },
+    {
+      "module": "KERNELBASE.dll",
+      "exceptionCode": "0xe0434352",
+      "offset": "0x00000000000c187a",
+      "count": 2,
+      "firstSeen": "2026-08-08 17:05",
+      "lastSeen": "2026-08-08 17:52",
+      "appVersions": [
+        "1.0.0.0"
+      ]
+    }
+  ],
+  "hangs": [],
+  "managedUnhandled": [
+    {
+      "time": "2026-08-30 18:11",
+      "head": "Application: SwiftX.exe | CoreCLR Version: 10.0.926.27113 | .NET Version: 10.0.9 | Description: The process was terminated due to an unhandled exception."
+    },
+    {
+      "time": "2026-08-08 17:52",
+      "head": "Application: SwiftX.exe | CoreCLR Version: 10.0.926.27113 | .NET Version: 10.0.9 | Description: The process was terminated due to an unhandled exception."
+    },
+    {
+      "time": "2026-08-08 17:05",
+      "head": "Application: SwiftX.exe | CoreCLR Version: 10.0.926.27113 | .NET Version: 10.0.9 | Description: The process was terminated due to an unhandled exception."
+    }
+  ],
+  "dumpCount": 9,
+  "dumps": [
+    {
+      "name": "SwiftX.exe.40872.dmp",
+      "mb": 18.1,
+      "time": "2026-09-22 21:35"
+    },
+    {
+      "name": "SwiftX.exe.28620.dmp",
+      "mb": 17.1,
+      "time": "2026-09-19 18:24"
+    },
+    {
+      "name": "SwiftX.exe.26592.dmp",
+      "mb": 17.1,
+      "time": "2026-09-19 18:11"
+    },
+    {
+      "name": "SwiftX.exe.30692.dmp",
+      "mb": 17.0,
+      "time": "2026-09-19 18:10"
+    },
+    {
+      "name": "SwiftX.exe.4696.dmp",
+      "mb": 17.1,
+      "time": "2026-09-19 18:08"
+    },
+    {
+      "name": "SwiftX.exe.30040.dmp",
+      "mb": 14.4,
+      "time": "2026-09-17 23:47"
+    },
+    {
+      "name": "SwiftX.exe.30224.dmp",
+      "mb": 19.2,
+      "time": "2026-09-17 23:46"
+    },
+    {
+      "name": "SwiftX.exe.17052.dmp",
+      "mb": 16.7,
+      "time": "2026-09-15 23:54"
+    },
+    {
+      "name": "SwiftX.exe.28856.dmp",
+      "mb": 17.7,
+      "time": "2026-09-15 23:31"
+    }
+  ],
+  "dumpScan": [
+    {
+      "dump": "SwiftX.exe.40872.dmp",
+      "time": "2026-09-22 21:35",
+      "topIdentifiers": [
+        {
+          "identifier": "SwiftX.dll",
+          "hits": 4
+        },
+        {
+          "identifier": "SwiftX.exe_40872.txt",
+          "hits": 3
+        },
+        {
+          "identifier": "Windows.ApplicationModel.Store.dll",
+          "hits": 2
+        },
+        {
+          "identifier": "Windows.System.Launcher.pdb",
+          "hits": 1
+        },
+        {
+          "identifier": "Windows.ApplicationModel.Store.pdb",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.ShellWindow.RateOnStore_Click()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.Services.StoreFeedback.RequestRatingAsync()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.Services.StoreFeedback+<RequestRatingAsync>d__1.MoveNext()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.Program.Main()",
+          "hits": 1
+        },
+        {
+          "identifier": "Windows.System.Launcher.dll",
+          "hits": 1
+        }
+      ]
+    },
+    {
+      "dump": "SwiftX.exe.28620.dmp",
+      "time": "2026-09-19 18:24",
+      "topIdentifiers": [
+        {
+          "identifier": "SwiftX.dll",
+          "hits": 6
+        },
+        {
+          "identifier": "SwiftX.exe_28620.txt",
+          "hits": 3
+        },
+        {
+          "identifier": "SwiftX.ShellWindow.BuildItemIcon()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.ShellWindow.BuildElementSection()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.ShellWindow.<BuildElementSection>b__319_0()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.Services.IconService.LoadIconAsync()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.Services.IconService+<ShellIconAsync>d__4.MoveNext()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.Services.IconService+<LoadIconAsync>d__3.MoveNext()",
+          "hits": 1
+        },
+        {
+          "identifier": "InterfaceMarshaler.ConvertToManaged",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.ShellWindow.<.ctor>b__49_6()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.ShellWindow.RebuildItemsList()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.Interop.NativeMethods.SHGetImageList()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.ShellWindow.BuildItemRow()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.Services.IconService.ShellIconAsync()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.Program.Main()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.Services.IconService.TryGetJumboIcon()",
+          "hits": 1
+        },
+        {
+          "identifier": "SwiftX.ShellWindow.LoadRowIcon()",
+          "hits": 1
+        }
+      ]
+    }
+  ],
+  "appLog": {
+    "path": "%USERPROFILE%\\AppData\\Local\\Temp\\swiftx.log",
+    "exists": true,
+    "bytes": 31466,
+    "lastWrite": "2026-10-01 00:11:12",
+    "faultLines": 19,
+    "lastFaults": [
+      "00:11:04.145 SecureValueStore.Unprotect failed: The input is not a valid Base-64 string as it contains a non-base 64 character, more than two padding characters, or an illegal character among the padding characters.",
+      "00:11:04.146 SecureValueStore.Unprotect failed: The input is not a valid Base-64 string as it contains a non-base 64 character, more than two padding characters, or an illegal character among the padding characters.",
+      "00:11:04.182 SecureValueStore.Load failed: The input does not contain any JSON tokens. Expected the input to start with a valid JSON token, when isFinalBlock is true. Path: $ | LineNumber: 0 | BytePositionInLine: 0.",
+      "00:11:04.184 SecureValueStore.Load failed: The input does not contain any JSON tokens. Expected the input to start with a valid JSON token, when isFinalBlock is true. Path: $ | LineNumber: 0 | BytePositionInLine: 0.",
+      "00:11:04.209 SecureValueStore.Load failed: 'not json at all' is an invalid JSON literal. Expected the literal 'null'. Path: $ | LineNumber: 0 | BytePositionInLine: 1.",
+      "00:11:04.212 SecureValueStore.Load failed: 'not json at all' is an invalid JSON literal. Expected the literal 'null'. Path: $ | LineNumber: 0 | BytePositionInLine: 1.",
+      "00:11:04.566 SecureValueStore.Unprotect failed: The data is invalid.",
+      "00:11:04.567 SecureValueStore.Unprotect failed: The data is invalid.",
+      "00:11:04.634 OrbitStore.ImportFrom('%USERPROFILE%\\AppData\\Local\\Temp\\swiftx-tests\\7436-5da897c86b1b496fa6d2fc8f0a1b8dfa\\bomb.json') failed: The maximum configured depth of 64 has been exceeded. Cannot read next JSON obj",
+      "00:11:04.638 OrbitStore.ImportFrom('%USERPROFILE%\\AppData\\Local\\Temp\\swiftx-tests\\7436-5da897c86b1b496fa6d2fc8f0a1b8dfa\\bomb.json') failed: The maximum configured depth of 64 has been exceeded. Cannot read next JSON obj"
+    ],
+    "note": "The log is shared by every SwiftX process and every test run, and is truncated at each process start: a fresh log is NOT evidence of a clean past."
+  }
+}
