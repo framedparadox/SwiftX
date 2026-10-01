@@ -4515,9 +4515,7 @@ public sealed partial class ShellWindow : Window
     {
         // Per row rather than on the window: a drag and the click it must suppress belong to the
         // same row, and none of this outlives the sidebar rebuild that replaces that row.
-        bool armed = false;
         bool dragged = false;
-        Point origin = default;
 
         row.Click += (_, _) =>
         {
@@ -4530,6 +4528,28 @@ public sealed partial class ShellWindow : Window
             }
             onClick?.Invoke();
         };
+
+        WireSidebarDrag(row, template, onPress: () => dragged = false, onDragged: () => dragged = true);
+    }
+
+    /// <summary>
+    /// The drag half of a sidebar row, for anything that can carry <paramref name="template"/> to
+    /// the ring or a group: a suggestion Button (<see cref="WireEditRow"/>) or a Groups row
+    /// (<see cref="BuildEditGroupRow"/>).
+    /// <para>
+    /// Started by hand once the pointer has travelled <see cref="SidebarDragThreshold"/>, rather
+    /// than left to <see cref="UIElement.CanDrag"/> alone, because the framework's own gesture is
+    /// not reliable for these: a Button takes the pointer on press, and a row whose content is out
+    /// of hit-testing (the Groups rows) gives it nothing to start from. <c>CanDrag</c> stays set
+    /// because it is what makes <see cref="UIElement.DragStarting"/> fire for a drag started
+    /// here. Whichever of the two starts first wins: a drag already in flight
+    /// (<see cref="_sidebarDragTemplate"/> set) is never started a second time.
+    /// </para>
+    /// </summary>
+    private void WireSidebarDrag(UIElement row, OrbitItem template, Action? onPress = null, Action? onDragged = null)
+    {
+        bool armed = false;
+        Point origin = default;
 
         row.CanDrag = true;
         row.DragStarting += (_, e) =>
@@ -4547,7 +4567,7 @@ public sealed partial class ShellWindow : Window
                 return;
             origin = point.Position;
             armed = true;
-            dragged = false;
+            onPress?.Invoke();
         }), handledEventsToo: true);
 
         row.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(async (_, e) =>
@@ -4565,10 +4585,15 @@ public sealed partial class ShellWindow : Window
                 return;
 
             armed = false;
-            dragged = true;
+            onDragged?.Invoke();
+
+            // The framework's own gesture got there first.
+            if (_sidebarDragTemplate is not null)
+                return;
+
             try
             {
-                // The Button grabbed the pointer on press; the drag cannot follow a pointer it is
+                // A Button grabbed the pointer on press; the drag cannot follow a pointer it is
                 // still holding, so it lets go first.
                 row.ReleasePointerCaptures();
                 await row.StartDragAsync(point);
@@ -4884,27 +4909,10 @@ public sealed partial class ShellWindow : Window
             : $"Drag an app, file, folder or link here to add it to {group.DisplayName}");
 
         WireEditGroupRow(row, group, count);
-        WireEditGroupDrag(row, group);
+        // Draggable onto the full ring or the corner's quadrant: the group travels as a live
+        // reference and the ring drops a copy of it, children included (see CloneOrbitTemplate).
+        WireSidebarDrag(row, group);
         return row;
-    }
-
-    /// <summary>
-    /// Lets a group row be dragged onto the ring — the full circle or the corner's quadrant — the
-    /// same way a suggestion row is: the group travels as a live reference
-    /// (<see cref="_sidebarDragTemplate"/>) and the ring drops a copy of it, children included (see
-    /// <see cref="CloneOrbitTemplate"/>). This row starts the framework's own drag, so unlike
-    /// <see cref="WireEditRow"/> there is no pointer capture to work around.
-    /// </summary>
-    private void WireEditGroupDrag(ContentControl row, OrbitItem group)
-    {
-        row.CanDrag = true;
-        row.DragStarting += (_, e) =>
-        {
-            _sidebarDragTemplate = group;
-            e.Data.SetText(group.DisplayName);
-            e.Data.RequestedOperation = DataPackageOperation.Copy;
-        };
-        row.DropCompleted += (_, _) => EndSidebarDrag();
     }
 
     /// <summary>
