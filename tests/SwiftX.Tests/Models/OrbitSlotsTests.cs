@@ -30,6 +30,18 @@ public class OrbitSlotsTests
     }
 
     [Fact]
+    public void A_smaller_capacity_bounds_placement_and_moves_for_the_corner()
+    {
+        var items = new List<OrbitItem> { App("a") };
+        Assert.True(OrbitSlots.PlaceAt(items, 3, App("d"), capacity: 4));
+        Assert.Equal(new[] { "a", "_", "_", "d" }, Names(items));
+        Assert.False(OrbitSlots.PlaceAt(items, 4, App("e"), capacity: 4));
+
+        var moved = OrbitSlots.Moved(items, items[0], 4, capacity: 4);
+        Assert.Equal(items, moved);
+    }
+
+    [Fact]
     public void Vacating_the_last_item_trims_the_empties_behind_it()
     {
         var items = new List<OrbitItem> { App("a"), App("b"), App("c") };

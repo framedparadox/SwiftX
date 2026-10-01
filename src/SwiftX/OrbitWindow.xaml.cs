@@ -541,6 +541,8 @@ public sealed partial class OrbitWindow : Window
         var layout = new List<(OrbitItem Item, int Index, double AngleRad)>(items.Count);
         for (int i = 0; i < items.Count; i++)
         {
+            // A place the user emptied stays a gap on the arc; the items around it keep theirs.
+            if (items[i].IsEmpty) continue;
             double local = QuadrantLayout.LocalAngleRad(
                 i, items.Count, OrbitMetrics.Bubble * OrbitMetrics.HoverScale, _itemRadius);
             layout.Add((items[i], i, QuadrantLayout.ScreenAngleRad(corner, local)));

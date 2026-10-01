@@ -52,12 +52,12 @@ public static class OrbitSlots
     /// end. Slots between the end of the list and <paramref name="slot"/> become placeholders, so the
     /// item lands where it was dropped instead of sliding down to the first free place.
     /// </summary>
-    public static bool PlaceAt(List<OrbitItem> items, int slot, OrbitItem item)
+    public static bool PlaceAt(List<OrbitItem> items, int slot, OrbitItem item, int capacity = OrbitMetrics.UserSlotCount)
     {
-        if (slot < 0 || slot >= OrbitMetrics.UserSlotCount)
+        if (slot < 0 || slot >= capacity)
             return false;
 
-        var visible = Visible(items);
+        var visible = items.Where(i => !i.Hidden).Take(capacity).ToList();
         if (slot < visible.Count)
         {
             var occupant = visible[slot];
@@ -67,7 +67,7 @@ public static class OrbitSlots
             return true;
         }
 
-        while (Visible(items).Count < slot)
+        while (items.Count(i => !i.Hidden) < slot)
             items.Add(NewEmpty());
         items.Add(item);
         return true;
@@ -99,11 +99,12 @@ public static class OrbitSlots
     /// slot beyond the end of the list it goes exactly there, its old slot left empty, rather than
     /// sliding back to the first free place.
     /// </summary>
-    public static List<OrbitItem> Moved(IReadOnlyList<OrbitItem> visible, OrbitItem dragged, int targetSlot)
+    public static List<OrbitItem> Moved(
+        IReadOnlyList<OrbitItem> visible, OrbitItem dragged, int targetSlot, int capacity = OrbitMetrics.UserSlotCount)
     {
         var order = visible.ToList();
         int from = order.IndexOf(dragged);
-        if (from < 0 || targetSlot < 0 || targetSlot >= OrbitMetrics.UserSlotCount)
+        if (from < 0 || targetSlot < 0 || targetSlot >= capacity)
             return order;
 
         if (targetSlot >= order.Count)

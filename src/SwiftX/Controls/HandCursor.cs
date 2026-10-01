@@ -1,5 +1,7 @@
 using Microsoft.UI.Input;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Markup;
 
 namespace SwiftX.Controls;
 
@@ -29,9 +31,27 @@ public sealed class HandButton : Button
 /// </summary>
 public sealed class HandBorder : ContentControl
 {
+    // An explicit template, because the bare ContentControl one is only a ContentPresenter that
+    // takes none of Background / BorderBrush / BorderThickness / CornerRadius / Padding from the
+    // control: the row had no surface to hit-test, so it never saw a press, a drag or a drop, and
+    // drew none of its drag feedback either.
+    private const string TemplateXaml =
+        "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='ContentControl'>" +
+        "<ContentPresenter Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' " +
+        "BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='{TemplateBinding CornerRadius}' " +
+        "Padding='{TemplateBinding Padding}' " +
+        "HorizontalContentAlignment='{TemplateBinding HorizontalContentAlignment}' " +
+        "VerticalContentAlignment='{TemplateBinding VerticalContentAlignment}'/>" +
+        "</ControlTemplate>";
+
     public HandBorder()
     {
         DefaultStyleKey = typeof(ContentControl);
+        Template = (ControlTemplate)XamlReader.Load(TemplateXaml);
+        // Stretched like a Border's child, so a row's trailing column sits at its right edge.
+        HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        VerticalContentAlignment = VerticalAlignment.Stretch;
+        IsTabStop = false;
         ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Hand);
     }
 }

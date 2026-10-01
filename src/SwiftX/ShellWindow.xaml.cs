@@ -1811,7 +1811,7 @@ public sealed partial class ShellWindow : Window
 
             double left = cx + previewRadius * Math.Cos(angle) - previewBubble / 2;
             double top = cy + previewRadius * Math.Sin(angle) - previewBubble / 2;
-            var item = i < items.Count ? items[i] : null;
+            var item = i < items.Count && !items[i].IsEmpty ? items[i] : null;
 
             var border = new Border
             {
@@ -2139,16 +2139,13 @@ public sealed partial class ShellWindow : Window
             _dragTentativeQuadrantSlot = target;
             if (target < 0) return;
 
-            var list = HotCornerItems.Resolve(_manager.Config, SystemOrbitItems.CreateSettings());
-            int from = list.IndexOf(_dragItem);
-            if (from < 0) return;
-            int to = Math.Min(target, list.Count - 1);
-            if (to != from)
-            {
-                list.RemoveAt(from);
-                list.Insert(to, _dragItem);
-            }
-            ReflowQuadrantBorders(list);
+            // The places as drawn right now (empty ones as placeholders), so the preview moves the
+            // very items on screen and the drop lands exactly where this last showed them.
+            var drawn = new List<OrbitItem>(_quadrantSlotCount);
+            for (int i = 0; i < _quadrantSlotCount; i++)
+                drawn.Add(_quadrantSlotBorders[i]?.Tag as OrbitItem ?? OrbitSlots.NewEmpty());
+            if (!drawn.Contains(_dragItem)) return;
+            ReflowQuadrantBorders(OrbitSlots.Moved(drawn, _dragItem, target, QuadrantLayout.ItemCount));
             return;
         }
 
@@ -2320,7 +2317,7 @@ public sealed partial class ShellWindow : Window
             }
             else
             {
-                AddQuadrantItem();
+                AddQuadrantItem(slot);
             }
             return;
         }
@@ -2507,24 +2504,10 @@ public sealed partial class ShellWindow : Window
         if (_previewQuadrant)
         {
             if (slot < 0 || slot >= _quadrantSlotBorders.Length) return;
-            var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
-            if (_quadrantSlotBorders[slot]?.Tag is OrbitItem existing)
-            {
-                int at = list.IndexOf(existing);
-                if (at < 0) return;
-                list[at] = added;
-                if (ReferenceEquals(_selectedItem, existing)) HideItemDetails();
-            }
-            else if (list.Count < QuadrantLayout.ItemCount)
-            {
-                list.Add(added);
-            }
-            else
-            {
-                return;
-            }
-
-            _manager.Save();
+            if (_quadrantSlotBorders[slot]?.Tag is OrbitItem existing &&
+                ReferenceEquals(_selectedItem, existing))
+                HideItemDetails();
+            PutInQuadrantSlot(slot, added);
             EndArmedReplaceAfterDrop();
             RenderPreview();
             return;
@@ -2651,7 +2634,8 @@ public sealed partial class ShellWindow : Window
 
         // The last item stays: a corner with nothing on it would summon an empty screen. Shown
         // greyed rather than left out, so the menu is the same shape whichever item it opens on.
-        int count = HotCornerItems.Resolve(_manager.Config, SystemOrbitItems.CreateSettings()).Count;
+        int count = HotCornerItems.Resolve(_manager.Config, SystemOrbitItems.CreateSettings())
+            .Count(i => !i.IsEmpty);
 
         return BuildItemMenu(
             item.DisplayName,
@@ -2789,10 +2773,7 @@ public sealed partial class ShellWindow : Window
         }
         else if (_replaceQuadrantSlot >= 0)
         {
-            var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
-            if (_replaceQuadrantSlot < list.Count)
-                list[_replaceQuadrantSlot] = added;
-            _manager.Save();
+            PutInQuadrantSlot(_replaceQuadrantSlot, added);
         }
         else
         {
@@ -2885,60 +2866,72 @@ public sealed partial class ShellWindow : Window
         return bestGap <= _quadrantBubble / 2 + 4 ? best : -1;
     }
 
-    /// <summary>Drags one of the corner's items into another of its places.</summary>
+    /// <summary>
+    /// Drags one of the corner's items into another of its places. Dropped on an empty place past
+    /// the last item it goes exactly there, its old place left empty (see <see cref="OrbitSlots.Moved"/>).
+    /// </summary>
     private void MoveQuadrantItem(int from, int to)
     {
         var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
-        if (from < 0 || from >= list.Count || to < 0)
-            return;
-
-        // Dropping past the last item means "put it at the end", not "into an empty place".
-        to = Math.Min(to, list.Count - 1);
-        if (from == to)
+        if (from < 0 || from >= list.Count || to < 0 || to >= QuadrantLayout.ItemCount || from == to)
         {
             RenderPreview();
             return;
         }
 
-        var entry = list[from];
-        list.RemoveAt(from);
-        list.Insert(to, entry);
+        var moved = OrbitSlots.Moved(list, list[from], to, QuadrantLayout.ItemCount);
+        list.Clear();
+        list.AddRange(moved);
+        OrbitSlots.TrimTrailing(list);
         _manager.Save();
         RenderPreview();
     }
 
-    /// <summary>Takes one item off the corner. The orbit itself keeps it.</summary>
+    /// <summary>
+    /// Takes one item off the corner. The orbit itself keeps it, and the other items stay where they
+    /// are: the place it leaves is empty, not closed up.
+    /// </summary>
     private void RemoveQuadrantItem(int slot)
     {
         var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
-        if (slot < 0 || slot >= list.Count || list.Count <= 1)
+        if (slot < 0 || slot >= list.Count || list[slot].IsEmpty || list.Count(i => !i.IsEmpty) <= 1)
             return;
 
-        list.RemoveAt(slot);
+        OrbitSlots.Vacate(list, list[slot]);
         _manager.Save();
         HideItemDetails();
         RenderPreview();
     }
 
     /// <summary>
-    /// Fills an empty place on the corner. The item belongs to the corner rather than to the orbit
-    /// — this is the corner's own arrangement — so it goes into that list and nowhere else.
+    /// Puts <paramref name="added"/> in corner place <paramref name="slot"/>: an empty place, one past
+    /// the end (the "+" after the last item), or an occupied one, which it replaces. Items in the
+    /// places around it do not move.
     /// </summary>
-    private void AddQuadrantItem()
+    private void PutInQuadrantSlot(int slot, OrbitItem added)
     {
-        var settings = SystemOrbitItems.CreateSettings();
-        if (HotCornerItems.Resolve(_manager.Config, settings).Count >= QuadrantLayout.ItemCount)
-            return;
+        var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
+        if (slot < 0 || slot >= QuadrantLayout.ItemCount) return;
 
-        _manager.OpenAddItem(added =>
-        {
-            var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
-            if (list.Count >= QuadrantLayout.ItemCount)
-                return;
-            list.Add(added);
-            _manager.Save();
-            RenderPreview();
-        }, _manager.Config.HotCornerOrbit);
+        if (slot < list.Count)
+            list[slot] = added;
+        else
+            OrbitSlots.PlaceAt(list, slot, added, QuadrantLayout.ItemCount);
+        _manager.Save();
+    }
+
+    /// <summary>
+    /// Opens the "ADD TO ORBIT" sidebar aimed at an empty corner place, the same place the orbit's
+    /// own "+" goes: the next thing clicked or dragged there fills <paramref name="slot"/> (see
+    /// <see cref="CompleteReplace"/>). The item belongs to the corner rather than to the orbit — this
+    /// is the corner's own arrangement — so it goes into that list and nowhere else.
+    /// </summary>
+    private void AddQuadrantItem(int slot)
+    {
+        _replaceItem = null;
+        _replaceQuadrantSlot = slot;
+        _replaceItemName = null;
+        BeginReplaceViaSidebar();
     }
 
     private int PreviewSlotAt(Point point, bool requireHit = true)
@@ -4206,8 +4199,15 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private void UpdateOrbitEditSummary()
     {
-        OrbitEditEyebrow.Text = IsReplacing ? "REPLACE" : "ADD TO ORBIT";
+        bool fillingEmpty = IsReplacing && _replaceItemName is null;
+        OrbitEditEyebrow.Text = IsReplacing && !fillingEmpty ? "REPLACE" : "ADD TO ORBIT";
         OrbitEditCancelButton.Visibility = IsReplacing ? Visibility.Visible : Visibility.Collapsed;
+
+        if (fillingEmpty)
+        {
+            OrbitEditSummary.Text = "Click or drag something below to put it in this empty place.";
+            return;
+        }
 
         if (IsReplacing)
         {
