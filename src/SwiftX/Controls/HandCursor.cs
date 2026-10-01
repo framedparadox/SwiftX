@@ -20,11 +20,18 @@ public sealed class HandButton : Button
     }
 }
 
-/// <summary>A <see cref="Border"/> that shows the pointing-hand cursor; see <see cref="HandButton"/>.</summary>
-public sealed class HandBorder : Border
+/// <summary>
+/// A <see cref="Border"/>-like control that shows the pointing-hand cursor; see
+/// <see cref="HandButton"/>. Derives from <see cref="ContentControl"/> rather than
+/// <see cref="Border"/> because <see cref="Border"/> is sealed — <see cref="ContentControl"/>
+/// carries the same Background/BorderBrush/BorderThickness/CornerRadius/Padding set, so it draws
+/// identically once templated as one.
+/// </summary>
+public sealed class HandBorder : ContentControl
 {
     public HandBorder()
     {
+        DefaultStyleKey = typeof(ContentControl);
         ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Hand);
     }
 }

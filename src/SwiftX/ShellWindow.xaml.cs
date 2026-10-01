@@ -4064,7 +4064,7 @@ public sealed partial class ShellWindow : Window
     private bool _orbitEditRefreshPending;
 
     /// <summary>The Groups row a drag is currently over, if any; see <see cref="WireEditGroupRow"/>.</summary>
-    private Border? _orbitEditHotGroupRow;
+    private ContentControl? _orbitEditHotGroupRow;
 
     // Built from codepoints rather than written as literals: a private-use character is invisible in
     // an editor, so a stray paste can swap it for another one without anyone seeing why an icon broke.
@@ -4825,9 +4825,9 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>
     /// One group on the orbit, listed under Groups as a place to drop things: its name, how full it
-    /// is, and drag feedback (see <see cref="WireEditGroupRow"/>). A Border rather than a Button
-    /// because clicking it does nothing: a row that lights up under the pointer and then ignores the
-    /// click would read as broken.
+    /// is, and drag feedback (see <see cref="WireEditGroupRow"/>). Not a Button because clicking it
+    /// does nothing: a row that lights up under the pointer and then ignores the click would read
+    /// as broken.
     /// </summary>
     private FrameworkElement BuildEditGroupRow(OrbitItem group)
     {
@@ -4873,7 +4873,7 @@ public sealed partial class ShellWindow : Window
             BorderBrush = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(1),
             AllowDrop = true,
-            Child = body,
+            Content = body,
         };
 
         bool full = GroupDropRules.IsFull(group);
@@ -4892,10 +4892,10 @@ public sealed partial class ShellWindow : Window
     /// Lets a group row be dragged onto the ring — the full circle or the corner's quadrant — the
     /// same way a suggestion row is: the group travels as a live reference
     /// (<see cref="_sidebarDragTemplate"/>) and the ring drops a copy of it, children included (see
-    /// <see cref="CloneOrbitTemplate"/>). A Border starts the framework's own drag, so unlike
+    /// <see cref="CloneOrbitTemplate"/>). This row starts the framework's own drag, so unlike
     /// <see cref="WireEditRow"/> there is no pointer capture to work around.
     /// </summary>
-    private void WireEditGroupDrag(Border row, OrbitItem group)
+    private void WireEditGroupDrag(ContentControl row, OrbitItem group)
     {
         row.CanDrag = true;
         row.DragStarting += (_, e) =>
@@ -4927,7 +4927,7 @@ public sealed partial class ShellWindow : Window
     /// cannot leave the row looking as though nothing were happening.
     /// </para>
     /// </summary>
-    private void WireEditGroupRow(Border row, OrbitItem group, TextBlock count)
+    private void WireEditGroupRow(ContentControl row, OrbitItem group, TextBlock count)
     {
         // Null while a text payload is still being read to see whether it is a path or a link.
         bool? usable = false;
