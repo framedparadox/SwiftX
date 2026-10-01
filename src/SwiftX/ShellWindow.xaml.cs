@@ -4487,8 +4487,95 @@ public sealed partial class ShellWindow : Window
         // may not go anywhere else. Only the click is held back for a ticked row, so a stray click
         // does not put a second copy in the next free slot.
         WireEditRow(row, template, present ? null : () => AddToOrbitFromSidebar(template));
+        row.ContextFlyout = BuildEditRowMenu(row, template, present);
 
         return row;
+    }
+
+    /// <summary>
+    /// The right-click menu of a suggestion row: put a copy in one of the orbit's groups (or in a
+    /// new one), or take the thing off the orbit wherever it sits. A tool is neither: the Tools
+    /// group owns them and puts them back on every launch, so both entries are greyed.
+    /// </summary>
+    private MenuFlyout BuildEditRowMenu(FrameworkElement anchor, OrbitItem template, bool present)
+    {
+        var menu = new MenuFlyout();
+
+        var addToGroup = new MenuFlyoutSubItem
+        {
+            Text = "Add to group",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE8F4) },
+            IsEnabled = !template.IsTool,
+        };
+        foreach (var group in ElementLibrary.UserGroups(_manager.Config.Primary.Items))
+        {
+            var verdict = GroupDropRules.Check(group, template);
+            var entry = new MenuFlyoutItem
+            {
+                Text = $"{group.DisplayName}  ({GroupDropRules.Count(group)}/{GroupDropRules.Capacity})",
+                IsEnabled = verdict == GroupDropVerdict.Allowed,
+            };
+            if (GroupDropRules.Reason(verdict) is { } why)
+                ToolTipService.SetToolTip(entry, why);
+            entry.Click += (_, _) =>
+            {
+                var result = GroupDropRules.TryAdd(group, CloneOrbitTemplate(template));
+                if (result == GroupDropVerdict.Allowed)
+                {
+                    _manager.NotifyItemsChanged();
+                    OrbitEditSummary.Text = $"Added {template.DisplayName} to {group.DisplayName}.";
+                }
+                else if (GroupDropRules.Reason(result) is { } reason)
+                {
+                    OrbitEditSummary.Text = reason;
+                }
+            };
+            addToGroup.Items.Add(entry);
+        }
+
+        if (addToGroup.Items.Count > 0)
+            addToGroup.Items.Add(new MenuFlyoutSeparator());
+        var newGroup = new MenuFlyoutItem
+        {
+            Text = "New group" + SidebarEllipsis,
+            Icon = new FontIcon { Glyph = SidebarAddGlyph },
+        };
+        newGroup.Click += (_, _) => ShowNewGroupFlyout(anchor, template);
+        addToGroup.Items.Add(newGroup);
+        menu.Items.Add(addToGroup);
+
+        var remove = new MenuFlyoutItem
+        {
+            Text = "Remove",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D) },
+            IsEnabled = present && !template.IsTool,
+        };
+        remove.Click += (_, _) => RemoveFromOrbitByTarget(template.Target);
+        menu.Items.Add(remove);
+
+        return menu;
+    }
+
+    /// <summary>
+    /// Takes every copy of <paramref name="target"/> off the orbit: top-level places are left empty,
+    /// and a copy inside a group is simply removed from it.
+    /// </summary>
+    private void RemoveFromOrbitByTarget(string target)
+    {
+        var items = _manager.Config.Primary.Items;
+        foreach (var item in items.Where(i => !i.IsGroup && !i.IsEmpty &&
+                     string.Equals(i.Target, target, StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            if (ReferenceEquals(_selectedItem, item)) HideItemDetails();
+            OrbitSlots.Vacate(items, item);
+        }
+        foreach (var group in items.Where(i => i.IsGroup && !ElementLibrary.IsBuiltInToolsGroup(i)))
+            group.Children.RemoveAll(c =>
+                string.Equals(c.Target, target, StringComparison.OrdinalIgnoreCase));
+
+        _manager.NotifyItemsChanged();
+        RenderPreview();
+        RebuildItemsList();
     }
 
     /// <summary>
@@ -4797,7 +4884,7 @@ public sealed partial class ShellWindow : Window
         return row;
     }
 
-    private void ShowNewGroupFlyout(FrameworkElement anchor)
+    private void ShowNewGroupFlyout(FrameworkElement anchor, OrbitItem? seed = null)
     {
         // A full orbit has nowhere to put the group, so say so (the same line a full orbit gives a
         // click on any other row) instead of asking for a name that cannot be used. A replace
@@ -4829,7 +4916,10 @@ public sealed partial class ShellWindow : Window
             flyout.Hide();
             // Through the same path a row's click takes, so a full orbit and an armed replace are
             // handled exactly as they are for everything else in the sidebar.
-            AddToOrbitFromSidebar(ElementLibrary.NewGroup(name.Text));
+            var group = ElementLibrary.NewGroup(name.Text);
+            if (seed is not null)
+                group.Children.Add(CloneOrbitTemplate(seed));
+            AddToOrbitFromSidebar(group);
         }
 
         create.Click += (_, _) => Commit();
@@ -4912,6 +5002,16 @@ public sealed partial class ShellWindow : Window
         // Draggable onto the full ring or the corner's quadrant: the group travels as a live
         // reference and the ring drops a copy of it, children included (see CloneOrbitTemplate).
         WireSidebarDrag(row, group);
+
+        // A group can only be removed: what goes in it is dragged in, and what comes out of it is
+        // managed on the Elements screen.
+        var removeGroup = new MenuFlyoutItem
+        {
+            Text = "Remove",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D) },
+        };
+        removeGroup.Click += (_, _) => RemoveOrbitItem(group);
+        row.ContextFlyout = new MenuFlyout { Items = { removeGroup } };
         return row;
     }
 
