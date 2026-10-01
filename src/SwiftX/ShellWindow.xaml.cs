@@ -970,7 +970,7 @@ public sealed partial class ShellWindow : Window
 
     private void ShowHomeOrbitHover()
     {
-        int used = _manager.Config.Primary.Items.Count(i => !i.Hidden);
+        int used = OrbitSlots.Used(_manager.Config.Primary.Items);
         int slots = OrbitMetrics.UserSlotCount;
         HomeOrbitHoverCount.Text = $"{used} of {slots} slots in use";
         HomeOrbitHoverSummary.Text =
@@ -1639,14 +1639,14 @@ public sealed partial class ShellWindow : Window
         Canvas.SetTop(hub, cy - logo / 2);
         PreviewCanvas.Children.Add(hub);
 
-        var items = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(OrbitMetrics.UserSlotCount).ToList();
+        var items = OrbitSlots.Visible(_manager.Config.Primary.Items);
 
         // A full orbit has no empty slot left to add into, so the button that would open the add
         // dialog goes away rather than sitting there offering something the orbit cannot take.
         // Reset defaults stays: it is still meaningful on a full orbit.
-        AddItemButton.Visibility = items.Count >= OrbitMetrics.UserSlotCount
-            ? Visibility.Collapsed
-            : Visibility.Visible;
+        AddItemButton.Visibility = OrbitSlots.HasRoom(_manager.Config.Primary.Items)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
         for (int i = 0; i < OrbitMetrics.SlotCount; i++)
         {
@@ -1659,7 +1659,7 @@ public sealed partial class ShellWindow : Window
             bool pinned = i >= OrbitMetrics.UserSlotCount;
             OrbitItem? item = pinned
                 ? (i == OrbitMetrics.UserSlotCount ? SystemOrbitItems.CreateSettings() : SystemOrbitItems.CreateClose())
-                : i < items.Count ? items[i] : null;
+                : i < items.Count && !items[i].IsEmpty ? items[i] : null;
 
             var border = new Border
             {
@@ -2157,16 +2157,9 @@ public sealed partial class ShellWindow : Window
         _dragTentativeSlot = targetSlot;
         if (targetSlot < 0 || targetSlot >= OrbitMetrics.UserSlotCount) return;
 
-        var visible = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(OrbitMetrics.UserSlotCount).ToList();
-        int vFrom = visible.IndexOf(_dragItem);
-        if (vFrom < 0) return;
-        int vTo = Math.Min(targetSlot, visible.Count - 1);
-        if (vTo != vFrom)
-        {
-            visible.RemoveAt(vFrom);
-            visible.Insert(vTo, _dragItem);
-        }
-        ReflowOrbitBorders(visible);
+        var visible = OrbitSlots.Visible(_manager.Config.Primary.Items);
+        if (!visible.Contains(_dragItem)) return;
+        ReflowOrbitBorders(OrbitSlots.Moved(visible, _dragItem, targetSlot));
     }
 
     /// <summary>
@@ -2407,7 +2400,8 @@ public sealed partial class ShellWindow : Window
         // drag says no over one rather than accepting a drop it would then quietly ignore.
         var occupant = border?.Tag as OrbitItem;
         bool intoGroup = !_previewQuadrant && occupant is { IsGroup: true } &&
-                         !ElementLibrary.IsBuiltInToolsGroup(occupant);
+                         !ElementLibrary.IsBuiltInToolsGroup(occupant) &&
+                         _sidebarDragTemplate is not { IsGroup: true };
         bool blocked = occupant is { IsTool: true };
         e.AcceptedOperation = blocked ? DataPackageOperation.None : DataPackageOperation.Copy;
         if (e.DragUIOverride is { } ui)
@@ -2545,7 +2539,7 @@ public sealed partial class ShellWindow : Window
             // A group on the ring is a place to put things, not something to swap out: dropping
             // on it adds to it (a group taking a group, a full group, or a duplicate is refused
             // by GroupDropRules and leaves everything as it was).
-            if (item.IsGroup && !ElementLibrary.IsBuiltInToolsGroup(item))
+            if (item.IsGroup && !added.IsGroup && !ElementLibrary.IsBuiltInToolsGroup(item))
             {
                 if (GroupDropRules.TryAdd(item, added) != GroupDropVerdict.Allowed) return;
                 _manager.NotifyItemsChanged();
@@ -2564,8 +2558,7 @@ public sealed partial class ShellWindow : Window
         }
         else
         {
-            if (items.Count(i => !i.Hidden) >= OrbitMetrics.UserSlotCount) return;
-            items.Add(added);
+            if (!OrbitSlots.PlaceAt(items, slot, added)) return;
         }
 
         _manager.NotifyItemsChanged();
@@ -2713,7 +2706,7 @@ public sealed partial class ShellWindow : Window
     /// <summary>Takes one item off the orbit — the same delete the Elements screen's own rows do.</summary>
     private void RemoveOrbitItem(OrbitItem item)
     {
-        if (!_manager.Config.Primary.Items.Remove(item))
+        if (!OrbitSlots.Vacate(_manager.Config.Primary.Items, item))
             return;
 
         if (ReferenceEquals(_expandedGroup, item)) CollapseGroup();
@@ -3120,33 +3113,32 @@ public sealed partial class ShellWindow : Window
         // ignored rather than clamped, so the item stays where the user last put it.
         if (targetSlot < 0 || targetSlot >= OrbitMetrics.UserSlotCount) return;
 
-        var visible = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(OrbitMetrics.UserSlotCount).ToList();
-        int from = visible.IndexOf(dragged);
-        if (from < 0) return;
-
-        // Clamp onto the last occupied slot: dropping past the end of a part-filled orbit means
-        // "put it last", not "leave a hole".
-        int to = Math.Min(targetSlot, visible.Count - 1);
-        if (to == from) return;
+        var before = OrbitSlots.Visible(_manager.Config.Primary.Items);
+        if (!before.Contains(dragged)) return;
 
         // Move, don't insert-before-the-occupant. That older form removed the item first and so
         // landed a forward drag one slot short of where it was dropped — dragging an item to the
-        // right appeared to do nothing at all.
-        visible.RemoveAt(from);
-        visible.Insert(to, dragged);
+        // right appeared to do nothing at all. Dropped on an empty slot past the last item it goes
+        // exactly there (see OrbitSlots.Moved), leaving its old slot empty.
+        var visible = OrbitSlots.Moved(before, dragged, targetSlot);
+        if (visible.SequenceEqual(before)) return;
 
         // Write the new order back over the positions the visible items already occupy, so
         // hidden entries keep their place in the list instead of being shuffled by an index
-        // computed from a filtered view of it.
+        // computed from a filtered view of it. A move into empty slots past the end is longer than
+        // what was there, so the extra places go on the end.
         var items = _manager.Config.Primary.Items;
         var positions = new List<int>();
-        for (int i = 0; i < items.Count && positions.Count < visible.Count; i++)
+        for (int i = 0; i < items.Count && positions.Count < before.Count; i++)
         {
             if (!items[i].Hidden)
                 positions.Add(i);
         }
         for (int i = 0; i < positions.Count; i++)
             items[positions[i]] = visible[i];
+        for (int i = positions.Count; i < visible.Count; i++)
+            items.Add(visible[i]);
+        OrbitSlots.TrimTrailing(items);
 
         _manager.NotifyItemsChanged();
         RenderPreview();
@@ -4015,17 +4007,29 @@ public sealed partial class ShellWindow : Window
 
         _manager.OpenAddItem(added =>
         {
-            _manager.Config.Primary.Items.Add(added);
+            AddToTopLevel(added);
             _manager.NotifyItemsChanged();
             RenderPreview();
             RebuildItemsList();
         }, _manager.Config.Primary.Items);
     }
 
+    /// <summary>
+    /// Puts something the add dialog returned on the top-level orbit: in the first empty slot, else
+    /// after the last. The dialog does not check for room itself, so a full orbit still takes it at
+    /// the end, as it always did.
+    /// </summary>
+    private void AddToTopLevel(OrbitItem added)
+    {
+        var items = _manager.Config.Primary.Items;
+        if (!OrbitSlots.Place(items, added))
+            items.Add(added);
+    }
+
     private void AddAppItem_Click(object sender, RoutedEventArgs e) =>
         _manager.OpenAddItem(added =>
         {
-            _manager.Config.Primary.Items.Add(added);
+            AddToTopLevel(added);
             _manager.NotifyItemsChanged();
             RenderPreview();
             RebuildItemsList();
@@ -4212,7 +4216,7 @@ public sealed partial class ShellWindow : Window
             return;
         }
 
-        int used = _manager.Config.Primary.Items.Count(i => !i.Hidden);
+        int used = OrbitSlots.Used(_manager.Config.Primary.Items);
         int free = Math.Max(0, OrbitMetrics.UserSlotCount - used);
         OrbitEditSummary.Text = free switch
         {
@@ -4349,10 +4353,8 @@ public sealed partial class ShellWindow : Window
         bool added = false;
         foreach (var target in targets)
         {
-            if (items.Count(i => !i.Hidden) >= OrbitMetrics.UserSlotCount)
+            if (!OrbitSlots.Place(items, OrbitItemFactory.FromTarget(target)))
                 break;
-            var item = OrbitItemFactory.FromTarget(target);
-            items.Add(item);
             added = true;
         }
 
@@ -4431,7 +4433,7 @@ public sealed partial class ShellWindow : Window
         Grid.SetColumn(chevron, 2);
         header.Children.Add(chevron);
 
-        var button = new Button
+        var button = new HandButton
         {
             Height = 36,
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -4484,7 +4486,7 @@ public sealed partial class ShellWindow : Window
         // Always draggable, ticked or not: the tick says it is already on the orbit, not that it
         // may not go anywhere else. Only the click is held back for a ticked row, so a stray click
         // does not put a second copy in the next free slot.
-        WireEditRow(row, template, clickAdds: !present);
+        WireEditRow(row, template, present ? null : () => AddToOrbitFromSidebar(template));
 
         return row;
     }
@@ -4509,7 +4511,7 @@ public sealed partial class ShellWindow : Window
     /// text put on the package only exists to give the OS a real drag operation to run.
     /// </para>
     /// </summary>
-    private void WireEditRow(Button row, OrbitItem template, bool clickAdds = true)
+    private void WireEditRow(Button row, OrbitItem template, Action? onClick)
     {
         // Per row rather than on the window: a drag and the click it must suppress belong to the
         // same row, and none of this outlives the sidebar rebuild that replaces that row.
@@ -4526,8 +4528,7 @@ public sealed partial class ShellWindow : Window
                 dragged = false;
                 return;
             }
-            if (clickAdds)
-                AddToOrbitFromSidebar(template);
+            onClick?.Invoke();
         };
 
         row.CanDrag = true;
@@ -4596,15 +4597,21 @@ public sealed partial class ShellWindow : Window
     /// <see cref="OrbitItem"/> objects and putting the same one in two slots would edit both at
     /// once. Shared by the click and the drag/drop paths onto the sidebar and the ring alike.
     /// </summary>
-    private static OrbitItem CloneOrbitTemplate(OrbitItem template) => new()
+    private static OrbitItem CloneOrbitTemplate(OrbitItem template)
     {
-        Kind = template.Kind,
-        DisplayName = template.DisplayName,
-        Target = template.Target,
-        Arguments = template.Arguments,
-        CustomIconPath = template.CustomIconPath,
-        CustomGlyph = template.CustomGlyph,
-    };
+        var clone = new OrbitItem
+        {
+            Kind = template.Kind,
+            DisplayName = template.DisplayName,
+            Target = template.Target,
+            Arguments = template.Arguments,
+            CustomIconPath = template.CustomIconPath,
+            CustomGlyph = template.CustomGlyph,
+        };
+        // A group is copied with what it holds, each child a fresh item of its own.
+        clone.Children.AddRange(template.Children.Where(c => !c.IsEmpty).Select(CloneOrbitTemplate));
+        return clone;
+    }
 
     /// <summary>
     /// What a category with nothing in it says. Reachable in practice: the link suggestions are
@@ -4624,7 +4631,7 @@ public sealed partial class ShellWindow : Window
     private Button BuildEditRowShell(
         string glyph, string text, string? badgeGlyph, Brush? badgeBrush, OrbitItem? iconSource = null)
     {
-        var button = new Button
+        var button = new HandButton
         {
             Height = 28,
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -4737,7 +4744,7 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>Whether every user slot on the orbit is taken.</summary>
     private bool OrbitIsFull =>
-        _manager.Config.Primary.Items.Count(i => !i.Hidden) >= OrbitMetrics.UserSlotCount;
+        !OrbitSlots.HasRoom(_manager.Config.Primary.Items);
 
     /// <summary>
     /// The Groups category: a "New group" row, then one drop-target row for each group on the orbit
@@ -4759,8 +4766,9 @@ public sealed partial class ShellWindow : Window
     private Button BuildNewGroupRow()
     {
         var row = BuildEditRowShell(SidebarAddGlyph, "New group" + SidebarEllipsis, null, null);
-        ToolTipService.SetToolTip(row, "Create an empty group and put it on the orbit");
-        row.Click += (_, _) => ShowNewGroupFlyout(row);
+        ToolTipService.SetToolTip(row, "Create an empty group and put it on the orbit, or drag it onto the ring");
+        // Clicked it asks for a name; dragged onto the ring it drops an empty group there.
+        WireEditRow(row, ElementLibrary.NewGroup(null), () => ShowNewGroupFlyout(row));
         return row;
     }
 
@@ -4838,20 +4846,34 @@ public sealed partial class ShellWindow : Window
         // pointer across the icon and the name raises no enter or leave of its own to flicker the
         // highlight.
         content.IsHitTestVisible = false;
+        content.Height = 28;
+
+        // What the group holds, listed under it as indented child rows. They sit inside the drop
+        // target rather than beside it, so a drop anywhere on the group and its children lands in
+        // the group instead of falling through to the sidebar's add-to-orbit.
+        var body = new StackPanel { IsHitTestVisible = false, Children = { content } };
+        foreach (var child in group.Children.Where(c => !c.IsEmpty))
+        {
+            var childContent = BuildEditRowContent(child.Glyph, child.DisplayName, null, null, iconSource: child);
+            childContent.Height = 24;
+            childContent.Margin = new Thickness(20, 0, 0, 0);
+            childContent.Opacity = child.Hidden ? 0.5 : 1;
+            body.Children.Add(childContent);
+        }
 
         // Transparent rather than null, so the whole row takes the pointer, not just what is drawn.
         // The 1px border that is only painted while a drag is over it is paid for out of the padding,
         // so the icon and name sit where they do on every other row.
-        var row = new Border
+        var row = new HandBorder
         {
-            Height = 28,
+            MinHeight = 28,
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(9, 0, 9, 0),
             Background = new SolidColorBrush(Colors.Transparent),
             BorderBrush = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(1),
             AllowDrop = true,
-            Child = content,
+            Child = body,
         };
 
         bool full = GroupDropRules.IsFull(group);
@@ -4862,7 +4884,27 @@ public sealed partial class ShellWindow : Window
             : $"Drag an app, file, folder or link here to add it to {group.DisplayName}");
 
         WireEditGroupRow(row, group, count);
+        WireEditGroupDrag(row, group);
         return row;
+    }
+
+    /// <summary>
+    /// Lets a group row be dragged onto the ring — the full circle or the corner's quadrant — the
+    /// same way a suggestion row is: the group travels as a live reference
+    /// (<see cref="_sidebarDragTemplate"/>) and the ring drops a copy of it, children included (see
+    /// <see cref="CloneOrbitTemplate"/>). A Border starts the framework's own drag, so unlike
+    /// <see cref="WireEditRow"/> there is no pointer capture to work around.
+    /// </summary>
+    private void WireEditGroupDrag(Border row, OrbitItem group)
+    {
+        row.CanDrag = true;
+        row.DragStarting += (_, e) =>
+        {
+            _sidebarDragTemplate = group;
+            e.Data.SetText(group.DisplayName);
+            e.Data.RequestedOperation = DataPackageOperation.Copy;
+        };
+        row.DropCompleted += (_, _) => EndSidebarDrag();
     }
 
     /// <summary>
@@ -5165,7 +5207,7 @@ public sealed partial class ShellWindow : Window
             return;
         }
 
-        _manager.Config.Primary.Items.Add(clone);
+        OrbitSlots.Place(_manager.Config.Primary.Items, clone);
 
         // Through the manager, so the orbit overlay and anything else watching hear about it and
         // the config is written — the same path AddItem_Click takes.
@@ -6504,7 +6546,7 @@ public sealed partial class ShellWindow : Window
                 new CardAction(0xE74D, "Delete", "Delete " + group.DisplayName, () =>
                 {
                     // The whole group goes, children and all: they only exist inside it.
-                    _manager.Config.Primary.Items.Remove(group);
+                    OrbitSlots.Vacate(_manager.Config.Primary.Items, group);
                     _manager.NotifyItemsChanged();
                     RebuildItemsList();
                     RenderPreview();
@@ -6560,7 +6602,7 @@ public sealed partial class ShellWindow : Window
                 new CardAction(0xE74D, "Delete", "Delete " + item.DisplayName, () =>
                 {
                     // Top level and inside a group both, since the same card builds for either.
-                    _manager.Config.Primary.Items.Remove(item);
+                    OrbitSlots.Vacate(_manager.Config.Primary.Items, item);
                     foreach (var group in _manager.Config.Primary.Items.Where(i => i.IsGroup))
                         group.Children.Remove(item);
                     _manager.NotifyItemsChanged();

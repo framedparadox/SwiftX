@@ -504,7 +504,8 @@ public sealed partial class OrbitWindow : Window
         foreach (var item in _manager.Config.Primary.Items.Where(i => !i.Hidden))
         {
             if (slot >= OrbitMetrics.UserSlotCount) break;
-            slots.Add((item, slot++));
+            // A removed item's place stays on the ring as an "Add new" slot of its own.
+            slots.Add((item.IsEmpty ? SystemOrbitItems.CreateAddNew() : item, slot++));
         }
 
         // Fewer than UserSlotCount items leaves the rest of the orbit empty — fill each remaining
