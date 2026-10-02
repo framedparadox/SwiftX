@@ -36,6 +36,14 @@ public sealed partial class AddItemWindow : Window
     private AddKind _kind = AddKind.App;
     private bool _nameEdited;
 
+    private void OnWindowActivated(object sender, WindowActivatedEventArgs args) => ApplyChromeTheme();
+
+    private void OnWindowClosed(object sender, WindowEventArgs args)
+    {
+        Closed -= OnWindowClosed;
+        Activated -= OnWindowActivated;
+    }
+
     /// <summary>
     /// Same dialog, two names: every "Add new" reached from the orbit, the tray icon, or the orbit
     /// preview itself is still adding "to the orbit", but the "Elements" tab's own "Add item…" button
@@ -110,7 +118,11 @@ public sealed partial class AddItemWindow : Window
             ApplyAccentColorOverride();
             ApplyChromeTheme();
         };
-        Activated += (_, _) => ApplyChromeTheme();
+        // Named, and removed again in OnWindowClosed: a Window that leaves a handler of its own
+        // method on its own Activated is never garbage collected — see ShellWindow.OnWindowClosed
+        // for the measurement.
+        Activated += OnWindowActivated;
+        Closed += OnWindowClosed;
 
         if (_appWindow.Presenter is OverlappedPresenter p)
         {

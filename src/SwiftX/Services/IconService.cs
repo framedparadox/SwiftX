@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using SwiftX.Interop;
@@ -32,7 +33,14 @@ public static class IconService
         return c;
     }
 
-    public static async Task<ImageSource?> LoadIconAsync(OrbitItem item)
+    /// <param name="decodePixelWidth">
+    /// When positive, the width in device pixels to decode the picture at, instead of at its own
+    /// size. The shell's jumbo icon is 256 px and the orbit draws it at 22 DIPs: left to the
+    /// compositor, that 10x reduction is a bilinear sample that skips most of the source pixels,
+    /// which is what put a staircase on every edge inside the icon. Decoding at the drawn size
+    /// makes the decoder do the reduction, with a filter that averages them.
+    /// </param>
+    public static async Task<ImageSource?> LoadIconAsync(OrbitItem item, int decodePixelWidth = 0)
     {
         try
         {
@@ -41,6 +49,15 @@ public static class IconService
             // silently overwrite the user's choice with a bitmap once it lands.
             if (!string.IsNullOrEmpty(item.CustomGlyph))
                 return null;
+
+            // Every existence check below is a file-system call, and on a network path it blocks
+            // for as long as the network takes to give up: measured at 21 s for an unroutable
+            // host, which is what an orbit item on a share looks like from a laptop off the VPN.
+            // Callers start this method on the UI thread, and an async method runs synchronously up
+            // to its first await — so made inline, those checks froze the whole app, once per
+            // summon, until the redirector's own timeout. They are made on the thread pool and only
+            // their answers come back; the decoding that follows needs this thread and stays on it.
+            var probe = await ProbeOncePerItemAsync(item);
 
             // 1. Explicit user-supplied icon wins — but only if it actually decodes. A path that
             // has since been deleted, or an image the XAML stack can't read, falls through to the
@@ -52,16 +69,16 @@ public static class IconService
             if (!string.IsNullOrWhiteSpace(item.CustomIconPath))
             {
                 var (modulePath, moduleIndex) = SplitModuleIconPath(item.CustomIconPath!);
-                if (moduleIndex is { } index && File.Exists(modulePath))
+                if (moduleIndex is { } index && probe.ModuleExists)
                 {
-                    var moduleIcon = await LoadModuleIconAsync(modulePath, index);
+                    var moduleIcon = await LoadModuleIconAsync(modulePath, index, decodePixelWidth);
                     if (moduleIcon is not null)
                         return moduleIcon;
                     Diag.Log($"IconService: module icon '{item.CustomIconPath}' didn't decode — using the default");
                 }
-                else if (File.Exists(item.CustomIconPath))
+                else if (probe.CustomFileExists)
                 {
-                    var custom = await FromFileAsync(item.CustomIconPath!);
+                    var custom = await FromFileAsync(item.CustomIconPath!, decodePixelWidth);
                     if (custom is not null)
                         return custom;
                     Diag.Log($"IconService: custom icon '{item.CustomIconPath}' didn't decode — using the default");
@@ -74,17 +91,17 @@ public static class IconService
                 case OrbitItemKind.Application:
                 case OrbitItemKind.File:
                 case OrbitItemKind.Shortcut:
-                    if (File.Exists(item.Target))
-                        return await ShellIconAsync(item.Target);
+                    if (probe.TargetFileExists)
+                        return await ShellIconAsync(item.Target, decodePixelWidth);
                     break;
 
                 case OrbitItemKind.Folder:
-                    if (Directory.Exists(item.Target))
-                        return await ShellIconAsync(item.Target);
+                    if (probe.TargetDirectoryExists)
+                        return await ShellIconAsync(item.Target, decodePixelWidth);
                     break;
 
                 case OrbitItemKind.WebLink:
-                    return await FaviconAsync(item.Target);
+                    return await FaviconAsync(item.Target, decodePixelWidth);
             }
         }
         catch (Exception ex)
@@ -94,6 +111,78 @@ public static class IconService
         return null;
     }
 
+    /// <summary>The answers <see cref="LoadIconAsync"/> needs from the file system, gathered in one
+    /// place so they can be gathered off the UI thread.</summary>
+    internal readonly record struct IconProbe(
+        bool ModuleExists, bool CustomFileExists, bool TargetFileExists, bool TargetDirectoryExists);
+
+    /// <summary>
+    /// Runs <see cref="Probe"/> on the thread pool. <paramref name="fileExists"/> and
+    /// <paramref name="directoryExists"/> default to the real checks; a test passes its own to see
+    /// which thread they run on without needing a share that never answers.
+    /// </summary>
+    internal static Task<IconProbe> ProbeAsync(
+        OrbitItem item, Func<string, bool>? fileExists = null, Func<string, bool>? directoryExists = null) =>
+        Task.Run(() => Probe(item, fileExists ?? File.Exists, directoryExists ?? Directory.Exists));
+
+    private static readonly ConcurrentDictionary<string, Task<IconProbe>> ProbesInFlight = new();
+
+    /// <summary>
+    /// <see cref="ProbeAsync"/>, at most once at a time per item. An item on a dead share keeps one
+    /// pool thread parked for the length of the SMB timeout, and a failed resolution is retried on
+    /// every summon — so without this, summoning the orbit a few times during that window parked a
+    /// thread per summon on the same unanswerable check. Callers that arrive while a probe for the
+    /// same item is running share its answer; the entry is removed the moment it completes, so the
+    /// next summon asks again (a share that has come back is noticed at once).
+    /// </summary>
+    internal static Task<IconProbe> ProbeOncePerItemAsync(OrbitItem item, Func<OrbitItem, IconProbe>? probe = null)
+    {
+        var key = item.IconKey;
+        var task = ProbesInFlight.GetOrAdd(key, _ => Task.Run(() => (probe ?? DefaultProbe)(item)));
+
+        // Registered after the add, so it still runs if the probe finished first, and a
+        // key-and-value removal so it can never evict a newer probe that replaced this one.
+        _ = task.ContinueWith(
+            t => ProbesInFlight.TryRemove(new KeyValuePair<string, Task<IconProbe>>(key, t)),
+            TaskScheduler.Default);
+        return task;
+    }
+
+    private static IconProbe DefaultProbe(OrbitItem item) => Probe(item, File.Exists, Directory.Exists);
+
+    /// <summary>
+    /// Asks only the questions the item can actually need answered: a custom icon is one file or one
+    /// module, and the target is a file or a folder depending on the kind. Blocking, by design — it
+    /// is the caller's job not to be a thread that matters (see <see cref="ProbeAsync"/>).
+    /// </summary>
+    internal static IconProbe Probe(OrbitItem item, Func<string, bool> fileExists, Func<string, bool> directoryExists)
+    {
+        bool moduleExists = false, customFileExists = false;
+        if (!string.IsNullOrWhiteSpace(item.CustomIconPath))
+        {
+            var (modulePath, moduleIndex) = SplitModuleIconPath(item.CustomIconPath!);
+            if (moduleIndex is not null)
+                moduleExists = fileExists(modulePath);
+            else
+                customFileExists = fileExists(item.CustomIconPath!);
+        }
+
+        bool targetFile = false, targetDirectory = false;
+        switch (item.Kind)
+        {
+            case OrbitItemKind.Application:
+            case OrbitItemKind.File:
+            case OrbitItemKind.Shortcut:
+                targetFile = fileExists(item.Target);
+                break;
+            case OrbitItemKind.Folder:
+                targetDirectory = directoryExists(item.Target);
+                break;
+        }
+
+        return new IconProbe(moduleExists, customFileExists, targetFile, targetDirectory);
+    }
+
     /// <summary>
     /// Resolves a file, app, or folder's shell icon via pure Win32 — no WinRT Storage broker
     /// involved, so this needs no <c>broadFileSystemAccess</c> capability. Prefers the 256x256
@@ -101,7 +190,7 @@ public static class IconService
     /// icon (<see cref="NativeMethods.SHGetFileInfo"/> with <c>SHGFI_ICON</c>) if the jumbo
     /// lookup fails for any reason.
     /// </summary>
-    private static async Task<ImageSource?> ShellIconAsync(string path)
+    private static async Task<ImageSource?> ShellIconAsync(string path, int decodePixelWidth = 0)
     {
         nint hIcon = TryGetJumboIcon(path);
         if (hIcon == nint.Zero)
@@ -117,7 +206,7 @@ public static class IconService
 
         try
         {
-            return await DecodeHIconAsync(hIcon);
+            return await DecodeHIconAsync(hIcon, decodePixelWidth);
         }
         finally
         {
@@ -132,7 +221,7 @@ public static class IconService
     /// Neither owns the handle: the caller extracted or looked it up and is the one that has to
     /// destroy it.
     /// </summary>
-    private static async Task<ImageSource?> DecodeHIconAsync(nint hIcon)
+    private static async Task<ImageSource?> DecodeHIconAsync(nint hIcon, int decodePixelWidth = 0)
     {
         byte[]? png = TryEncodeIconPng(hIcon);
         if (png is null)
@@ -146,7 +235,7 @@ public static class IconService
             bitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
             png = ms.ToArray();
         }
-        return await DecodeAsync(png);
+        return await DecodeAsync(png, decodePixelWidth);
     }
 
     /// <summary>
@@ -177,7 +266,7 @@ public static class IconService
     /// form a Windows shortcut's own icon location field uses, so it round-trips through the same
     /// property a plain image file already does.
     /// </summary>
-    public static async Task<ImageSource?> LoadModuleIconAsync(string path, int index)
+    public static async Task<ImageSource?> LoadModuleIconAsync(string path, int index, int decodePixelWidth = 0)
     {
         if (NativeMethods.ExtractIconEx(path, index, out nint large, out nint small, 1) == 0)
             return null;
@@ -188,7 +277,7 @@ public static class IconService
 
         try
         {
-            return await DecodeHIconAsync(hIcon);
+            return await DecodeHIconAsync(hIcon, decodePixelWidth);
         }
         catch (Exception ex)
         {
@@ -365,7 +454,7 @@ public static class IconService
     /// A custom icon is drawn at 44 px; anything past the ceiling is not one.
     /// </para>
     /// </summary>
-    private static async Task<ImageSource?> FromFileAsync(string path)
+    private static async Task<ImageSource?> FromFileAsync(string path, int decodePixelWidth = 0)
     {
         var read = await InputLimits.ReadBytesAsync(path, InputLimits.MaxIconBytes);
         if (!read.Ok)
@@ -373,7 +462,7 @@ public static class IconService
             Diag.Log($"IconService: custom icon '{path}' not read: {read.Error}");
             return null;
         }
-        return await DecodeAsync(read.Bytes);
+        return await DecodeAsync(read.Bytes, decodePixelWidth);
     }
 
     // ---- Favicons ---------------------------------------------------------
@@ -383,14 +472,19 @@ public static class IconService
     /// site itself (its /favicon.ico), falling back to a favicon service. Returns null (→ globe
     /// glyph) when nothing usable is found or there's no connectivity.
     /// </summary>
-    private static async Task<ImageSource?> FaviconAsync(string url)
+    private static async Task<ImageSource?> FaviconAsync(string url, int decodePixelWidth = 0)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Host))
             return null;
 
         string host = uri.Host;
         string scheme = uri.Scheme is "http" or "https" ? uri.Scheme : "https";
-        string cacheFile = Path.Combine(CacheDir, Sanitize(host) + ".ico");
+        // The site's own favicon lives on the site's own port. Authority is host plus the port when
+        // it is not the scheme's default, so a dev server on localhost:3000 asks localhost:3000 —
+        // and not port 80, where there is nothing — and two servers on the same host do not share
+        // one cached icon. The icon service below only ever knows hosts.
+        string authority = uri.Scheme is "http" or "https" ? uri.Authority : host;
+        string cacheFile = Path.Combine(CacheDir, Sanitize(authority) + ".ico");
 
         // 1. Cached copy. Bounded on the way back in, not only on the way out: what this cache
         // holds is whatever was written to a predictable path under the user's own data directory,
@@ -402,7 +496,7 @@ public static class IconService
             var read = await InputLimits.ReadBytesAsync(cacheFile, MaxFaviconBytes);
             if (read.Ok)
             {
-                var cached = await DecodeAsync(read.Bytes);
+                var cached = await DecodeAsync(read.Bytes, decodePixelWidth);
                 if (cached is not null)
                     return cached;
             }
@@ -412,10 +506,14 @@ public static class IconService
             }
         }
 
+        // A host that just failed is not asked again until its back-off is up: see FaviconMissCache.
+        if (Misses.ShouldSkip(authority))
+            return null;
+
         // 2. Fetch, preferring the site's own favicon (no third party), then a service fallback.
         foreach (var candidate in new[]
                  {
-                     $"{scheme}://{host}/favicon.ico",
+                     $"{scheme}://{authority}/favicon.ico",
                      $"https://icons.duckduckgo.com/ip3/{host}.ico",
                  })
         {
@@ -423,16 +521,21 @@ public static class IconService
             if (bytes is null || !LooksLikeImage(bytes))
                 continue;
 
-            var image = await DecodeAsync(bytes);
+            var image = await DecodeAsync(bytes, decodePixelWidth);
             if (image is null)
                 continue;
 
             TrySaveCache(cacheFile, bytes);
+            Misses.RecordSuccess(authority);
             return image;
         }
 
+        Misses.RecordMiss(authority);
         return null;
     }
+
+    /// <summary>Which hosts are currently being left alone after a failed favicon fetch.</summary>
+    internal static readonly FaviconMissCache Misses = new();
 
     /// <summary>
     /// The ceiling on a downloaded favicon. A favicon is a few kilobytes; this is the point past
@@ -516,7 +619,7 @@ public static class IconService
 
     /// <summary>Decodes raw bytes into a BitmapImage, confirming the decode actually succeeded
     /// (so a 200-OK HTML error page never gets shown as a broken image).</summary>
-    private static async Task<ImageSource?> DecodeAsync(byte[] bytes)
+    private static async Task<ImageSource?> DecodeAsync(byte[] bytes, int decodePixelWidth = 0)
     {
         // Declared out here so the finally can detach them, constructed inside the try so that a
         // BitmapImage refused on the calling thread is still the caught "no icon" this method has
@@ -529,6 +632,9 @@ public static class IconService
         try
         {
             bmp = new BitmapImage();
+            // Before the source is set: the decode size cannot be changed once it has started.
+            if (decodePixelWidth > 0)
+                bmp.DecodePixelWidth = decodePixelWidth;
             bmp.ImageOpened += OnOpened;
             bmp.ImageFailed += OnFailed;
 

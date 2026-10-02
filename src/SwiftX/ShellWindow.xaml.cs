@@ -67,6 +67,10 @@ public sealed partial class ShellWindow : Window
     private bool _loading = true;
     private bool _radiusAdjusting;
 
+    /// <summary>Set by <c>Closed</c>. A callback queued on the dispatcher just before the window
+    /// closed still runs after it, against elements that are no longer on screen.</summary>
+    private bool _closed;
+
     /// <summary>
     /// Home Orbit / Tools idle marks — Orbit drifts continuously; Tools replays on a timer
     /// while Home is showing.
@@ -75,6 +79,13 @@ public sealed partial class ShellWindow : Window
     private AppLogo.Mark? _homeOrbitMark;
     private AppLogo.Mark? _homeToolsMark;
     private DispatcherTimer? _homeHoverHideTimer;
+
+    // Whether the marks above are playing, and the inputs HomeIdlePolicy decides it from. The marks
+    // cost ~19% of a core while they play, so they rest unless someone is looking: see the policy.
+    private bool _homeIdlePlaying;
+    private bool _windowActive;
+    private long _lastHomeActivityMs = Environment.TickCount64;
+    private DispatcherTimer? _homeRestTimer;
 
     /// <summary>The one-shot behind <see cref="FlashGroupNotice"/>, tracked for the same reason
     /// the two above are: so <c>Closed</c> can stop it before it ticks at a window that is gone.</summary>
@@ -108,6 +119,10 @@ public sealed partial class ShellWindow : Window
     // Preview geometry and slot occupancy, recorded by RenderPreview so the canvas-level pointer
     // handlers can work out which slot an event landed in without walking the visual tree.
     private readonly Border?[] _slotBorders = new Border?[OrbitMetrics.SlotCount];
+    // The empty user slots' borders, kept apart from _slotBorders because every reader of that array
+    // takes a non-null entry to mean "an item lives here". Only a drag-over needs these, to
+    // highlight the place a drop would fill.
+    private readonly Border?[] _emptySlotBorders = new Border?[OrbitMetrics.SlotCount];
     private Border? _hoveredPreviewOrigin;
     private readonly Dictionary<Border, Border> _previewHoverPartners = new();
     private readonly List<(Border Element, Brush? Brush, Thickness Thickness)> _hoveredPreviewRestores = new();
@@ -243,6 +258,13 @@ public sealed partial class ShellWindow : Window
             new PointerEventHandler(RadiusSlider_DragEnded), handledEventsToo: true);
         RadiusSlider.PointerCaptureLost += RadiusSlider_DragEnded;
 
+        // Any pointer or keyboard activity anywhere in the window wakes the Home marks (see
+        // HomeIdlePolicy). On Root, a child element, so these handlers do not touch the window's own
+        // lifetime (contrast OnWindowClosed); handledEventsToo because the controls consume most input.
+        Root.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(Root_Activity), handledEventsToo: true);
+        Root.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(Root_Activity), handledEventsToo: true);
+        Root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(Root_Activity), handledEventsToo: true);
+
         // See OnRatingValueChanged for why this is a DP callback and not the ValueChanged event.
         ExperienceRating.RegisterPropertyChangedCallback(
             RatingControl.ValueProperty, (_, _) => OnRatingValueChanged());
@@ -263,7 +285,10 @@ public sealed partial class ShellWindow : Window
             // those without changing the accent. See RepaintThemedContent.
             RepaintThemedContent();
         };
-        Activated += (_, _) => ApplyChromeTheme();
+        // Every subscription below that targets this window is a named method and is removed again
+        // in OnWindowClosed — including OnWindowClosed itself. That is load-bearing, not tidiness:
+        // see OnWindowClosed for what happens to a window that leaves any of them in place.
+        Activated += OnWindowActivated;
 
         // A DispatcherTimer keeps its tick handler — and through it this window — alive on the
         // dispatcher's own queue. OrbitManager drops its reference on Closed (see OpenSettings);
@@ -273,18 +298,15 @@ public sealed partial class ShellWindow : Window
         // listened to it before, which is why picking a size wrote the setting and left the canvas
         // showing the old one until some unrelated edit forced a render. It is a static event, so
         // the handler it holds would keep this window alive past its Closed — hence the matching
-        // unsubscribe below, in the same place the Home mark timer is stopped and for the same
-        // reason.
-        void OnMetricsChanged() => DispatcherQueue.TryEnqueue(RenderPreview);
+        // unsubscribe in OnWindowClosed, in the same place the Home mark timer is stopped and for
+        // the same reason.
         OrbitMetrics.Changed += OnMetricsChanged;
 
-        Closed += (_, _) =>
-        {
-            StopHomeOrbitMark();
-            CancelHomeHoverHide();
-            StopGroupNoticeFlash();
-            OrbitMetrics.Changed -= OnMetricsChanged;
-        };
+        // The manager outlives every ShellWindow (a new one is built each time Settings opens), so
+        // this is the same hazard as the static event above, one level removed.
+        _manager.ItemsChanged += OnItemsChanged;
+
+        Closed += OnWindowClosed;
 
         if (_appWindow.Presenter is OverlappedPresenter p)
             p.IsMaximizable = false;
@@ -331,7 +353,7 @@ public sealed partial class ShellWindow : Window
             SyncAccentControls();
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             SyncDesktopShortcutToggle();
-            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.0");
+            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.1");
             FillAboutDetails();
             // Wired here rather than in XAML because ThemeShadow.Receivers is a collection with no
             // XAML syntax of its own on a shared resource. Without a receiver the Home tiles
@@ -363,25 +385,154 @@ public sealed partial class ShellWindow : Window
                 DesktopShortcutOffer.IsOpen = true;
             }
         };
+    }
 
-        _manager.ItemsChanged += () =>
+    private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
+    {
+        ApplyChromeTheme();
+
+        // Activation is "somebody is here" (the window just came forward, so wake the marks);
+        // deactivation — another window took focus, or this one was minimised — is the end of it.
+        _windowActive = args.WindowActivationState != WindowActivationState.Deactivated;
+        if (_windowActive)
+            _lastHomeActivityMs = Environment.TickCount64;
+        UpdateHomeIdle();
+        ArmHomeRestTimer();
+    }
+
+    private void Root_Activity(object sender, RoutedEventArgs e)
+    {
+        // Pointer-move arrives at the display's rate; once the marks are already playing the only
+        // thing to do is push the deadline back, at most twice a second.
+        long now = Environment.TickCount64;
+        if (_homeIdlePlaying && now - _lastHomeActivityMs < 500)
+            return;
+
+        _lastHomeActivityMs = now;
+        UpdateHomeIdle();
+        ArmHomeRestTimer();
+    }
+
+    /// <summary>
+    /// Starts or stops the Home marks to match <see cref="HomeIdlePolicy"/>. Cheap to call: it only
+    /// does anything when the answer changes.
+    /// </summary>
+    private void UpdateHomeIdle()
+    {
+        if (_closed || _loading)
+            return;
+
+        bool should = HomeIdlePolicy.ShouldAnimate(
+            onHome: _currentScreen == ScreenHome,
+            windowActive: _windowActive,
+            reducedMotion: ReducedMotion.IsActive(),
+            closed: _closed,
+            sinceActivity: TimeSpan.FromMilliseconds(Environment.TickCount64 - _lastHomeActivityMs));
+
+        if (should && !_homeIdlePlaying)
         {
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                // An edit from elsewhere (e.g. a delete on the Elements screen) can remove the
-                // item the Orbit screen currently has selected or expanded — drop stale state rather than
-                // leave the inspector or children row pointing at something that no longer exists.
-                if (_expandedGroup is not null && !ItemExists(_manager.Config.Primary.Items, _expandedGroup))
-                    CollapseGroup();
-                if (_selectedItem is not null && !ItemExists(_manager.Config.Primary.Items, _selectedItem))
-                    HideItemDetails();
-                RenderPreview();
-                RebuildItemsList();
-                // The edit sidebar's rows say whether each thing is already on the orbit, which a
-                // delete or an add made anywhere else has just changed the answer to.
-                if (_orbitEditBuilt) BuildOrbitEditSidebar();
-            });
+            _homeIdlePlaying = true;
+            StartHomeOrbitMark();
+        }
+        else if (!should && _homeIdlePlaying)
+        {
+            _homeIdlePlaying = false;
+            StopHomeOrbitMark();
+        }
+    }
+
+    /// <summary>(Re)starts the one-shot that, once <see cref="HomeIdlePolicy.RestAfter"/> has passed
+    /// without activity, lets the marks rest. Not armed while they are not playing.</summary>
+    private void ArmHomeRestTimer()
+    {
+        if (_closed || !_homeIdlePlaying)
+        {
+            _homeRestTimer?.Stop();
+            return;
+        }
+
+        _homeRestTimer ??= CreateHomeRestTimer();
+        _homeRestTimer.Stop();
+        _homeRestTimer.Start();
+    }
+
+    private DispatcherTimer CreateHomeRestTimer()
+    {
+        // A little past the policy's own limit, so a timer that fires a few milliseconds early
+        // still finds the deadline passed — otherwise the marks would keep playing until the next
+        // bit of activity, with nothing left to stop them.
+        var timer = new DispatcherTimer { Interval = HomeIdlePolicy.RestAfter + TimeSpan.FromMilliseconds(250) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            UpdateHomeIdle();
         };
+        return timer;
+    }
+
+    private void OnMetricsChanged() => DispatcherQueue.TryEnqueue(RenderPreview);
+
+    private void OnItemsChanged()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_closed)
+                return;
+
+            // An edit from elsewhere (e.g. a delete on the Elements screen) can remove the
+            // item the Orbit screen currently has selected or expanded — drop stale state rather than
+            // leave the inspector or children row pointing at something that no longer exists.
+            if (_expandedGroup is not null && !ItemExists(_manager.Config.Primary.Items, _expandedGroup))
+                CollapseGroup();
+            if (_selectedItem is not null && !ItemExists(_manager.Config.Primary.Items, _selectedItem))
+                HideItemDetails();
+            RenderPreview();
+            RebuildItemsList();
+            // The edit sidebar's rows say whether each thing is already on the orbit, which a
+            // delete or an add made anywhere else has just changed the answer to.
+            if (_orbitEditBuilt) BuildOrbitEditSidebar();
+        });
+    }
+
+    /// <summary>
+    /// Everything that has to stop when the window closes — and the reason it must all stop.
+    /// <para>
+    /// <b>A <see cref="Window"/> that subscribes to its own events is never garbage collected.</b>
+    /// <c>Window</c> is not a <c>DependencyObject</c>, so it does not take part in the XAML
+    /// reference-tracking that lets the collector see through a managed-to-native cycle: a delegate
+    /// on the window's own <c>Activated</c> or <c>Closed</c> that targets the window is a strong
+    /// reference the native side holds for as long as it lives, and the native window lives for as
+    /// long as that reference is there. Measured on a minimal WinUI 3 app (Windows App SDK 2.4,
+    /// .NET 10, 30 windows opened and closed, full GC afterwards): 30 of 30 windows alive with
+    /// <c>Activated</c> or <c>Closed</c> subscribed to a method of the window; 0 of 30 with no
+    /// subscription, with a weak-reference delegate target, or with every one of them removed in
+    /// <c>Closed</c> (the pattern here). Leaving a single one subscribed leaks all 30.
+    /// </para>
+    /// <para>
+    /// For this window that was ~7 MB, ~49 handles and ~39 GDI objects per Settings open (a heap
+    /// dump after 15 opens held 15 live windows), so the process's 10 000 GDI-object quota would
+    /// have run out after ~250 opens, and every closed window kept re-running
+    /// <c>RenderPreview</c> and <c>RebuildItemsList</c> on each edit. Now ~1 MB, ~33 handles and
+    /// ~26 GDI per open, and one live window in a dump after 40 opens; what is left is the
+    /// framework's own cost of a custom title bar, which application code cannot remove.
+    /// Unsubscribing only the <see cref="OrbitManager.ItemsChanged"/> handler, and stopping the Home
+    /// animations, did not change the numbers: it is the window's own two events that matter.
+    /// <c>EventSubscriptionLifetimeTests</c> pins the rule for every closeable window.
+    /// </para>
+    /// </summary>
+    private void OnWindowClosed(object sender, WindowEventArgs args)
+    {
+        Closed -= OnWindowClosed;
+        Activated -= OnWindowActivated;
+        _closed = true;
+        _homeIdlePlaying = false;
+        _homeRestTimer?.Stop();
+        _homeRestTimer = null;
+        StopHomeOrbitMark();
+        CancelHomeHoverHide();
+        StopGroupNoticeFlash();
+        OrbitMetrics.Changed -= OnMetricsChanged;
+        _manager.ItemsChanged -= OnItemsChanged;
     }
 
     private static bool ItemExists(List<OrbitItem> items, OrbitItem target)
@@ -824,10 +975,12 @@ public sealed partial class ShellWindow : Window
         ElementsScreen.Visibility = screen == ScreenElements ? Visibility.Visible : Visibility.Collapsed;
         SettingsScreen.Visibility = screen == ScreenSettings ? Visibility.Visible : Visibility.Collapsed;
 
+        // Arriving on Home counts as activity; leaving it ends the marks. Whether they actually play
+        // is HomeIdlePolicy's call (window active, motion not reduced, ...), not this method's.
         if (screen == ScreenHome)
-            StartHomeOrbitMark();
-        else
-            StopHomeOrbitMark();
+            _lastHomeActivityMs = Environment.TickCount64;
+        UpdateHomeIdle();
+        ArmHomeRestTimer();
         if (screen == ScreenOrbit)
         {
             // Editing is a mode you are in while arranging the orbit, not a preference — arriving
@@ -907,11 +1060,14 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>
     /// Starts Home idle marks: Orbit keeps a small hub with a slow continuous ring drift;
-    /// Tools replays the tile-spin grid every five seconds.
+    /// Tools replays the tile-spin grid every five seconds. Called only when
+    /// <see cref="HomeIdlePolicy"/> says they may play, and undone by <see cref="StopHomeOrbitMark"/>
+    /// when it says they may not — they cost ~19% of a core while they run.
     /// </summary>
     private void StartHomeOrbitMark()
     {
-        StopHomeOrbitMark();
+        // The timer only: this starts the marks, it never resets them.
+        StopHomeOrbitTimer();
         _homeOrbitMark?.PlayOrbitDock();
         _homeToolsMark?.PlayEncode();
         _homeOrbitMarkTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
@@ -923,7 +1079,23 @@ public sealed partial class ShellWindow : Window
         _homeOrbitMarkTimer.Start();
     }
 
+    /// <summary>
+    /// Ends the Home idle: the replay timer <em>and</em> the animations on both marks.
+    /// <para>
+    /// Stopping the timer alone is what this used to do, which left the Orbit mark's ring turning
+    /// on a <c>Forever</c> composition animation — one that never ends by itself — after Home was
+    /// left and after the window was closed. (Not what kept closed windows in memory: see
+    /// <see cref="OnWindowClosed"/>.)
+    /// </para>
+    /// </summary>
     private void StopHomeOrbitMark()
+    {
+        StopHomeOrbitTimer();
+        _homeOrbitMark?.Reset();
+        _homeToolsMark?.Reset();
+    }
+
+    private void StopHomeOrbitTimer()
     {
         if (_homeOrbitMarkTimer is null) return;
         _homeOrbitMarkTimer.Stop();
@@ -1600,6 +1772,7 @@ public sealed partial class ShellWindow : Window
             // bubble that is no longer drawn. The two orbit-wide buttons go with them — they act on
             // the orbit, and a bottom corner's fan would run straight through where they sit.
             Array.Clear(_slotBorders);
+            Array.Clear(_emptySlotBorders);
             CanvasActions.Visibility = Visibility.Collapsed;
             RenderQuadrantPreview(size);
             AddHotCornerButton(size);
@@ -1623,6 +1796,7 @@ public sealed partial class ShellWindow : Window
         _previewRadius = radius;
         _previewBubble = bubble;
         Array.Clear(_slotBorders);
+        Array.Clear(_emptySlotBorders);
 
         // Resolve against this window's theme — not Application.Current.Resources.
         var borderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush");
@@ -1681,6 +1855,7 @@ public sealed partial class ShellWindow : Window
             else if (item is null)
             {
                 border.Child = PreviewGlyph("\uE710", glyphSize, muted);
+                _emptySlotBorders[i] = border;
             }
             else
             {
@@ -1713,6 +1888,7 @@ public sealed partial class ShellWindow : Window
     {
         CanvasActions.Visibility = Visibility.Visible;
         Array.Clear(_slotBorders);
+        Array.Clear(_emptySlotBorders);
 
         double scale = size * 0.65 / (2 * (OrbitMetrics.Radius + OrbitMetrics.Bubble / 2));
         double radius = OrbitMetrics.Radius * scale;
@@ -2390,7 +2566,7 @@ public sealed partial class ShellWindow : Window
             ? null
             : (_previewQuadrant
                 ? (slot < _quadrantSlotBorders.Length ? _quadrantSlotBorders[slot] : null)
-                : (slot < _slotBorders.Length ? _slotBorders[slot] : null));
+                : (slot < _slotBorders.Length ? _slotBorders[slot] ?? _emptySlotBorders[slot] : null));
 
         // What the drop would actually do, said before it happens: an occupied place is replaced,
         // not added beside, and a tool is not swappable at all (see DropOntoPreviewSlot) — so the
@@ -3679,22 +3855,32 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private async void PickModuleIcon(OrbitItem item)
     {
-        var picker = new FileOpenPicker();
-        InitializeWithWindow.Initialize(picker, _hwnd);
-        picker.FileTypeFilter.Add(".exe");
-        picker.FileTypeFilter.Add(".dll");
-
-        var file = await picker.PickSingleFileAsync();
-        if (file is null) return;
-
-        int count = IconService.CountModuleIcons(file.Path);
-        if (count <= 0)
+        // async void, no caller, and the same picker call PickIconImage guards: it throws rather than
+        // returning null when a picker is already open on this window, and the gallery it leads to
+        // builds a tile per icon. Guarded the same way, for the same reason.
+        try
         {
-            ApplyIconChoice(item, null, null);
-            return;
-        }
+            var picker = new FileOpenPicker();
+            InitializeWithWindow.Initialize(picker, _hwnd);
+            picker.FileTypeFilter.Add(".exe");
+            picker.FileTypeFilter.Add(".dll");
 
-        await ShowModuleIconGalleryAsync(item, file.Path, count);
+            var file = await picker.PickSingleFileAsync();
+            if (file is null) return;
+
+            int count = IconService.CountModuleIcons(file.Path);
+            if (count <= 0)
+            {
+                ApplyIconChoice(item, null, null);
+                return;
+            }
+
+            await ShowModuleIconGalleryAsync(item, file.Path, count);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("ShellWindow.PickModuleIcon failed: " + ex);
+        }
     }
 
     /// <summary>
@@ -3846,6 +4032,7 @@ public sealed partial class ShellWindow : Window
         // and right-click paths read them. Cleared so a press inside a group cannot reach a bubble
         // that is no longer drawn — the same reason the corner preview clears them.
         Array.Clear(_slotBorders);
+        Array.Clear(_emptySlotBorders);
         _groupSlotBorders.Clear();
         // Both of the canvas commands go: Add item adds to the top level, and Reset defaults
         // rebuilds the whole orbit — neither is what "add" or "reset" means while you are looking
@@ -5002,6 +5189,25 @@ public sealed partial class ShellWindow : Window
         // Draggable onto the full ring or the corner's quadrant: the group travels as a live
         // reference and the ring drops a copy of it, children included (see CloneOrbitTemplate).
         WireSidebarDrag(row, group);
+
+        // The drag image is a snapshot of the row, taken once DragStarting returns. The fill count
+        // is for the row at rest, not something to carry across the screen, so it is hidden (Opacity,
+        // so the row keeps its layout) for the snapshot and put back when the drag ends. The
+        // deferral holds the snapshot back until the hidden state has been rendered.
+        row.DragStarting += async (_, e) =>
+        {
+            var deferral = e.GetDeferral();
+            try
+            {
+                count.Opacity = 0;
+                await Task.Delay(16);
+            }
+            finally
+            {
+                deferral.Complete();
+            }
+        };
+        row.DropCompleted += (_, _) => count.Opacity = 1;
 
         // A group can only be removed: what goes in it is dragged in, and what comes out of it is
         // managed on the Elements screen.

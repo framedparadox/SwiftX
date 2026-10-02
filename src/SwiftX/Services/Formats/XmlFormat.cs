@@ -59,11 +59,26 @@ public sealed class XmlFormat : IDataFormat
         }
     }
 
+    /// <summary>
+    /// Well-formedness is a property of the token stream, so this reads the stream and builds
+    /// nothing. It used to call <see cref="LoadSecure"/> and discard the tree — an
+    /// <see cref="XDocument"/> of roughly ten times the text's size per call, from a method that
+    /// runs on every debounced keystroke in the Formatter and on every clipboard read in Quick
+    /// Format. Measured on a 3.7 MB document, that was ~70 ms and ~100 MB of garbage per check;
+    /// the loop below allocates a few hundred kilobytes (pinned by
+    /// <c>Validate_DoesNotBuildADocumentTree</c>). The same hardened, depth-limited reader is used,
+    /// so the same inputs are refused with the same diagnostic.
+    /// </summary>
     public IReadOnlyList<Diagnostic> Validate(string text)
     {
         try
         {
-            LoadSecure(text);
+            using var stringReader = new StringReader(text);
+            using var reader = CreateSecureReader(stringReader);
+            using var bounded = new DepthLimitedXmlReader(reader, MaxDepth);
+            while (bounded.Read())
+            {
+            }
             return [];
         }
         catch (XmlException ex)
@@ -117,19 +132,24 @@ public sealed class XmlFormat : IDataFormat
     private static XDocument LoadSecure(string text)
     {
         using var stringReader = new StringReader(text);
-        using var reader = XmlReader.Create(stringReader, new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            MaxCharactersFromEntities = 1024,
-            IgnoreWhitespace = true,
-        });
+        using var reader = CreateSecureReader(stringReader);
         // The depth ceiling is applied by the reader, so the refusal happens on the way in rather
         // than after a tree exists — see DepthLimitedXmlReader for why that distinction is the
         // whole guard rather than a detail of where it is written.
         using var bounded = new DepthLimitedXmlReader(reader, MaxDepth);
         return XDocument.Load(bounded, LoadOptions.None);
     }
+
+    /// <summary>The hardened reader itself, split out so <see cref="Validate"/> can walk the tokens
+    /// without building a tree while every reader of untrusted text still comes from one place.</summary>
+    private static XmlReader CreateSecureReader(TextReader input) =>
+        XmlReader.Create(input, new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+            MaxCharactersFromEntities = 1024,
+            IgnoreWhitespace = true,
+        });
 
     /// <summary>
     /// The nesting ceiling, deliberately the same number as <see cref="JsonFormat"/>'s

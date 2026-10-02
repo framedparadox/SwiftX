@@ -118,6 +118,10 @@ public sealed class OrbitManager
                 Quit();
         };
 
+        // The first summon after launch is the slowest one by a wide margin (it is the first time
+        // anything the orbit uses has been loaded); play one out of sight so it is not the user's.
+        _ = _orbitWindow.PrewarmAsync();
+
         // Anyone who turned "Start with Windows" on before the autostart entry learned to say it
         // was an autostart entry has one that doesn't — and would get Settings in their face at
         // every sign-in. Rather than make them toggle the setting off and on again, the entry

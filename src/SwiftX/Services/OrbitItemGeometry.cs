@@ -103,6 +103,48 @@ public static class OrbitItemGeometry
     /// <summary>Opacity floor of a hexagon's resting fill, out of 255.</summary>
     private const byte HexagonRestAlpha = 0xD0;
 
+    /// <summary>
+    /// The colour of the ring drawn over the acrylic disc's hard edge: the glass tint's own colour
+    /// at (nearly) full strength. It has to be close to opaque to do its job — whatever of the
+    /// acrylic's stair-step shows through it is the contrast between glass and desktop times what
+    /// is left of the ring's transparency — and the glass tint's own colour is what makes that read
+    /// as the glass's bezel rather than as a second material.
+    /// </summary>
+    public static Windows.UI.Color RimTint(Windows.UI.Color glassTint)
+    {
+        glassTint.A = Math.Max(glassTint.A, RimAlpha);
+        return glassTint;
+    }
+
+    /// <summary>Opacity floor of the rim, out of 255.</summary>
+    private const byte RimAlpha = 0xF0;
+
+    // The acrylic under a bubble is clipped by the compositor to a rounded rectangle whose edge is a
+    // hard stair-step, not an antialiased curve, and no clip set from outside reaches it (an ellipse
+    // clip on the element's own visual left the acrylic a full square). Its edge therefore cannot be
+    // smoothed, only hidden: held inside the bubble's antialiased silhouette, and covered by a ring.
+    // The numbers below are device pixels, not DIPs, because the stair-step is a device-pixel
+    // artifact: a DIP inset is half the protection at 200% scaling.
+
+    /// <summary>
+    /// How far, in device pixels, the acrylic disc is held inside the bubble's edge, per side. Must
+    /// leave room for the clip's worst-case overshoot of its nominal size
+    /// (<see cref="AcrylicEdgeOvershootPx"/>, seen at the four compass points) plus half a pixel for
+    /// the silhouette's own antialiasing, so that the stair-step never reaches the outline.
+    /// </summary>
+    public const double BackdropInsetPx = 1.5;
+
+    /// <summary>
+    /// Width, in device pixels, of the ring drawn over the acrylic's edge. Must reach from the
+    /// bubble's edge back past the disc's innermost possible edge: the inset, the stair-step's half
+    /// pixel the other way, and the half pixel of antialiasing on the ring's own inner edge.
+    /// </summary>
+    public const double RimWidthPx = 3;
+
+    /// <summary>How far, in device pixels, the acrylic clip's edge can stand outside its nominal
+    /// size. Measured on the live dock at 100% scaling: up to one pixel.</summary>
+    public const double AcrylicEdgeOvershootPx = 1;
+
     public static Geometry RoundedHexagon(double size)
     {
         double r = size / 2;

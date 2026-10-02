@@ -1,0 +1,124 @@
+{
+  "label": "after-debug",
+  "mode": "Scratch",
+  "configuration": "Debug",
+  "platform": "x64",
+  "filter": "",
+  "workspace": "%USERPROFILE%\\AppData\\Local\\Temp\\claude\\c--Git-SwiftX\\1efb7ac8-d270-4159-abb1-9c64fc9234e0\\scratchpad\\perf-review\\workspace",
+  "runDirectory": "%USERPROFILE%\\AppData\\Local\\Temp\\claude\\c--Git-SwiftX\\1efb7ac8-d270-4159-abb1-9c64fc9234e0\\scratchpad\\perf-review\\runs\\20261001-084909-after-debug",
+  "wallSeconds": 56.9,
+  "dotnetExit": 0,
+  "quietGate": {
+    "Quiet": true,
+    "CpuPercent": 16.0,
+    "ThresholdPct": 25.0,
+    "WaitedSeconds": 13.0
+  },
+  "facts": {
+    "timestamp": "2026-10-01T08:49:11.6525972-04:00",
+    "machine": "<machine>",
+    "os": "Microsoft Windows 11 Home 10.0.26300",
+    "cpu": "13th Gen Intel(R) Core(TM) i5-1334U",
+    "logicalCores": 12,
+    "ramGb": 15.7,
+    "powerPlan": "Balanced",
+    "onBattery": false,
+    "dotnetSdk": "10.0.301",
+    "git": {
+      "sha": "852cf87",
+      "branch": "develop",
+      "dirtyFiles": 55
+    },
+    "runningSwiftXPids": []
+  },
+  "buildErrors": [],
+  "buildWarnings": 0,
+  "totals": {
+    "total": 862,
+    "passed": 862,
+    "failed": 0,
+    "skipped": 0
+  },
+  "failures": [],
+  "slowest": [
+    {
+      "name": "SwiftX.Tests.Load.ConcurrencyAndEnduranceTests.AtomicWrite_UnderConcurrentPublishes_LandsWholeAndLeavesNothingBehind",
+      "seconds": 7.158
+    },
+    {
+      "name": "SwiftX.Tests.Performance.PerformanceBudgetTests.RepeatedFormatCycles_DoNotRetainEachDocument",
+      "seconds": 4.029
+    },
+    {
+      "name": "SwiftX.Tests.Performance.PerformanceBudgetTests.SyntaxPipeline_CostGrowsWithTheInput_NotItsSquare",
+      "seconds": 3.447
+    },
+    {
+      "name": "SwiftX.Tests.Performance.PerformanceBudgetTests.XmlPipeline_CostGrowsWithTheInput_NotItsSquare",
+      "seconds": 3.292
+    },
+    {
+      "name": "SwiftX.Tests.Performance.PerformanceBudgetTests.Json_HeavyPayload_EveryOperationStaysInteractive",
+      "seconds": 3.291
+    },
+    {
+      "name": "SwiftX.Tests.Performance.PerformanceBudgetTests.Xml_HeavyPayload_EveryOperationStaysInteractive",
+      "seconds": 2.626
+    },
+    {
+      "name": "SwiftX.Tests.Security.SecurityHardeningTests.CertificateReader_OnStructuredGarbage_AlwaysReturnsAResult",
+      "seconds": 2.271
+    },
+    {
+      "name": "SwiftX.Tests.Performance.PerformanceBudgetTests.JsonPipeline_CostGrowsWithTheInput_NotItsSquare",
+      "seconds": 2.078
+    },
+    {
+      "name": "SwiftX.Tests.Load.ConcurrencyAndEnduranceTests.BothStores_SavedFromManyThreadsAtOnce_NeverPublishATornFile",
+      "seconds": 1.561
+    },
+    {
+      "name": "SwiftX.Tests.Formats.ToolLoadAndStressTests.HeavyXml_LoadFormatMinifyConvertCycle_RepeatsSuccessfully",
+      "seconds": 1.376
+    },
+    {
+      "name": "SwiftX.Tests.Performance.AllocationBudgetTests.XmlValidate_DoesNotBuildADocumentTree",
+      "seconds": 1.009
+    },
+    {
+      "name": "SwiftX.Tests.Load.ConcurrencyAndEnduranceTests.SecureValueStore_RepeatedSaveLoadCycles_AlwaysReadBackTheLastWrite",
+      "seconds": 0.85
+    },
+    {
+      "name": "SwiftX.Tests.Load.ConcurrencyAndEnduranceTests.TheFullFormatterCycle_RepeatedHundredsOfTimes_DoesNotAccumulate",
+      "seconds": 0.817
+    },
+    {
+      "name": "SwiftX.Tests.Formats.ToolLoadAndStressTests.HeavyJson_LoadFormatMinifyConvertCycle_RepeatsSuccessfully",
+      "seconds": 0.783
+    },
+    {
+      "name": "SwiftX.Tests.Formats.QuickFormatterTests.Analyze_CostGrowsWithTheInput_NotItsSquare",
+      "seconds": 0.77
+    }
+  ],
+  "testOutput": {
+    "SwiftX.Tests.Performance.PerformanceBudgetTests.SyntaxPipeline_CostGrowsWithTheInput_NotItsSquare": "json tokenize: 8.0ms at 10000 -> 68.0ms at 80000 (time x8.5 for size x8.0, ceiling x24.0)\r\nxml tokenize: 7.8ms at 10000 -> 52.2ms at 80000 (time x6.7 for size x8.0, ceiling x24.0)\r\njson folds: 10.7ms at 10000 -> 98.1ms at 80000 (time x9.1 for size x8.0, ceiling x24.0)\r\nxml folds: 10.5ms at 10000 -> 89.4ms at 80000 (time x8.6 for size x8.0, ceiling x24.0)\r\nline index: 3.0ms at 10000 -> 22.9ms at 80000 (time x7.6 for size x8.0, ceiling x24.0)",
+    "SwiftX.Tests.Performance.PerformanceBudgetTests.JsonPipeline_CostGrowsWithTheInput_NotItsSquare": "json validate: 2.1ms at 10000 -> 20.0ms at 80000 (time x9.4 for size x8.0, ceiling x32.0)\r\njson format: 9.6ms at 10000 -> 85.9ms at 80000 (time x8.9 for size x8.0, ceiling x32.0)\r\njson minify: 8.7ms at 10000 -> 77.8ms at 80000 (time x8.9 for size x8.0, ceiling x32.0)",
+    "SwiftX.Tests.Performance.PerformanceBudgetTests.RepeatedFormatCycles_DoNotRetainEachDocument": "managed heap: 6MB -> 11MB (growth 4MB)",
+    "SwiftX.Tests.Performance.PerformanceBudgetTests.XmlFormatting_AcrossThePermittedDepthBand_StaysAffordable": "xml format by depth: 0.0ms at 64 -> 0.4ms at 256 (time x0.4 for size x4.0, ceiling x8.0)",
+    "SwiftX.Tests.Performance.PerformanceBudgetTests.XmlPipeline_CostGrowsWithTheInput_NotItsSquare": "xml validate: 1.5ms at 10000 -> 12.8ms at 80000 (time x8.5 for size x8.0, ceiling x32.0)\r\nxml format: 8.0ms at 10000 -> 98.1ms at 80000 (time x12.3 for size x8.0, ceiling x32.0)\r\nxml to canonical: 13.5ms at 10000 -> 197.1ms at 80000 (time x14.6 for size x8.0, ceiling x32.0)",
+    "SwiftX.Tests.Load.ConcurrencyAndEnduranceTests.CodecsAndSanitizer_RepeatedThousandsOfTimes_DoNotAccumulate": "3000 codec cycles; heap growth 0MB",
+    "SwiftX.Tests.Performance.PerformanceBudgetTests.InputSanitizer_OnAHeavyEscapedPayload_StaysFast": "escaped payload: 699,556 chars\r\nsanitize: 5.7ms (budget 5000ms)",
+    "SwiftX.Tests.Performance.PerformanceBudgetTests.Json_HeavyPayload_EveryOperationStaysInteractive": "payload: 6,145,385 chars\r\njson validate: 13.3ms (budget 10000ms)\r\njson format: 56.9ms (budget 10000ms)\r\njson minify: 45.8ms (budget 10000ms)\r\njson sort keys: 71.6ms (budget 10000ms)\r\njson canonical round trip: 166.8ms (budget 15000ms)",
+    "SwiftX.Tests.Performance.AllocationBudgetTests.XmlValidate_DoesNotBuildADocumentTree": "3,670,391 chars: validate allocated 11,496 bytes; building the tree allocates 18,207,504 bytes (x1,584)",
+    "SwiftX.Tests.Performance.PerformanceBudgetTests.Tokenizers_WellPastTheEditorHighlightCap_StayFast": "json 1,205,385 chars, xml 710,391 chars\r\njson tokenize: 7.8ms (budget 5000ms)\r\nxml tokenize: 6.4ms (budget 5000ms)\r\njson folds: 10.8ms (budget 5000ms)\r\nxml folds: 12.3ms (budget 5000ms)\r\nline index: 2.6ms (budget 2000ms)",
+    "SwiftX.Tests.Load.ConcurrencyAndEnduranceTests.TheFullFormatterCycle_RepeatedHundredsOfTimes_DoesNotAccumulate": "300 full cycles in 802ms; heap 5MB -> 6MB (growth 0MB)",
+    "SwiftX.Tests.Load.ConcurrencyAndEnduranceTests.EveryToolUnderSimultaneousLoad_CompletesWithoutFaulting": "mixed load across 24 threads: 73ms",
+    "SwiftX.Tests.Performance.PerformanceBudgetTests.Base64_MultiMegabytePayload_RoundTripsWithinBudget": "base64 encode: 4.6ms (budget 5000ms)\r\nbase64 decode: 39.2ms (budget 5000ms)",
+    "SwiftX.Tests.Formats.QuickFormatterTests.Analyze_OnAHeavyPayload_StaysWellInsideAnInteractiveBudget": "1,257,790 chars analyzed in 272ms",
+    "SwiftX.Tests.Load.ConcurrencyAndEnduranceTests.OrbitStore_WithAVeryLargeConfiguration_RoundTripsIntact": "5000-item config save+load: 57ms",
+    "SwiftX.Tests.Performance.PerformanceBudgetTests.Xml_HeavyPayload_EveryOperationStaysInteractive": "payload: 3,670,391 chars\r\nxml validate: 8.1ms (budget 10000ms)\r\nxml format: 83.4ms (budget 15000ms)\r\nxml minify: 66.9ms (budget 15000ms)\r\nxml to canonical: 125.9ms (budget 15000ms)"
+  },
+  "outcome": "PASSED"
+}

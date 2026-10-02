@@ -74,7 +74,11 @@ public sealed class ToolWindowBase : Window
         WindowChrome.SetClientSizeDip(_appWindow, _hwnd, width, height);
         WindowChrome.CenterOnCursor(_appWindow, windowId);
 
-        Activated += (_, _) => ApplyChromeTheme();
+        // Named, and removed again in OnWindowClosed: a Window that leaves a handler of its own
+        // method on its own Activated or Closed is never garbage collected — see
+        // ShellWindow.OnWindowClosed for the measurement. For a tool window that is the whole page:
+        // the editors, the document text and, on Secure values, any value the user had revealed.
+        Activated += OnWindowActivated;
         // The page as well as the chrome. An OS light/dark flip under the System theme is the one
         // theme change that does not come through OrbitManager.ApplyTheme (no choice was made, so
         // nothing fans out), and the chrome alone left the page wearing the local brushes it was
@@ -89,13 +93,20 @@ public sealed class ToolWindowBase : Window
         ApplyChromeTheme();
 
         _appWindow.Closing += OnClosing;
-        Closed += (_, _) =>
-        {
-            Page.NotifyClosing();
-            _manager.ToolWindows.Unregister(this);
-        };
+        Closed += OnWindowClosed;
 
         manager.ToolWindows.Register(this);
+    }
+
+    private void OnWindowActivated(object sender, WindowActivatedEventArgs args) => ApplyChromeTheme();
+
+    private void OnWindowClosed(object sender, WindowEventArgs args)
+    {
+        Closed -= OnWindowClosed;
+        Activated -= OnWindowActivated;
+        _appWindow.Closing -= OnClosing;
+        Page.NotifyClosing();
+        _manager.ToolWindows.Unregister(this);
     }
 
     /// <summary>
