@@ -124,13 +124,13 @@ public static class AppLogo
             var spin = compositor.CreateSpringScalarAnimation();
             spin.FinalValue = 0f;
             spin.DampingRatio = 0.62f;
-            spin.Period = TimeSpan.FromMilliseconds(220);
+            spin.Period = SpringMotion.Period(220);
             visual.StartAnimation("RotationAngleInDegrees", spin);
 
             var grow = compositor.CreateSpringVector3Animation();
             grow.FinalValue = Vector3.One;
             grow.DampingRatio = 0.62f;
-            grow.Period = TimeSpan.FromMilliseconds(220);
+            grow.Period = SpringMotion.Period(220);
             visual.StartAnimation("Scale", grow);
 
             var fade = compositor.CreateScalarKeyFrameAnimation();
@@ -506,6 +506,14 @@ public static class AppLogo
         public static readonly int EntranceSpanMs =
             PetalStaggerMs * (Quadrants.Length - 1) + SpringPeriodMs * 2;
 
+        /// <summary>
+        /// How long <see cref="PlayExit"/> runs: the last petal's delay plus one petal's exit. A
+        /// keyframe motion, so unlike <see cref="EntranceSpanMs"/> this one is exact — and it is what
+        /// a caller that tears the mark down afterwards has to wait out.
+        /// </summary>
+        public static readonly int ExitSpanMs =
+            PetalExitStaggerMs * (Quadrants.Length - 1) + ExitMs;
+
         // Home Orbit idle: small fixed hub + eight dock bubbles on a ring that slowly revolves.
         // Overlay lives in DIP space beside the Viewbox so bubble offsets are not Viewbox-scaled
         // when the hub shrinks.
@@ -623,7 +631,7 @@ public static class AppLogo
                 var spin = compositor.CreateSpringScalarAnimation();
                 spin.FinalValue = 0f;
                 spin.DampingRatio = SpringDamping;
-                spin.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+                spin.Period = SpringMotion.Period(SpringPeriodMs);
                 art.StartAnimation("RotationAngleInDegrees", spin);
 
                 for (int i = 0; i < _petals.Length; i++)
@@ -641,14 +649,14 @@ public static class AppLogo
                     var untwist = compositor.CreateSpringScalarAnimation();
                     untwist.FinalValue = 0f;
                     untwist.DampingRatio = SpringDamping;
-                    untwist.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+                    untwist.Period = SpringMotion.Period(SpringPeriodMs);
                     untwist.DelayTime = delay;
                     petal.StartAnimation("RotationAngleInDegrees", untwist);
 
                     var grow = compositor.CreateSpringVector3Animation();
                     grow.FinalValue = Vector3.One;
                     grow.DampingRatio = SpringDamping;
-                    grow.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+                    grow.Period = SpringMotion.Period(SpringPeriodMs);
                     grow.DelayTime = delay;
                     petal.StartAnimation("Scale", grow);
 
