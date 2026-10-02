@@ -119,6 +119,10 @@ public sealed partial class ShellWindow : Window
     // Preview geometry and slot occupancy, recorded by RenderPreview so the canvas-level pointer
     // handlers can work out which slot an event landed in without walking the visual tree.
     private readonly Border?[] _slotBorders = new Border?[OrbitMetrics.SlotCount];
+    // The empty user slots' borders, kept apart from _slotBorders because every reader of that array
+    // takes a non-null entry to mean "an item lives here". Only a drag-over needs these, to
+    // highlight the place a drop would fill.
+    private readonly Border?[] _emptySlotBorders = new Border?[OrbitMetrics.SlotCount];
     private Border? _hoveredPreviewOrigin;
     private readonly Dictionary<Border, Border> _previewHoverPartners = new();
     private readonly List<(Border Element, Brush? Brush, Thickness Thickness)> _hoveredPreviewRestores = new();
@@ -349,7 +353,7 @@ public sealed partial class ShellWindow : Window
             SyncAccentControls();
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             SyncDesktopShortcutToggle();
-            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.0");
+            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.1");
             FillAboutDetails();
             // Wired here rather than in XAML because ThemeShadow.Receivers is a collection with no
             // XAML syntax of its own on a shared resource. Without a receiver the Home tiles
@@ -1768,6 +1772,7 @@ public sealed partial class ShellWindow : Window
             // bubble that is no longer drawn. The two orbit-wide buttons go with them — they act on
             // the orbit, and a bottom corner's fan would run straight through where they sit.
             Array.Clear(_slotBorders);
+            Array.Clear(_emptySlotBorders);
             CanvasActions.Visibility = Visibility.Collapsed;
             RenderQuadrantPreview(size);
             AddHotCornerButton(size);
@@ -1791,6 +1796,7 @@ public sealed partial class ShellWindow : Window
         _previewRadius = radius;
         _previewBubble = bubble;
         Array.Clear(_slotBorders);
+        Array.Clear(_emptySlotBorders);
 
         // Resolve against this window's theme — not Application.Current.Resources.
         var borderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush");
@@ -1849,6 +1855,7 @@ public sealed partial class ShellWindow : Window
             else if (item is null)
             {
                 border.Child = PreviewGlyph("\uE710", glyphSize, muted);
+                _emptySlotBorders[i] = border;
             }
             else
             {
@@ -1881,6 +1888,7 @@ public sealed partial class ShellWindow : Window
     {
         CanvasActions.Visibility = Visibility.Visible;
         Array.Clear(_slotBorders);
+        Array.Clear(_emptySlotBorders);
 
         double scale = size * 0.65 / (2 * (OrbitMetrics.Radius + OrbitMetrics.Bubble / 2));
         double radius = OrbitMetrics.Radius * scale;
@@ -2558,7 +2566,7 @@ public sealed partial class ShellWindow : Window
             ? null
             : (_previewQuadrant
                 ? (slot < _quadrantSlotBorders.Length ? _quadrantSlotBorders[slot] : null)
-                : (slot < _slotBorders.Length ? _slotBorders[slot] : null));
+                : (slot < _slotBorders.Length ? _slotBorders[slot] ?? _emptySlotBorders[slot] : null));
 
         // What the drop would actually do, said before it happens: an occupied place is replaced,
         // not added beside, and a tool is not swappable at all (see DropOntoPreviewSlot) — so the
@@ -4024,6 +4032,7 @@ public sealed partial class ShellWindow : Window
         // and right-click paths read them. Cleared so a press inside a group cannot reach a bubble
         // that is no longer drawn — the same reason the corner preview clears them.
         Array.Clear(_slotBorders);
+        Array.Clear(_emptySlotBorders);
         _groupSlotBorders.Clear();
         // Both of the canvas commands go: Add item adds to the top level, and Reset defaults
         // rebuilds the whole orbit — neither is what "add" or "reset" means while you are looking
@@ -5180,6 +5189,25 @@ public sealed partial class ShellWindow : Window
         // Draggable onto the full ring or the corner's quadrant: the group travels as a live
         // reference and the ring drops a copy of it, children included (see CloneOrbitTemplate).
         WireSidebarDrag(row, group);
+
+        // The drag image is a snapshot of the row, taken once DragStarting returns. The fill count
+        // is for the row at rest, not something to carry across the screen, so it is hidden (Opacity,
+        // so the row keeps its layout) for the snapshot and put back when the drag ends. The
+        // deferral holds the snapshot back until the hidden state has been rendered.
+        row.DragStarting += async (_, e) =>
+        {
+            var deferral = e.GetDeferral();
+            try
+            {
+                count.Opacity = 0;
+                await Task.Delay(16);
+            }
+            finally
+            {
+                deferral.Complete();
+            }
+        };
+        row.DropCompleted += (_, _) => count.Opacity = 1;
 
         // A group can only be removed: what goes in it is dragged in, and what comes out of it is
         // managed on the Elements screen.
