@@ -290,6 +290,11 @@ public sealed partial class ShellWindow : Window
         // see OnWindowClosed for what happens to a window that leaves any of them in place.
         Activated += OnWindowActivated;
 
+        // Minimise and restore, which activation alone does not track: a restore from the taskbar
+        // activates the window while it is still minimised, and a minimise from the taskbar happens
+        // after the window has already lost activation. Removed in OnWindowClosed like the rest.
+        _appWindow.Changed += OnAppWindowChanged;
+
         // A DispatcherTimer keeps its tick handler — and through it this window — alive on the
         // dispatcher's own queue. OrbitManager drops its reference on Closed (see OpenSettings);
         // without this, the timer would hold the window past that and keep firing at a tree that is
@@ -400,6 +405,23 @@ public sealed partial class ShellWindow : Window
         ArmHomeRestTimer();
 
         ApplyChromeTheme();
+    }
+
+    /// <summary>
+    /// Re-asks <see cref="HomeIdlePolicy"/> when the window is minimised, restored, shown or hidden
+    /// (a minimise shows up as a move to Windows' minimised position). The rest timer is only
+    /// touched when the marks actually start or stop here, so moving or resizing the window does not
+    /// push back the rest of marks playing in a window nobody is using.
+    /// </summary>
+    private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        if (!args.DidVisibilityChange && !args.DidPresenterChange && !args.DidPositionChange && !args.DidSizeChange)
+            return;
+
+        bool wasPlaying = _homeIdlePlaying;
+        UpdateHomeIdle();
+        if (_homeIdlePlaying != wasPlaying)
+            ArmHomeRestTimer();
     }
 
     private void Root_Activity(object sender, RoutedEventArgs e)
@@ -535,6 +557,7 @@ public sealed partial class ShellWindow : Window
     {
         Closed -= OnWindowClosed;
         Activated -= OnWindowActivated;
+        _appWindow.Changed -= OnAppWindowChanged;
         _closed = true;
         _homeIdlePlaying = false;
         _homeRestTimer?.Stop();
