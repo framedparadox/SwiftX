@@ -239,7 +239,7 @@ public sealed class AppConfig
 
     /// <summary>
     /// How long, in milliseconds, <see cref="MouseSummonButton"/> has to stay down before the
-    /// orbit is summoned. Defaults to <see cref="Services.MouseSummonWatcher.DefaultHoldMilliseconds"/>.
+    /// orbit is summoned. Defaults to <see cref="MouseSummonDefaults.HoldMilliseconds"/>.
     /// </summary>
     public int MouseSummonHoldMs { get; set; } = MouseSummonDefaults.HoldMilliseconds;
 

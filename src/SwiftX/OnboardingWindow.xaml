@@ -168,6 +168,29 @@
                             </Grid>
                         </Border>
 
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE7C6;" FontSize="18"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                          VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="Mouse hold" Style="{StaticResource SettingTitle}" />
+                                    <TextBlock Text="Hold the middle mouse button to bring the orbit up at the pointer."
+                                               Style="{StaticResource SettingBody}" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="MouseSummonEnabledToggle" Grid.Column="2"
+                                              OnContent="" OffContent="" MinWidth="0"
+                                              AutomationProperties.Name="Mouse hold summon"
+                                              VerticalAlignment="Center" HorizontalAlignment="Right"
+                                              Toggled="MouseSummonEnabled_Toggled" />
+                            </Grid>
+                        </Border>
+
                         <!-- The pointer half of the same question, asked in the same breath: a
                              shortcut the user could not register (another app owns it) still leaves
                              them a way in. Second row collapses with the switch rather than sitting

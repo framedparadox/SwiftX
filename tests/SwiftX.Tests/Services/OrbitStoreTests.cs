@@ -28,6 +28,9 @@ public class OrbitStoreTests : IDisposable
             Language = AppLanguage.French,
             ItemSize = OrbitItemSize.Small,
             Hotkey = "Ctrl+Alt+Space",
+            MouseSummonEnabled = false,
+            MouseSummonButton = MouseSummonButton.Right,
+            MouseSummonHoldMs = 750,
             ShowDataTool = true,
             ShowCertificateTool = false,
         };
@@ -70,6 +73,9 @@ public class OrbitStoreTests : IDisposable
         Assert.Equal(AppLanguage.French, restored.Language);
         Assert.Equal(OrbitItemSize.Small, restored.ItemSize);
         Assert.Equal("Ctrl+Alt+Space", restored.Hotkey);
+        Assert.False(restored.MouseSummonEnabled);
+        Assert.Equal(MouseSummonButton.Right, restored.MouseSummonButton);
+        Assert.Equal(750, restored.MouseSummonHoldMs);
         Assert.True(restored.ShowDataTool);
         Assert.False(restored.ShowCertificateTool);
 

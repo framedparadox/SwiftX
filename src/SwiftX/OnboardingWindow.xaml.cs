@@ -60,6 +60,7 @@ public sealed partial class OnboardingWindow : Window
     private HotCorner _hotCorner = HotCorner.TopLeft;
     private bool _hotCornerEnabled = true;
     private bool _hotkeyEnabled = true;
+    private bool _mouseSummonEnabled = true;
 
     private int _step;
     private const int StepCount = 3;
@@ -144,9 +145,11 @@ public sealed partial class OnboardingWindow : Window
                 HotkeyStatus.Text = "Hold Ctrl, Alt, or Win with that key.";
 
             _hotkeyEnabled = _manager.Config.HotkeyEnabled;
+            _mouseSummonEnabled = _manager.Config.MouseSummonEnabled;
             _hotCornerEnabled = _manager.Config.HotCornerEnabled;
             _hotCorner = _manager.Config.HotCorner;
             HotkeyEnabledToggle.IsOn = _hotkeyEnabled;
+            MouseSummonEnabledToggle.IsOn = _mouseSummonEnabled;
             HotCornerEnabledToggle.IsOn = _hotCornerEnabled;
             SelectHotCorner(_hotCorner);
             SyncHotCornerControls();
@@ -314,9 +317,9 @@ public sealed partial class OnboardingWindow : Window
             0 => ("Welcome to SwiftX",
                   "A quick-access orbit for the apps, folders, links and tools you reach for most."),
             1 => ("What goes on the orbit?",
-                  $"Tick what you want within reach. The orbit holds {OrbitRingLayout.MaxUserCount} of your own items — everything here can be changed later from Orbit Settings."),
+                  $"Tick what you want within reach. The orbit holds {OrbitRingLayout.MaxUserCount} of your own items (up to {OrbitRingLayout.MaxInnerCount} on the inner ring, then an outer ring). Everything here can be changed later from Orbit Settings."),
             _ => ("How should it appear?",
-                  "Pick the keys that summon the orbit, and whether a screen corner should do it too."),
+                  "Pick the keys that summon the orbit, whether holding the middle mouse button should, and whether a screen corner should do it too."),
         };
 
         BackButton.Visibility = _step == 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -607,6 +610,12 @@ public sealed partial class OnboardingWindow : Window
         SyncHotCornerControls();
     }
 
+    private void MouseSummonEnabled_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _mouseSummonEnabled = MouseSummonEnabledToggle.IsOn;
+    }
+
     private void HotCornerBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || HotCornerBox.SelectedItem is not ComboBoxItem item) return;
@@ -641,7 +650,7 @@ public sealed partial class OnboardingWindow : Window
     {
         if (!_hotkeyEnabled)
         {
-            HotkeyStatus.Text = "Off — the tray icon and the hot corner still work.";
+            HotkeyStatus.Text = "Off — the tray icon, mouse hold and the hot corner still work.";
             return;
         }
         HotkeyStatus.Text = _gesture is null
@@ -683,11 +692,13 @@ public sealed partial class OnboardingWindow : Window
             if (_gesture is not null)
                 _manager.Config.Hotkey = _gesture.ToString();
             _manager.Config.HotkeyEnabled = _hotkeyEnabled;
+            _manager.Config.MouseSummonEnabled = _mouseSummonEnabled;
             _manager.Config.HotCornerEnabled = _hotCornerEnabled;
             _manager.Config.HotCorner = _hotCorner;
 
             _manager.NotifyItemsChanged();
             _manager.ApplyHotkey();
+            _manager.ApplyMouseSummon();
             _manager.ApplyHotCorner();
 
             // Both of these touch the OS rather than the config, and both can fail (a policy-locked
