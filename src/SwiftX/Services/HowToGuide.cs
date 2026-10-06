@@ -62,10 +62,10 @@ public static class HowToGuide
     private static GuideSection SetUpTheDock() => new(
         Title: "Setting up the dock",
         Glyph: char.ConvertFromUtf32(0xE713),
-        Summary: $"The dock has {OrbitMetrics.UserSlotCount} places for your own items.",
+        Summary: $"The dock holds up to {OrbitRingLayout.MaxUserCount} of your own items: {OrbitRingLayout.MaxInnerCount} on the inner ring, then an outer ring.",
         Steps:
         [
-            $"Open Orbit from Home. The ring holds {OrbitMetrics.UserSlotCount} items of your own, and Settings and Close always stay at the end.",
+            $"Open Orbit from Home. The inner ring shows between {OrbitRingLayout.MinInnerCount} and {OrbitRingLayout.MaxInnerCount} places (Settings and Close always stay at the end). More than {OrbitRingLayout.MaxInnerCount} items spill onto an outer ring.",
             "On the Orbit screen, press the Elements button (the hexagon) to open Add to orbit: apps, shortcuts, folders, links, groups and tools.",
             "Click an entry to put it in the next free place, or drag it onto the ring. You can also drag a file, folder, link or app in from Explorer or the desktop.",
             "Press the gear on the same screen for item size, shape, hover style and the hot corner. The dock follows as you change them.",
@@ -89,6 +89,9 @@ public static class HowToGuide
                     ? $"Press {hotkey} from anywhere to show the dock at the pointer, and press it again to hide it."
                     : "Turn the keyboard shortcut on in Settings, General, and choose the keys you want.",
                 "Click the SwiftX icon in the system tray to show or hide the dock. Right-click it for the tray menu: Show or Hide, Add new, Settings and Quit.",
+                config.MouseSummonEnabled
+                    ? $"Or hold the {MouseButtonName(config.MouseSummonButton)} mouse button for a moment to show or hide the dock at the pointer."
+                    : "Or switch Mouse hold on in Settings, General, and hold the middle mouse button to summon the dock.",
                 config.HotCornerEnabled
                     ? $"Or push the pointer into the {CornerName(config.HotCorner)} corner of the screen (see the hot corner topic below)."
                     : "Or switch the hot corner on and push the pointer into a screen corner (see the hot corner topic below).",
@@ -162,5 +165,13 @@ public static class HowToGuide
         HotCorner.BottomLeft => "bottom-left",
         HotCorner.BottomRight => "bottom-right",
         _ => corner.ToString(),
+    };
+
+    /// <summary>A mouse button as a person says it: "middle".</summary>
+    public static string MouseButtonName(MouseSummonButton button) => button switch
+    {
+        MouseSummonButton.Left => "left",
+        MouseSummonButton.Right => "right",
+        _ => "middle",
     };
 }

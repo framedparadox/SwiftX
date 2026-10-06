@@ -227,6 +227,23 @@ public sealed class AppConfig
     public HotCornerLayout HotCornerLayout { get; set; } = HotCornerLayout.Orbit;
 
     /// <summary>
+    /// Whether holding <see cref="MouseSummonButton"/> for <see cref="MouseSummonHoldMs"/> summons
+    /// the orbit. On by default — a mouse-only way in beside the hot corner and the tray icon.
+    /// </summary>
+    public bool MouseSummonEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Which button a long-press summons with. Middle by default; see <see cref="MouseSummonButton"/>.
+    /// </summary>
+    public MouseSummonButton MouseSummonButton { get; set; } = MouseSummonButton.Middle;
+
+    /// <summary>
+    /// How long, in milliseconds, <see cref="MouseSummonButton"/> has to stay down before the
+    /// orbit is summoned. Defaults to <see cref="Services.MouseSummonWatcher.DefaultHoldMilliseconds"/>.
+    /// </summary>
+    public int MouseSummonHoldMs { get; set; } = MouseSummonDefaults.HoldMilliseconds;
+
+    /// <summary>
     /// What the quadrant shows, once the user has arranged it themselves. Empty means "whatever
     /// the orbit suggests" — see <see cref="HotCornerItems"/>, which picks the default and is also
     /// what writes this list the first time the corner is edited.
@@ -397,6 +414,9 @@ public sealed class AppConfig
         HotCornerEnabled = other.HotCornerEnabled;
         HotCorner = other.HotCorner;
         HotCornerLayout = other.HotCornerLayout;
+        MouseSummonEnabled = other.MouseSummonEnabled;
+        MouseSummonButton = other.MouseSummonButton;
+        MouseSummonHoldMs = other.MouseSummonHoldMs;
         // Copied, not aliased. Every other field here is a value type or an immutable string, so
         // assigning the reference would quietly make this the one line where two AppConfig
         // instances share mutable state: HotCornerItems.Edit and Reset both mutate this list in

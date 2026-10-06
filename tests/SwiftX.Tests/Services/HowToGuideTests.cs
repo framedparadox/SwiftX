@@ -212,8 +212,10 @@ public class HowToGuideTests
     {
         var dock = Section("dock");
 
-        Assert.Contains(OrbitMetrics.UserSlotCount.ToString(), dock.Summary);
-        Assert.Contains(OrbitMetrics.UserSlotCount.ToString(), dock.Steps[0]);
+        Assert.Contains(OrbitRingLayout.MaxUserCount.ToString(), dock.Summary);
+        Assert.Contains(OrbitRingLayout.MaxInnerCount.ToString(), dock.Summary);
+        Assert.Contains(OrbitRingLayout.MinInnerCount.ToString(), dock.Steps[0]);
+        Assert.Contains(OrbitRingLayout.MaxInnerCount.ToString(), dock.Steps[0]);
         Assert.Equal(GuideAction.OpenOrbit, dock.Action);
     }
 

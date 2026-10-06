@@ -1803,6 +1803,30 @@
                                 </Grid>
                             </Border>
 
+                            <Border Style="{StaticResource Card}">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE7C6;"
+                                              FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                              VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="Mouse hold" Style="{StaticResource SettingTitle}" />
+                                        <TextBlock Text="Hold the middle mouse button to show or hide the orbit at the pointer."
+                                                   Style="{StaticResource SettingBody}" />
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="MouseSummonEnabledToggle" Grid.Column="2"
+                                                  OnContent="" OffContent="" MinWidth="0"
+                                                  AutomationProperties.Name="Mouse hold summon"
+                                                  AutomationProperties.AutomationId="SettingsMouseSummonToggle"
+                                                  VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                  Toggled="MouseSummonEnabled_Toggled" />
+                                </Grid>
+                            </Border>
+
                             <!-- Language on the left, Accent colour on the right: each is a
                                  single row of icon, title, and control — no body copy. -->
                             <Grid ColumnSpacing="14">

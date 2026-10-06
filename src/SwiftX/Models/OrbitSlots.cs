@@ -13,19 +13,21 @@ namespace SwiftX.Models;
 public static class OrbitSlots
 {
     /// <summary>The items that take a slot, placeholders included, in slot order.</summary>
-    public static List<OrbitItem> Visible(IEnumerable<OrbitItem> items) =>
-        items.Where(i => !i.Hidden).Take(OrbitMetrics.UserSlotCount).ToList();
+    public static List<OrbitItem> Visible(
+        IEnumerable<OrbitItem> items, int capacity = OrbitRingLayout.MaxUserCount) =>
+        items.Where(i => !i.Hidden).Take(capacity).ToList();
 
     /// <summary>How many slots hold a real item.</summary>
     public static int Used(IEnumerable<OrbitItem> items) =>
         items.Count(i => !i.Hidden && !i.IsEmpty);
 
     /// <summary>Whether another item can go on the orbit: an empty slot, or one still free at the end.</summary>
-    public static bool HasRoom(IEnumerable<OrbitItem> items)
+    public static bool HasRoom(
+        IEnumerable<OrbitItem> items, int capacity = OrbitRingLayout.MaxUserCount)
     {
         var visible = items.Where(i => !i.Hidden).ToList();
-        return visible.Count < OrbitMetrics.UserSlotCount ||
-               visible.Take(OrbitMetrics.UserSlotCount).Any(i => i.IsEmpty);
+        return visible.Count < capacity ||
+               visible.Take(capacity).Any(i => i.IsEmpty);
     }
 
     public static OrbitItem NewEmpty() => new() { Kind = OrbitItemKind.Empty };
@@ -52,7 +54,7 @@ public static class OrbitSlots
     /// end. Slots between the end of the list and <paramref name="slot"/> become placeholders, so the
     /// item lands where it was dropped instead of sliding down to the first free place.
     /// </summary>
-    public static bool PlaceAt(List<OrbitItem> items, int slot, OrbitItem item, int capacity = OrbitMetrics.UserSlotCount)
+    public static bool PlaceAt(List<OrbitItem> items, int slot, OrbitItem item, int capacity = OrbitRingLayout.MaxUserCount)
     {
         if (slot < 0 || slot >= capacity)
             return false;
@@ -100,7 +102,7 @@ public static class OrbitSlots
     /// sliding back to the first free place.
     /// </summary>
     public static List<OrbitItem> Moved(
-        IReadOnlyList<OrbitItem> visible, OrbitItem dragged, int targetSlot, int capacity = OrbitMetrics.UserSlotCount)
+        IReadOnlyList<OrbitItem> visible, OrbitItem dragged, int targetSlot, int capacity = OrbitRingLayout.MaxUserCount)
     {
         var order = visible.ToList();
         int from = order.IndexOf(dragged);

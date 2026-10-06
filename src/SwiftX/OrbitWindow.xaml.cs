@@ -141,6 +141,8 @@ public sealed partial class OrbitWindow : Window
     // orbit (it has to clear two screen edges), so these are resolved per summon from
     // OrbitMetrics' *For(radius) helpers rather than read straight off OrbitMetrics.
     private double _itemRadius = OrbitMetrics.Radius;
+    private double _outerItemRadius = OrbitMetrics.FlyoutRadius;
+    private double _outerBandStart = OrbitMetrics.FlyoutBandStart;
     private double _flyoutRadius = OrbitMetrics.FlyoutRadius;
     private double _flyoutBandStart = OrbitMetrics.FlyoutBandStart;
     private double _flyoutStepDegrees = OrbitMetrics.FlyoutStepDegrees;
@@ -270,10 +272,21 @@ public sealed partial class OrbitWindow : Window
     private void UpdateGeometry()
     {
         _itemRadius = _quadrant is null ? OrbitMetrics.Radius : OrbitMetrics.QuadrantRadius;
-        _flyoutRadius = OrbitMetrics.FlyoutRadiusFor(_itemRadius);
-        _flyoutBandStart = OrbitMetrics.FlyoutBandStartFor(_itemRadius);
+        // Overflow user items sit on the flyout band; a group expansion then steps one band further
+        // out so its children do not land on top of those permanent outer items.
+        bool hasOuterItems = _quadrant is null && CurrentRingLayout().Any(e => e.IsOuter);
+        _outerItemRadius = OrbitMetrics.FlyoutRadiusFor(_itemRadius);
+        _outerBandStart = OrbitMetrics.FlyoutBandStartFor(_itemRadius);
+        _flyoutRadius = hasOuterItems
+            ? OrbitMetrics.FlyoutRadiusFor(_outerItemRadius)
+            : _outerItemRadius;
+        _flyoutBandStart = hasOuterItems
+            ? OrbitMetrics.FlyoutBandStartFor(_outerItemRadius)
+            : _outerBandStart;
         _flyoutStepDegrees = OrbitMetrics.FlyoutStepDegreesFor(_flyoutRadius);
-        _contentRadius = OrbitMetrics.ContentRadiusFor(_itemRadius);
+        _contentRadius = hasOuterItems
+            ? OrbitMetrics.ContentRadiusFor(_outerItemRadius)
+            : OrbitMetrics.ContentRadiusFor(_itemRadius);
     }
 
     /// <summary>
@@ -386,7 +399,7 @@ public sealed partial class OrbitWindow : Window
     private void ResolveGroupIcons()
     {
         int decodePixels = IconDecodePixels;
-        foreach (var (item, _, _) in CurrentLayout())
+        foreach (var (item, _, _, _) in CurrentLayout())
         {
             if (!item.IsGroup)
                 continue;
@@ -607,55 +620,36 @@ public sealed partial class OrbitWindow : Window
             bubble.Detach?.Invoke();
     }
 
-    private IReadOnlyList<(OrbitItem Item, int Slot)> CurrentItems()
-    {
-        var slots = new List<(OrbitItem, int)>();
-        int slot = 0;
-        foreach (var item in _manager.Config.Primary.Items.Where(i => !i.Hidden))
-        {
-            if (slot >= OrbitMetrics.UserSlotCount) break;
-            // A removed item's place stays on the ring as an "Add new" slot of its own.
-            slots.Add((item.IsEmpty ? SystemOrbitItems.CreateAddNew() : item, slot++));
-        }
-
-        // Fewer than UserSlotCount items leaves the rest of the orbit empty — fill each remaining
-        // user slot with its own "Add new" placeholder rather than leaving a bare gap, so the orbit
-        // always reads as a full circle and every empty slot is itself an obvious way to fill it.
-        while (slot < OrbitMetrics.UserSlotCount)
-            slots.Add((SystemOrbitItems.CreateAddNew(), slot++));
-
-        // Always last, always present, always in the same place — see SystemOrbitItems.
-        slots.Add((_settingsItem, OrbitMetrics.SlotCount - 2));
-        slots.Add((_closeItem, OrbitMetrics.SlotCount - 1));
-        return slots;
-    }
+    /// <summary>
+    /// Inner- and outer-ring entries for a full-orbit summon. Settings and Close are always on the
+    /// inner ring; user items past <see cref="OrbitRingLayout.MaxInnerUserCount"/> sit outside.
+    /// </summary>
+    private IReadOnlyList<OrbitRingLayout.Entry> CurrentRingLayout() =>
+        OrbitRingLayout.Build(_manager.Config.Primary.Items, _settingsItem, _closeItem);
 
     /// <summary>
-    /// What to draw and where, for whichever shape this summon took: the eight-slot orbit, or the
+    /// What to draw and where, for whichever shape this summon took: the multi-ring orbit, or the
     /// quarter circle's fan. Index is the bubble's position in its own layout — an orbit slot, or a
     /// place along the arc — and the angle is already in canvas terms.
     /// </summary>
-    private IReadOnlyList<(OrbitItem Item, int Index, double AngleRad)> CurrentLayout()
+    private IReadOnlyList<(OrbitItem Item, int Index, double AngleRad, bool IsOuter)> CurrentLayout()
     {
         if (_quadrant is not { } corner)
         {
-            return CurrentItems()
-                .Select(entry => (
-                    Item: entry.Item,
-                    Index: entry.Slot,
-                    AngleRad: OrbitMetrics.SlotAngleRad(entry.Slot)))
+            return CurrentRingLayout()
+                .Select(entry => (entry.Item, entry.Index, entry.AngleRad, entry.IsOuter))
                 .ToList();
         }
 
         var items = HotCornerItems.Resolve(_manager.Config, _settingsItem);
-        var layout = new List<(OrbitItem Item, int Index, double AngleRad)>(items.Count);
+        var layout = new List<(OrbitItem Item, int Index, double AngleRad, bool IsOuter)>(items.Count);
         for (int i = 0; i < items.Count; i++)
         {
             // A place the user emptied stays a gap on the arc; the items around it keep theirs.
             if (items[i].IsEmpty) continue;
             double local = QuadrantLayout.LocalAngleRad(
                 i, items.Count, OrbitMetrics.Bubble * OrbitMetrics.HoverScale, _itemRadius);
-            layout.Add((items[i], i, QuadrantLayout.ScreenAngleRad(corner, local)));
+            layout.Add((items[i], i, QuadrantLayout.ScreenAngleRad(corner, local), false));
         }
         return layout;
     }
@@ -676,16 +670,21 @@ public sealed partial class OrbitWindow : Window
         // actually shows.
         AttachHub();
 
-        foreach (var (item, slot, angle) in CurrentLayout())
+        foreach (var (item, slot, angle, isOuter) in CurrentLayout())
         {
+            double radius = isOuter ? _outerItemRadius : _itemRadius;
+            double diameter = isOuter ? OrbitMetrics.FlyoutBubble : OrbitMetrics.Bubble;
+            double iconSize = isOuter ? OrbitMetrics.FlyoutIcon : OrbitMetrics.Icon;
+            double glyphSize = isOuter ? OrbitMetrics.FlyoutGlyph : OrbitMetrics.Glyph;
             var bubble = CreateBubble(
                 item, slot, angle,
-                radius: _itemRadius,
-                diameter: OrbitMetrics.Bubble,
-                iconSize: OrbitMetrics.Icon,
-                glyphSize: OrbitMetrics.Glyph,
+                radius: radius,
+                diameter: diameter,
+                iconSize: iconSize,
+                glyphSize: glyphSize,
                 origin: Vector2.Zero,
-                isFlyout: false);
+                isFlyout: false,
+                isOuterRing: isOuter);
             _bubbles.Add(bubble);
             OrbitCanvas.Children.Add(bubble.Host);
             _ = ResolveIconAsync(item, IconDecodePixels);
@@ -1059,7 +1058,7 @@ public sealed partial class OrbitWindow : Window
 
     private BubbleView CreateBubble(
         OrbitItem item, int index, double angle, double radius, double diameter,
-        double iconSize, double glyphSize, Vector2 origin, bool isFlyout)
+        double iconSize, double glyphSize, Vector2 origin, bool isFlyout, bool isOuterRing = false)
     {
         float restX = (float)(radius * Math.Cos(angle));
         float restY = (float)(radius * Math.Sin(angle));
@@ -1220,6 +1219,7 @@ public sealed partial class OrbitWindow : Window
             OriginY = origin.Y,
             Diameter = diameter,
             IsFlyout = isFlyout,
+            IsOuterRing = isOuterRing,
             StaggerIndex = index,
             Backdrop = backdrop,
             Rim = rim,
@@ -2439,7 +2439,7 @@ public sealed partial class OrbitWindow : Window
             return;
         }
 
-        // Past the flyout band the outer orbit owns the pointer; inside it, the inner orbit does.
+        // Past the flyout band the group expansion owns the pointer.
         if (_flyout.Count > 0 && dist >= _flyoutBandStart)
         {
             SetHovered(NearestOnArc(_flyout, dx, dy, _flyoutStepDegrees * 0.6 * Math.PI / 180.0));
@@ -2447,10 +2447,21 @@ public sealed partial class OrbitWindow : Window
         }
 
         // A quarter circle is an arc too, so it is hovered the same way its flyout is rather than
-        // through the eight-slot lookup below, which only knows about the full orbit's geometry.
+        // through the ring-slot lookup below, which only knows about the full orbit's geometry.
         if (_quadrant is not null)
         {
             SetHovered(NearestOnArc(_bubbles, dx, dy, QuadrantHoverToleranceRad()));
+            return;
+        }
+
+        var outer = _bubbles.Where(b => b.IsOuterRing).ToList();
+        var inner = _bubbles.Where(b => !b.IsOuterRing).ToList();
+
+        // Permanent overflow ring: once the pointer is past the inner band, angle-pick among those.
+        if (outer.Count > 0 && dist >= _outerBandStart)
+        {
+            int outerIndex = OrbitRingLayout.NearestSlotIndex(dx, dy, outer.Count);
+            SetHovered(outer.FirstOrDefault(b => b.Index == outerIndex));
             return;
         }
 
@@ -2458,8 +2469,8 @@ public sealed partial class OrbitWindow : Window
         // precise hover over a bubble's own small circle — so the gaps between bubbles feel like
         // part of the orbit instead of dead space. A gap that points at a slot with no bubble in
         // it simply clears the hover.
-        int index = OrbitMetrics.NearestSlotIndex(dx, dy);
-        SetHovered(_bubbles.FirstOrDefault(b => b.Index == index));
+        int index = OrbitRingLayout.NearestSlotIndex(dx, dy, Math.Max(1, inner.Count));
+        SetHovered(inner.FirstOrDefault(b => b.Index == index));
     }
 
     /// <summary>
@@ -2587,6 +2598,9 @@ public sealed partial class OrbitWindow : Window
 
         public required double Diameter { get; init; }
         public required bool IsFlyout { get; init; }
+
+        /// <summary>True for a permanent overflow item on the outer user ring (not a group flyout).</summary>
+        public bool IsOuterRing { get; init; }
 
         /// <summary>
         /// The live-acrylic disc under the tint. ApplyBubbleFill fades it out whenever the fill

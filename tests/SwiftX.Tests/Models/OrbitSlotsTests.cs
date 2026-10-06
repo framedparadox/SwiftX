@@ -89,21 +89,21 @@ public class OrbitSlotsTests
     [Fact]
     public void Place_refuses_once_every_slot_is_taken()
     {
-        var items = Enumerable.Range(0, OrbitMetrics.UserSlotCount).Select(i => App("i" + i)).ToList();
+        var items = Enumerable.Range(0, OrbitRingLayout.MaxUserCount).Select(i => App("i" + i)).ToList();
 
         Assert.False(OrbitSlots.HasRoom(items));
         Assert.False(OrbitSlots.Place(items, App("extra")));
-        Assert.Equal(OrbitMetrics.UserSlotCount, items.Count);
+        Assert.Equal(OrbitRingLayout.MaxUserCount, items.Count);
     }
 
     [Fact]
     public void A_full_ring_with_a_hole_has_room_and_counts_only_real_items()
     {
-        var items = Enumerable.Range(0, OrbitMetrics.UserSlotCount).Select(i => App("i" + i)).ToList();
+        var items = Enumerable.Range(0, OrbitRingLayout.MaxUserCount).Select(i => App("i" + i)).ToList();
         OrbitSlots.Vacate(items, items[2]);
 
         Assert.True(OrbitSlots.HasRoom(items));
-        Assert.Equal(OrbitMetrics.UserSlotCount - 1, OrbitSlots.Used(items));
+        Assert.Equal(OrbitRingLayout.MaxUserCount - 1, OrbitSlots.Used(items));
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public class OrbitSlotsTests
     {
         var items = new List<OrbitItem>();
 
-        Assert.False(OrbitSlots.PlaceAt(items, OrbitMetrics.UserSlotCount, App("x")));
+        Assert.False(OrbitSlots.PlaceAt(items, OrbitRingLayout.MaxUserCount, App("x")));
         Assert.False(OrbitSlots.PlaceAt(items, -1, App("x")));
     }
 

@@ -314,7 +314,7 @@ public sealed partial class OnboardingWindow : Window
             0 => ("Welcome to SwiftX",
                   "A quick-access orbit for the apps, folders, links and tools you reach for most."),
             1 => ("What goes on the orbit?",
-                  $"Tick what you want within reach. The orbit holds {OrbitMetrics.UserSlotCount} of your own items — everything here can be changed later from Orbit Settings."),
+                  $"Tick what you want within reach. The orbit holds {OrbitRingLayout.MaxUserCount} of your own items — everything here can be changed later from Orbit Settings."),
             _ => ("How should it appear?",
                   "Pick the keys that summon the orbit, and whether a screen corner should do it too."),
         };
@@ -371,10 +371,10 @@ public sealed partial class OnboardingWindow : Window
         SuggestionGrid.RowDefinitions.Clear();
 
         int used = _selected.Count;
-        bool full = used >= OrbitMetrics.UserSlotCount;
+        bool full = used >= OrbitRingLayout.MaxUserCount;
 
         SlotCountText.Text =
-            $"{used} of {OrbitMetrics.UserSlotCount} orbit slots used" + (full ? " · orbit full" : "");
+            $"{used} of {OrbitRingLayout.MaxUserCount} orbit slots used" + (full ? " · orbit full" : "");
 
         int rows = (_suggestions.Count + 1) / 2;
         for (int r = 0; r < rows; r++)
@@ -544,7 +544,7 @@ public sealed partial class OnboardingWindow : Window
             {
                 var key = "custom:" + added.Id;
                 _suggestions.Add(new OnboardingSuggestion(key, KindLabel(added), added, DefaultOn: true));
-                if (_selected.Count < OrbitMetrics.UserSlotCount)
+                if (_selected.Count < OrbitRingLayout.MaxUserCount)
                     _selected.Add(key);
                 RebuildSuggestions();
             },
@@ -581,7 +581,7 @@ public sealed partial class OnboardingWindow : Window
         _suggestions
             .Where(s => _selected.Contains(s.Key))
             .Select(s => s.Item)
-            .Take(OrbitMetrics.UserSlotCount)
+            .Take(OrbitRingLayout.MaxUserCount)
             .ToList();
 
     // ===================== step 3: summoning =====================

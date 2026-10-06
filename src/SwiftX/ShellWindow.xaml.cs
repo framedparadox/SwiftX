@@ -118,16 +118,19 @@ public sealed partial class ShellWindow : Window
 
     // Preview geometry and slot occupancy, recorded by RenderPreview so the canvas-level pointer
     // handlers can work out which slot an event landed in without walking the visual tree.
-    private readonly Border?[] _slotBorders = new Border?[OrbitMetrics.SlotCount];
+    private readonly Border?[] _slotBorders = new Border?[OrbitRingLayout.MaxUserCount];
     // The empty user slots' borders, kept apart from _slotBorders because every reader of that array
     // takes a non-null entry to mean "an item lives here". Only a drag-over needs these, to
     // highlight the place a drop would fill.
-    private readonly Border?[] _emptySlotBorders = new Border?[OrbitMetrics.SlotCount];
+    private readonly Border?[] _emptySlotBorders = new Border?[OrbitRingLayout.MaxUserCount];
     private Border? _hoveredPreviewOrigin;
     private readonly Dictionary<Border, Border> _previewHoverPartners = new();
     private readonly List<(Border Element, Brush? Brush, Thickness Thickness)> _hoveredPreviewRestores = new();
     private Point _previewCenter;
     private double _previewRadius;
+    private double _previewOuterRadius;
+    private int _previewInnerCount = OrbitMetrics.SlotCount;
+    private int _previewOuterCount;
     private double _previewBubble;
 
     // Quadrant geometry and slot occupancy, the corner view's counterpart to _slotBorders and
@@ -336,6 +339,7 @@ public sealed partial class ShellWindow : Window
             SelectItemShape(_manager.Config.ItemShape);
             RadiusSlider.Value = _manager.Config.OrbitRadius ?? OrbitMetrics.DefaultRadius;
             HotkeyEnabledToggle.IsOn = _manager.Config.HotkeyEnabled;
+            MouseSummonEnabledToggle.IsOn = _manager.Config.MouseSummonEnabled;
             HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
             SelectHotCorner(_manager.Config.HotCorner);
             SelectHotCornerLayout(_manager.Config.HotCornerLayout);
@@ -1177,7 +1181,7 @@ public sealed partial class ShellWindow : Window
     private void ShowHomeOrbitHover()
     {
         int used = OrbitSlots.Used(_manager.Config.Primary.Items);
-        int slots = OrbitMetrics.UserSlotCount;
+        int slots = OrbitRingLayout.MaxUserCount;
         HomeOrbitHoverCount.Text = $"{used} of {slots} slots in use";
         HomeOrbitHoverSummary.Text =
             "Pick what sits on the orbit, how large the items are, and whether a screen corner summons it.";
@@ -1185,7 +1189,8 @@ public sealed partial class ShellWindow : Window
             ? (_manager.Config.Hotkey ?? HotkeyGesture.Default.ToString())
             : "Off";
         string corner = _manager.Config.HotCornerEnabled ? "Hot corner on" : "Hot corner off";
-        HomeOrbitHoverMeta.Text = $"Shortcut  {hotkey}  •  {corner}";
+        string mouse = _manager.Config.MouseSummonEnabled ? "Middle-click hold on" : "Middle-click hold off";
+        HomeOrbitHoverMeta.Text = $"Shortcut  {hotkey}  •  {corner}  •  {mouse}";
 
         HomeOrbitHoverPanel.Visibility = Visibility.Visible;
         HomeOrbitHoverSlide.X = _homeOrbitHoverOpen ? 0 : -28;
@@ -1847,8 +1852,6 @@ public sealed partial class ShellWindow : Window
         Canvas.SetTop(hub, cy - logo / 2);
         PreviewCanvas.Children.Add(hub);
 
-        var items = OrbitSlots.Visible(_manager.Config.Primary.Items);
-
         // A full orbit has no empty slot left to add into, so the button that would open the add
         // dialog goes away rather than sitting there offering something the orbit cannot take.
         // Reset defaults stays: it is still meaningful on a full orbit.
@@ -1856,52 +1859,65 @@ public sealed partial class ShellWindow : Window
             ? Visibility.Visible
             : Visibility.Collapsed;
 
-        for (int i = 0; i < OrbitMetrics.SlotCount; i++)
-        {
-            double angle = (-90 + i * 45) * Math.PI / 180.0;
-            double x = cx + radius * Math.Cos(angle) - bubble / 2;
-            double y = cy + radius * Math.Sin(angle) - bubble / 2;
+        var layout = OrbitRingLayout.Build(
+            _manager.Config.Primary.Items,
+            SystemOrbitItems.CreateSettings(),
+            SystemOrbitItems.CreateClose());
+        _previewInnerCount = layout.Count(e => !e.IsOuter);
+        _previewOuterCount = layout.Count(e => e.IsOuter);
+        double outerRadius = OrbitMetrics.FlyoutRadiusFor(OrbitMetrics.Radius) * scale;
+        _previewOuterRadius = outerRadius;
+        double outerBubble = OrbitMetrics.FlyoutBubble * scale;
+        double outerGlyph = Math.Max(10, OrbitMetrics.FlyoutGlyph * scale);
 
-            // The orbit synthesizes Settings and Close into the last two slots, so the preview does
-            // the same rather than reading them out of the profile — they are not in it.
-            bool pinned = i >= OrbitMetrics.UserSlotCount;
-            OrbitItem? item = pinned
-                ? (i == OrbitMetrics.UserSlotCount ? SystemOrbitItems.CreateSettings() : SystemOrbitItems.CreateClose())
-                : i < items.Count && !items[i].IsEmpty ? items[i] : null;
+        foreach (var entry in layout)
+        {
+            double entryRadius = entry.IsOuter ? outerRadius : radius;
+            double entryBubble = entry.IsOuter ? outerBubble : bubble;
+            double entryGlyph = entry.IsOuter ? outerGlyph : glyphSize;
+            double angle = entry.AngleRad;
+            double x = cx + entryRadius * Math.Cos(angle) - entryBubble / 2;
+            double y = cy + entryRadius * Math.Sin(angle) - entryBubble / 2;
+
+            bool isAddNew = string.Equals(
+                entry.Item.Target, SystemOrbitItems.AddNewTarget, StringComparison.OrdinalIgnoreCase);
+            OrbitItem? item = entry.IsPinned || !isAddNew ? entry.Item : null;
 
             var border = new Border
             {
-                Width = bubble,
-                Height = bubble,
+                Width = entryBubble,
+                Height = entryBubble,
                 Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 Tag = item,
             };
 
-            if (pinned)
+            if (entry.IsPinned)
             {
-                border.Child = PreviewBubbleContent(item!, glyphSize, canvasAccent, bubble, angle);
+                border.Child = PreviewBubbleContent(entry.Item, entryGlyph, canvasAccent, entryBubble, angle);
                 border.BorderBrush = canvasAccent;
                 border.BorderThickness = new Thickness(1.5);
-                ToolTipService.SetToolTip(border, $"{item!.DisplayName} — always on the orbit");
+                ToolTipService.SetToolTip(border, $"{entry.Item.DisplayName} — always on the orbit");
             }
             else if (item is null)
             {
-                border.Child = PreviewGlyph("\uE710", glyphSize, muted);
-                _emptySlotBorders[i] = border;
+                border.Child = PreviewGlyph("\uE710", entryGlyph, muted);
+                if (entry.UserSlot >= 0 && entry.UserSlot < _emptySlotBorders.Length)
+                    _emptySlotBorders[entry.UserSlot] = border;
             }
             else
             {
-                border.Child = PreviewBubbleContent(item, glyphSize, foreground, bubble, angle);
+                border.Child = PreviewBubbleContent(item, entryGlyph, foreground, entryBubble, angle);
                 ToolTipService.SetToolTip(border, $"{item.DisplayName} — right-click to replace or delete");
-                _slotBorders[i] = border;
+                if (entry.UserSlot >= 0 && entry.UserSlot < _slotBorders.Length)
+                    _slotBorders[entry.UserSlot] = border;
             }
 
-            OrbitItemGeometry.Apply(border, bubble);
+            OrbitItemGeometry.Apply(border, entryBubble);
 
             if (item is not null)
-                AttachPreviewHover(border, AddSlotLabel(item, cx, cy, angle, radius, bubble));
+                AttachPreviewHover(border, AddSlotLabel(item, cx, cy, angle, entryRadius, entryBubble));
             else
                 AttachPreviewHover(border);
 
@@ -2362,7 +2378,7 @@ public sealed partial class ShellWindow : Window
         int targetSlot = PreviewSlotAt(point, requireHit: false);
         if (targetSlot == _dragTentativeSlot) return;
         _dragTentativeSlot = targetSlot;
-        if (targetSlot < 0 || targetSlot >= OrbitMetrics.UserSlotCount) return;
+        if (targetSlot < 0 || targetSlot >= OrbitRingLayout.MaxUserCount) return;
 
         var visible = OrbitSlots.Visible(_manager.Config.Primary.Items);
         if (!visible.Contains(_dragItem)) return;
@@ -2378,15 +2394,23 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private void ReflowOrbitBorders(List<OrbitItem> tentativeOrder)
     {
+        int outerCount = Math.Max(0, tentativeOrder.Count - OrbitRingLayout.MaxInnerUserCount);
+        int innerUserCount = tentativeOrder.Count - outerCount;
+        int innerCount = innerUserCount + OrbitRingLayout.SystemCount;
+
         for (int i = 0; i < tentativeOrder.Count; i++)
         {
             var item = tentativeOrder[i];
             if (ReferenceEquals(item, _dragItem)) continue;
             var border = FindSlotBorder(_slotBorders, item);
             if (border is null) continue;
-            double angle = OrbitMetrics.SlotAngleRad(i);
-            double x = _previewCenter.X + _previewRadius * Math.Cos(angle) - _previewBubble / 2;
-            double y = _previewCenter.Y + _previewRadius * Math.Sin(angle) - _previewBubble / 2;
+            bool isOuter = i >= OrbitRingLayout.MaxInnerUserCount;
+            double radius = isOuter ? _previewOuterRadius : _previewRadius;
+            double angle = isOuter
+                ? OrbitRingLayout.SlotAngleRad(i - OrbitRingLayout.MaxInnerUserCount, Math.Max(1, outerCount))
+                : OrbitRingLayout.SlotAngleRad(i, Math.Max(1, innerCount));
+            double x = _previewCenter.X + radius * Math.Cos(angle) - _previewBubble / 2;
+            double y = _previewCenter.Y + radius * Math.Sin(angle) - _previewBubble / 2;
             AnimateBubbleTo(border, x, y);
         }
     }
@@ -2546,7 +2570,7 @@ public sealed partial class ShellWindow : Window
             else
                 ShowItemDetails(item, e.GetCurrentPoint(PreviewCanvas).Position);
         }
-        else if (slot < OrbitMetrics.UserSlotCount)
+        else if (slot < OrbitRingLayout.MaxUserCount)
         {
             // The ring's own "+" opens the "ADD TO ORBIT" sidebar, the same place the Elements
             // button goes, rather than the add dialog in a second window. The dialog stays one
@@ -2584,7 +2608,7 @@ public sealed partial class ShellWindow : Window
         }
 
         int slot = DropSlotAt(sender, e);
-        if (!_previewQuadrant && slot >= OrbitMetrics.UserSlotCount)
+        if (!_previewQuadrant && slot >= OrbitRingLayout.MaxUserCount)
             slot = -1;
 
         // The pinned Settings and Close pills label no place that can take anything, so a pill
@@ -2723,7 +2747,7 @@ public sealed partial class ShellWindow : Window
             return;
         }
 
-        if (slot < 0 || slot >= OrbitMetrics.UserSlotCount) return;
+        if (slot < 0 || slot >= OrbitRingLayout.MaxUserCount) return;
         var items = _manager.Config.Primary.Items;
         if (_slotBorders[slot]?.Tag is OrbitItem item)
         {
@@ -2807,7 +2831,7 @@ public sealed partial class ShellWindow : Window
     private MenuFlyout? BuildOrbitItemMenu(Point point)
     {
         int slot = PreviewSlotAt(point);
-        if (slot < 0 || slot >= OrbitMetrics.UserSlotCount)
+        if (slot < 0 || slot >= OrbitRingLayout.MaxUserCount)
             return null;
 
         // Only a filled user slot has a border recorded here — RenderPreview leaves the pinned and
@@ -3148,15 +3172,39 @@ public sealed partial class ShellWindow : Window
     {
         double dx = point.X - _previewCenter.X;
         double dy = point.Y - _previewCenter.Y;
-        int slot = OrbitMetrics.NearestSlotIndex(dx, dy);
-        if (!requireHit)
-            return slot;
+        double dist = Math.Sqrt(dx * dx + dy * dy);
 
-        double angle = OrbitMetrics.SlotAngleRad(slot);
-        double sx = _previewRadius * Math.Cos(angle);
-        double sy = _previewRadius * Math.Sin(angle);
-        double gap = Math.Sqrt((dx - sx) * (dx - sx) + (dy - sy) * (dy - sy));
-        return gap <= _previewBubble / 2 + 4 ? slot : -1;
+        // Outer ring owns the pointer once it clears the midpoint between the two radii.
+        bool onOuter = _previewOuterCount > 0 &&
+                       dist >= (_previewRadius + _previewOuterRadius) / 2;
+        if (onOuter)
+        {
+            int outerIndex = OrbitRingLayout.NearestSlotIndex(dx, dy, _previewOuterCount);
+            int slot = OrbitRingLayout.MaxInnerUserCount + outerIndex;
+            if (!requireHit)
+                return slot;
+            double angle = OrbitRingLayout.SlotAngleRad(outerIndex, _previewOuterCount);
+            double sx = _previewOuterRadius * Math.Cos(angle);
+            double sy = _previewOuterRadius * Math.Sin(angle);
+            double gap = Math.Sqrt((dx - sx) * (dx - sx) + (dy - sy) * (dy - sy));
+            return gap <= _previewBubble / 2 + 4 ? slot : -1;
+        }
+
+        int innerCount = Math.Max(1, _previewInnerCount);
+        int index = OrbitRingLayout.NearestSlotIndex(dx, dy, innerCount);
+        // Settings/Close occupy the last two inner places and are not user slots.
+        int userPlaces = Math.Max(0, innerCount - OrbitRingLayout.SystemCount);
+        if (index >= userPlaces)
+            return -1; // pinned — not a drop or reorder target
+        int userSlot = index;
+        if (!requireHit)
+            return userSlot;
+
+        double innerAngle = OrbitRingLayout.SlotAngleRad(index, innerCount);
+        double ix = _previewRadius * Math.Cos(innerAngle);
+        double iy = _previewRadius * Math.Sin(innerAngle);
+        double innerGap = Math.Sqrt((dx - ix) * (dx - ix) + (dy - iy) * (dy - iy));
+        return innerGap <= _previewBubble / 2 + 4 ? userSlot : -1;
     }
 
     /// <summary>
@@ -3314,7 +3362,7 @@ public sealed partial class ShellWindow : Window
     {
         // Slots past the user range hold the pinned Settings/Close bubbles; a drop there is
         // ignored rather than clamped, so the item stays where the user last put it.
-        if (targetSlot < 0 || targetSlot >= OrbitMetrics.UserSlotCount) return;
+        if (targetSlot < 0 || targetSlot >= OrbitRingLayout.MaxUserCount) return;
 
         var before = OrbitSlots.Visible(_manager.Config.Primary.Items);
         if (!before.Contains(dragged)) return;
@@ -4438,7 +4486,7 @@ public sealed partial class ShellWindow : Window
         }
 
         int used = OrbitSlots.Used(_manager.Config.Primary.Items);
-        int free = Math.Max(0, OrbitMetrics.UserSlotCount - used);
+        int free = Math.Max(0, OrbitRingLayout.MaxUserCount - used);
         OrbitEditSummary.Text = free switch
         {
             0 => "The orbit is full. Remove something to make room.",
@@ -6389,10 +6437,12 @@ public sealed partial class ShellWindow : Window
             _manager.ApplyTheme();
             _manager.ApplyLanguage();
             _manager.ApplyHotCorner();
+            _manager.ApplyMouseSummon();
             ApplyTheme();
             _loading = true;
             PopulateLanguageBox();
             HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
+            MouseSummonEnabledToggle.IsOn = _manager.Config.MouseSummonEnabled;
             SelectHotCorner(_manager.Config.HotCorner);
             SelectHotCornerLayout(_manager.Config.HotCornerLayout);
             SyncHotCornerControls();
@@ -6421,6 +6471,9 @@ public sealed partial class ShellWindow : Window
         _manager.Config.HoverAnimation = HoverAnimation.Pulse;
         _manager.Config.Hotkey = HotkeyGesture.Default.ToString();
         _manager.Config.HotkeyEnabled = true;
+        _manager.Config.MouseSummonEnabled = true;
+        _manager.Config.MouseSummonButton = MouseSummonButton.Middle;
+        _manager.Config.MouseSummonHoldMs = MouseSummonDefaults.HoldMilliseconds;
         _manager.Config.HotCornerEnabled = true;
         _manager.Config.HotCorner = HotCorner.TopLeft;
         _manager.Config.HotCornerLayout = HotCornerLayout.Orbit;
@@ -6443,6 +6496,7 @@ public sealed partial class ShellWindow : Window
         _manager.ApplyTheme();
         _manager.ApplyHotkey();
         _manager.ApplyHotCorner();
+        _manager.ApplyMouseSummon();
         ApplyTheme();
         _loading = true;
         SelectTheme(AppTheme.Dark);
@@ -6452,6 +6506,7 @@ public sealed partial class ShellWindow : Window
         SelectItemShape(OrbitItemShape.Circle);
         RadiusSlider.Value = OrbitMetrics.DefaultRadius;
         HotkeyEnabledToggle.IsOn = true;
+        MouseSummonEnabledToggle.IsOn = true;
         HotkeyCapture.Gesture = HotkeyGesture.Default;
         HotCornerEnabledToggle.IsOn = true;
         ExperienceRating.Value = -1;
@@ -6544,6 +6599,14 @@ public sealed partial class ShellWindow : Window
         _manager.Config.HotkeyEnabled = HotkeyEnabledToggle.IsOn;
         _manager.Save();
         UpdateHotkeyStatus();
+    }
+
+    private void MouseSummonEnabled_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _manager.Config.MouseSummonEnabled = MouseSummonEnabledToggle.IsOn;
+        _manager.Save();
+        _manager.ApplyMouseSummon();
     }
 
     private void SelectHotCorner(HotCorner corner) => RebuildHotCornerPicker(corner);

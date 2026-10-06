@@ -15,6 +15,7 @@ public sealed class OrbitManager
     private TrayIconService? _tray;
     private HotkeyService? _hotkeys;
     private HotCornerWatcher? _hotCorner;
+    private MouseSummonWatcher? _mouseSummon;
     private ShellWindow? _shellWindow;
     private OnboardingWindow? _onboardingWindow;
     private AddItemWindow? _addItemWindow;
@@ -164,8 +165,8 @@ public sealed class OrbitManager
     }
 
     /// <summary>
-    /// Fills the orbit's <see cref="OrbitMetrics.UserSlotCount"/> user slots. Settings and Close are
-    /// deliberately absent: the orbit always adds them itself (see <see cref="SystemOrbitItems"/>).
+    /// Fills the orbit's default user slots. Settings and Close are deliberately absent: the orbit
+    /// always adds them itself (see <see cref="SystemOrbitItems"/>).
     /// </summary>
     public void SeedDefaults(OrbitProfile profile)
     {
@@ -243,6 +244,10 @@ public sealed class OrbitManager
             _hotCorner = new HotCornerWatcher(_messageWindow);
             _hotCorner.Triggered += SummonFromHotCorner;
             ApplyHotCorner();
+
+            _mouseSummon = new MouseSummonWatcher(_messageWindow);
+            _mouseSummon.Triggered += SummonFromMouse;
+            ApplyMouseSummon();
         }
         catch (Exception ex)
         {
@@ -268,6 +273,11 @@ public sealed class OrbitManager
     public void ApplyHotCorner() =>
         _hotCorner?.Configure(Config.HotCornerEnabled, Config.HotCorner);
 
+    /// <summary>Puts <see cref="Config"/>'s mouse long-press summon into effect.</summary>
+    public void ApplyMouseSummon() =>
+        _mouseSummon?.Configure(
+            Config.MouseSummonEnabled, Config.MouseSummonButton, Config.MouseSummonHoldMs);
+
     /// <summary>
     /// The mouse-only counterpart to the summon hotkey (see <see cref="HotCornerWatcher"/>).
     /// A toggle, the same as the hotkey and the tray icon: the pointer reaching the corner while
@@ -292,6 +302,17 @@ public sealed class OrbitManager
         // comes up under the pointer exactly as the hotkey summons it.
         _orbitWindow.Summon(
             Config.HotCornerLayout == HotCornerLayout.Quadrant ? Config.HotCorner : null);
+    }
+
+    /// <summary>
+    /// Long-press mouse summon (see <see cref="MouseSummonWatcher"/>). Same toggle semantics as
+    /// the hot corner: ignored while the tray has hidden the dock, and dismisses when already open.
+    /// </summary>
+    private void SummonFromMouse()
+    {
+        if (_hiddenByUser)
+            return;
+        ToggleOrbit();
     }
 
     public void ToggleOrbit()
@@ -552,10 +573,12 @@ public sealed class OrbitManager
         _tray?.Dispose();
         _hotkeys?.Dispose();
         _hotCorner?.Dispose();
+        _mouseSummon?.Dispose();
         _messageWindow?.Dispose();
         _tray = null;
         _hotkeys = null;
         _hotCorner = null;
+        _mouseSummon = null;
         _messageWindow = null;
     }
 

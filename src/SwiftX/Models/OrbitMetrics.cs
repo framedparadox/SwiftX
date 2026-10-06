@@ -307,25 +307,24 @@ public static class OrbitMetrics
     public const int SlotCount = 8;
 
     /// <summary>
-    /// Slots available to user items: the last two are reserved for the built-in Settings and
-    /// Close entries, which are always on the orbit (see <see cref="SystemOrbitItems"/>).
+    /// Slots available to user items on the inner ring: the last two of <see cref="SlotCount"/>
+    /// are reserved for the built-in Settings and Close entries (see <see cref="SystemOrbitItems"/>).
+    /// Overflow beyond this lands on the outer ring — see <see cref="OrbitRingLayout"/>.
     /// </summary>
     public const int UserSlotCount = SlotCount - 2;
 
     /// <summary>
-    /// The slot (0..<see cref="SlotCount"/>-1) angularly nearest a pointer at offset
+    /// The slot (0..<paramref name="count"/>-1) angularly nearest a pointer at offset
     /// (<paramref name="dx"/>, <paramref name="dy"/>) from the orbit center, matching the layout
-    /// in OrbitWindow.CreateBubble: slot 0 is straight up, slots advance clockwise 45° apart.
+    /// in OrbitWindow.CreateBubble: slot 0 is straight up, slots advance clockwise.
     /// Pure geometry — no notion of which slots actually have an item in them, so callers must
     /// still check that one exists at the returned index.
     /// </summary>
-    public static int NearestSlotIndex(double dx, double dy)
-    {
-        double angle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
-        double normalized = (angle + 90 + 360) % 360;
-        return (int)Math.Round(normalized / 45.0) % SlotCount;
-    }
+    public static int NearestSlotIndex(double dx, double dy, int count = SlotCount) =>
+        OrbitRingLayout.NearestSlotIndex(dx, dy, count);
 
-    /// <summary>Angle (radians, 0 = straight up, clockwise) of inner slot <paramref name="index"/>.</summary>
-    public static double SlotAngleRad(int index) => (-90 + index * 45) * Math.PI / 180.0;
+    /// <summary>Angle (radians, 0 = straight up, clockwise) of inner slot <paramref name="index"/>
+    /// on a full <see cref="SlotCount"/> ring (45° steps). Prefer
+    /// <see cref="OrbitRingLayout.SlotAngleRad"/> when the ring's live count may differ.</summary>
+    public static double SlotAngleRad(int index) => OrbitRingLayout.SlotAngleRad(index, SlotCount);
 }
