@@ -753,8 +753,13 @@ public static class AppLogo
                     Canvas.SetTop(ellipse, cy - bubbleR);
                     ellipse.Opacity = 1;
 
+                    // Scale and opacity only, never Offset. A dock bubble's Offset is how XAML
+                    // carries the Canvas.Left/Top set just above, and XAML only writes it again when
+                    // that position changes. Every replay sets the same position as the first play,
+                    // so an Offset written here stood, and all eight bubbles revolved as one clump
+                    // in the ring's top-left corner. That happened on every replay after a Reset,
+                    // which the Home rest now does routinely (see ShellWindow.StopHomeOrbitMark).
                     var visual = ElementCompositionPreview.GetElementVisual(ellipse);
-                    visual.Offset = Vector3.Zero;
                     visual.Scale = Vector3.One;
                     visual.Opacity = 1;
                 }
@@ -1122,13 +1127,14 @@ public static class AppLogo
                 {
                     foreach (var bubble in _dockBubbles)
                     {
+                        // No Offset here: layout owns it for these Canvas-positioned bubbles (see
+                        // PlayOrbitDock). The encode cells below are the opposite case: they sit at
+                        // Canvas 0,0 and are placed by Offset alone, so resetting theirs is correct.
                         var visual = ElementCompositionPreview.GetElementVisual(bubble);
-                        visual.StopAnimation("Offset");
                         visual.StopAnimation("Scale");
                         visual.StopAnimation("Opacity");
                         visual.Opacity = 0;
                         visual.Scale = Vector3.One;
-                        visual.Offset = Vector3.Zero;
                         bubble.Opacity = 0;
                         bubble.Visibility = Visibility.Collapsed;
                     }

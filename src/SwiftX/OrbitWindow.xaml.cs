@@ -25,7 +25,16 @@ public sealed partial class OrbitWindow : Window
 {
     private const float SpringDamping = 0.65f;
     private const int SpringPeriodMs = 220;
-    private const int StaggerMs = 28;
+
+    /// <summary>
+    /// Gap between neighbouring bubbles' entrances. Small against the spring's own flight (about
+    /// 215 ms to settle at <see cref="SpringPeriodMs"/>), so the eight leave the hub together and
+    /// the orbit grows outward as one ring. It was 28 ms when the spring took over a second to
+    /// settle (see <see cref="SpringMotion"/>); against the corrected spring the same 28 ms let the
+    /// first bubble land before the last one left, so the ring formed as a clockwise spiral
+    /// instead of a circle. Same proportion of the flight as before, about one seventh.
+    /// </summary>
+    private const int StaggerMs = 4;
 
     // Flyout ("water drop") motion. Looser damping than the main orbit's entrance so the children
     // visibly overshoot and settle, and a slower period so the travel out to the outer orbit reads
@@ -34,7 +43,14 @@ public sealed partial class OrbitWindow : Window
     private const float FlyoutDamping = 0.58f;
     private const int FlyoutPeriodMs = 320;
     private const int FlyoutScaleMs = 380;
-    private const int FlyoutStaggerMs = 26;
+
+    /// <summary>
+    /// Gap between flyout children's entrances, counted outward from the middle of the arc. Kept
+    /// small against the flyout spring's ~350 ms flight for the same reason as
+    /// <see cref="StaggerMs"/>: a 26 ms step against that flight had the middle children landing
+    /// while the outer ones were still near the parent, so the arc did not read as an arc.
+    /// </summary>
+    private const int FlyoutStaggerMs = 4;
 
     // A flyout collapsing under the pointer. Deliberately shorter and faster-starting than the
     // entrance it answers (see OrbitTiming.ExitMs for the reasoning, and for the dock's own
@@ -346,6 +362,12 @@ public sealed partial class OrbitWindow : Window
             ClearOrbit();
             WindowChrome.SetEllipticHitRegions(_hwnd, 1, Array.Empty<(double, double, double)>());
             _appWindow.Hide();
+
+            // Park the hidden window back on a real monitor. Left at PrewarmOrigin it keeps the DPI
+            // of whichever monitor is nearest that point, which on a mixed-DPI desktop need not be
+            // the primary, and the first real summon would then cross a DPI change in the middle of
+            // laying itself out.
+            _appWindow.MoveAndResize(work);
         }
         catch (Exception ex)
         {
@@ -672,7 +694,7 @@ public sealed partial class OrbitWindow : Window
 
         BuildPill();
 
-        // Composition Offset/Scale must start after the element is in the visual tree.
+        // Composition Translation/Scale must start after the element is in the visual tree.
         foreach (var bubble in _bubbles)
         {
             if (animate)
@@ -1172,6 +1194,18 @@ public sealed partial class OrbitWindow : Window
         Canvas.SetLeft(border, _cx + restX - diameter / 2);
         Canvas.SetTop(border, _cy + restY - diameter / 2);
 
+        // Layout alone says where the bubble rests; every motion that carries it anywhere else (the
+        // entrance's trip out from the hub, a hover's bounce) rides on Translation, which adds on
+        // top of that. See ResetBubbleVisual. Enabled before anything seeds it.
+        try
+        {
+            ElementCompositionPreview.SetIsTranslationEnabled(border, true);
+        }
+        catch
+        {
+            // Composition may be unavailable in some hosts; the bubble still rests where layout put it.
+        }
+
         NameForNarrator(border, item);
 
         var bubble = new BubbleView
@@ -1505,6 +1539,20 @@ public sealed partial class OrbitWindow : Window
 
     // ---- Motion --------------------------------------------------------------------------
 
+    /// <summary>
+    /// Snaps a bubble's composition visual to rest, or to the first frame of its entrance.
+    /// <para>
+    /// The trip out from the hub is carried by <c>Translation</c>, never by the visual's
+    /// <c>Offset</c>. Offset is how XAML itself carries the bubble's <c>Canvas.Left</c>/<c>Top</c>
+    /// (the same lesson as <see cref="GlidePill"/>), so the entrance used to drive a property that
+    /// layout also writes, toward <c>Vector3.Zero</c>, which to that property is the canvas's
+    /// top-left corner, not the bubble's slot. Where each bubble ended up then depended on whether
+    /// XAML's layout write or the spring came last. Once the springs were made about six times
+    /// faster (<see cref="SpringMotion"/>), that race no longer reliably went to layout, and bubbles
+    /// and flyout children ended up off the ring. Translation is added on top of the layout
+    /// position, so an entrance that ends at zero ends exactly on the ring whatever the timing.
+    /// </para>
+    /// </summary>
     private static void ResetBubbleVisual(BubbleView bubble, bool rested)
     {
         try
@@ -1514,17 +1562,20 @@ public sealed partial class OrbitWindow : Window
                 (float)(bubble.Diameter / 2),
                 (float)(bubble.Diameter / 2),
                 0);
+            // A running animation owns the property it drives and drops a plain assignment, so it
+            // has to let go before the seed below can take.
+            visual.StopAnimation("Translation");
             if (rested)
             {
-                visual.Offset = Vector3.Zero;
+                visual.Properties.InsertVector3("Translation", Vector3.Zero);
                 visual.Scale = new Vector3(bubble.RestScale, bubble.RestScale, 1);
                 visual.Opacity = 1;
             }
             else
             {
                 // Layout puts the bubble at its resting place, so "emerging from the hub" (or,
-                // for a flyout child, from its parent bubble) is an offset back to that origin.
-                visual.Offset = bubble.EntryOffset;
+                // for a flyout child, from its parent bubble) is a translation back to that origin.
+                visual.Properties.InsertVector3("Translation", bubble.EntryOffset);
                 visual.Scale = new Vector3(0.15f, 0.15f, 1);
                 visual.Opacity = 0;
             }
@@ -1544,13 +1595,18 @@ public sealed partial class OrbitWindow : Window
             var compositor = visual.Compositor;
             var delay = TimeSpan.FromMilliseconds(bubble.StaggerIndex * StaggerMs);
 
-            var offset = compositor.CreateSpringVector3Animation();
-            offset.Target = "Offset";
-            offset.FinalValue = Vector3.Zero;
-            offset.DampingRatio = SpringDamping;
-            offset.Period = SpringMotion.Period(SpringPeriodMs);
-            offset.DelayTime = delay;
-            visual.StartAnimation("Offset", offset);
+            // Translation, not Offset: see ResetBubbleVisual. The start value is stated rather than
+            // read from the property when the delay ends, so a bubble waiting out its stagger
+            // leaves from the hub and from nowhere else.
+            var travel = compositor.CreateSpringVector3Animation();
+            travel.Target = "Translation";
+            travel.InitialValue = bubble.EntryOffset;
+            travel.FinalValue = Vector3.Zero;
+            travel.DampingRatio = SpringDamping;
+            travel.Period = SpringMotion.Period(SpringPeriodMs);
+            travel.DelayTime = delay;
+            travel.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
+            visual.StartAnimation("Translation", travel);
 
             var scale = compositor.CreateSpringVector3Animation();
             scale.Target = "Scale";
@@ -1568,7 +1624,9 @@ public sealed partial class OrbitWindow : Window
         }
         catch
         {
-            // skip animation
+            // Skip the animation, not the bubble: the seed above has already made it invisible and
+            // put it at the hub, so land it at rest the way AnimateDropletOut does.
+            ResetBubbleVisual(bubble, rested: true);
         }
     }
 
@@ -1755,13 +1813,16 @@ public sealed partial class OrbitWindow : Window
             var compositor = visual.Compositor;
             var delay = TimeSpan.FromMilliseconds(staggerIndex * FlyoutStaggerMs);
 
-            var offset = compositor.CreateSpringVector3Animation();
-            offset.Target = "Offset";
-            offset.FinalValue = Vector3.Zero;
-            offset.DampingRatio = FlyoutDamping;
-            offset.Period = SpringMotion.Period(FlyoutPeriodMs);
-            offset.DelayTime = delay;
-            visual.StartAnimation("Offset", offset);
+            // Translation, not Offset, and from a stated start: see AnimateBurstIn.
+            var travel = compositor.CreateSpringVector3Animation();
+            travel.Target = "Translation";
+            travel.InitialValue = bubble.EntryOffset;
+            travel.FinalValue = Vector3.Zero;
+            travel.DampingRatio = FlyoutDamping;
+            travel.Period = SpringMotion.Period(FlyoutPeriodMs);
+            travel.DelayTime = delay;
+            travel.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
+            visual.StartAnimation("Translation", travel);
 
             // Swell past full size on the way out and dip back under it on arrival — the surface
             // tension half of the droplet, and the part a plain spring can't express.
@@ -2564,7 +2625,9 @@ public sealed partial class OrbitWindow : Window
 
         public Action? Detach { get; set; }
 
-        /// <summary>Composition offset that puts the bubble back at its origin.</summary>
+        /// <summary>The <c>Translation</c> that puts the bubble back at its origin (the hub, or a
+        /// flyout child's parent): the entrance's first frame. A displacement from the bubble's
+        /// layout position, which is why it must never be written to the visual's Offset.</summary>
         public Vector3 EntryOffset => new(OriginX - RestX, OriginY - RestY, 0);
     }
 }
