@@ -33,15 +33,14 @@ public class OrbitRingLayoutTests
     }
 
     [Fact]
-    public void Three_user_items_plus_system_entries_fill_five_inner_slots_evenly()
+    public void Three_user_items_get_a_trailing_add_new_and_space_evenly_on_the_inner_ring()
     {
         var layout = Layout(App("a"), App("b"), App("c"));
 
-        // 3 users + trailing Add-new affordance + Settings + Close = 6, or without trailing?
-        // Trailing Add-new is added when under MaxInnerUserCount and no empty — so 3+1+2 = 6.
+        // 3 users + trailing Add-new affordance + Settings + Close = 6.
         Assert.Equal(6, layout.Count);
         Assert.All(layout, e => Assert.False(e.IsOuter));
-        Assert.Equal(60.0, 360.0 / layout.Count, 3); // even spacing implied by SlotAngleRad
+        Assert.Equal(60.0, 360.0 / layout.Count, 3);
         Assert.Equal(-Math.PI / 2, layout[0].AngleRad, 5);
     }
 
