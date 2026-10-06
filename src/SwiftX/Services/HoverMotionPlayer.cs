@@ -10,12 +10,13 @@ namespace SwiftX.Services;
 /// it animates a bubble under the pointer, and by Settings' picker, where each option plays its own
 /// motion when hovered so the choice can be seen instead of guessed from a name.
 /// <para>
-/// It uses only properties the rest of the app's motion code leaves alone. Travel goes through
-/// <c>Translation</c>, never <c>Offset</c>: Offset is how XAML carries an element's
-/// <c>Canvas.Left</c>/<c>Top</c> and is what the orbit's entrance animates, so writing it would hand
-/// the element's position to composition and strand it wherever the animation ended. Rotation is
-/// otherwise unused, and Scale is only ever animated here by Pulse, which replaces whatever scale
-/// animation was running.
+/// Travel goes through <c>Translation</c>, never <c>Offset</c>: Offset is how XAML carries an
+/// element's <c>Canvas.Left</c>/<c>Top</c>, so writing it would hand the element's position to
+/// composition and strand it wherever the animation ended. The orbit's entrance also rides on
+/// Translation (its trip out from the hub); a hover that lands mid-entrance replaces that trip, and
+/// <see cref="Stop"/> brings Translation back to zero, which is the bubble's resting place either
+/// way. Rotation is otherwise unused, and Scale is only ever animated here by Pulse, which replaces
+/// whatever scale animation was running.
 /// </para>
 /// </summary>
 public static class HoverMotionPlayer

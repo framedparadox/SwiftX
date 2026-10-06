@@ -34,6 +34,10 @@ internal static class TestEnvironment
     internal static void Initialize()
     {
         Environment.SetEnvironmentVariable("SWIFTX_DATA_DIR", DataDirectory);
+        // The diagnostic log is the one file the stores' redirect does not cover: it lives in %TEMP%,
+        // is shared by every SwiftX process, and is truncated at process start — so without this a
+        // test run erased the log of the user's real session. See Diag.LogDirectoryVariable.
+        Environment.SetEnvironmentVariable("SWIFTX_LOG_DIR", DataDirectory);
         Directory.CreateDirectory(DataDirectory);
     }
 }

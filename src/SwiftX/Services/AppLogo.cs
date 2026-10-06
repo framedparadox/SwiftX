@@ -124,13 +124,13 @@ public static class AppLogo
             var spin = compositor.CreateSpringScalarAnimation();
             spin.FinalValue = 0f;
             spin.DampingRatio = 0.62f;
-            spin.Period = TimeSpan.FromMilliseconds(220);
+            spin.Period = SpringMotion.Period(220);
             visual.StartAnimation("RotationAngleInDegrees", spin);
 
             var grow = compositor.CreateSpringVector3Animation();
             grow.FinalValue = Vector3.One;
             grow.DampingRatio = 0.62f;
-            grow.Period = TimeSpan.FromMilliseconds(220);
+            grow.Period = SpringMotion.Period(220);
             visual.StartAnimation("Scale", grow);
 
             var fade = compositor.CreateScalarKeyFrameAnimation();
@@ -506,6 +506,14 @@ public static class AppLogo
         public static readonly int EntranceSpanMs =
             PetalStaggerMs * (Quadrants.Length - 1) + SpringPeriodMs * 2;
 
+        /// <summary>
+        /// How long <see cref="PlayExit"/> runs: the last petal's delay plus one petal's exit. A
+        /// keyframe motion, so unlike <see cref="EntranceSpanMs"/> this one is exact — and it is what
+        /// a caller that tears the mark down afterwards has to wait out.
+        /// </summary>
+        public static readonly int ExitSpanMs =
+            PetalExitStaggerMs * (Quadrants.Length - 1) + ExitMs;
+
         // Home Orbit idle: small fixed hub + eight dock bubbles on a ring that slowly revolves.
         // Overlay lives in DIP space beside the Viewbox so bubble offsets are not Viewbox-scaled
         // when the hub shrinks.
@@ -623,7 +631,7 @@ public static class AppLogo
                 var spin = compositor.CreateSpringScalarAnimation();
                 spin.FinalValue = 0f;
                 spin.DampingRatio = SpringDamping;
-                spin.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+                spin.Period = SpringMotion.Period(SpringPeriodMs);
                 art.StartAnimation("RotationAngleInDegrees", spin);
 
                 for (int i = 0; i < _petals.Length; i++)
@@ -641,14 +649,14 @@ public static class AppLogo
                     var untwist = compositor.CreateSpringScalarAnimation();
                     untwist.FinalValue = 0f;
                     untwist.DampingRatio = SpringDamping;
-                    untwist.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+                    untwist.Period = SpringMotion.Period(SpringPeriodMs);
                     untwist.DelayTime = delay;
                     petal.StartAnimation("RotationAngleInDegrees", untwist);
 
                     var grow = compositor.CreateSpringVector3Animation();
                     grow.FinalValue = Vector3.One;
                     grow.DampingRatio = SpringDamping;
-                    grow.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+                    grow.Period = SpringMotion.Period(SpringPeriodMs);
                     grow.DelayTime = delay;
                     petal.StartAnimation("Scale", grow);
 
@@ -745,8 +753,13 @@ public static class AppLogo
                     Canvas.SetTop(ellipse, cy - bubbleR);
                     ellipse.Opacity = 1;
 
+                    // Scale and opacity only, never Offset. A dock bubble's Offset is how XAML
+                    // carries the Canvas.Left/Top set just above, and XAML only writes it again when
+                    // that position changes. Every replay sets the same position as the first play,
+                    // so an Offset written here stood, and all eight bubbles revolved as one clump
+                    // in the ring's top-left corner. That happened on every replay after a Reset,
+                    // which the Home rest now does routinely (see ShellWindow.StopHomeOrbitMark).
                     var visual = ElementCompositionPreview.GetElementVisual(ellipse);
-                    visual.Offset = Vector3.Zero;
                     visual.Scale = Vector3.One;
                     visual.Opacity = 1;
                 }
@@ -1114,13 +1127,14 @@ public static class AppLogo
                 {
                     foreach (var bubble in _dockBubbles)
                     {
+                        // No Offset here: layout owns it for these Canvas-positioned bubbles (see
+                        // PlayOrbitDock). The encode cells below are the opposite case: they sit at
+                        // Canvas 0,0 and are placed by Offset alone, so resetting theirs is correct.
                         var visual = ElementCompositionPreview.GetElementVisual(bubble);
-                        visual.StopAnimation("Offset");
                         visual.StopAnimation("Scale");
                         visual.StopAnimation("Opacity");
                         visual.Opacity = 0;
                         visual.Scale = Vector3.One;
-                        visual.Offset = Vector3.Zero;
                         bubble.Opacity = 0;
                         bubble.Visibility = Visibility.Collapsed;
                     }

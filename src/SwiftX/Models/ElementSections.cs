@@ -70,6 +70,7 @@ public static class ElementSections
     /// </summary>
     public static bool IsListed(OrbitItem item) =>
         !item.IsTool &&
+        !item.IsEmpty &&
         !(item.IsGroup && string.Equals(
             item.Target, ToolCatalog.ToolsGroupTarget, StringComparison.OrdinalIgnoreCase));
 

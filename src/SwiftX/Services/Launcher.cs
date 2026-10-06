@@ -7,7 +7,44 @@ namespace SwiftX.Services;
 /// <summary>Launches a dock item via the shell (handles apps, files, folders, .lnk and URLs).</summary>
 public static class Launcher
 {
+    /// <summary>
+    /// Whether launching <paramref name="item"/> must not happen on the calling (UI) thread: its
+    /// target is on the network, so even the existence checks that precede the launch can block
+    /// for the SMB timeout — see <see cref="PathLocality"/>.
+    /// </summary>
+    internal static bool ShouldLaunchOffTheCallerThread(OrbitItem item) => !PathLocality.IsLocal(item.Target);
+
     public static void Launch(OrbitItem item)
+    {
+        if (!ShouldLaunchOffTheCallerThread(item))
+        {
+            LaunchCore(item);
+            return;
+        }
+
+        // A dedicated STA thread rather than the pool: ShellExecute (what Process.Start uses here)
+        // is a shell call that wants a single-threaded apartment for some association handlers,
+        // and a launch that may wait on the network should not hold a pool thread while it does.
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                LaunchCore(item);
+            }
+            catch (Exception ex)
+            {
+                Diag.Log($"Launch (network target) FAILED: {ex.GetType().Name}: {ex.Message}");
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "SwiftX network launch",
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+    }
+
+    private static void LaunchCore(OrbitItem item)
     {
         Diag.Log($"Launch requested: kind={item.Kind} name='{item.DisplayName}' target='{item.Target}'");
         if (string.IsNullOrWhiteSpace(item.Target))

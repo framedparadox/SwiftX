@@ -1175,6 +1175,7 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock x:Name="OrbitEditEyebrow" Grid.Column="0"
                                                    Text="ADD TO ORBIT" Style="{StaticResource SidebarEyebrow}"
@@ -1183,6 +1184,15 @@
                                                          Content="Cancel" Style="{StaticResource AccentLink}"
                                                          Visibility="Collapsed"
                                                          Click="OrbitEditCancel_Click" />
+                                        <Button x:Name="OrbitEditResetButton" Grid.Column="2"
+                                                Style="{StaticResource ChromeIconButton}"
+                                                Click="ResetDefaults_Click"
+                                                AutomationProperties.Name="Reset to default apps and links"
+                                                ToolTipService.ToolTip="Reset to default apps and links">
+                                            <FontIcon Glyph="&#xE777;" FontSize="16"
+                                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                                      Foreground="{ThemeResource SettingsHeaderBrush}" />
+                                        </Button>
                                     </Grid>
                                     <TextBlock x:Name="OrbitEditSummary" Style="{StaticResource SidebarCaption}"
                                                TextWrapping="Wrap" />

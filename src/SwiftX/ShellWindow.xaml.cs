@@ -67,6 +67,10 @@ public sealed partial class ShellWindow : Window
     private bool _loading = true;
     private bool _radiusAdjusting;
 
+    /// <summary>Set by <c>Closed</c>. A callback queued on the dispatcher just before the window
+    /// closed still runs after it, against elements that are no longer on screen.</summary>
+    private bool _closed;
+
     /// <summary>
     /// Home Orbit / Tools idle marks — Orbit drifts continuously; Tools replays on a timer
     /// while Home is showing.
@@ -75,6 +79,13 @@ public sealed partial class ShellWindow : Window
     private AppLogo.Mark? _homeOrbitMark;
     private AppLogo.Mark? _homeToolsMark;
     private DispatcherTimer? _homeHoverHideTimer;
+
+    // Whether the marks above are playing, and the inputs HomeIdlePolicy decides it from. The marks
+    // cost ~19% of a core while they play, so they rest unless someone is looking: see the policy.
+    private bool _homeIdlePlaying;
+    private bool _windowActive;
+    private long _lastHomeActivityMs = Environment.TickCount64;
+    private DispatcherTimer? _homeRestTimer;
 
     /// <summary>The one-shot behind <see cref="FlashGroupNotice"/>, tracked for the same reason
     /// the two above are: so <c>Closed</c> can stop it before it ticks at a window that is gone.</summary>
@@ -108,6 +119,10 @@ public sealed partial class ShellWindow : Window
     // Preview geometry and slot occupancy, recorded by RenderPreview so the canvas-level pointer
     // handlers can work out which slot an event landed in without walking the visual tree.
     private readonly Border?[] _slotBorders = new Border?[OrbitMetrics.SlotCount];
+    // The empty user slots' borders, kept apart from _slotBorders because every reader of that array
+    // takes a non-null entry to mean "an item lives here". Only a drag-over needs these, to
+    // highlight the place a drop would fill.
+    private readonly Border?[] _emptySlotBorders = new Border?[OrbitMetrics.SlotCount];
     private Border? _hoveredPreviewOrigin;
     private readonly Dictionary<Border, Border> _previewHoverPartners = new();
     private readonly List<(Border Element, Brush? Brush, Thickness Thickness)> _hoveredPreviewRestores = new();
@@ -243,6 +258,13 @@ public sealed partial class ShellWindow : Window
             new PointerEventHandler(RadiusSlider_DragEnded), handledEventsToo: true);
         RadiusSlider.PointerCaptureLost += RadiusSlider_DragEnded;
 
+        // Any pointer or keyboard activity anywhere in the window wakes the Home marks (see
+        // HomeIdlePolicy). On Root, a child element, so these handlers do not touch the window's own
+        // lifetime (contrast OnWindowClosed); handledEventsToo because the controls consume most input.
+        Root.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(Root_Activity), handledEventsToo: true);
+        Root.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(Root_Activity), handledEventsToo: true);
+        Root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(Root_Activity), handledEventsToo: true);
+
         // See OnRatingValueChanged for why this is a DP callback and not the ValueChanged event.
         ExperienceRating.RegisterPropertyChangedCallback(
             RatingControl.ValueProperty, (_, _) => OnRatingValueChanged());
@@ -263,7 +285,15 @@ public sealed partial class ShellWindow : Window
             // those without changing the accent. See RepaintThemedContent.
             RepaintThemedContent();
         };
-        Activated += (_, _) => ApplyChromeTheme();
+        // Every subscription below that targets this window is a named method and is removed again
+        // in OnWindowClosed — including OnWindowClosed itself. That is load-bearing, not tidiness:
+        // see OnWindowClosed for what happens to a window that leaves any of them in place.
+        Activated += OnWindowActivated;
+
+        // Minimise and restore, which activation alone does not track: a restore from the taskbar
+        // activates the window while it is still minimised, and a minimise from the taskbar happens
+        // after the window has already lost activation. Removed in OnWindowClosed like the rest.
+        _appWindow.Changed += OnAppWindowChanged;
 
         // A DispatcherTimer keeps its tick handler — and through it this window — alive on the
         // dispatcher's own queue. OrbitManager drops its reference on Closed (see OpenSettings);
@@ -273,18 +303,15 @@ public sealed partial class ShellWindow : Window
         // listened to it before, which is why picking a size wrote the setting and left the canvas
         // showing the old one until some unrelated edit forced a render. It is a static event, so
         // the handler it holds would keep this window alive past its Closed — hence the matching
-        // unsubscribe below, in the same place the Home mark timer is stopped and for the same
-        // reason.
-        void OnMetricsChanged() => DispatcherQueue.TryEnqueue(RenderPreview);
+        // unsubscribe in OnWindowClosed, in the same place the Home mark timer is stopped and for
+        // the same reason.
         OrbitMetrics.Changed += OnMetricsChanged;
 
-        Closed += (_, _) =>
-        {
-            StopHomeOrbitMark();
-            CancelHomeHoverHide();
-            StopGroupNoticeFlash();
-            OrbitMetrics.Changed -= OnMetricsChanged;
-        };
+        // The manager outlives every ShellWindow (a new one is built each time Settings opens), so
+        // this is the same hazard as the static event above, one level removed.
+        _manager.ItemsChanged += OnItemsChanged;
+
+        Closed += OnWindowClosed;
 
         if (_appWindow.Presenter is OverlappedPresenter p)
             p.IsMaximizable = false;
@@ -331,7 +358,7 @@ public sealed partial class ShellWindow : Window
             SyncAccentControls();
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             SyncDesktopShortcutToggle();
-            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.0");
+            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.1");
             FillAboutDetails();
             // Wired here rather than in XAML because ThemeShadow.Receivers is a collection with no
             // XAML syntax of its own on a shared resource. Without a receiver the Home tiles
@@ -363,25 +390,183 @@ public sealed partial class ShellWindow : Window
                 DesktopShortcutOffer.IsOpen = true;
             }
         };
+    }
 
-        _manager.ItemsChanged += () =>
+    private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
+    {
+        // Activation is "somebody is here" (the window just came forward, so wake the marks);
+        // deactivation — another window took focus, or this one was minimised — starts their rest.
+        // Recorded before the chrome is repainted, so that this event's state is the one that
+        // stands even if repainting the chrome throws or raises another activation.
+        _windowActive = args.WindowActivationState != WindowActivationState.Deactivated;
+        if (_windowActive)
+            _lastHomeActivityMs = Environment.TickCount64;
+        UpdateHomeIdle();
+        ArmHomeRestTimer();
+
+        ApplyChromeTheme();
+    }
+
+    /// <summary>
+    /// Re-asks <see cref="HomeIdlePolicy"/> when the window is minimised, restored, shown or hidden
+    /// (a minimise shows up as a move to Windows' minimised position). The rest timer is only
+    /// touched when the marks actually start or stop here, so moving or resizing the window does not
+    /// push back the rest of marks playing in a window nobody is using.
+    /// </summary>
+    private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        if (!args.DidVisibilityChange && !args.DidPresenterChange && !args.DidPositionChange && !args.DidSizeChange)
+            return;
+
+        bool wasPlaying = _homeIdlePlaying;
+        UpdateHomeIdle();
+        if (_homeIdlePlaying != wasPlaying)
+            ArmHomeRestTimer();
+    }
+
+    private void Root_Activity(object sender, RoutedEventArgs e)
+    {
+        // Pointer-move arrives at the display's rate; once the marks are already playing the only
+        // thing to do is push the deadline back, at most twice a second.
+        long now = Environment.TickCount64;
+        if (_homeIdlePlaying && now - _lastHomeActivityMs < 500)
+            return;
+
+        _lastHomeActivityMs = now;
+        UpdateHomeIdle();
+        ArmHomeRestTimer();
+    }
+
+    /// <summary>
+    /// Starts or stops the Home marks to match <see cref="HomeIdlePolicy"/>. Cheap to call: it only
+    /// does anything when the answer changes.
+    /// </summary>
+    private void UpdateHomeIdle()
+    {
+        if (_closed || _loading)
+            return;
+
+        bool should = HomeIdlePolicy.ShouldAnimate(
+            onHome: _currentScreen == ScreenHome,
+            windowShown: IsShownOnScreen(),
+            windowActive: _windowActive,
+            closed: _closed,
+            sinceActivity: TimeSpan.FromMilliseconds(Environment.TickCount64 - _lastHomeActivityMs));
+
+        if (should && !_homeIdlePlaying)
         {
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                // An edit from elsewhere (e.g. a delete on the Elements screen) can remove the
-                // item the Orbit screen currently has selected or expanded — drop stale state rather than
-                // leave the inspector or children row pointing at something that no longer exists.
-                if (_expandedGroup is not null && !ItemExists(_manager.Config.Primary.Items, _expandedGroup))
-                    CollapseGroup();
-                if (_selectedItem is not null && !ItemExists(_manager.Config.Primary.Items, _selectedItem))
-                    HideItemDetails();
-                RenderPreview();
-                RebuildItemsList();
-                // The edit sidebar's rows say whether each thing is already on the orbit, which a
-                // delete or an add made anywhere else has just changed the answer to.
-                if (_orbitEditBuilt) BuildOrbitEditSidebar();
-            });
+            _homeIdlePlaying = true;
+            StartHomeOrbitMark();
+        }
+        else if (!should && _homeIdlePlaying)
+        {
+            _homeIdlePlaying = false;
+            StopHomeOrbitMark();
+        }
+    }
+
+    /// <summary>
+    /// Whether the window is on screen at all: shown, and not minimised. The marks may keep playing
+    /// for a while in a window that is visible but not the active one (see
+    /// <see cref="HomeIdlePolicy"/>), never in one nobody can see.
+    /// </summary>
+    private bool IsShownOnScreen() =>
+        _appWindow.IsVisible &&
+        _appWindow.Presenter is not OverlappedPresenter { State: OverlappedPresenterState.Minimized };
+
+    /// <summary>(Re)starts the one-shot that, once <see cref="HomeIdlePolicy.RestAfter"/> has passed
+    /// without activity, lets the marks rest. Not armed while they are not playing.</summary>
+    private void ArmHomeRestTimer()
+    {
+        if (_closed || !_homeIdlePlaying)
+        {
+            _homeRestTimer?.Stop();
+            return;
+        }
+
+        _homeRestTimer ??= CreateHomeRestTimer();
+        _homeRestTimer.Stop();
+        _homeRestTimer.Start();
+    }
+
+    private DispatcherTimer CreateHomeRestTimer()
+    {
+        // A little past the policy's own limit, so a timer that fires a few milliseconds early
+        // still finds the deadline passed — otherwise the marks would keep playing until the next
+        // bit of activity, with nothing left to stop them.
+        var timer = new DispatcherTimer { Interval = HomeIdlePolicy.RestAfter + TimeSpan.FromMilliseconds(250) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            UpdateHomeIdle();
         };
+        return timer;
+    }
+
+    private void OnMetricsChanged() => DispatcherQueue.TryEnqueue(RenderPreview);
+
+    private void OnItemsChanged()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_closed)
+                return;
+
+            // An edit from elsewhere (e.g. a delete on the Elements screen) can remove the
+            // item the Orbit screen currently has selected or expanded — drop stale state rather than
+            // leave the inspector or children row pointing at something that no longer exists.
+            if (_expandedGroup is not null && !ItemExists(_manager.Config.Primary.Items, _expandedGroup))
+                CollapseGroup();
+            if (_selectedItem is not null && !ItemExists(_manager.Config.Primary.Items, _selectedItem))
+                HideItemDetails();
+            RenderPreview();
+            RebuildItemsList();
+            // The edit sidebar's rows say whether each thing is already on the orbit, which a
+            // delete or an add made anywhere else has just changed the answer to.
+            if (_orbitEditBuilt) BuildOrbitEditSidebar();
+        });
+    }
+
+    /// <summary>
+    /// Everything that has to stop when the window closes — and the reason it must all stop.
+    /// <para>
+    /// <b>A <see cref="Window"/> that subscribes to its own events is never garbage collected.</b>
+    /// <c>Window</c> is not a <c>DependencyObject</c>, so it does not take part in the XAML
+    /// reference-tracking that lets the collector see through a managed-to-native cycle: a delegate
+    /// on the window's own <c>Activated</c> or <c>Closed</c> that targets the window is a strong
+    /// reference the native side holds for as long as it lives, and the native window lives for as
+    /// long as that reference is there. Measured on a minimal WinUI 3 app (Windows App SDK 2.4,
+    /// .NET 10, 30 windows opened and closed, full GC afterwards): 30 of 30 windows alive with
+    /// <c>Activated</c> or <c>Closed</c> subscribed to a method of the window; 0 of 30 with no
+    /// subscription, with a weak-reference delegate target, or with every one of them removed in
+    /// <c>Closed</c> (the pattern here). Leaving a single one subscribed leaks all 30.
+    /// </para>
+    /// <para>
+    /// For this window that was ~7 MB, ~49 handles and ~39 GDI objects per Settings open (a heap
+    /// dump after 15 opens held 15 live windows), so the process's 10 000 GDI-object quota would
+    /// have run out after ~250 opens, and every closed window kept re-running
+    /// <c>RenderPreview</c> and <c>RebuildItemsList</c> on each edit. Now ~1 MB, ~33 handles and
+    /// ~26 GDI per open, and one live window in a dump after 40 opens; what is left is the
+    /// framework's own cost of a custom title bar, which application code cannot remove.
+    /// Unsubscribing only the <see cref="OrbitManager.ItemsChanged"/> handler, and stopping the Home
+    /// animations, did not change the numbers: it is the window's own two events that matter.
+    /// <c>EventSubscriptionLifetimeTests</c> pins the rule for every closeable window.
+    /// </para>
+    /// </summary>
+    private void OnWindowClosed(object sender, WindowEventArgs args)
+    {
+        Closed -= OnWindowClosed;
+        Activated -= OnWindowActivated;
+        _appWindow.Changed -= OnAppWindowChanged;
+        _closed = true;
+        _homeIdlePlaying = false;
+        _homeRestTimer?.Stop();
+        _homeRestTimer = null;
+        StopHomeOrbitMark();
+        CancelHomeHoverHide();
+        StopGroupNoticeFlash();
+        OrbitMetrics.Changed -= OnMetricsChanged;
+        _manager.ItemsChanged -= OnItemsChanged;
     }
 
     private static bool ItemExists(List<OrbitItem> items, OrbitItem target)
@@ -824,10 +1009,12 @@ public sealed partial class ShellWindow : Window
         ElementsScreen.Visibility = screen == ScreenElements ? Visibility.Visible : Visibility.Collapsed;
         SettingsScreen.Visibility = screen == ScreenSettings ? Visibility.Visible : Visibility.Collapsed;
 
+        // Arriving on Home counts as activity; leaving it ends the marks. Whether they actually play
+        // is HomeIdlePolicy's call (window active, motion not reduced, ...), not this method's.
         if (screen == ScreenHome)
-            StartHomeOrbitMark();
-        else
-            StopHomeOrbitMark();
+            _lastHomeActivityMs = Environment.TickCount64;
+        UpdateHomeIdle();
+        ArmHomeRestTimer();
         if (screen == ScreenOrbit)
         {
             // Editing is a mode you are in while arranging the orbit, not a preference — arriving
@@ -907,11 +1094,14 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>
     /// Starts Home idle marks: Orbit keeps a small hub with a slow continuous ring drift;
-    /// Tools replays the tile-spin grid every five seconds.
+    /// Tools replays the tile-spin grid every five seconds. Called only when
+    /// <see cref="HomeIdlePolicy"/> says they may play, and undone by <see cref="StopHomeOrbitMark"/>
+    /// when it says they may not — they cost ~19% of a core while they run.
     /// </summary>
     private void StartHomeOrbitMark()
     {
-        StopHomeOrbitMark();
+        // The timer only: this starts the marks, it never resets them.
+        StopHomeOrbitTimer();
         _homeOrbitMark?.PlayOrbitDock();
         _homeToolsMark?.PlayEncode();
         _homeOrbitMarkTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
@@ -923,7 +1113,23 @@ public sealed partial class ShellWindow : Window
         _homeOrbitMarkTimer.Start();
     }
 
+    /// <summary>
+    /// Ends the Home idle: the replay timer <em>and</em> the animations on both marks.
+    /// <para>
+    /// Stopping the timer alone is what this used to do, which left the Orbit mark's ring turning
+    /// on a <c>Forever</c> composition animation — one that never ends by itself — after Home was
+    /// left and after the window was closed. (Not what kept closed windows in memory: see
+    /// <see cref="OnWindowClosed"/>.)
+    /// </para>
+    /// </summary>
     private void StopHomeOrbitMark()
+    {
+        StopHomeOrbitTimer();
+        _homeOrbitMark?.Reset();
+        _homeToolsMark?.Reset();
+    }
+
+    private void StopHomeOrbitTimer()
     {
         if (_homeOrbitMarkTimer is null) return;
         _homeOrbitMarkTimer.Stop();
@@ -970,7 +1176,7 @@ public sealed partial class ShellWindow : Window
 
     private void ShowHomeOrbitHover()
     {
-        int used = _manager.Config.Primary.Items.Count(i => !i.Hidden);
+        int used = OrbitSlots.Used(_manager.Config.Primary.Items);
         int slots = OrbitMetrics.UserSlotCount;
         HomeOrbitHoverCount.Text = $"{used} of {slots} slots in use";
         HomeOrbitHoverSummary.Text =
@@ -1600,6 +1806,7 @@ public sealed partial class ShellWindow : Window
             // bubble that is no longer drawn. The two orbit-wide buttons go with them — they act on
             // the orbit, and a bottom corner's fan would run straight through where they sit.
             Array.Clear(_slotBorders);
+            Array.Clear(_emptySlotBorders);
             CanvasActions.Visibility = Visibility.Collapsed;
             RenderQuadrantPreview(size);
             AddHotCornerButton(size);
@@ -1623,6 +1830,7 @@ public sealed partial class ShellWindow : Window
         _previewRadius = radius;
         _previewBubble = bubble;
         Array.Clear(_slotBorders);
+        Array.Clear(_emptySlotBorders);
 
         // Resolve against this window's theme — not Application.Current.Resources.
         var borderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush");
@@ -1639,14 +1847,14 @@ public sealed partial class ShellWindow : Window
         Canvas.SetTop(hub, cy - logo / 2);
         PreviewCanvas.Children.Add(hub);
 
-        var items = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(OrbitMetrics.UserSlotCount).ToList();
+        var items = OrbitSlots.Visible(_manager.Config.Primary.Items);
 
         // A full orbit has no empty slot left to add into, so the button that would open the add
         // dialog goes away rather than sitting there offering something the orbit cannot take.
         // Reset defaults stays: it is still meaningful on a full orbit.
-        AddItemButton.Visibility = items.Count >= OrbitMetrics.UserSlotCount
-            ? Visibility.Collapsed
-            : Visibility.Visible;
+        AddItemButton.Visibility = OrbitSlots.HasRoom(_manager.Config.Primary.Items)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
         for (int i = 0; i < OrbitMetrics.SlotCount; i++)
         {
@@ -1659,7 +1867,7 @@ public sealed partial class ShellWindow : Window
             bool pinned = i >= OrbitMetrics.UserSlotCount;
             OrbitItem? item = pinned
                 ? (i == OrbitMetrics.UserSlotCount ? SystemOrbitItems.CreateSettings() : SystemOrbitItems.CreateClose())
-                : i < items.Count ? items[i] : null;
+                : i < items.Count && !items[i].IsEmpty ? items[i] : null;
 
             var border = new Border
             {
@@ -1681,6 +1889,7 @@ public sealed partial class ShellWindow : Window
             else if (item is null)
             {
                 border.Child = PreviewGlyph("\uE710", glyphSize, muted);
+                _emptySlotBorders[i] = border;
             }
             else
             {
@@ -1713,6 +1922,7 @@ public sealed partial class ShellWindow : Window
     {
         CanvasActions.Visibility = Visibility.Visible;
         Array.Clear(_slotBorders);
+        Array.Clear(_emptySlotBorders);
 
         double scale = size * 0.65 / (2 * (OrbitMetrics.Radius + OrbitMetrics.Bubble / 2));
         double radius = OrbitMetrics.Radius * scale;
@@ -1811,7 +2021,7 @@ public sealed partial class ShellWindow : Window
 
             double left = cx + previewRadius * Math.Cos(angle) - previewBubble / 2;
             double top = cy + previewRadius * Math.Sin(angle) - previewBubble / 2;
-            var item = i < items.Count ? items[i] : null;
+            var item = i < items.Count && !items[i].IsEmpty ? items[i] : null;
 
             var border = new Border
             {
@@ -2139,16 +2349,13 @@ public sealed partial class ShellWindow : Window
             _dragTentativeQuadrantSlot = target;
             if (target < 0) return;
 
-            var list = HotCornerItems.Resolve(_manager.Config, SystemOrbitItems.CreateSettings());
-            int from = list.IndexOf(_dragItem);
-            if (from < 0) return;
-            int to = Math.Min(target, list.Count - 1);
-            if (to != from)
-            {
-                list.RemoveAt(from);
-                list.Insert(to, _dragItem);
-            }
-            ReflowQuadrantBorders(list);
+            // The places as drawn right now (empty ones as placeholders), so the preview moves the
+            // very items on screen and the drop lands exactly where this last showed them.
+            var drawn = new List<OrbitItem>(_quadrantSlotCount);
+            for (int i = 0; i < _quadrantSlotCount; i++)
+                drawn.Add(_quadrantSlotBorders[i]?.Tag as OrbitItem ?? OrbitSlots.NewEmpty());
+            if (!drawn.Contains(_dragItem)) return;
+            ReflowQuadrantBorders(OrbitSlots.Moved(drawn, _dragItem, target, QuadrantLayout.ItemCount));
             return;
         }
 
@@ -2157,16 +2364,9 @@ public sealed partial class ShellWindow : Window
         _dragTentativeSlot = targetSlot;
         if (targetSlot < 0 || targetSlot >= OrbitMetrics.UserSlotCount) return;
 
-        var visible = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(OrbitMetrics.UserSlotCount).ToList();
-        int vFrom = visible.IndexOf(_dragItem);
-        if (vFrom < 0) return;
-        int vTo = Math.Min(targetSlot, visible.Count - 1);
-        if (vTo != vFrom)
-        {
-            visible.RemoveAt(vFrom);
-            visible.Insert(vTo, _dragItem);
-        }
-        ReflowOrbitBorders(visible);
+        var visible = OrbitSlots.Visible(_manager.Config.Primary.Items);
+        if (!visible.Contains(_dragItem)) return;
+        ReflowOrbitBorders(OrbitSlots.Moved(visible, _dragItem, targetSlot));
     }
 
     /// <summary>
@@ -2327,7 +2527,7 @@ public sealed partial class ShellWindow : Window
             }
             else
             {
-                AddQuadrantItem();
+                AddQuadrantItem(slot);
             }
             return;
         }
@@ -2348,12 +2548,12 @@ public sealed partial class ShellWindow : Window
         }
         else if (slot < OrbitMetrics.UserSlotCount)
         {
-            _manager.OpenAddItem(added =>
-            {
-                _manager.Config.Primary.Items.Add(added);
-                _manager.NotifyItemsChanged();
-                RenderPreview();
-            }, _manager.Config.Primary.Items);
+            // The ring's own "+" opens the "ADD TO ORBIT" sidebar, the same place the Elements
+            // button goes, rather than the add dialog in a second window. The dialog stays one
+            // click away through the sidebar's "Add something else…" row.
+            EndReplace();
+            SetOrbitEditing(true);
+            UpdateOrbitEditSummary();
         }
     }
 
@@ -2400,12 +2600,15 @@ public sealed partial class ShellWindow : Window
             ? null
             : (_previewQuadrant
                 ? (slot < _quadrantSlotBorders.Length ? _quadrantSlotBorders[slot] : null)
-                : (slot < _slotBorders.Length ? _slotBorders[slot] : null));
+                : (slot < _slotBorders.Length ? _slotBorders[slot] ?? _emptySlotBorders[slot] : null));
 
         // What the drop would actually do, said before it happens: an occupied place is replaced,
         // not added beside, and a tool is not swappable at all (see DropOntoPreviewSlot) — so the
         // drag says no over one rather than accepting a drop it would then quietly ignore.
         var occupant = border?.Tag as OrbitItem;
+        bool intoGroup = !_previewQuadrant && occupant is { IsGroup: true } &&
+                         !ElementLibrary.IsBuiltInToolsGroup(occupant) &&
+                         _sidebarDragTemplate is not { IsGroup: true };
         bool blocked = occupant is { IsTool: true };
         e.AcceptedOperation = blocked ? DataPackageOperation.None : DataPackageOperation.Copy;
         if (e.DragUIOverride is { } ui)
@@ -2414,7 +2617,9 @@ public sealed partial class ShellWindow : Window
                 ? "Drop to add to the orbit"
                 : blocked
                     ? $"{occupant.DisplayName} is a tool — switch it off instead"
-                    : $"Drop to replace {occupant.DisplayName}";
+                    : intoGroup
+                        ? $"Drop to add to {occupant.DisplayName}"
+                        : $"Drop to replace {occupant.DisplayName}";
             ui.IsCaptionVisible = true;
             ui.IsGlyphVisible = true;
         }
@@ -2509,24 +2714,10 @@ public sealed partial class ShellWindow : Window
         if (_previewQuadrant)
         {
             if (slot < 0 || slot >= _quadrantSlotBorders.Length) return;
-            var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
-            if (_quadrantSlotBorders[slot]?.Tag is OrbitItem existing)
-            {
-                int at = list.IndexOf(existing);
-                if (at < 0) return;
-                list[at] = added;
-                if (ReferenceEquals(_selectedItem, existing)) HideItemDetails();
-            }
-            else if (list.Count < QuadrantLayout.ItemCount)
-            {
-                list.Add(added);
-            }
-            else
-            {
-                return;
-            }
-
-            _manager.Save();
+            if (_quadrantSlotBorders[slot]?.Tag is OrbitItem existing &&
+                ReferenceEquals(_selectedItem, existing))
+                HideItemDetails();
+            PutInQuadrantSlot(slot, added);
             EndArmedReplaceAfterDrop();
             RenderPreview();
             return;
@@ -2537,6 +2728,21 @@ public sealed partial class ShellWindow : Window
         if (_slotBorders[slot]?.Tag is OrbitItem item)
         {
             if (item.IsTool) return;
+
+            // A group on the ring is a place to put things, not something to swap out: dropping
+            // on it adds to it (a group taking a group, a full group, or a duplicate is refused
+            // by GroupDropRules and leaves everything as it was).
+            if (item.IsGroup && !added.IsGroup && !ElementLibrary.IsBuiltInToolsGroup(item))
+            {
+                if (GroupDropRules.TryAdd(item, added) != GroupDropVerdict.Allowed) return;
+                _manager.NotifyItemsChanged();
+                EndArmedReplaceAfterDrop();
+                RenderPreview();
+                RebuildItemsList();
+                DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
+                return;
+            }
+
             int at = items.IndexOf(item);
             if (at < 0) return;
             items[at] = added;
@@ -2545,8 +2751,7 @@ public sealed partial class ShellWindow : Window
         }
         else
         {
-            if (items.Count(i => !i.Hidden) >= OrbitMetrics.UserSlotCount) return;
-            items.Add(added);
+            if (!OrbitSlots.PlaceAt(items, slot, added)) return;
         }
 
         _manager.NotifyItemsChanged();
@@ -2639,7 +2844,8 @@ public sealed partial class ShellWindow : Window
 
         // The last item stays: a corner with nothing on it would summon an empty screen. Shown
         // greyed rather than left out, so the menu is the same shape whichever item it opens on.
-        int count = HotCornerItems.Resolve(_manager.Config, SystemOrbitItems.CreateSettings()).Count;
+        int count = HotCornerItems.Resolve(_manager.Config, SystemOrbitItems.CreateSettings())
+            .Count(i => !i.IsEmpty);
 
         return BuildItemMenu(
             item.DisplayName,
@@ -2694,7 +2900,7 @@ public sealed partial class ShellWindow : Window
     /// <summary>Takes one item off the orbit — the same delete the Elements screen's own rows do.</summary>
     private void RemoveOrbitItem(OrbitItem item)
     {
-        if (!_manager.Config.Primary.Items.Remove(item))
+        if (!OrbitSlots.Vacate(_manager.Config.Primary.Items, item))
             return;
 
         if (ReferenceEquals(_expandedGroup, item)) CollapseGroup();
@@ -2777,10 +2983,7 @@ public sealed partial class ShellWindow : Window
         }
         else if (_replaceQuadrantSlot >= 0)
         {
-            var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
-            if (_replaceQuadrantSlot < list.Count)
-                list[_replaceQuadrantSlot] = added;
-            _manager.Save();
+            PutInQuadrantSlot(_replaceQuadrantSlot, added);
         }
         else
         {
@@ -2873,60 +3076,72 @@ public sealed partial class ShellWindow : Window
         return bestGap <= _quadrantBubble / 2 + 4 ? best : -1;
     }
 
-    /// <summary>Drags one of the corner's items into another of its places.</summary>
+    /// <summary>
+    /// Drags one of the corner's items into another of its places. Dropped on an empty place past
+    /// the last item it goes exactly there, its old place left empty (see <see cref="OrbitSlots.Moved"/>).
+    /// </summary>
     private void MoveQuadrantItem(int from, int to)
     {
         var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
-        if (from < 0 || from >= list.Count || to < 0)
-            return;
-
-        // Dropping past the last item means "put it at the end", not "into an empty place".
-        to = Math.Min(to, list.Count - 1);
-        if (from == to)
+        if (from < 0 || from >= list.Count || to < 0 || to >= QuadrantLayout.ItemCount || from == to)
         {
             RenderPreview();
             return;
         }
 
-        var entry = list[from];
-        list.RemoveAt(from);
-        list.Insert(to, entry);
+        var moved = OrbitSlots.Moved(list, list[from], to, QuadrantLayout.ItemCount);
+        list.Clear();
+        list.AddRange(moved);
+        OrbitSlots.TrimTrailing(list);
         _manager.Save();
         RenderPreview();
     }
 
-    /// <summary>Takes one item off the corner. The orbit itself keeps it.</summary>
+    /// <summary>
+    /// Takes one item off the corner. The orbit itself keeps it, and the other items stay where they
+    /// are: the place it leaves is empty, not closed up.
+    /// </summary>
     private void RemoveQuadrantItem(int slot)
     {
         var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
-        if (slot < 0 || slot >= list.Count || list.Count <= 1)
+        if (slot < 0 || slot >= list.Count || list[slot].IsEmpty || list.Count(i => !i.IsEmpty) <= 1)
             return;
 
-        list.RemoveAt(slot);
+        OrbitSlots.Vacate(list, list[slot]);
         _manager.Save();
         HideItemDetails();
         RenderPreview();
     }
 
     /// <summary>
-    /// Fills an empty place on the corner. The item belongs to the corner rather than to the orbit
-    /// — this is the corner's own arrangement — so it goes into that list and nowhere else.
+    /// Puts <paramref name="added"/> in corner place <paramref name="slot"/>: an empty place, one past
+    /// the end (the "+" after the last item), or an occupied one, which it replaces. Items in the
+    /// places around it do not move.
     /// </summary>
-    private void AddQuadrantItem()
+    private void PutInQuadrantSlot(int slot, OrbitItem added)
     {
-        var settings = SystemOrbitItems.CreateSettings();
-        if (HotCornerItems.Resolve(_manager.Config, settings).Count >= QuadrantLayout.ItemCount)
-            return;
+        var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
+        if (slot < 0 || slot >= QuadrantLayout.ItemCount) return;
 
-        _manager.OpenAddItem(added =>
-        {
-            var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
-            if (list.Count >= QuadrantLayout.ItemCount)
-                return;
-            list.Add(added);
-            _manager.Save();
-            RenderPreview();
-        }, _manager.Config.HotCornerOrbit);
+        if (slot < list.Count)
+            list[slot] = added;
+        else
+            OrbitSlots.PlaceAt(list, slot, added, QuadrantLayout.ItemCount);
+        _manager.Save();
+    }
+
+    /// <summary>
+    /// Opens the "ADD TO ORBIT" sidebar aimed at an empty corner place, the same place the orbit's
+    /// own "+" goes: the next thing clicked or dragged there fills <paramref name="slot"/> (see
+    /// <see cref="CompleteReplace"/>). The item belongs to the corner rather than to the orbit — this
+    /// is the corner's own arrangement — so it goes into that list and nowhere else.
+    /// </summary>
+    private void AddQuadrantItem(int slot)
+    {
+        _replaceItem = null;
+        _replaceQuadrantSlot = slot;
+        _replaceItemName = null;
+        BeginReplaceViaSidebar();
     }
 
     private int PreviewSlotAt(Point point, bool requireHit = true)
@@ -3101,33 +3316,32 @@ public sealed partial class ShellWindow : Window
         // ignored rather than clamped, so the item stays where the user last put it.
         if (targetSlot < 0 || targetSlot >= OrbitMetrics.UserSlotCount) return;
 
-        var visible = _manager.Config.Primary.Items.Where(i => !i.Hidden).Take(OrbitMetrics.UserSlotCount).ToList();
-        int from = visible.IndexOf(dragged);
-        if (from < 0) return;
-
-        // Clamp onto the last occupied slot: dropping past the end of a part-filled orbit means
-        // "put it last", not "leave a hole".
-        int to = Math.Min(targetSlot, visible.Count - 1);
-        if (to == from) return;
+        var before = OrbitSlots.Visible(_manager.Config.Primary.Items);
+        if (!before.Contains(dragged)) return;
 
         // Move, don't insert-before-the-occupant. That older form removed the item first and so
         // landed a forward drag one slot short of where it was dropped — dragging an item to the
-        // right appeared to do nothing at all.
-        visible.RemoveAt(from);
-        visible.Insert(to, dragged);
+        // right appeared to do nothing at all. Dropped on an empty slot past the last item it goes
+        // exactly there (see OrbitSlots.Moved), leaving its old slot empty.
+        var visible = OrbitSlots.Moved(before, dragged, targetSlot);
+        if (visible.SequenceEqual(before)) return;
 
         // Write the new order back over the positions the visible items already occupy, so
         // hidden entries keep their place in the list instead of being shuffled by an index
-        // computed from a filtered view of it.
+        // computed from a filtered view of it. A move into empty slots past the end is longer than
+        // what was there, so the extra places go on the end.
         var items = _manager.Config.Primary.Items;
         var positions = new List<int>();
-        for (int i = 0; i < items.Count && positions.Count < visible.Count; i++)
+        for (int i = 0; i < items.Count && positions.Count < before.Count; i++)
         {
             if (!items[i].Hidden)
                 positions.Add(i);
         }
         for (int i = 0; i < positions.Count; i++)
             items[positions[i]] = visible[i];
+        for (int i = positions.Count; i < visible.Count; i++)
+            items.Add(visible[i]);
+        OrbitSlots.TrimTrailing(items);
 
         _manager.NotifyItemsChanged();
         RenderPreview();
@@ -3675,22 +3889,32 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private async void PickModuleIcon(OrbitItem item)
     {
-        var picker = new FileOpenPicker();
-        InitializeWithWindow.Initialize(picker, _hwnd);
-        picker.FileTypeFilter.Add(".exe");
-        picker.FileTypeFilter.Add(".dll");
-
-        var file = await picker.PickSingleFileAsync();
-        if (file is null) return;
-
-        int count = IconService.CountModuleIcons(file.Path);
-        if (count <= 0)
+        // async void, no caller, and the same picker call PickIconImage guards: it throws rather than
+        // returning null when a picker is already open on this window, and the gallery it leads to
+        // builds a tile per icon. Guarded the same way, for the same reason.
+        try
         {
-            ApplyIconChoice(item, null, null);
-            return;
-        }
+            var picker = new FileOpenPicker();
+            InitializeWithWindow.Initialize(picker, _hwnd);
+            picker.FileTypeFilter.Add(".exe");
+            picker.FileTypeFilter.Add(".dll");
 
-        await ShowModuleIconGalleryAsync(item, file.Path, count);
+            var file = await picker.PickSingleFileAsync();
+            if (file is null) return;
+
+            int count = IconService.CountModuleIcons(file.Path);
+            if (count <= 0)
+            {
+                ApplyIconChoice(item, null, null);
+                return;
+            }
+
+            await ShowModuleIconGalleryAsync(item, file.Path, count);
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("ShellWindow.PickModuleIcon failed: " + ex);
+        }
     }
 
     /// <summary>
@@ -3842,6 +4066,7 @@ public sealed partial class ShellWindow : Window
         // and right-click paths read them. Cleared so a press inside a group cannot reach a bubble
         // that is no longer drawn — the same reason the corner preview clears them.
         Array.Clear(_slotBorders);
+        Array.Clear(_emptySlotBorders);
         _groupSlotBorders.Clear();
         // Both of the canvas commands go: Add item adds to the top level, and Reset defaults
         // rebuilds the whole orbit — neither is what "add" or "reset" means while you are looking
@@ -3996,17 +4221,29 @@ public sealed partial class ShellWindow : Window
 
         _manager.OpenAddItem(added =>
         {
-            _manager.Config.Primary.Items.Add(added);
+            AddToTopLevel(added);
             _manager.NotifyItemsChanged();
             RenderPreview();
             RebuildItemsList();
         }, _manager.Config.Primary.Items);
     }
 
+    /// <summary>
+    /// Puts something the add dialog returned on the top-level orbit: in the first empty slot, else
+    /// after the last. The dialog does not check for room itself, so a full orbit still takes it at
+    /// the end, as it always did.
+    /// </summary>
+    private void AddToTopLevel(OrbitItem added)
+    {
+        var items = _manager.Config.Primary.Items;
+        if (!OrbitSlots.Place(items, added))
+            items.Add(added);
+    }
+
     private void AddAppItem_Click(object sender, RoutedEventArgs e) =>
         _manager.OpenAddItem(added =>
         {
-            _manager.Config.Primary.Items.Add(added);
+            AddToTopLevel(added);
             _manager.NotifyItemsChanged();
             RenderPreview();
             RebuildItemsList();
@@ -4041,7 +4278,7 @@ public sealed partial class ShellWindow : Window
     private bool _orbitEditRefreshPending;
 
     /// <summary>The Groups row a drag is currently over, if any; see <see cref="WireEditGroupRow"/>.</summary>
-    private Border? _orbitEditHotGroupRow;
+    private ContentControl? _orbitEditHotGroupRow;
 
     // Built from codepoints rather than written as literals: a private-use character is invisible in
     // an editor, so a stray paste can swap it for another one without anyone seeing why an icon broke.
@@ -4183,8 +4420,15 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private void UpdateOrbitEditSummary()
     {
-        OrbitEditEyebrow.Text = IsReplacing ? "REPLACE" : "ADD TO ORBIT";
+        bool fillingEmpty = IsReplacing && _replaceItemName is null;
+        OrbitEditEyebrow.Text = IsReplacing && !fillingEmpty ? "REPLACE" : "ADD TO ORBIT";
         OrbitEditCancelButton.Visibility = IsReplacing ? Visibility.Visible : Visibility.Collapsed;
+
+        if (fillingEmpty)
+        {
+            OrbitEditSummary.Text = "Click or drag something below to put it in this empty place.";
+            return;
+        }
 
         if (IsReplacing)
         {
@@ -4193,7 +4437,7 @@ public sealed partial class ShellWindow : Window
             return;
         }
 
-        int used = _manager.Config.Primary.Items.Count(i => !i.Hidden);
+        int used = OrbitSlots.Used(_manager.Config.Primary.Items);
         int free = Math.Max(0, OrbitMetrics.UserSlotCount - used);
         OrbitEditSummary.Text = free switch
         {
@@ -4330,12 +4574,8 @@ public sealed partial class ShellWindow : Window
         bool added = false;
         foreach (var target in targets)
         {
-            if (items.Count(i => !i.Hidden) >= OrbitMetrics.UserSlotCount)
+            if (!OrbitSlots.Place(items, OrbitItemFactory.FromTarget(target)))
                 break;
-            if (OrbitHasTarget(items, target))
-                continue;
-            var item = OrbitItemFactory.FromTarget(target);
-            items.Add(item);
             added = true;
         }
 
@@ -4414,7 +4654,7 @@ public sealed partial class ShellWindow : Window
         Grid.SetColumn(chevron, 2);
         header.Children.Add(chevron);
 
-        var button = new Button
+        var button = new HandButton
         {
             Height = 36,
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -4461,19 +4701,102 @@ public sealed partial class ShellWindow : Window
             iconSource: template);
 
         ToolTipService.SetToolTip(row, present
-            ? $"{template.DisplayName} is already on the orbit"
+            ? $"{template.DisplayName} is already on the orbit. Drag it onto the ring or a group to add another."
             : $"Add {template.DisplayName} to the orbit");
 
-        if (!present)
-        {
-            WireEditRow(row, template);
-        }
-        else
-        {
-            row.IsEnabled = false;
-        }
+        // Always draggable, ticked or not: the tick says it is already on the orbit, not that it
+        // may not go anywhere else. Only the click is held back for a ticked row, so a stray click
+        // does not put a second copy in the next free slot.
+        WireEditRow(row, template, present ? null : () => AddToOrbitFromSidebar(template));
+        row.ContextFlyout = BuildEditRowMenu(row, template, present);
 
         return row;
+    }
+
+    /// <summary>
+    /// The right-click menu of a suggestion row: put a copy in one of the orbit's groups (or in a
+    /// new one), or take the thing off the orbit wherever it sits. A tool is neither: the Tools
+    /// group owns them and puts them back on every launch, so both entries are greyed.
+    /// </summary>
+    private MenuFlyout BuildEditRowMenu(FrameworkElement anchor, OrbitItem template, bool present)
+    {
+        var menu = new MenuFlyout();
+
+        var addToGroup = new MenuFlyoutSubItem
+        {
+            Text = "Add to group",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE8F4) },
+            IsEnabled = !template.IsTool,
+        };
+        foreach (var group in ElementLibrary.UserGroups(_manager.Config.Primary.Items))
+        {
+            var verdict = GroupDropRules.Check(group, template);
+            var entry = new MenuFlyoutItem
+            {
+                Text = $"{group.DisplayName}  ({GroupDropRules.Count(group)}/{GroupDropRules.Capacity})",
+                IsEnabled = verdict == GroupDropVerdict.Allowed,
+            };
+            if (GroupDropRules.Reason(verdict) is { } why)
+                ToolTipService.SetToolTip(entry, why);
+            entry.Click += (_, _) =>
+            {
+                var result = GroupDropRules.TryAdd(group, CloneOrbitTemplate(template));
+                if (result == GroupDropVerdict.Allowed)
+                {
+                    _manager.NotifyItemsChanged();
+                    OrbitEditSummary.Text = $"Added {template.DisplayName} to {group.DisplayName}.";
+                }
+                else if (GroupDropRules.Reason(result) is { } reason)
+                {
+                    OrbitEditSummary.Text = reason;
+                }
+            };
+            addToGroup.Items.Add(entry);
+        }
+
+        if (addToGroup.Items.Count > 0)
+            addToGroup.Items.Add(new MenuFlyoutSeparator());
+        var newGroup = new MenuFlyoutItem
+        {
+            Text = "New group" + SidebarEllipsis,
+            Icon = new FontIcon { Glyph = SidebarAddGlyph },
+        };
+        newGroup.Click += (_, _) => ShowNewGroupFlyout(anchor, template);
+        addToGroup.Items.Add(newGroup);
+        menu.Items.Add(addToGroup);
+
+        var remove = new MenuFlyoutItem
+        {
+            Text = "Remove",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D) },
+            IsEnabled = present && !template.IsTool,
+        };
+        remove.Click += (_, _) => RemoveFromOrbitByTarget(template.Target);
+        menu.Items.Add(remove);
+
+        return menu;
+    }
+
+    /// <summary>
+    /// Takes every copy of <paramref name="target"/> off the orbit: top-level places are left empty,
+    /// and a copy inside a group is simply removed from it.
+    /// </summary>
+    private void RemoveFromOrbitByTarget(string target)
+    {
+        var items = _manager.Config.Primary.Items;
+        foreach (var item in items.Where(i => !i.IsGroup && !i.IsEmpty &&
+                     string.Equals(i.Target, target, StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            if (ReferenceEquals(_selectedItem, item)) HideItemDetails();
+            OrbitSlots.Vacate(items, item);
+        }
+        foreach (var group in items.Where(i => i.IsGroup && !ElementLibrary.IsBuiltInToolsGroup(i)))
+            group.Children.RemoveAll(c =>
+                string.Equals(c.Target, target, StringComparison.OrdinalIgnoreCase));
+
+        _manager.NotifyItemsChanged();
+        RenderPreview();
+        RebuildItemsList();
     }
 
     /// <summary>
@@ -4496,13 +4819,11 @@ public sealed partial class ShellWindow : Window
     /// text put on the package only exists to give the OS a real drag operation to run.
     /// </para>
     /// </summary>
-    private void WireEditRow(Button row, OrbitItem template)
+    private void WireEditRow(Button row, OrbitItem template, Action? onClick)
     {
         // Per row rather than on the window: a drag and the click it must suppress belong to the
         // same row, and none of this outlives the sidebar rebuild that replaces that row.
-        bool armed = false;
         bool dragged = false;
-        Point origin = default;
 
         row.Click += (_, _) =>
         {
@@ -4513,8 +4834,30 @@ public sealed partial class ShellWindow : Window
                 dragged = false;
                 return;
             }
-            AddToOrbitFromSidebar(template);
+            onClick?.Invoke();
         };
+
+        WireSidebarDrag(row, template, onPress: () => dragged = false, onDragged: () => dragged = true);
+    }
+
+    /// <summary>
+    /// The drag half of a sidebar row, for anything that can carry <paramref name="template"/> to
+    /// the ring or a group: a suggestion Button (<see cref="WireEditRow"/>) or a Groups row
+    /// (<see cref="BuildEditGroupRow"/>).
+    /// <para>
+    /// Started by hand once the pointer has travelled <see cref="SidebarDragThreshold"/>, rather
+    /// than left to <see cref="UIElement.CanDrag"/> alone, because the framework's own gesture is
+    /// not reliable for these: a Button takes the pointer on press, and a row whose content is out
+    /// of hit-testing (the Groups rows) gives it nothing to start from. <c>CanDrag</c> stays set
+    /// because it is what makes <see cref="UIElement.DragStarting"/> fire for a drag started
+    /// here. Whichever of the two starts first wins: a drag already in flight
+    /// (<see cref="_sidebarDragTemplate"/> set) is never started a second time.
+    /// </para>
+    /// </summary>
+    private void WireSidebarDrag(UIElement row, OrbitItem template, Action? onPress = null, Action? onDragged = null)
+    {
+        bool armed = false;
+        Point origin = default;
 
         row.CanDrag = true;
         row.DragStarting += (_, e) =>
@@ -4532,7 +4875,7 @@ public sealed partial class ShellWindow : Window
                 return;
             origin = point.Position;
             armed = true;
-            dragged = false;
+            onPress?.Invoke();
         }), handledEventsToo: true);
 
         row.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(async (_, e) =>
@@ -4550,10 +4893,15 @@ public sealed partial class ShellWindow : Window
                 return;
 
             armed = false;
-            dragged = true;
+            onDragged?.Invoke();
+
+            // The framework's own gesture got there first.
+            if (_sidebarDragTemplate is not null)
+                return;
+
             try
             {
-                // The Button grabbed the pointer on press; the drag cannot follow a pointer it is
+                // A Button grabbed the pointer on press; the drag cannot follow a pointer it is
                 // still holding, so it lets go first.
                 row.ReleasePointerCaptures();
                 await row.StartDragAsync(point);
@@ -4582,15 +4930,21 @@ public sealed partial class ShellWindow : Window
     /// <see cref="OrbitItem"/> objects and putting the same one in two slots would edit both at
     /// once. Shared by the click and the drag/drop paths onto the sidebar and the ring alike.
     /// </summary>
-    private static OrbitItem CloneOrbitTemplate(OrbitItem template) => new()
+    private static OrbitItem CloneOrbitTemplate(OrbitItem template)
     {
-        Kind = template.Kind,
-        DisplayName = template.DisplayName,
-        Target = template.Target,
-        Arguments = template.Arguments,
-        CustomIconPath = template.CustomIconPath,
-        CustomGlyph = template.CustomGlyph,
-    };
+        var clone = new OrbitItem
+        {
+            Kind = template.Kind,
+            DisplayName = template.DisplayName,
+            Target = template.Target,
+            Arguments = template.Arguments,
+            CustomIconPath = template.CustomIconPath,
+            CustomGlyph = template.CustomGlyph,
+        };
+        // A group is copied with what it holds, each child a fresh item of its own.
+        clone.Children.AddRange(template.Children.Where(c => !c.IsEmpty).Select(CloneOrbitTemplate));
+        return clone;
+    }
 
     /// <summary>
     /// What a category with nothing in it says. Reachable in practice: the link suggestions are
@@ -4610,7 +4964,7 @@ public sealed partial class ShellWindow : Window
     private Button BuildEditRowShell(
         string glyph, string text, string? badgeGlyph, Brush? badgeBrush, OrbitItem? iconSource = null)
     {
-        var button = new Button
+        var button = new HandButton
         {
             Height = 28,
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -4723,7 +5077,7 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>Whether every user slot on the orbit is taken.</summary>
     private bool OrbitIsFull =>
-        _manager.Config.Primary.Items.Count(i => !i.Hidden) >= OrbitMetrics.UserSlotCount;
+        !OrbitSlots.HasRoom(_manager.Config.Primary.Items);
 
     /// <summary>
     /// The Groups category: a "New group" row, then one drop-target row for each group on the orbit
@@ -4745,12 +5099,13 @@ public sealed partial class ShellWindow : Window
     private Button BuildNewGroupRow()
     {
         var row = BuildEditRowShell(SidebarAddGlyph, "New group" + SidebarEllipsis, null, null);
-        ToolTipService.SetToolTip(row, "Create an empty group and put it on the orbit");
-        row.Click += (_, _) => ShowNewGroupFlyout(row);
+        ToolTipService.SetToolTip(row, "Create an empty group and put it on the orbit, or drag it onto the ring");
+        // Clicked it asks for a name; dragged onto the ring it drops an empty group there.
+        WireEditRow(row, ElementLibrary.NewGroup(null), () => ShowNewGroupFlyout(row));
         return row;
     }
 
-    private void ShowNewGroupFlyout(FrameworkElement anchor)
+    private void ShowNewGroupFlyout(FrameworkElement anchor, OrbitItem? seed = null)
     {
         // A full orbit has nowhere to put the group, so say so (the same line a full orbit gives a
         // click on any other row) instead of asking for a name that cannot be used. A replace
@@ -4782,7 +5137,10 @@ public sealed partial class ShellWindow : Window
             flyout.Hide();
             // Through the same path a row's click takes, so a full orbit and an armed replace are
             // handled exactly as they are for everything else in the sidebar.
-            AddToOrbitFromSidebar(ElementLibrary.NewGroup(name.Text));
+            var group = ElementLibrary.NewGroup(name.Text);
+            if (seed is not null)
+                group.Children.Add(CloneOrbitTemplate(seed));
+            AddToOrbitFromSidebar(group);
         }
 
         create.Click += (_, _) => Commit();
@@ -4803,9 +5161,9 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>
     /// One group on the orbit, listed under Groups as a place to drop things: its name, how full it
-    /// is, and drag feedback (see <see cref="WireEditGroupRow"/>). A Border rather than a Button
-    /// because clicking it does nothing: a row that lights up under the pointer and then ignores the
-    /// click would read as broken.
+    /// is, and drag feedback (see <see cref="WireEditGroupRow"/>). Not a Button because clicking it
+    /// does nothing: a row that lights up under the pointer and then ignores the click would read
+    /// as broken.
     /// </summary>
     private FrameworkElement BuildEditGroupRow(OrbitItem group)
     {
@@ -4824,20 +5182,34 @@ public sealed partial class ShellWindow : Window
         // pointer across the icon and the name raises no enter or leave of its own to flicker the
         // highlight.
         content.IsHitTestVisible = false;
+        content.Height = 28;
+
+        // What the group holds, listed under it as indented child rows. They sit inside the drop
+        // target rather than beside it, so a drop anywhere on the group and its children lands in
+        // the group instead of falling through to the sidebar's add-to-orbit.
+        var body = new StackPanel { IsHitTestVisible = false, Children = { content } };
+        foreach (var child in group.Children.Where(c => !c.IsEmpty))
+        {
+            var childContent = BuildEditRowContent(child.Glyph, child.DisplayName, null, null, iconSource: child);
+            childContent.Height = 24;
+            childContent.Margin = new Thickness(20, 0, 0, 0);
+            childContent.Opacity = child.Hidden ? 0.5 : 1;
+            body.Children.Add(childContent);
+        }
 
         // Transparent rather than null, so the whole row takes the pointer, not just what is drawn.
         // The 1px border that is only painted while a drag is over it is paid for out of the padding,
         // so the icon and name sit where they do on every other row.
-        var row = new Border
+        var row = new HandBorder
         {
-            Height = 28,
+            MinHeight = 28,
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(9, 0, 9, 0),
             Background = new SolidColorBrush(Colors.Transparent),
             BorderBrush = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(1),
             AllowDrop = true,
-            Child = content,
+            Content = body,
         };
 
         bool full = GroupDropRules.IsFull(group);
@@ -4848,6 +5220,38 @@ public sealed partial class ShellWindow : Window
             : $"Drag an app, file, folder or link here to add it to {group.DisplayName}");
 
         WireEditGroupRow(row, group, count);
+        // Draggable onto the full ring or the corner's quadrant: the group travels as a live
+        // reference and the ring drops a copy of it, children included (see CloneOrbitTemplate).
+        WireSidebarDrag(row, group);
+
+        // The drag image is a snapshot of the row, taken once DragStarting returns. The fill count
+        // is for the row at rest, not something to carry across the screen, so it is hidden (Opacity,
+        // so the row keeps its layout) for the snapshot and put back when the drag ends. The
+        // deferral holds the snapshot back until the hidden state has been rendered.
+        row.DragStarting += async (_, e) =>
+        {
+            var deferral = e.GetDeferral();
+            try
+            {
+                count.Opacity = 0;
+                await Task.Delay(16);
+            }
+            finally
+            {
+                deferral.Complete();
+            }
+        };
+        row.DropCompleted += (_, _) => count.Opacity = 1;
+
+        // A group can only be removed: what goes in it is dragged in, and what comes out of it is
+        // managed on the Elements screen.
+        var removeGroup = new MenuFlyoutItem
+        {
+            Text = "Remove",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D) },
+        };
+        removeGroup.Click += (_, _) => RemoveOrbitItem(group);
+        row.ContextFlyout = new MenuFlyout { Items = { removeGroup } };
         return row;
     }
 
@@ -4871,7 +5275,7 @@ public sealed partial class ShellWindow : Window
     /// cannot leave the row looking as though nothing were happening.
     /// </para>
     /// </summary>
-    private void WireEditGroupRow(Border row, OrbitItem group, TextBlock count)
+    private void WireEditGroupRow(ContentControl row, OrbitItem group, TextBlock count)
     {
         // Null while a text payload is still being read to see whether it is a path or a link.
         bool? usable = false;
@@ -5151,7 +5555,7 @@ public sealed partial class ShellWindow : Window
             return;
         }
 
-        _manager.Config.Primary.Items.Add(clone);
+        OrbitSlots.Place(_manager.Config.Primary.Items, clone);
 
         // Through the manager, so the orbit overlay and anything else watching hear about it and
         // the config is written — the same path AddItem_Click takes.
@@ -6490,7 +6894,7 @@ public sealed partial class ShellWindow : Window
                 new CardAction(0xE74D, "Delete", "Delete " + group.DisplayName, () =>
                 {
                     // The whole group goes, children and all: they only exist inside it.
-                    _manager.Config.Primary.Items.Remove(group);
+                    OrbitSlots.Vacate(_manager.Config.Primary.Items, group);
                     _manager.NotifyItemsChanged();
                     RebuildItemsList();
                     RenderPreview();
@@ -6546,7 +6950,7 @@ public sealed partial class ShellWindow : Window
                 new CardAction(0xE74D, "Delete", "Delete " + item.DisplayName, () =>
                 {
                     // Top level and inside a group both, since the same card builds for either.
-                    _manager.Config.Primary.Items.Remove(item);
+                    OrbitSlots.Vacate(_manager.Config.Primary.Items, item);
                     foreach (var group in _manager.Config.Primary.Items.Where(i => i.IsGroup))
                         group.Children.Remove(item);
                     _manager.NotifyItemsChanged();

@@ -113,6 +113,16 @@ public static class OrbitMetrics
         _ => 22,
     };
 
+    /// <summary>
+    /// The width, in device pixels, an item's picture is decoded at for a monitor scaled by
+    /// <paramref name="deviceScale"/>: the size it is drawn at, grown by the most any motion scales
+    /// it (<see cref="HoverScale"/>). Smaller would turn every hover into a blur; larger leaves the
+    /// compositor to shrink a 256 px shell icon to 22 DIPs with a filter that skips most of the
+    /// source, which is what put a staircase on every edge inside the icon.
+    /// </summary>
+    public static int IconDecodePixels(double deviceScale) =>
+        (int)Math.Ceiling(Icon * deviceScale * HoverScale);
+
     public static double Glyph => ItemSize switch
     {
         OrbitItemSize.Small => 13,

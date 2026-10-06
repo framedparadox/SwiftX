@@ -25,7 +25,16 @@ public sealed partial class OrbitWindow : Window
 {
     private const float SpringDamping = 0.65f;
     private const int SpringPeriodMs = 220;
-    private const int StaggerMs = 28;
+
+    /// <summary>
+    /// Gap between neighbouring bubbles' entrances. Small against the spring's own flight (about
+    /// 215 ms to settle at <see cref="SpringPeriodMs"/>), so the eight leave the hub together and
+    /// the orbit grows outward as one ring. It was 28 ms when the spring took over a second to
+    /// settle (see <see cref="SpringMotion"/>); against the corrected spring the same 28 ms let the
+    /// first bubble land before the last one left, so the ring formed as a clockwise spiral
+    /// instead of a circle. Same proportion of the flight as before, about one seventh.
+    /// </summary>
+    private const int StaggerMs = 4;
 
     // Flyout ("water drop") motion. Looser damping than the main orbit's entrance so the children
     // visibly overshoot and settle, and a slower period so the travel out to the outer orbit reads
@@ -34,7 +43,21 @@ public sealed partial class OrbitWindow : Window
     private const float FlyoutDamping = 0.58f;
     private const int FlyoutPeriodMs = 320;
     private const int FlyoutScaleMs = 380;
-    private const int FlyoutStaggerMs = 26;
+
+    /// <summary>
+    /// Gap between flyout children's entrances, counted outward from the middle of the arc. Kept
+    /// small against the flyout spring's ~350 ms flight for the same reason as
+    /// <see cref="StaggerMs"/>: a 26 ms step against that flight had the middle children landing
+    /// while the outer ones were still near the parent, so the arc did not read as an arc.
+    /// </summary>
+    private const int FlyoutStaggerMs = 4;
+
+    // A flyout collapsing under the pointer. Deliberately shorter and faster-starting than the
+    // entrance it answers (see OrbitTiming.ExitMs for the reasoning, and for the dock's own
+    // dismissal): it took about 490 ms, and a hover switching from one group to another waits for
+    // it before the next flyout opens.
+    private const int CollapseMs = 190;
+    private const int CollapseStaggerMs = 12;
 
     /// <summary>
     /// Dwell before hovering a group opens it. Long enough that sweeping the pointer across a
@@ -54,18 +77,18 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     private const int HoverMs = 160;
 
-    /// <summary>
-    /// How far the acrylic disc is held inside the bubble's painted edge, per side. Sub-pixel at
-    /// 100% scaling, and only ever hidden further by DPI rounding up — enough that the disc's own
-    /// hard-clipped rim can never land outside the antialiased circle drawn over it, and small
-    /// enough to take nothing visible off the glass. See CreateBubble.
-    /// </summary>
-    private const double BackdropInset = 0.5;
+    /// <summary>How long after launch <see cref="PrewarmAsync"/> waits, so the tray icon, the
+    /// hotkey and any window the launch itself opens are in place before it takes the UI thread
+    /// for a few hundred milliseconds.</summary>
+    private const int PrewarmDelayMs = 700;
 
-    /// <summary>How long after a dismiss a summon is still read as part of that same gesture.
-    /// Comfortably longer than a click's own down-to-up, and shorter than any deliberate
-    /// close-then-reopen.</summary>
-    private const int ClosingGraceMs = 500;
+    /// <summary>How long the pre-warm leaves the orbit up before putting it away — long enough
+    /// for the entrance to run and the layout and icons to land, which is what has to be warm.</summary>
+    private const int PrewarmSettleMs = 450;
+
+    /// <summary>Where the pre-warm parks the window: far past every monitor in both directions,
+    /// so no desktop layout can put any of it on screen.</summary>
+    private const int PrewarmOrigin = -32000;
 
     private readonly OrbitManager _manager;
     private readonly nint _hwnd;
@@ -162,7 +185,7 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     public bool IsClosing =>
         _isAnimating ||
-        (_dismissedAt != 0 && Environment.TickCount64 - _dismissedAt < ClosingGraceMs);
+        (_dismissedAt != 0 && Environment.TickCount64 - _dismissedAt < OrbitTiming.ClosingGraceMs);
 
     public OrbitWindow(OrbitManager manager)
     {
@@ -283,6 +306,93 @@ public sealed partial class OrbitWindow : Window
         _buttonWasDown = IsAnyMouseButtonDown();
         _outsideClick.Start();
         RenderCurrent(animate: true);
+    }
+
+    /// <summary>
+    /// Plays one whole summon where nobody can see it, so the first real one is not the first
+    /// ever. Measured on the Release build, the first summon after launch spent 300-600 ms on the UI
+    /// thread (the hub alone 55-100 ms, the bubbles another 95-105 ms, showing the window 45-60 ms)
+    /// before anything appeared, where every later one took 30-60 ms: XAML loading the types and
+    /// resources the orbit uses, the compositor building its first surfaces, the acrylic backdrop
+    /// starting up, the JIT. All of that is paid once per process, and a launcher is judged on the
+    /// first press.
+    /// <para>
+    /// It is the real thing — the same layout, <see cref="RenderCurrent"/> and entrance — in a
+    /// window moved far off every monitor and shown without being activated, so it takes neither
+    /// focus nor input and nothing of it is ever on screen. Rendering also resolves the icons,
+    /// including those inside groups (<see cref="ResolveGroupIcons"/>), so the first flyout does not
+    /// open on glyphs that turn into pictures halfway through the animation.
+    /// </para>
+    /// <para>
+    /// Whatever else the app is doing at launch goes first (<see cref="PrewarmDelayMs"/>), and a
+    /// real summon that arrives while this is under way wins: it bumps <see cref="_renderGeneration"/>,
+    /// which is what this checks before it tears anything down.
+    /// </para>
+    /// </summary>
+    public async Task PrewarmAsync()
+    {
+        try
+        {
+            await Task.Delay(PrewarmDelayMs);
+            if (_isOpen || _isAnimating)
+                return;
+
+            _quadrant = null;
+            UpdateGeometry();
+            WindowChrome.MakeTransparentOverlay(this, _hwnd);
+            ApplyTheme();
+
+            var work = DisplayArea.Primary.WorkArea;
+            _appWindow.MoveAndResize(new RectInt32(PrewarmOrigin, PrewarmOrigin, work.Width, work.Height));
+            double scale = DeviceScale;
+            OrbitCanvas.Width = work.Width / scale;
+            OrbitCanvas.Height = work.Height / scale;
+            _cx = OrbitCanvas.Width / 2;
+            _cy = OrbitCanvas.Height / 2;
+
+            _appWindow.Show(false);
+            RenderCurrent(animate: true);
+
+            // RenderCurrent just advanced the generation, so this is the one that is ours.
+            int generation = _renderGeneration;
+            await Task.Delay(PrewarmSettleMs);
+            if (generation != _renderGeneration || _isOpen)
+                return;
+
+            ClearOrbit();
+            WindowChrome.SetEllipticHitRegions(_hwnd, 1, Array.Empty<(double, double, double)>());
+            _appWindow.Hide();
+
+            // Park the hidden window back on a real monitor. Left at PrewarmOrigin it keeps the DPI
+            // of whichever monitor is nearest that point, which on a mixed-DPI desktop need not be
+            // the primary, and the first real summon would then cross a DPI change in the middle of
+            // laying itself out.
+            _appWindow.MoveAndResize(work);
+        }
+        catch (Exception ex)
+        {
+            // Decoration of the first summon: a warm-up that fails costs the first summon its
+            // head start and nothing else.
+            Diag.Log("OrbitWindow.PrewarmAsync: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Starts resolving the icon of every item that sits inside a group, which nothing else does
+    /// until the group's flyout opens — and opening it is exactly when an icon arriving late shows,
+    /// as a glyph turning into a picture mid-animation. Cheap to repeat: an item whose icon is
+    /// already resolved at this size is skipped (see <see cref="ResolveIconAsync"/>).
+    /// </summary>
+    private void ResolveGroupIcons()
+    {
+        int decodePixels = IconDecodePixels;
+        foreach (var (item, _, _) in CurrentLayout())
+        {
+            if (!item.IsGroup)
+                continue;
+            foreach (var child in item.Children.Where(c => !c.Hidden).Take(OrbitMetrics.FlyoutSlotCount))
+                _ = ResolveIconAsync(child, decodePixels);
+        }
     }
 
     /// <summary>
@@ -504,7 +614,8 @@ public sealed partial class OrbitWindow : Window
         foreach (var item in _manager.Config.Primary.Items.Where(i => !i.Hidden))
         {
             if (slot >= OrbitMetrics.UserSlotCount) break;
-            slots.Add((item, slot++));
+            // A removed item's place stays on the ring as an "Add new" slot of its own.
+            slots.Add((item.IsEmpty ? SystemOrbitItems.CreateAddNew() : item, slot++));
         }
 
         // Fewer than UserSlotCount items leaves the rest of the orbit empty — fill each remaining
@@ -540,6 +651,8 @@ public sealed partial class OrbitWindow : Window
         var layout = new List<(OrbitItem Item, int Index, double AngleRad)>(items.Count);
         for (int i = 0; i < items.Count; i++)
         {
+            // A place the user emptied stays a gap on the arc; the items around it keep theirs.
+            if (items[i].IsEmpty) continue;
             double local = QuadrantLayout.LocalAngleRad(
                 i, items.Count, OrbitMetrics.Bubble * OrbitMetrics.HoverScale, _itemRadius);
             layout.Add((items[i], i, QuadrantLayout.ScreenAngleRad(corner, local)));
@@ -575,12 +688,13 @@ public sealed partial class OrbitWindow : Window
                 isFlyout: false);
             _bubbles.Add(bubble);
             OrbitCanvas.Children.Add(bubble.Host);
-            _ = ResolveIconAsync(item);
+            _ = ResolveIconAsync(item, IconDecodePixels);
         }
+        ResolveGroupIcons();
 
         BuildPill();
 
-        // Composition Offset/Scale must start after the element is in the visual tree.
+        // Composition Translation/Scale must start after the element is in the visual tree.
         foreach (var bubble in _bubbles)
         {
             if (animate)
@@ -591,6 +705,9 @@ public sealed partial class OrbitWindow : Window
 
         ApplyHitRegions();
     }
+
+    /// <summary>Device pixels per DIP on the monitor the window is on right now.</summary>
+    private double DeviceScale => NativeMethods.GetDpiForWindow(_hwnd) / 96.0;
 
     /// <summary>
     /// One circle covering everything the orbit can paint — hub, bubbles, a hover-grown bubble, an
@@ -606,7 +723,7 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     private void ApplyHitRegions(double pillCx = 0, double pillCy = 0, double pillRadius = 0)
     {
-        double scale = NativeMethods.GetDpiForWindow(_hwnd) / 96.0;
+        double scale = DeviceScale;
         var regions = new List<(double, double, double)>
         {
             (_cx, _cy, _contentRadius),
@@ -682,20 +799,31 @@ public sealed partial class OrbitWindow : Window
     /// what lets a glyph chosen for an item that previously showed a shell icon actually appear.
     /// </para>
     /// </summary>
-    private static async Task ResolveIconAsync(OrbitItem orbitItem)
+    private static async Task ResolveIconAsync(OrbitItem orbitItem, int decodePixelWidth)
     {
         string key = orbitItem.IconKey;
-        if (orbitItem.IconImage is not null && orbitItem.IconSignature == key)
+        // The decode size is part of the answer: the same icon decoded for a 22 px bubble is the
+        // wrong picture for a 44 px one, so a change of scale or item size re-resolves.
+        string signature = $"{key}\u001f{decodePixelWidth}";
+        if (orbitItem.IconImage is not null && orbitItem.IconSignature == signature)
             return;
 
-        var src = await IconService.LoadIconAsync(orbitItem);
+        var src = await IconService.LoadIconAsync(orbitItem, decodePixelWidth);
 
         if (orbitItem.IconKey != key)
             return; // edited mid-flight; the resolution for the newer key owns the result
 
-        orbitItem.IconSignature = key;
+        orbitItem.IconSignature = signature;
         orbitItem.IconImage = src;
     }
+
+    /// <summary>
+    /// The width, in device pixels, an item's icon is decoded at: the size it is drawn at, grown
+    /// by the most any motion scales it (<see cref="OrbitMetrics.HoverScale"/>; a flyout bubble's
+    /// icon is smaller and its swell is covered by the same margin). Decoding smaller than that
+    /// would make every hover a blur; decoding larger is the 10x reduction this exists to avoid.
+    /// </summary>
+    private int IconDecodePixels => OrbitMetrics.IconDecodePixels(DeviceScale);
 
     /// <summary>
     /// Adds the hub to the canvas for the current render — reusing the existing instance (and
@@ -880,7 +1008,7 @@ public sealed partial class OrbitWindow : Window
             scale.Target = "Scale";
             scale.FinalValue = Vector3.One;
             scale.DampingRatio = SpringDamping;
-            scale.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            scale.Period = SpringMotion.Period(SpringPeriodMs);
             visual.StartAnimation("Scale", scale);
 
             var opacity = compositor.CreateScalarKeyFrameAnimation();
@@ -975,15 +1103,19 @@ public sealed partial class OrbitWindow : Window
         // one Composition visual (bubble.Host below), so it travels with those animations for
         // free — nothing in the motion code needs to know it's there.
         //
-        // Drawn a hair smaller than the tint above it (BackdropInset). SystemBackdropElement can
-        // only round itself with a composition rounded-rect clip, whose edge is a hard, unfeathered
-        // stair-step; the tint's own rounded Background is drawn by XAML and is properly
-        // antialiased. At exactly equal sizes the aliased disc therefore peeks out from behind the
-        // feathered one by a fraction of a pixel all the way round — invisible while the tint is
-        // translucent, but the literal light rim that showed around an inverted bubble under Light
-        // once the tint went opaque. Insetting puts the backdrop's own edge strictly inside the
-        // tint's, so the outermost thing painted is always the antialiased circle.
-        double backdropSize = Math.Max(1, diameter - BackdropInset * 2);
+        // Drawn smaller than the tint above it (OrbitItemGeometry.BackdropInsetPx), and its edge then
+        // covered by a rim (OrbitItemGeometry.RimWidthPx). SystemBackdropElement can only round
+        // itself with a composition rounded-rect clip, whose edge is a hard, unfeathered stair-step
+        // that also overshoots its nominal size by up to a pixel at the four compass points; the
+        // tint's own rounded Background is drawn by XAML and is properly antialiased. Measured over
+        // a bright desktop the stair-step is plainly visible, because the glass is much darker than
+        // what is behind it and the translucent tint cannot hide the step. No clip set from outside
+        // reaches it — an ellipse clip on the element's own visual left the acrylic a full square —
+        // so the step can only be covered, not smoothed: inset the disc until its worst-case edge
+        // sits inside the rim, and let the rim's antialiased outer edge be the silhouette.
+        double scale = DeviceScale;
+        double backdropInset = OrbitItemGeometry.BackdropInsetPx / scale;
+        double backdropSize = Math.Max(1, diameter - backdropInset * 2);
         var backdrop = new SystemBackdropElement
         {
             Width = backdropSize,
@@ -1009,9 +1141,29 @@ public sealed partial class OrbitWindow : Window
         };
         OrbitItemGeometry.Apply(tint, diameter);
 
+        // The ring that hides the acrylic's edge. Near-opaque in the glass tint's own colour, so
+        // it reads as the glass's bezel rather than a second material, and drawn by XAML — its
+        // outer and inner edges are both antialiased. A hexagon has no acrylic under it, so no
+        // edge to hide; its Path is already antialiased.
+        Border? rim = null;
+        if (OrbitMetrics.ItemShape != OrbitItemShape.Hexagon)
+        {
+            rim = new Border
+            {
+                Width = diameter,
+                Height = diameter,
+                BorderBrush = new SolidColorBrush(OrbitItemGeometry.RimTint(ThemeColor("OrbitBubbleGlassTint"))),
+                BorderThickness = new Thickness(OrbitItemGeometry.RimWidthPx / scale),
+                IsHitTestVisible = false,
+            };
+            OrbitItemGeometry.Apply(rim, diameter);
+        }
+
         var content = new Grid();
         content.Children.Add(backdrop);
         content.Children.Add(tint);
+        if (rim is not null)
+            content.Children.Add(rim);
         content.Children.Add(icon);
         content.Children.Add(glyph);
 
@@ -1042,6 +1194,18 @@ public sealed partial class OrbitWindow : Window
         Canvas.SetLeft(border, _cx + restX - diameter / 2);
         Canvas.SetTop(border, _cy + restY - diameter / 2);
 
+        // Layout alone says where the bubble rests; every motion that carries it anywhere else (the
+        // entrance's trip out from the hub, a hover's bounce) rides on Translation, which adds on
+        // top of that. See ResetBubbleVisual. Enabled before anything seeds it.
+        try
+        {
+            ElementCompositionPreview.SetIsTranslationEnabled(border, true);
+        }
+        catch
+        {
+            // Composition may be unavailable in some hosts; the bubble still rests where layout put it.
+        }
+
         NameForNarrator(border, item);
 
         var bubble = new BubbleView
@@ -1058,6 +1222,7 @@ public sealed partial class OrbitWindow : Window
             IsFlyout = isFlyout,
             StaggerIndex = index,
             Backdrop = backdrop,
+            Rim = rim,
             TintBrush = tintBrush,
             GlyphBrush = glyphBrush,
             Detach = () => item.PropertyChanged -= onItemChanged,
@@ -1374,6 +1539,20 @@ public sealed partial class OrbitWindow : Window
 
     // ---- Motion --------------------------------------------------------------------------
 
+    /// <summary>
+    /// Snaps a bubble's composition visual to rest, or to the first frame of its entrance.
+    /// <para>
+    /// The trip out from the hub is carried by <c>Translation</c>, never by the visual's
+    /// <c>Offset</c>. Offset is how XAML itself carries the bubble's <c>Canvas.Left</c>/<c>Top</c>
+    /// (the same lesson as <see cref="GlidePill"/>), so the entrance used to drive a property that
+    /// layout also writes, toward <c>Vector3.Zero</c>, which to that property is the canvas's
+    /// top-left corner, not the bubble's slot. Where each bubble ended up then depended on whether
+    /// XAML's layout write or the spring came last. Once the springs were made about six times
+    /// faster (<see cref="SpringMotion"/>), that race no longer reliably went to layout, and bubbles
+    /// and flyout children ended up off the ring. Translation is added on top of the layout
+    /// position, so an entrance that ends at zero ends exactly on the ring whatever the timing.
+    /// </para>
+    /// </summary>
     private static void ResetBubbleVisual(BubbleView bubble, bool rested)
     {
         try
@@ -1383,17 +1562,20 @@ public sealed partial class OrbitWindow : Window
                 (float)(bubble.Diameter / 2),
                 (float)(bubble.Diameter / 2),
                 0);
+            // A running animation owns the property it drives and drops a plain assignment, so it
+            // has to let go before the seed below can take.
+            visual.StopAnimation("Translation");
             if (rested)
             {
-                visual.Offset = Vector3.Zero;
+                visual.Properties.InsertVector3("Translation", Vector3.Zero);
                 visual.Scale = new Vector3(bubble.RestScale, bubble.RestScale, 1);
                 visual.Opacity = 1;
             }
             else
             {
                 // Layout puts the bubble at its resting place, so "emerging from the hub" (or,
-                // for a flyout child, from its parent bubble) is an offset back to that origin.
-                visual.Offset = bubble.EntryOffset;
+                // for a flyout child, from its parent bubble) is a translation back to that origin.
+                visual.Properties.InsertVector3("Translation", bubble.EntryOffset);
                 visual.Scale = new Vector3(0.15f, 0.15f, 1);
                 visual.Opacity = 0;
             }
@@ -1413,19 +1595,24 @@ public sealed partial class OrbitWindow : Window
             var compositor = visual.Compositor;
             var delay = TimeSpan.FromMilliseconds(bubble.StaggerIndex * StaggerMs);
 
-            var offset = compositor.CreateSpringVector3Animation();
-            offset.Target = "Offset";
-            offset.FinalValue = Vector3.Zero;
-            offset.DampingRatio = SpringDamping;
-            offset.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
-            offset.DelayTime = delay;
-            visual.StartAnimation("Offset", offset);
+            // Translation, not Offset: see ResetBubbleVisual. The start value is stated rather than
+            // read from the property when the delay ends, so a bubble waiting out its stagger
+            // leaves from the hub and from nowhere else.
+            var travel = compositor.CreateSpringVector3Animation();
+            travel.Target = "Translation";
+            travel.InitialValue = bubble.EntryOffset;
+            travel.FinalValue = Vector3.Zero;
+            travel.DampingRatio = SpringDamping;
+            travel.Period = SpringMotion.Period(SpringPeriodMs);
+            travel.DelayTime = delay;
+            travel.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
+            visual.StartAnimation("Translation", travel);
 
             var scale = compositor.CreateSpringVector3Animation();
             scale.Target = "Scale";
             scale.FinalValue = Vector3.One;
             scale.DampingRatio = SpringDamping;
-            scale.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            scale.Period = SpringMotion.Period(SpringPeriodMs);
             scale.DelayTime = delay;
             visual.StartAnimation("Scale", scale);
 
@@ -1437,7 +1624,9 @@ public sealed partial class OrbitWindow : Window
         }
         catch
         {
-            // skip animation
+            // Skip the animation, not the bubble: the seed above has already made it invisible and
+            // put it at the hub, so land it at rest the way AnimateDropletOut does.
+            ResetBubbleVisual(bubble, rested: true);
         }
     }
 
@@ -1458,19 +1647,18 @@ public sealed partial class OrbitWindow : Window
             visual.CenterPoint = new Vector3(
                 (float)(bubble.Diameter / 2), (float)(bubble.Diameter / 2), 0);
             var compositor = visual.Compositor;
-            var delay = TimeSpan.FromMilliseconds(staggerIndex * StaggerMs);
-            var ease = compositor.CreateCubicBezierEasingFunction(
-                new Vector2(0.3f, 0f), new Vector2(0.2f, 1f));
+            var delay = TimeSpan.FromMilliseconds(staggerIndex * OrbitTiming.ExitStaggerMs);
+            var ease = ExitEase(compositor);
 
             var scale = compositor.CreateVector3KeyFrameAnimation();
             scale.InsertKeyFrame(1, new Vector3(0.85f, 0.85f, 1), ease);
-            scale.Duration = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            scale.Duration = TimeSpan.FromMilliseconds(OrbitTiming.ExitMs);
             scale.DelayTime = delay;
             visual.StartAnimation("Scale", scale);
 
             var opacity = compositor.CreateScalarKeyFrameAnimation();
             opacity.InsertKeyFrame(1, 0, ease);
-            opacity.Duration = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            opacity.Duration = TimeSpan.FromMilliseconds(OrbitTiming.ExitMs);
             opacity.DelayTime = delay;
             visual.StartAnimation("Opacity", opacity);
         }
@@ -1490,7 +1678,7 @@ public sealed partial class OrbitWindow : Window
         foreach (var bubble in bubbles)
             AnimateBurstOut(bubble, maxStagger - bubble.StaggerIndex);
 
-        await Task.Delay(SpringPeriodMs + maxStagger * StaggerMs + 30);
+        await Task.Delay(OrbitTiming.DismissMs(maxStagger));
     }
 
     /// <summary>
@@ -1511,7 +1699,7 @@ public sealed partial class OrbitWindow : Window
             scale.Target = "Scale";
             scale.FinalValue = new Vector3(0.7f, 0.7f, 1);
             scale.DampingRatio = SpringDamping;
-            scale.Period = TimeSpan.FromMilliseconds(SpringPeriodMs);
+            scale.Period = SpringMotion.Period(SpringPeriodMs);
             visual.StartAnimation("Scale", scale);
 
             var opacity = compositor.CreateScalarKeyFrameAnimation();
@@ -1597,7 +1785,7 @@ public sealed partial class OrbitWindow : Window
                 isFlyout: true);
             _flyout.Add(bubble);
             OrbitCanvas.Children.Add(bubble.Host);
-            _ = ResolveIconAsync(children[i]);
+            _ = ResolveIconAsync(children[i], IconDecodePixels);
         }
 
         // Fan out from the middle of the arc rather than from one end, so the group looks like it
@@ -1625,13 +1813,16 @@ public sealed partial class OrbitWindow : Window
             var compositor = visual.Compositor;
             var delay = TimeSpan.FromMilliseconds(staggerIndex * FlyoutStaggerMs);
 
-            var offset = compositor.CreateSpringVector3Animation();
-            offset.Target = "Offset";
-            offset.FinalValue = Vector3.Zero;
-            offset.DampingRatio = FlyoutDamping;
-            offset.Period = TimeSpan.FromMilliseconds(FlyoutPeriodMs);
-            offset.DelayTime = delay;
-            visual.StartAnimation("Offset", offset);
+            // Translation, not Offset, and from a stated start: see AnimateBurstIn.
+            var travel = compositor.CreateSpringVector3Animation();
+            travel.Target = "Translation";
+            travel.InitialValue = bubble.EntryOffset;
+            travel.FinalValue = Vector3.Zero;
+            travel.DampingRatio = FlyoutDamping;
+            travel.Period = SpringMotion.Period(FlyoutPeriodMs);
+            travel.DelayTime = delay;
+            travel.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
+            visual.StartAnimation("Translation", travel);
 
             // Swell past full size on the way out and dip back under it on arrival — the surface
             // tension half of the droplet, and the part a plain spring can't express.
@@ -1672,19 +1863,18 @@ public sealed partial class OrbitWindow : Window
             visual.CenterPoint = new Vector3(
                 (float)(bubble.Diameter / 2), (float)(bubble.Diameter / 2), 0);
             var compositor = visual.Compositor;
-            var delay = TimeSpan.FromMilliseconds(staggerIndex * FlyoutStaggerMs);
-            var ease = compositor.CreateCubicBezierEasingFunction(
-                new Vector2(0.3f, 0f), new Vector2(0.2f, 1f));
+            var delay = TimeSpan.FromMilliseconds(staggerIndex * CollapseStaggerMs);
+            var ease = ExitEase(compositor);
 
             var scale = compositor.CreateVector3KeyFrameAnimation();
             scale.InsertKeyFrame(1, new Vector3(0.85f, 0.85f, 1), ease);
-            scale.Duration = TimeSpan.FromMilliseconds(FlyoutScaleMs);
+            scale.Duration = TimeSpan.FromMilliseconds(CollapseMs);
             scale.DelayTime = delay;
             visual.StartAnimation("Scale", scale);
 
             var opacity = compositor.CreateScalarKeyFrameAnimation();
             opacity.InsertKeyFrame(1, 0, ease);
-            opacity.Duration = TimeSpan.FromMilliseconds(FlyoutScaleMs);
+            opacity.Duration = TimeSpan.FromMilliseconds(CollapseMs);
             opacity.DelayTime = delay;
             visual.StartAnimation("Opacity", opacity);
         }
@@ -1704,7 +1894,7 @@ public sealed partial class OrbitWindow : Window
         foreach (var bubble in children)
             AnimateDropletBack(bubble, maxStagger - bubble.StaggerIndex);
 
-        await Task.Delay(FlyoutScaleMs + maxStagger * FlyoutStaggerMs + 30);
+        await Task.Delay(CollapseMs + maxStagger * CollapseStaggerMs + 30);
     }
 
     private async Task CollapseFlyoutAsync()
@@ -1916,7 +2106,8 @@ public sealed partial class OrbitWindow : Window
     /// through an opaque circle anyway, and leaving it lit is what put a pale rim around an
     /// inverted bubble under Light — the disc is clipped to a hard-edged rounded rect while the
     /// fill over it is antialiased, so at the boundary the disc always won by a sliver. See
-    /// <see cref="BackdropInset"/>, which closes the same gap geometrically for the rest states.
+    /// <see cref="OrbitItemGeometry.BackdropInsetPx"/> and <see cref="OrbitItemGeometry.RimWidthPx"/>,
+    /// which close the same gap geometrically for the rest states.
     /// </para>
     /// </summary>
     private void ApplyBubbleFill(BubbleView bubble, bool active)
@@ -1942,6 +2133,11 @@ public sealed partial class OrbitWindow : Window
         bubble.TintFade = AnimateBrushTo(bubble.TintFade, bubble.TintBrush, background, HoverMs);
         bubble.GlyphFade = AnimateBrushTo(bubble.GlyphFade, bubble.GlyphBrush, foreground, HoverMs);
         AnimateOpacity(bubble.Backdrop, opaque ? 0f : 1f, HoverMs);
+
+        // The rim exists only to hide the acrylic's edge, so it goes when the acrylic does: an
+        // opaque fill is its own clean antialiased silhouette.
+        if (bubble.Rim is { } rim)
+            AnimateOpacity(rim, opaque ? 0f : 1f, HoverMs);
     }
 
     /// <summary>
@@ -2010,6 +2206,14 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     private static CompositionEasingFunction HoverEase(Compositor compositor) =>
         compositor.CreateCubicBezierEasingFunction(new Vector2(0.2f, 0.9f), new Vector2(0.2f, 1f));
+
+    /// <summary>
+    /// The curve the dock's closing motion rides: a decelerate that is already moving at the first
+    /// frame. The curve it replaced started slowly (control points 0.3, 0 / 0.2, 1), which is what
+    /// made a dismissed dock sit there for ~100 ms before visibly doing anything.
+    /// </summary>
+    private static CompositionEasingFunction ExitEase(Compositor compositor) =>
+        compositor.CreateCubicBezierEasingFunction(new Vector2(0.2f, 0f), new Vector2(0f, 1f));
 
     /// <summary>
     /// Runs one bubble layer's opacity to <paramref name="target"/> on the hover curve. Falls back
@@ -2391,6 +2595,10 @@ public sealed partial class OrbitWindow : Window
         /// </summary>
         public required UIElement Backdrop { get; init; }
 
+        /// <summary>The ring over the acrylic's edge (see CreateBubble), or null for a shape with
+        /// no acrylic. Fades with <see cref="Backdrop"/>.</summary>
+        public UIElement? Rim { get; init; }
+
         /// <summary>The glass tint layer's own brush, animated by ApplyBubbleFill for hover/close
         /// states — see CreateBubble's comment on why this, and not Host.Background, carries the
         /// fill, and why it is one brush for the life of the bubble.</summary>
@@ -2417,7 +2625,9 @@ public sealed partial class OrbitWindow : Window
 
         public Action? Detach { get; set; }
 
-        /// <summary>Composition offset that puts the bubble back at its origin.</summary>
+        /// <summary>The <c>Translation</c> that puts the bubble back at its origin (the hub, or a
+        /// flyout child's parent): the entrance's first frame. A displacement from the bubble's
+        /// layout position, which is why it must never be written to the visual's Offset.</summary>
         public Vector3 EntryOffset => new(OriginX - RestX, OriginY - RestY, 0);
     }
 }

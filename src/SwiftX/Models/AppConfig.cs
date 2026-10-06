@@ -343,6 +343,44 @@ public sealed class AppConfig
         return this;
     }
 
+    /// <summary>
+    /// Puts back the shape the types promise and a JSON file does not keep. <c>"Items": null</c>,
+    /// <c>"Items": [null]</c> and <c>"Orbits": [null]</c> all deserialize without complaint into a
+    /// null list or a null element, and the first line that walks one throws. On the launch path
+    /// that was <see cref="SystemOrbitItems.Strip"/>, out of <c>App.OnLaunched</c>: a hand-edited or
+    /// merge-damaged <c>orbit.json</c> stopped the app from starting at all, on every launch, until
+    /// the file was deleted by hand. Everything that can be read is kept; only what cannot be
+    /// anything (a null entry) is dropped, and a missing list or string becomes an empty one.
+    /// </summary>
+    public AppConfig RepairShape()
+    {
+        Orbits ??= new();
+        Orbits.RemoveAll(o => o is null);
+        foreach (var orbit in Orbits)
+        {
+            orbit.Id ??= Guid.NewGuid().ToString("N");
+            orbit.Name ??= string.Empty;
+            orbit.Items = RepairItems(orbit.Items);
+        }
+        HotCornerOrbit = RepairItems(HotCornerOrbit);
+        Hotkey ??= HotkeyGesture.Default.ToString();
+        return this;
+    }
+
+    private static List<OrbitItem> RepairItems(List<OrbitItem>? items)
+    {
+        items ??= new();
+        items.RemoveAll(i => i is null);
+        foreach (var item in items)
+        {
+            item.Id ??= Guid.NewGuid().ToString("N");
+            item.Target ??= "";
+            item.DisplayName ??= "";
+            item.Children = RepairItems(item.Children);
+        }
+        return items;
+    }
+
     public void CopyAppSettingsFrom(AppConfig other)
     {
         LaunchAtStartup = other.LaunchAtStartup;

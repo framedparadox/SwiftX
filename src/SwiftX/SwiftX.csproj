@@ -37,9 +37,9 @@
     <Company>SwiftX</Company>
     <Authors>SwiftX</Authors>
     <Description>A quick-access orbit for Windows 11.</Description>
-    <Version>2.0.0.0</Version>
-    <FileVersion>2.0.0.0</FileVersion>
-    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <Version>2.0.2.0</Version>
+    <FileVersion>2.0.2.0</FileVersion>
+    <AssemblyVersion>2.0.2.0</AssemblyVersion>
     <NeutralLanguage>en-US</NeutralLanguage>
   </PropertyGroup>
 

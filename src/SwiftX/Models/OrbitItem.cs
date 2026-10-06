@@ -15,6 +15,12 @@ public enum OrbitItemKind
     Shortcut,
     Group,
     Tool,
+
+    /// <summary>
+    /// A hole in the orbit: the place an item used to be, kept so the items after it do not slide
+    /// into it. Never launched or listed — see <see cref="OrbitSlots"/>.
+    /// </summary>
+    Empty,
 }
 
 /// <summary>One entry on the orbit. Serializable fields persist; <see cref="IconImage"/> does not.</summary>
@@ -127,6 +133,9 @@ public sealed class OrbitItem : INotifyPropertyChanged
 
     [JsonIgnore]
     public bool IsTool => Kind == OrbitItemKind.Tool;
+
+    [JsonIgnore]
+    public bool IsEmpty => Kind == OrbitItemKind.Empty;
 
     [JsonIgnore]
     public bool HasCustomIcon =>

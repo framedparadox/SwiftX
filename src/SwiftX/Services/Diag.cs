@@ -29,8 +29,46 @@ public static class Diag
     /// </summary>
     private const long MaxBytes = 4L * 1024 * 1024;
 
-    private static readonly string LogPath =
-        Path.Combine(Path.GetTempPath(), "swiftx.log");
+    /// <summary>
+    /// Names a directory to write the log in instead of <c>%TEMP%</c>. Set by the test assembly and
+    /// by any harness that runs a second copy of the app beside the user's own.
+    /// <para>
+    /// The log is one fixed file shared by every SwiftX process on the machine, and a process
+    /// <em>truncates it when it starts</em>. So a test run, or a measurement launch, wiped the
+    /// diagnostic record of the user's real session — including the only managed trace of a crash
+    /// that had just happened. <c>SWIFTX_DATA_DIR</c> already redirects everything else those
+    /// processes write; this does the same for the one file that lives outside it.
+    /// </para>
+    /// </summary>
+    internal const string LogDirectoryVariable = "SWIFTX_LOG_DIR";
+
+    /// <summary>Where the log is written; see <see cref="ResolveLogPath"/>.</summary>
+    internal static string LogPath { get; } = ResolveLogPath(
+        Environment.GetEnvironmentVariable(LogDirectoryVariable), Path.GetTempPath());
+
+    /// <summary>
+    /// <c>swiftx.log</c> inside <paramref name="overrideDirectory"/> when one is given and usable,
+    /// otherwise inside <paramref name="defaultDirectory"/>. Never throws: a log that cannot be
+    /// placed where it was asked falls back to the default rather than costing the app its
+    /// diagnostics.
+    /// </summary>
+    internal static string ResolveLogPath(string? overrideDirectory, string defaultDirectory)
+    {
+        if (!string.IsNullOrWhiteSpace(overrideDirectory))
+        {
+            try
+            {
+                var directory = Path.GetFullPath(overrideDirectory);
+                Directory.CreateDirectory(directory);
+                return Path.Combine(directory, "swiftx.log");
+            }
+            catch
+            {
+                // Fall through to the default.
+            }
+        }
+        return Path.Combine(defaultDirectory, "swiftx.log");
+    }
 
     private static readonly object Gate = new();
 

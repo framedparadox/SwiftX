@@ -64,7 +64,7 @@ public static class ElementLibrary
         {
             foreach (var item in items)
             {
-                if (item.IsSystem || SystemOrbitItems.IsSystemTarget(item.Target))
+                if (item.IsSystem || item.IsEmpty || SystemOrbitItems.IsSystemTarget(item.Target))
                     continue;
                 if (IsBuiltInToolsGroup(item))
                     continue;

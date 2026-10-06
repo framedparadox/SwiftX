@@ -72,7 +72,7 @@ public static class OrbitStore
                 var json = LegacyConfigFormat.Upgrade(File.ReadAllText(path));
                 var cfg = JsonSerializer.Deserialize<AppConfig>(json, Options);
                 if (cfg is not null)
-                    return cfg.EnsurePrimary();
+                    return cfg.RepairShape().EnsurePrimary();
             }
         }
         catch (Exception ex)
@@ -146,7 +146,7 @@ public static class OrbitStore
             var config = JsonSerializer.Deserialize<AppConfig>(json, Options);
             if (config is null)
                 return null;
-            if (config.Orbits.Count == 0)
+            if (config.RepairShape().Orbits.Count == 0)
                 return null;
             return config.EnsurePrimary();
         }
