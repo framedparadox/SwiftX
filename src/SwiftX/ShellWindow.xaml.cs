@@ -5057,8 +5057,15 @@ public sealed partial class ShellWindow : Window
     /// here. Whichever of the two starts first wins: a drag already in flight
     /// (<see cref="_sidebarDragTemplate"/> set) is never started a second time.
     /// </para>
+    /// <para>
+    /// <paramref name="canStart"/> is asked, with the press's <c>OriginalSource</c>, whether a press
+    /// may arm the drag at all. The Groups rows need it: their child rows and buttons sit inside the
+    /// row, so their presses reach the row's handlers too.
+    /// </para>
     /// </summary>
-    private void WireSidebarDrag(UIElement row, OrbitItem template, Action? onPress = null, Action? onDragged = null)
+    private void WireSidebarDrag(
+        UIElement row, OrbitItem template, Action? onPress = null, Action? onDragged = null,
+        Func<object?, bool>? canStart = null)
     {
         bool armed = false;
         Point origin = default;
@@ -5076,6 +5083,10 @@ public sealed partial class ShellWindow : Window
         {
             var point = e.GetCurrentPoint(row);
             if (point.Properties.IsRightButtonPressed || point.Properties.IsMiddleButtonPressed)
+                return;
+            // A press that began on something inside the row with a job of its own (a child row, a
+            // button) is not the start of this row's drag, though it bubbles up through it.
+            if (canStart is not null && !canStart(e.OriginalSource))
                 return;
             origin = point.Position;
             armed = true;
@@ -5387,15 +5398,18 @@ public sealed partial class ShellWindow : Window
 
         // What the group holds, listed under it as indented child rows. They sit inside the drop
         // target rather than beside it, so a drop anywhere on the group and its children lands in
-        // the group instead of falling through to the sidebar's add-to-orbit.
-        var body = new StackPanel { IsHitTestVisible = false, Children = { content } };
-        foreach (var child in group.Children.Where(c => !c.IsEmpty))
+        // the group instead of falling through to the sidebar's add-to-orbit. Unlike the header,
+        // each child row takes the pointer itself: it is what is dragged to reorder, what carries
+        // the remove button and what the right-click menu opens on.
+        var childRows = new List<HandBorder>();
+        var children = new StackPanel();
+        var body = new StackPanel { Children = { content, children } };
+        var listed = GroupChildren.Listed(group);
+        foreach (var child in listed)
         {
-            var childContent = BuildEditRowContent(child.Glyph, child.DisplayName, null, null, iconSource: child);
-            childContent.Height = 24;
-            childContent.Margin = new Thickness(20, 0, 0, 0);
-            childContent.Opacity = child.Hidden ? 0.5 : 1;
-            body.Children.Add(childContent);
+            var childRow = BuildEditGroupChildRow(group, child, listed);
+            childRows.Add(childRow);
+            children.Children.Add(childRow);
         }
 
         // Transparent rather than null, so the whole row takes the pointer, not just what is drawn.
@@ -5420,11 +5434,16 @@ public sealed partial class ShellWindow : Window
             ? $"{group.DisplayName} is full ({GroupDropRules.Capacity} items)"
             : $"Click to see what is in {group.DisplayName}. Drag an app, file, folder or link here to add it to it.");
 
-        WireEditGroupRow(row, group, count);
+        WireEditGroupRow(row, group, count, childRows);
         // Draggable onto the full ring or the corner's quadrant: the group travels as a live
         // reference and the ring drops a copy of it, children included (see CloneOrbitTemplate).
+        // Only from the header: a press on one of its child rows is that item's own drag.
         bool dragged = false;
-        WireSidebarDrag(row, group, onPress: () => dragged = false, onDragged: () => dragged = true);
+        WireSidebarDrag(
+            row, group,
+            onPress: () => dragged = false,
+            onDragged: () => dragged = true,
+            canStart: source => !IsWithin(source, children));
 
         // Clicked, the group opens on the Orbit screen's canvas with its children on their arc —
         // what clicking it on the ring does, and what the Tools group has always shown. Without
@@ -5437,6 +5456,10 @@ public sealed partial class ShellWindow : Window
                 dragged = false;
                 return;
             }
+            // A tap on one of the children is for that child (its remove button, say), and the list
+            // it was in may be about to be rebuilt under the group it would otherwise open.
+            if (IsWithin(e.OriginalSource, children))
+                return;
             // A replace is aimed at a place on the ring, which a group open on the canvas hides.
             if (IsReplacing)
                 return;
@@ -5484,6 +5507,130 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
+    /// One item listed under a group in the sidebar: its icon and name, a remove button, and a
+    /// right-click menu with Move up, Move down and Remove from group. Dragged onto another of the
+    /// group's items it is put in that place (see <see cref="WireEditGroupRow"/>, which is the drop
+    /// target for the whole group and answers for these rows).
+    /// <para>
+    /// The row takes the pointer as a whole and its content does not, like the group row above it,
+    /// so crossing the icon and the name raises no enter or leave of its own. The remove button is
+    /// the exception and is kept out of the drag's start, as the child rows are out of the group's.
+    /// </para>
+    /// </summary>
+    private HandBorder BuildEditGroupChildRow(OrbitItem group, OrbitItem child, IReadOnlyList<OrbitItem> listed)
+    {
+        var content = BuildEditRowContent(child.Glyph, child.DisplayName, null, null, iconSource: child);
+        content.Height = 24;
+        content.Opacity = child.Hidden ? 0.5 : 1;
+        content.IsHitTestVisible = false;
+
+        var remove = new HandButton
+        {
+            Width = 24,
+            Height = 24,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(4),
+            VerticalAlignment = VerticalAlignment.Center,
+            Content = new FontIcon
+            {
+                Glyph = char.ConvertFromUtf32(0xE711),
+                FontSize = 10,
+                Foreground = ThemeHelper.Brush(Root, "SwiftXMutedBrush"),
+            },
+        };
+        WireOrbitGlyphHover(remove);
+        ToolTipService.SetToolTip(remove, "Remove from " + group.DisplayName);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            remove, $"Remove {child.DisplayName} from {group.DisplayName}");
+        remove.Click += (_, _) => RemoveFromGroup(group, child);
+
+        var layout = new Grid { ColumnSpacing = 4 };
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        layout.Children.Add(content);
+        Grid.SetColumn(remove, 1);
+        layout.Children.Add(remove);
+
+        // Transparent rather than null, so the whole row takes the pointer; the border is only
+        // painted while a reordering drag is over it (see WireEditGroupRow).
+        var row = new HandBorder
+        {
+            Margin = new Thickness(20, 0, 0, 0),
+            CornerRadius = new CornerRadius(4),
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderBrush = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(1),
+            Tag = child,
+            Content = layout,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, $"{child.DisplayName}, in {group.DisplayName}");
+        ToolTipService.SetToolTip(row, $"{child.DisplayName}. Drag onto another item to reorder; right-click for more.");
+
+        // The item travels as a live reference, like every sidebar row (see _sidebarDragTemplate);
+        // dropped on another of the group's items it is moved, dropped on the ring or on another
+        // group it is added there as a copy, like any other.
+        WireSidebarDrag(row, child, canStart: source => !IsWithin(source, remove));
+
+        int at = listed.ToList().FindIndex(c => ReferenceEquals(c, child));
+        var moveUp = new MenuFlyoutItem
+        {
+            Text = "Move up",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74A) },
+            IsEnabled = at > 0,
+        };
+        moveUp.Click += (_, _) => MoveInGroup(group, child, -1);
+        var moveDown = new MenuFlyoutItem
+        {
+            Text = "Move down",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74B) },
+            IsEnabled = at >= 0 && at < listed.Count - 1,
+        };
+        moveDown.Click += (_, _) => MoveInGroup(group, child, +1);
+        var removeItem = new MenuFlyoutItem
+        {
+            Text = "Remove from group",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D) },
+        };
+        removeItem.Click += (_, _) => RemoveFromGroup(group, child);
+        row.ContextFlyout = new MenuFlyout { Items = { moveUp, moveDown, new MenuFlyoutSeparator(), removeItem } };
+
+        return row;
+    }
+
+    /// <summary>Takes one item out of a group, from the sidebar's list of what it holds.</summary>
+    private void RemoveFromGroup(OrbitItem group, OrbitItem child)
+    {
+        if (!GroupChildren.Remove(group, child))
+            return;
+
+        if (ReferenceEquals(_selectedItem, child))
+            HideItemDetails();
+        _manager.NotifyItemsChanged();
+        RefreshAfterGroupChange();
+    }
+
+    /// <summary>Moves one of a group's items a place up or down, from its right-click menu.</summary>
+    private void MoveInGroup(OrbitItem group, OrbitItem child, int delta)
+    {
+        if (!GroupChildren.MoveBy(group, child, delta))
+            return;
+
+        _manager.NotifyItemsChanged();
+        RefreshAfterGroupChange();
+    }
+
+    /// <summary>Whether <paramref name="source"/> is <paramref name="ancestor"/> or something inside it.</summary>
+    private static bool IsWithin(object? source, DependencyObject ancestor)
+    {
+        for (var node = source as DependencyObject; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (ReferenceEquals(node, ancestor))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Makes a Groups row a drop target: a sidebar row dragged onto it, or an app, file, folder,
     /// shortcut or link dragged in from outside SwiftX, becomes a child of that group.
     /// <para>
@@ -5503,7 +5650,8 @@ public sealed partial class ShellWindow : Window
     /// cannot leave the row looking as though nothing were happening.
     /// </para>
     /// </summary>
-    private void WireEditGroupRow(ContentControl row, OrbitItem group, TextBlock count)
+    private void WireEditGroupRow(
+        ContentControl row, OrbitItem group, TextBlock count, IReadOnlyList<HandBorder> childRows)
     {
         // Null while a text payload is still being read to see whether it is a path or a link.
         bool? usable = false;
@@ -5513,11 +5661,52 @@ public sealed partial class ShellWindow : Window
         // answer do not rebuild the same two brushes on every pointer move.
         bool? painted = null;
 
+        // The child row painted as where a reordering drag would land, while one of this group's own
+        // items is being dragged over it. A reorder is painted on the child, not the whole row: the
+        // row's accent says "this goes in the group", which is not what is happening.
+        HandBorder? marked = null;
+
+        void Unmark()
+        {
+            if (marked is null)
+                return;
+            marked.BorderBrush = new SolidColorBrush(Colors.Transparent);
+            marked.Background = new SolidColorBrush(Colors.Transparent);
+            marked = null;
+        }
+
+        void Mark(HandBorder? target)
+        {
+            if (ReferenceEquals(marked, target))
+                return;
+            Unmark();
+            if (target is null)
+                return;
+            var accent = CurrentAccentColor();
+            target.BorderBrush = new SolidColorBrush(accent);
+            target.Background = new SolidColorBrush(Color.FromArgb(48, accent.R, accent.G, accent.B));
+            marked = target;
+        }
+
+        // The child row under the pointer. A drag is raised on the group row as a whole, since that
+        // is what allows the drop, so which child it is over comes from where the pointer is.
+        HandBorder? ChildRowAt(DragEventArgs e)
+        {
+            foreach (var childRow in childRows)
+            {
+                var at = e.GetPosition(childRow);
+                if (at.X >= 0 && at.X < childRow.ActualWidth && at.Y >= 0 && at.Y < childRow.ActualHeight)
+                    return childRow;
+            }
+            return null;
+        }
+
         void Clear()
         {
             if (ReferenceEquals(_orbitEditHotGroupRow, row))
                 _orbitEditHotGroupRow = null;
             painted = null;
+            Unmark();
             row.BorderBrush = new SolidColorBrush(Colors.Transparent);
             row.Background = new SolidColorBrush(Colors.Transparent);
         }
@@ -5554,6 +5743,25 @@ public sealed partial class ShellWindow : Window
         void Answer(DragEventArgs e)
         {
             e.Handled = true;
+
+            // One of this group's own items, dragged by its row here: a reorder. It is accepted only
+            // over another of the group's items, which is where it will be put.
+            if (_sidebarDragTemplate is { } own && GroupChildren.Holds(group, own))
+            {
+                var over = ChildRowAt(e);
+                bool lands = over is not null && !ReferenceEquals(over.Tag, own);
+                Mark(lands ? over : null);
+                e.AcceptedOperation = lands ? DataPackageOperation.Copy : DataPackageOperation.None;
+                if (e.DragUIOverride is { } moveUi)
+                {
+                    moveUi.IsCaptionVisible = lands;
+                    if (lands)
+                        moveUi.Caption = "Move here";
+                    moveUi.IsGlyphVisible = true;
+                }
+                return;
+            }
+
             e.AcceptedOperation = usable != false ? DataPackageOperation.Copy : DataPackageOperation.None;
             if (e.DragUIOverride is { } ui)
             {
@@ -5620,6 +5828,22 @@ public sealed partial class ShellWindow : Window
                 return;
             }
 
+            // One of this group's own items dropped on another of them: a reorder, put where the one
+            // it landed on was. Anywhere else in the group it does nothing — it is already in it.
+            // The pointer is read first: Clear above only repaints, but the list is rebuilt below.
+            if (_sidebarDragTemplate is { } dragged && GroupChildren.Holds(group, dragged))
+            {
+                var landedOn = ChildRowAt(e)?.Tag as OrbitItem;
+                bool moved = landedOn is not null && GroupChildren.Move(group, dragged, landedOn);
+                e.AcceptedOperation = moved ? DataPackageOperation.Copy : DataPackageOperation.None;
+                if (moved)
+                {
+                    _manager.NotifyItemsChanged();
+                    RefreshAfterGroupChange();
+                }
+                return;
+            }
+
             // A sidebar row's own drag: the template is a live field, as it is for the ring (see
             // _sidebarDragTemplate), so there is nothing to read off the DataView. It stays set
             // until the drag's own DropCompleted, which is what releases any rebuild held meanwhile.
@@ -5682,6 +5906,11 @@ public sealed partial class ShellWindow : Window
 
         if (_sidebarDragTemplate is { } template)
         {
+            // Its own item, dragged within it: a reorder, which Check would refuse as a duplicate.
+            // Where it may land is settled by the pointer, over the group's rows (see WireEditGroupRow).
+            if (GroupChildren.Holds(group, template))
+                return (true, null);
+
             var verdict = GroupDropRules.Check(group, template);
             return (verdict == GroupDropVerdict.Allowed, GroupDropRules.Reason(verdict));
         }

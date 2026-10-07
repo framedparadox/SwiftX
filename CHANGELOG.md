@@ -10,6 +10,9 @@ All notable changes to SwiftX will be documented in this file.
   on the ring — has Edit icon. The colour tints the item's glyph on the orbit, the Orbit screen
   preview, the sidebar and the Elements cards.
 - Clicking a group in the Add to Orbit list opens it on the Orbit screen, showing what is inside it.
+- The items listed under a group in Add to Orbit can be rearranged — drag one onto another, or
+  right-click for Move up and Move down — and taken out one at a time with the cross beside each
+  or Remove from group.
 - A GitHub logo that reads on both light and dark, used for GitHub links.
 
 ### Changed

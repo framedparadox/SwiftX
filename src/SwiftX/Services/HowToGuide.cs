@@ -133,7 +133,7 @@ public static class HowToGuide
             "Remove: right-click an item and choose Delete.",
             "Icon: click an item, then click the icon on its card to choose a different one, or a different colour for it. Right-click a group and choose Edit icon to do the same.",
             "Elements screen: press the Elements button on Home to see everything by type. Show or hide an item, edit it or delete it there.",
-            "Groups: choose New group in Add to orbit to make one, click a group in the list to see what is inside it, and drop items onto it to put them inside. Hover a group on the dock to open its ring.",
+            "Groups: choose New group in Add to orbit to make one, click a group in the list to see what is inside it, and drop items onto it to put them inside. Drag an item in the list onto another to reorder it, or use the cross beside it (or right-click) to take it out. Hover a group on the dock to open its ring.",
         ],
         ActionLabel: "Open Elements",
         Action: GuideAction.OpenElements);
