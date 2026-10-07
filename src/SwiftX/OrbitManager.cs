@@ -98,6 +98,9 @@ public sealed class OrbitManager
             repaired |= ToolCatalog.MigrateLegacyTargets(Config.Primary.Items);
             // Every tool belongs under the one Tools group, wherever an older config left them.
             repaired |= ToolCatalog.EnsureToolsGroup(Config.Primary.Items);
+            // The default GitHub link used to carry the Data tool's "code" glyph; it shows the
+            // GitHub logo now, and an orbit seeded by an earlier build should too.
+            repaired |= BrandIcons.MigrateLegacyGitHubGlyph(Config.Primary.Items);
         }
 
         // After the migrations, not inside one: a tool item EnsureToolsGroup has just added starts
@@ -181,7 +184,7 @@ public sealed class OrbitManager
             Kind = OrbitItemKind.WebLink,
             DisplayName = "GitHub",
             Target = "https://github.com",
-            CustomGlyph = "\uE943",
+            // No glyph: a GitHub link resolves to the logo SwiftX ships (see BrandIcons).
         });
         profile.Items.Add(new OrbitItem
         {
@@ -416,10 +419,16 @@ public sealed class OrbitManager
     /// defaulted so that every caller that was only ever adding, "Replace…" included, keeps the
     /// behaviour it had: a null here is the old dialog exactly.
     /// </param>
+    /// <param name="startAsGroup">
+    /// Open on the Group tile rather than the first one — for the callers that already know they
+    /// are making a group (the sidebar's "New group…"). Ignored when groups are not allowed or an
+    /// existing item is being edited, which opens on what that item is.
+    /// </param>
     public void OpenAddItem(
         Action<OrbitItem>? onAdded = null, List<OrbitItem>? targetList = null,
         bool isGenericAddItem = false, bool allowGroups = true,
-        string? heading = null, string? confirmLabel = null, OrbitItem? existing = null)
+        string? heading = null, string? confirmLabel = null, OrbitItem? existing = null,
+        bool startAsGroup = false)
     {
         if (_addItemWindow is not null)
         {
@@ -428,7 +437,7 @@ public sealed class OrbitManager
         }
         _addItemWindow = new AddItemWindow(
             this, onAdded, targetList ?? Config.Primary.Items, isGenericAddItem, allowGroups,
-            heading, confirmLabel, existing);
+            heading, confirmLabel, existing, startAsGroup);
         _addItemWindow.Closed += (_, _) => _addItemWindow = null;
         _addItemWindow.Activate();
     }

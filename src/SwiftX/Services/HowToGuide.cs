@@ -131,9 +131,9 @@ public static class HowToGuide
             "Reorder: on the Orbit screen, drag an item around the ring to a new place.",
             "Replace: right-click an item and choose Replace, or click it and use Replace on its card. Then pick something from the Add to orbit list, or drop it onto the ring.",
             "Remove: right-click an item and choose Delete.",
-            "Icon: click an item, then click the icon on its card to choose a different one.",
+            "Icon: click an item, then click the icon on its card to choose a different one, or a different colour for it. Right-click a group and choose Edit icon to do the same.",
             "Elements screen: press the Elements button on Home to see everything by type. Show or hide an item, edit it or delete it there.",
-            "Groups: drop items onto a group in Add to orbit to put them inside it. Hover a group on the dock to open its ring.",
+            "Groups: choose New group in Add to orbit to make one, click a group in the list to see what is inside it, and drop items onto it to put them inside. Hover a group on the dock to open its ring.",
         ],
         ActionLabel: "Open Elements",
         Action: GuideAction.OpenElements);

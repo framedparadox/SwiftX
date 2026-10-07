@@ -57,6 +57,26 @@ public sealed class OrbitItem : INotifyPropertyChanged
         }
     }
 
+    private string? _customIconColor;
+
+    /// <summary>
+    /// The colour the item's glyph is drawn in, "#RRGGBB", or null for the theme's own foreground.
+    /// Only a glyph is tinted: a picture (an app's shell icon, a site's favicon, a picked image) has
+    /// its own colours. Not part of <see cref="IconKey"/> for that reason — changing it never needs
+    /// a picture re-resolved. Hover states that fill the bubble (Invert, Tint, Close) still draw
+    /// their own contrast colour over it, since this one was chosen against the resting glass.
+    /// </summary>
+    public string? CustomIconColor
+    {
+        get => _customIconColor;
+        set
+        {
+            if (_customIconColor == value) return;
+            _customIconColor = value;
+            OnPropertyChanged();
+        }
+    }
+
     public bool Hidden { get; set; }
 
     /// <summary>

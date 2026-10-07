@@ -329,7 +329,7 @@ Hover style. Pressing **Edit** swaps it for **Apps /
 Shortcuts / Links / Tools**, an accordion of things that can go on the orbit: the apps, folders and
 links this machine actually has (the same existence-checked catalog the first-run guide offers
 from) and the built-in tools. Click a row to put it in the first free slot; anything already on the
-orbit is shown ticked and does nothing. **Add something else…** at the bottom opens the full add
+orbit is shown ticked and does nothing. **Add to Orbit…** at the bottom opens the full add
 dialog. The swap is a visibility change between two panels, not a navigation, so the canvas keeps
 its selection and its drag state across it.
 
