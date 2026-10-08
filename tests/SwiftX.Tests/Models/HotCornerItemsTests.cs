@@ -120,6 +120,76 @@ public class HotCornerItemsTests
         Assert.Same(tools, resolved);
     }
 
+    private static OrbitItem QuickAccessOf(AppConfig config) =>
+        HotCornerItems.Resolve(config, SystemOrbitItems.CreateSettings()).First(QuadrantLayout.IsQuickAccess);
+
+    [Fact]
+    public void An_icon_given_to_QuickAccess_survives_it_being_gathered_again()
+    {
+        var config = ConfigWith(Link("github"));
+        var shown = QuickAccessOf(config);
+        shown.CustomGlyph = "\uE774";
+        shown.CustomIconColor = "#E5484D";
+
+        HotCornerItems.KeepGatheredIcon(config, SystemOrbitItems.CreateSettings(), shown);
+
+        // A new object every resolve, so what is kept is the icon and not the instance.
+        var again = QuickAccessOf(config);
+        Assert.NotSame(shown, again);
+        Assert.Equal("\uE774", again.CustomGlyph);
+        Assert.Equal("#E5484D", again.CustomIconColor);
+        Assert.Equal(new[] { "github" }, again.Children.Select(c => c.DisplayName));
+    }
+
+    [Fact]
+    public void A_picture_given_to_QuickAccess_replaces_its_glyph()
+    {
+        var config = ConfigWith(Link("github"));
+        var shown = QuickAccessOf(config);
+        shown.CustomGlyph = null;
+        shown.CustomIconPath = @"C:\Pictures\mark.png";
+
+        HotCornerItems.KeepGatheredIcon(config, SystemOrbitItems.CreateSettings(), shown);
+
+        var again = QuickAccessOf(config);
+        Assert.Equal(@"C:\Pictures\mark.png", again.CustomIconPath);
+        Assert.Null(again.CustomGlyph);
+    }
+
+    [Fact]
+    public void Resetting_QuickAccess_goes_back_to_its_own_glyph_not_a_blank_one()
+    {
+        var config = ConfigWith(Link("github"));
+        var shown = QuickAccessOf(config);
+        shown.CustomGlyph = "\uE774";
+        shown.CustomIconColor = "#E5484D";
+        HotCornerItems.KeepGatheredIcon(config, SystemOrbitItems.CreateSettings(), shown);
+
+        // What the icon picker's Reset leaves on the item.
+        shown.CustomGlyph = null;
+        shown.CustomIconPath = null;
+        shown.CustomIconColor = null;
+        HotCornerItems.KeepGatheredIcon(config, SystemOrbitItems.CreateSettings(), shown);
+
+        var again = QuickAccessOf(config);
+        Assert.Equal(QuadrantLayout.QuickAccessGlyph, again.CustomGlyph);
+        Assert.Null(again.CustomIconPath);
+        Assert.Null(again.CustomIconColor);
+    }
+
+    [Fact]
+    public void Keeping_an_icon_is_for_QuickAccess_alone()
+    {
+        var tools = ToolCatalog.CreateToolsGroup();
+        var config = ConfigWith(tools, Link("github"));
+
+        HotCornerItems.KeepGatheredIcon(config, SystemOrbitItems.CreateSettings(), tools);
+
+        // Not QuickAccess, so nothing was stored — and the corner is still following the orbit,
+        // which storing anything would have ended.
+        Assert.True(HotCornerItems.IsDefault(config));
+    }
+
     [Fact]
     public void A_stored_entry_resolves_to_the_live_item_it_names()
     {

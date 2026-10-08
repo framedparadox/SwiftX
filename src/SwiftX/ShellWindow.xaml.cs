@@ -358,7 +358,7 @@ public sealed partial class ShellWindow : Window
             SyncAccentControls();
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             SyncDesktopShortcutToggle();
-            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.1");
+            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.3");
             FillAboutDetails();
             // Wired here rather than in XAML because ThemeShadow.Receivers is a collection with no
             // XAML syntax of its own on a shared resource. Without a receiver the Home tiles
@@ -515,8 +515,7 @@ public sealed partial class ShellWindow : Window
             // An edit from elsewhere (e.g. a delete on the Elements screen) can remove the
             // item the Orbit screen currently has selected or expanded — drop stale state rather than
             // leave the inspector or children row pointing at something that no longer exists.
-            if (_expandedGroup is not null && !ItemExists(_manager.Config.Primary.Items, _expandedGroup))
-                CollapseGroup();
+            RefreshOpenGroup();
             if (_selectedItem is not null && !ItemExists(_manager.Config.Primary.Items, _selectedItem))
                 HideItemDetails();
             RenderPreview();
@@ -567,6 +566,41 @@ public sealed partial class ShellWindow : Window
         StopGroupNoticeFlash();
         OrbitMetrics.Changed -= OnMetricsChanged;
         _manager.ItemsChanged -= OnItemsChanged;
+    }
+
+    /// <summary>
+    /// Keeps the group the canvas has open honest after the orbit changed under it: closes it when
+    /// the thing it showed is gone, and swaps in the live object when it was only ever a snapshot.
+    /// <para>
+    /// A group opened from the corner preview is not always one of the orbit's own items. The
+    /// corner's QuickAccess is gathered afresh every time it is resolved (see
+    /// <see cref="QuadrantLayout.IsQuickAccess"/>), so the object held here goes stale on the next
+    /// link added or removed and is re-gathered rather than closed; it closes only when nothing is
+    /// left to gather. A group the corner holds a copy of after the orbit dropped it is kept for
+    /// as long as the corner holds it.
+    /// </para>
+    /// </summary>
+    private void RefreshOpenGroup()
+    {
+        var group = _expandedGroup;
+        if (group is null)
+            return;
+
+        if (QuadrantLayout.IsQuickAccess(group))
+        {
+            var fresh = QuadrantLayout.BuildQuickAccess(_manager.Config.Primary.Items);
+            if (fresh is null)
+                CollapseGroup();
+            else
+                _expandedGroup = fresh;
+            return;
+        }
+
+        if (ItemExists(_manager.Config.Primary.Items, group))
+            return;
+        if (_manager.Config.HotCornerOrbit.Any(entry => ReferenceEquals(entry, group)))
+            return;
+        CollapseGroup();
     }
 
     private static bool ItemExists(List<OrbitItem> items, OrbitItem target)
@@ -2325,6 +2359,9 @@ public sealed partial class ShellWindow : Window
             _dragTentativeGroupSlot = target;
             if (target < 0) return;
 
+            // A gathered group has no order of its own to change (see GroupAddEnds).
+            if (QuadrantLayout.IsQuickAccess(_expandedGroup)) return;
+
             var children = _expandedGroup.Children.Where(c => !c.Hidden).ToList();
             int from = children.IndexOf(_dragItem);
             if (from < 0) return;
@@ -2332,13 +2369,13 @@ public sealed partial class ShellWindow : Window
             // slot index is one ahead of the child index it targets; the trailing add slot clamps
             // down to the last child the same way dropping past the end of the top-level orbit
             // clamps to its last occupied slot.
-            int to = Math.Clamp(target - 1, 0, children.Count - 1);
+            int to = Math.Clamp(target - GroupAddEnds(_expandedGroup), 0, children.Count - 1);
             if (to != from)
             {
                 children.RemoveAt(from);
                 children.Insert(to, _dragItem);
             }
-            ReflowGroupBorders(children);
+            ReflowGroupBorders(_expandedGroup, children);
             return;
         }
 
@@ -2409,14 +2446,16 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>Group-arc counterpart of <see cref="ReflowOrbitBorders"/>. <paramref name="tentativeOrder"/>
     /// is indexed by child position; the arc slot for child <c>i</c> is <c>i + 1</c>, since slot 0
-    /// is always the leading "add" end (see <see cref="GroupSlotAt"/>).</summary>
-    private void ReflowGroupBorders(List<OrbitItem> tentativeOrder)
+    /// is the leading "add" end (see <see cref="GroupSlotAt"/>, and <see cref="GroupAddEnds"/> for
+    /// the group that has none).</summary>
+    private void ReflowGroupBorders(OrbitItem group, List<OrbitItem> tentativeOrder)
     {
         int count = _groupSlotBorders.Count;
         if (count == 0) return;
 
         double step = OrbitMetrics.FlyoutStepDegreesFor(_previewRadius) * Math.PI / 180.0;
         double first = -((count - 1) / 2.0) * step;
+        int ends = GroupAddEnds(group);
 
         for (int i = 0; i < tentativeOrder.Count; i++)
         {
@@ -2424,7 +2463,7 @@ public sealed partial class ShellWindow : Window
             if (ReferenceEquals(item, _dragItem)) continue;
             var border = FindSlotBorder(_groupSlotBorders, item);
             if (border is null) continue;
-            double angle = first + (i + 1) * step;
+            double angle = first + (i + ends) * step;
             double x = _previewCenter.X + _previewRadius * Math.Cos(angle) - _previewBubble / 2;
             double y = _previewCenter.Y + _previewRadius * Math.Sin(angle) - _previewBubble / 2;
             AnimateBubbleTo(border, x, y);
@@ -2523,7 +2562,13 @@ public sealed partial class ShellWindow : Window
             }
             else if (item is not null)
             {
-                ShowItemDetails(item, e.GetCurrentPoint(PreviewCanvas).Position);
+                // A group opens onto its children, as it does on the ring: the corner's Tools and
+                // QuickAccess are groups, and a click on one that only showed its details gave no
+                // way to see what was in it. The canvas's centre closes it again, back to the corner.
+                if (item.IsGroup)
+                    OpenGroup(item);
+                else
+                    ShowItemDetails(item, e.GetCurrentPoint(PreviewCanvas).Position);
             }
             else
             {
@@ -2550,7 +2595,7 @@ public sealed partial class ShellWindow : Window
         {
             // The ring's own "+" opens the "ADD TO ORBIT" sidebar, the same place the Elements
             // button goes, rather than the add dialog in a second window. The dialog stays one
-            // click away through the sidebar's "Add something else…" row.
+            // click away through the sidebar's "Add to Orbit…" row.
             EndReplace();
             SetOrbitEditing(true);
             UpdateOrbitEditSummary();
@@ -2812,7 +2857,7 @@ public sealed partial class ShellWindow : Window
 
         // Only a filled user slot has a border recorded here — RenderPreview leaves the pinned and
         // empty ones out — so this doubles as the "is this actually editable" check.
-        if (_slotBorders[slot]?.Tag is not OrbitItem item)
+        if (_slotBorders[slot] is not { Tag: OrbitItem item } slotBorder)
             return null;
 
         // A standalone tool is the Tools screen's, exactly as on the Elements screen, which leaves
@@ -2828,7 +2873,11 @@ public sealed partial class ShellWindow : Window
             replace: () => ReplaceOrbitItem(item),
             remove: () => RemoveOrbitItem(item),
             removeLabel: "Delete",
-            canRemove: true);
+            canRemove: true,
+            // A group's mark is the one thing about it with no other way to change: its name and
+            // contents are edited elsewhere, and it is not a shell target with an icon of its own
+            // to fall back on.
+            editIcon: item.IsGroup ? () => ShowIconPicker(item, slotBorder) : null);
     }
 
     /// <summary>
@@ -2839,7 +2888,7 @@ public sealed partial class ShellWindow : Window
     private MenuFlyout? BuildQuadrantItemMenu(Point point)
     {
         int slot = QuadrantSlotAt(point);
-        if (slot < 0 || _quadrantSlotBorders[slot]?.Tag is not OrbitItem item)
+        if (slot < 0 || _quadrantSlotBorders[slot] is not { Tag: OrbitItem item } slotBorder)
             return null;
 
         // The last item stays: a corner with nothing on it would summon an empty screen. Shown
@@ -2852,11 +2901,17 @@ public sealed partial class ShellWindow : Window
             replace: () => ReplaceQuadrantItem(slot),
             remove: () => RemoveQuadrantItem(slot),
             removeLabel: "Remove from corner",
-            canRemove: count > 1);
+            canRemove: count > 1,
+            // A group's mark is the one thing about it with no other way to change, here as on the
+            // ring (see BuildOrbitItemMenu). A group on the corner is the orbit's own group, so the
+            // mark is changed on it and the ring shows the same one; QuickAccess, which only the
+            // corner has, keeps its own (see ApplyIconChoice).
+            editIcon: item.IsGroup ? () => ShowIconPicker(item, slotBorder) : null);
     }
 
     private static MenuFlyout BuildItemMenu(
-        string name, Action replace, Action remove, string removeLabel, bool canRemove)
+        string name, Action replace, Action remove, string removeLabel, bool canRemove,
+        Action? editIcon = null)
     {
         var menu = new MenuFlyout();
 
@@ -2868,6 +2923,18 @@ public sealed partial class ShellWindow : Window
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(replaceItem, "Replace " + name);
         replaceItem.Click += (_, _) => replace();
         menu.Items.Add(replaceItem);
+
+        if (editIcon is not null)
+        {
+            var editIconItem = new MenuFlyoutItem
+            {
+                Text = "Edit icon…",
+                Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE91B) },
+            };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(editIconItem, "Edit icon of " + name);
+            editIconItem.Click += (_, _) => editIcon();
+            menu.Items.Add(editIconItem);
+        }
 
         var removeItem = new MenuFlyoutItem
         {
@@ -2999,6 +3066,10 @@ public sealed partial class ShellWindow : Window
     {
         if (_dragBorder is not null)
             _dragBorder.RenderTransform = null;
+        // Preview_PointerMoved hides the name pills for the length of a drag and a render puts them
+        // back, but a drop that changes nothing (onto its own place, or in a group whose order is
+        // fixed) never renders.
+        PreviewLabelCanvas.Visibility = Visibility.Visible;
         _dragBorder = null;
         _dragItem = null;
         _dragSlot = -1;
@@ -3185,7 +3256,10 @@ public sealed partial class ShellWindow : Window
     private UIElement PreviewBubbleContent(
         OrbitItem item, double glyphSize, Brush foreground, double diameter, double angleRad)
     {
-        var glyph = PreviewGlyph(item.Glyph, glyphSize, foreground);
+        // The item's own glyph colour when it has one — the arc follows it, as it does on the dock,
+        // where the arc shares the glyph's brush.
+        var tinted = IconColors.BrushFor(item, foreground);
+        var glyph = PreviewGlyph(item.Glyph, glyphSize, tinted);
         if (!ShowsGroupArc(item))
             return glyph;
 
@@ -3202,7 +3276,7 @@ public sealed partial class ShellWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
         };
         grid.Children.Add(glyph);
-        grid.Children.Add(BuildPreviewGroupArc(diameter, angleRad, foreground));
+        grid.Children.Add(BuildPreviewGroupArc(diameter, angleRad, tinted));
         return grid;
     }
 
@@ -3355,13 +3429,13 @@ public sealed partial class ShellWindow : Window
     private void ReorderGroupChild(OrbitItem dragged, int targetSlot)
     {
         var group = _expandedGroup;
-        if (group is null || targetSlot < 0) return;
+        if (group is null || targetSlot < 0 || QuadrantLayout.IsQuickAccess(group)) return;
 
         var visible = group.Children.Where(c => !c.Hidden).ToList();
         int from = visible.IndexOf(dragged);
         if (from < 0) return;
 
-        int to = Math.Clamp(targetSlot - 1, 0, visible.Count - 1);
+        int to = Math.Clamp(targetSlot - GroupAddEnds(group), 0, visible.Count - 1);
         if (to == from) return;
 
         visible.RemoveAt(from);
@@ -3695,7 +3769,7 @@ public sealed partial class ShellWindow : Window
         {
             Glyph = item.Glyph,
             FontSize = 24,
-            Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+            Foreground = IconColors.BrushFor(item, ThemeHelper.Brush(Root, "SwiftXForegroundBrush")),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -3761,18 +3835,31 @@ public sealed partial class ShellWindow : Window
         };
     }
 
+    /// <summary>Icons and swatches to a row in the icon picker, each a square tile with a gap between.</summary>
+    private const int IconPickerColumns = 6;
+    private const double IconPickerTile = 34;
+    private const double IconPickerGap = 4;
+
+    /// <summary>
+    /// The width of one row of tiles, which is the width the whole picker is held to: the
+    /// full-width buttons below the grid and the caption line up with the tiles instead of
+    /// stretching to a width of their own and leaving the grid short of the flyout's right edge.
+    /// </summary>
+    private const double IconPickerWidth =
+        IconPickerColumns * IconPickerTile + (IconPickerColumns - 1) * IconPickerGap;
+
     /// <summary>
     /// The glyph grid behind the pencil. Six to a row, which is what fits the card's width without
     /// the flyout growing wider than the card it hangs off.
     /// </summary>
     private Flyout BuildIconPicker(OrbitItem item)
     {
-        var grid = new Grid { ColumnSpacing = 4, RowSpacing = 4 };
-        for (int c = 0; c < 6; c++)
+        var grid = new Grid { ColumnSpacing = IconPickerGap, RowSpacing = IconPickerGap };
+        for (int c = 0; c < IconPickerColumns; c++)
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var choices = IconChoices.All;
-        for (int r = 0; r <= (choices.Count - 1) / 6; r++)
+        for (int r = 0; r <= (choices.Count - 1) / IconPickerColumns; r++)
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         for (int i = 0; i < choices.Count; i++)
@@ -3780,8 +3867,8 @@ public sealed partial class ShellWindow : Window
             var choice = choices[i];
             var button = new Button
             {
-                Width = 34,
-                Height = 34,
+                Width = IconPickerTile,
+                Height = IconPickerTile,
                 Padding = new Thickness(0),
                 CornerRadius = new CornerRadius(6),
                 Content = new FontIcon
@@ -3794,8 +3881,8 @@ public sealed partial class ShellWindow : Window
             ToolTipService.SetToolTip(button, choice.Name);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, choice.Name);
             button.Click += (_, _) => ApplyIconChoice(item, choice.Glyph, null);
-            Grid.SetRow(button, i / 6);
-            Grid.SetColumn(button, i % 6);
+            Grid.SetRow(button, i / IconPickerColumns);
+            Grid.SetColumn(button, i % IconPickerColumns);
             grid.Children.Add(button);
         }
 
@@ -3811,29 +3898,232 @@ public sealed partial class ShellWindow : Window
         var resetText = new TextBlock { Text = "Reset" };
         var reset = new Button { Content = resetText, HorizontalAlignment = HorizontalAlignment.Stretch };
         WireOrbitGlyphHover(reset);
-        reset.Click += (_, _) => ApplyIconChoice(item, null, null);
+        // Everything about the icon back to what it resolves to unaided, the colour included.
+        reset.Click += (_, _) =>
+        {
+            item.CustomIconColor = null;
+            ApplyIconChoice(item, null, null);
+        };
 
-        var panel = new StackPanel { Spacing = 8 };
+        var panel = new StackPanel { Spacing = 8, Width = IconPickerWidth };
         panel.Children.Add(new TextBlock
         {
             Text = "CHOOSE AN ICON",
             Style = (Style)Root.Resources["SidebarEyebrow"],
         });
         panel.Children.Add(grid);
+        panel.Children.Add(BuildIconColorSection(item));
         panel.Children.Add(picture);
         panel.Children.Add(module);
         panel.Children.Add(reset);
 
-        return new Flyout
+        // A flyout will not go narrower than its presenter's own minimum width (320 by default),
+        // which is wider than a row of tiles plus the presenter's padding. Left alone it would
+        // stretch every full-width button past the grid, so the minimum is dropped and the panel's
+        // own width is what sets it.
+        //
+        // No scrollbar, ever: the content is a fixed height (the free colour picker is its own
+        // flyout, see BuildCustomColorFlyout) and fits whole, so the presenter's own vertical
+        // scrolling is switched off as well and nothing here caps the height.
+        var presenterStyle = new Style(typeof(FlyoutPresenter));
+        presenterStyle.Setters.Add(new Setter(FrameworkElement.MinWidthProperty, 0d));
+        presenterStyle.Setters.Add(new Setter(
+            ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled));
+
+        var flyout = new Flyout
         {
-            Content = new ScrollViewer
-            {
-                MaxHeight = 320,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Content = panel,
-            },
+            FlyoutPresenterStyle = presenterStyle,
+            Content = panel,
         };
+
+        // Remembered while it is up, so applying a choice can close it wherever it was opened from
+        // (see ApplyIconChoice): the details card takes its nested picker down with itself, but a
+        // picker opened on a sidebar row or the ring (see ShowIconPicker) has nothing else to do it.
+        flyout.Opened += (_, _) => _iconPickerFlyout = flyout;
+        flyout.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_iconPickerFlyout, flyout))
+                _iconPickerFlyout = null;
+        };
+        return flyout;
+    }
+
+    /// <summary>The "Choose an icon" flyout that is on screen right now, if any.</summary>
+    private Flyout? _iconPickerFlyout;
+
+    /// <summary>
+    /// Opens "Choose an icon" for <paramref name="item"/> on <paramref name="anchor"/> — the same
+    /// picker the details card's pencil opens, reached from a right-click menu instead (a group
+    /// row in the sidebar, a group on the ring).
+    /// </summary>
+    private void ShowIconPicker(OrbitItem item, FrameworkElement anchor)
+    {
+        HideItemDetails();
+        BuildIconPicker(item).ShowAt(anchor);
+    }
+
+    /// <summary>
+    /// The colour half of the icon picker: a row of swatches, a tile that opens a full colour
+    /// picker for anything else (see <see cref="BuildCustomColorFlyout"/>), and a way back to the
+    /// theme's own colour. The swatches apply as soon as they are clicked.
+    /// <para>
+    /// Only a glyph is tinted (see <see cref="OrbitItem.CustomIconColor"/>), which is what the
+    /// caption under the swatches says for an item showing a picture.
+    /// </para>
+    /// </summary>
+    private FrameworkElement BuildIconColorSection(OrbitItem item)
+    {
+        bool hasColor = IconColors.TryGet(item, out var current);
+        var accent = CurrentAccentColor();
+        var selectedBrush = new SolidColorBrush(accent);
+
+        var section = new StackPanel { Spacing = 8 };
+        section.Children.Add(new TextBlock
+        {
+            Text = "ICON COLOUR",
+            Style = (Style)Root.Resources["SidebarEyebrow"],
+        });
+
+        const int columns = IconPickerColumns;
+        var swatches = new Grid { ColumnSpacing = IconPickerGap, RowSpacing = IconPickerGap };
+        for (int c = 0; c < columns; c++)
+            swatches.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        int tiles = IconColors.Presets.Count + 1;
+        for (int r = 0; r <= (tiles - 1) / columns; r++)
+            swatches.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        for (int i = 0; i < IconColors.Presets.Count; i++)
+        {
+            var swatch = IconColors.Presets[i];
+            AccentPalette.TryParseHex(swatch.Hex, out var color);
+            bool selected = hasColor &&
+                string.Equals(item.CustomIconColor, swatch.Hex, StringComparison.OrdinalIgnoreCase);
+
+            var button = new Button
+            {
+                Width = IconPickerTile,
+                Height = IconPickerTile,
+                Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(6),
+                Content = new Border
+                {
+                    Width = 18,
+                    Height = 18,
+                    CornerRadius = new CornerRadius(9),
+                    Background = new SolidColorBrush(color),
+                },
+            };
+            if (selected)
+            {
+                button.BorderBrush = selectedBrush;
+                button.BorderThickness = new Thickness(2);
+            }
+            ToolTipService.SetToolTip(button, swatch.Name);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, swatch.Name + " icon colour");
+            button.Click += (_, _) => ApplyIconColor(item, color);
+            Grid.SetRow(button, i / columns);
+            Grid.SetColumn(button, i % columns);
+            swatches.Children.Add(button);
+        }
+
+        // The last tile: any other colour. It opens the full picker in a flyout of its own rather
+        // than unfolding it here, because the picker is far taller than everything else in this
+        // one put together and the whole icon picker has to stay a fixed height with no scrollbar.
+        var custom = new Button
+        {
+            Width = IconPickerTile,
+            Height = IconPickerTile,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(6),
+            Content = new FontIcon
+            {
+                Glyph = char.ConvertFromUtf32(0xE790),
+                FontSize = 16,
+                Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+            },
+            Flyout = BuildCustomColorFlyout(item, hasColor ? current : accent),
+        };
+        ToolTipService.SetToolTip(custom, "Pick another colour");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(custom, "Pick another icon colour");
+        Grid.SetRow(custom, IconColors.Presets.Count / columns);
+        Grid.SetColumn(custom, IconColors.Presets.Count % columns);
+        swatches.Children.Add(custom);
+
+        section.Children.Add(swatches);
+
+        var defaultColor = new Button
+        {
+            Content = "Default colour",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            IsEnabled = hasColor,
+        };
+        defaultColor.Click += (_, _) => ApplyIconColor(item, null);
+        section.Children.Add(defaultColor);
+
+        section.Children.Add(new TextBlock
+        {
+            Text = "Colours the icon's mark; an app's or site's own picture keeps its colours.",
+            Style = (Style)Root.Resources["SidebarCaption"],
+            TextWrapping = TextWrapping.Wrap,
+            // Held to the tiles' width: a wrapping line left to size itself runs out to its full
+            // one-line length and sets the width of the whole picker.
+            MaxWidth = IconPickerWidth,
+        });
+        return section;
+    }
+
+    /// <summary>
+    /// The free colour picker behind the palette tile: a full <see cref="ColorPicker"/> and the button
+    /// that applies it. Applied on the button, not as the colour changes, because ColorChanged fires
+    /// continuously through a drag and every apply rebuilds the sidebar the icon picker may be
+    /// anchored to. The icon picker under it goes down with it, as it does for a swatch.
+    /// </summary>
+    private Flyout BuildCustomColorFlyout(OrbitItem item, Color initial)
+    {
+        var picker = new ColorPicker
+        {
+            IsAlphaEnabled = false,
+            IsMoreButtonVisible = true,
+            Color = initial,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(picker, "Icon colour picker");
+
+        var use = new Button
+        {
+            Content = "Use this colour",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"],
+        };
+
+        var flyout = new Flyout
+        {
+            Content = new StackPanel { Spacing = 8, Children = { picker, use } },
+        };
+        use.Click += (_, _) =>
+        {
+            // Both go: hiding the icon picker does not by itself take a flyout opened from it down.
+            flyout.Hide();
+            ApplyIconColor(item, picker.Color);
+        };
+        return flyout;
+    }
+
+    /// <summary>
+    /// Gives the item's glyph a colour (or, with null, the theme's own back) and pushes it
+    /// everywhere. No re-resolve is needed, unlike <see cref="ApplyIconChoice"/>: the colour is not
+    /// part of <see cref="OrbitItem.IconKey"/>, so no picture is affected.
+    /// </summary>
+    private void ApplyIconColor(OrbitItem item, Color? color)
+    {
+        _iconPickerFlyout?.Hide();
+        item.CustomIconColor = color is { } c ? IconColors.ToStored(c) : null;
+        HotCornerItems.KeepGatheredIcon(_manager.Config, SystemOrbitItems.CreateSettings(), item);
+
+        _manager.NotifyItemsChanged();
+        RenderPreview();
+        RebuildItemsList();
+        HideItemDetails();
     }
 
     /// <summary>
@@ -3844,10 +4134,14 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private void ApplyIconChoice(OrbitItem item, string? glyph, string? imagePath)
     {
+        _iconPickerFlyout?.Hide();
         item.CustomGlyph = glyph;
         item.CustomIconPath = imagePath;
         item.IconImage = null;
         item.IconSignature = null;
+        // Reset (both null) is what the item resolves to unaided; QuickAccess's own is its default
+        // glyph, which KeepGatheredIcon leaves to the group when nothing is stored.
+        HotCornerItems.KeepGatheredIcon(_manager.Config, SystemOrbitItems.CreateSettings(), item);
 
         _manager.NotifyItemsChanged();
         RenderPreview();
@@ -4125,8 +4419,11 @@ public sealed partial class ShellWindow : Window
 
         var children = group.Children.Where(c => !c.Hidden).ToList();
 
-        // One dashed slot either side of the children, so the arc always has at least the two.
-        int count = children.Count + 2;
+        // One dashed slot either side of the children, so the arc always has at least the two —
+        // except on a group that is gathered rather than kept (see GroupAddEnds), which has
+        // nothing to add to.
+        int ends = GroupAddEnds(group);
+        int count = children.Count + 2 * ends;
         double step = OrbitMetrics.FlyoutStepDegreesFor(radius) * Math.PI / 180.0;
         double first = -((count - 1) / 2.0) * step;
 
@@ -4136,8 +4433,8 @@ public sealed partial class ShellWindow : Window
             double x = cx + radius * Math.Cos(angle) - bubble / 2;
             double y = cy + radius * Math.Sin(angle) - bubble / 2;
 
-            bool isAdd = i == 0 || i == count - 1;
-            var child = isAdd ? null : children[i - 1];
+            bool isAdd = ends > 0 && (i == 0 || i == count - 1);
+            var child = isAdd ? null : children[i - ends];
 
             var border = new Border
             {
@@ -4184,6 +4481,15 @@ public sealed partial class ShellWindow : Window
             PreviewCanvas.Children.Add(border);
         }
     }
+
+    /// <summary>
+    /// How many dashed "add" slots <paramref name="group"/>'s arc has at each end: one, or none for
+    /// the corner's QuickAccess (see <see cref="QuadrantLayout.IsQuickAccess"/>). That group is
+    /// gathered from the orbit's links and shortcuts every time it is resolved, so an item added
+    /// to it or moved within it would be gone on the next redraw. It is shown for what it holds,
+    /// and its children are changed where they live.
+    /// </summary>
+    private static int GroupAddEnds(OrbitItem group) => QuadrantLayout.IsQuickAccess(group) ? 0 : 1;
 
     /// <summary>
     /// Adds to whichever group the canvas currently has open, through the same dialog the top-level
@@ -4402,9 +4708,10 @@ public sealed partial class ShellWindow : Window
         }
 
         // One row for the full picker, below the categories rather than repeated inside each of
-        // them: the dialog takes no starting kind, so a per-category "Browse for an app" would have
-        // promised a preselection it cannot make, once for every category.
-        var browse = BuildEditRowShell("\uE710", "Add something else\u2026", null, null);
+        // them: this row opens the dialog on its first tile whatever category it sits under, so a
+        // per-category "Browse for an app" would have promised a preselection it does not make,
+        // once for every category. (Only "New group…" opens it on a tile of its own.)
+        var browse = BuildEditRowShell("\uE710", "Add to Orbit\u2026", null, null);
         browse.Margin = new Thickness(0, 8, 0, 0);
         browse.Click += AddItem_Click;
         ToolTipService.SetToolTip(browse, "Open the full add dialog: apps, files, folders, links, groups and tools");
@@ -4715,8 +5022,10 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>
     /// The right-click menu of a suggestion row: put a copy in one of the orbit's groups (or in a
-    /// new one), or take the thing off the orbit wherever it sits. A tool is neither: the Tools
-    /// group owns them and puts them back on every launch, so both entries are greyed.
+    /// new one), or take the thing off the orbit wherever it sits. A tool can go in a group like
+    /// anything else, but cannot be taken off the orbit from here: the Tools group owns it and puts
+    /// it back on every launch, so Remove is greyed. A copy in a group of the user's own is removed
+    /// from that group's own rows.
     /// </summary>
     private MenuFlyout BuildEditRowMenu(FrameworkElement anchor, OrbitItem template, bool present)
     {
@@ -4726,7 +5035,6 @@ public sealed partial class ShellWindow : Window
         {
             Text = "Add to group",
             Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE8F4) },
-            IsEnabled = !template.IsTool,
         };
         foreach (var group in ElementLibrary.UserGroups(_manager.Config.Primary.Items))
         {
@@ -4744,6 +5052,7 @@ public sealed partial class ShellWindow : Window
                 if (result == GroupDropVerdict.Allowed)
                 {
                     _manager.NotifyItemsChanged();
+                    RefreshAfterGroupChange();
                     OrbitEditSummary.Text = $"Added {template.DisplayName} to {group.DisplayName}.";
                 }
                 else if (GroupDropRules.Reason(result) is { } reason)
@@ -4761,7 +5070,7 @@ public sealed partial class ShellWindow : Window
             Text = "New group" + SidebarEllipsis,
             Icon = new FontIcon { Glyph = SidebarAddGlyph },
         };
-        newGroup.Click += (_, _) => ShowNewGroupFlyout(anchor, template);
+        newGroup.Click += (_, _) => OpenNewGroupDialog(anchor, template);
         addToGroup.Items.Add(newGroup);
         menu.Items.Add(addToGroup);
 
@@ -4853,8 +5162,15 @@ public sealed partial class ShellWindow : Window
     /// here. Whichever of the two starts first wins: a drag already in flight
     /// (<see cref="_sidebarDragTemplate"/> set) is never started a second time.
     /// </para>
+    /// <para>
+    /// <paramref name="canStart"/> is asked, with the press's <c>OriginalSource</c>, whether a press
+    /// may arm the drag at all. The Groups rows need it: their child rows and buttons sit inside the
+    /// row, so their presses reach the row's handlers too.
+    /// </para>
     /// </summary>
-    private void WireSidebarDrag(UIElement row, OrbitItem template, Action? onPress = null, Action? onDragged = null)
+    private void WireSidebarDrag(
+        UIElement row, OrbitItem template, Action? onPress = null, Action? onDragged = null,
+        Func<object?, bool>? canStart = null)
     {
         bool armed = false;
         Point origin = default;
@@ -4872,6 +5188,10 @@ public sealed partial class ShellWindow : Window
         {
             var point = e.GetCurrentPoint(row);
             if (point.Properties.IsRightButtonPressed || point.Properties.IsMiddleButtonPressed)
+                return;
+            // A press that began on something inside the row with a job of its own (a child row, a
+            // button) is not the start of this row's drag, though it bubbles up through it.
+            if (canStart is not null && !canStart(e.OriginalSource))
                 return;
             origin = point.Position;
             armed = true;
@@ -4940,6 +5260,7 @@ public sealed partial class ShellWindow : Window
             Arguments = template.Arguments,
             CustomIconPath = template.CustomIconPath,
             CustomGlyph = template.CustomGlyph,
+            CustomIconColor = template.CustomIconColor,
         };
         // A group is copied with what it holds, each child a fresh item of its own.
         clone.Children.AddRange(template.Children.Where(c => !c.IsEmpty).Select(CloneOrbitTemplate));
@@ -4954,7 +5275,7 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private FrameworkElement BuildEmptyCategoryRow() => new TextBlock
     {
-        Text = "Nothing to suggest here \u2014 use Add something else below.",
+        Text = "Nothing to suggest here \u2014 use Add to Orbit below.",
         FontSize = 11,
         TextWrapping = TextWrapping.Wrap,
         Margin = new Thickness(10, 2, 10, 4),
@@ -4996,7 +5317,9 @@ public sealed partial class ShellWindow : Window
         {
             Glyph = glyph,
             FontSize = 12,
-            Foreground = ThemeHelper.Brush(Root, "SwiftXMutedBrush"),
+            // The thing's own glyph colour when the row stands for one that has it (a group the user
+            // coloured), so the sidebar shows what the orbit will.
+            Foreground = IconColors.BrushFor(iconSource, ThemeHelper.Brush(Root, "SwiftXMutedBrush")),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -5007,7 +5330,7 @@ public sealed partial class ShellWindow : Window
         // so on) rather than the generic category glyph alone — the same swap LoadRowIcon performs
         // for the Elements screen's own cards and the details card's logo, so a row here looks the
         // same as the very item it is offering to put on the orbit rather than a placeholder for
-        // it. Left out for a category header or the plain "Add something else…" row, neither of
+        // it. Left out for a category header or the plain "Add to Orbit…" row, neither of
         // which stands for one specific thing.
         if (iconSource is not null)
         {
@@ -5091,68 +5414,63 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// "New group": asks for a name and puts an empty group on the orbit. The name is asked for in a
-    /// small flyout on the row rather than by opening the add dialog: that dialog takes no starting
-    /// type, so it would open on Application and leave the user to find the Group tile, in a second
-    /// window, to type one word.
+    /// "New group": opens the "Add to orbit" window on its Group tile (see
+    /// <see cref="OpenNewGroupDialog"/>). Dragged onto the ring instead, it drops an empty group
+    /// there with no questions asked.
     /// </summary>
     private Button BuildNewGroupRow()
     {
         var row = BuildEditRowShell(SidebarAddGlyph, "New group" + SidebarEllipsis, null, null);
-        ToolTipService.SetToolTip(row, "Create an empty group and put it on the orbit, or drag it onto the ring");
-        // Clicked it asks for a name; dragged onto the ring it drops an empty group there.
-        WireEditRow(row, ElementLibrary.NewGroup(null), () => ShowNewGroupFlyout(row));
+        ToolTipService.SetToolTip(row, "Name a new group and put it on the orbit, or drag it onto the ring");
+        WireEditRow(row, ElementLibrary.NewGroup(null), () => OpenNewGroupDialog(row));
         return row;
     }
 
-    private void ShowNewGroupFlyout(FrameworkElement anchor, OrbitItem? seed = null)
+    /// <summary>
+    /// Opens the "Add to orbit" window already on the Group tile, so naming the group is the whole
+    /// of the job; what it returns goes where any other sidebar pick goes
+    /// (<see cref="AddToOrbitFromSidebar"/>), which is what settles an armed replace.
+    /// <para>
+    /// This was a name box in a small flyout, which did nothing visible on the default orbit: every
+    /// user slot is taken, and the only sign of that was a line at the top of the sidebar, well out
+    /// of sight of the Groups list it was answering a click in. A full orbit is therefore said on
+    /// the row that was clicked, and the window is not opened — it could only end in "no room".
+    /// </para>
+    /// </summary>
+    /// <param name="seed">
+    /// Something to put in the new group as it is created: the thing a right-click on a suggestion
+    /// chose "New group…" for.
+    /// </param>
+    private void OpenNewGroupDialog(FrameworkElement anchor, OrbitItem? seed = null)
     {
-        // A full orbit has nowhere to put the group, so say so (the same line a full orbit gives a
-        // click on any other row) instead of asking for a name that cannot be used. A replace
-        // swaps rather than appends, so it has room whatever the count is.
+        // A replace swaps rather than appends, so it has room whatever the count is.
         if (!IsReplacing && OrbitIsFull)
         {
             UpdateOrbitEditSummary();
+            ShowSidebarNotice(anchor, "The orbit is full. Remove something to make room for a group.");
             return;
         }
 
-        var name = new TextBox { PlaceholderText = "Group name", MinWidth = 220 };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(name, "Group name");
+        _manager.OpenAddItem(
+            added =>
+            {
+                // The tile can be changed in the window; only a group can take the seed.
+                if (seed is not null && added.IsGroup)
+                    added.Children.Add(CloneOrbitTemplate(seed));
+                AddToOrbitFromSidebar(added);
+            },
+            _manager.Config.Primary.Items,
+            startAsGroup: true);
+    }
 
-        var create = new Button
-        {
-            Content = "Create",
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Style = (Style)Application.Current.Resources["AccentButtonStyle"],
-        };
-
-        var flyout = new Flyout
+    /// <summary>A line of explanation in a small flyout on the row it answers.</summary>
+    private static void ShowSidebarNotice(FrameworkElement anchor, string text)
+    {
+        new Flyout
         {
             Placement = FlyoutPlacementMode.Bottom,
-            Content = new StackPanel { Spacing = 8, Children = { name, create } },
-        };
-
-        void Commit()
-        {
-            flyout.Hide();
-            // Through the same path a row's click takes, so a full orbit and an armed replace are
-            // handled exactly as they are for everything else in the sidebar.
-            var group = ElementLibrary.NewGroup(name.Text);
-            if (seed is not null)
-                group.Children.Add(CloneOrbitTemplate(seed));
-            AddToOrbitFromSidebar(group);
-        }
-
-        create.Click += (_, _) => Commit();
-        name.KeyDown += (_, e) =>
-        {
-            if (e.Key != Windows.System.VirtualKey.Enter)
-                return;
-            e.Handled = true;
-            Commit();
-        };
-        flyout.Opened += (_, _) => name.Focus(FocusState.Programmatic);
-        flyout.ShowAt(anchor);
+            Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 240 },
+        }.ShowAt(anchor);
     }
 
     /// <summary>How full a group is, as the row shows it: children over what the flyout can hold.</summary>
@@ -5161,9 +5479,8 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>
     /// One group on the orbit, listed under Groups as a place to drop things: its name, how full it
-    /// is, and drag feedback (see <see cref="WireEditGroupRow"/>). Not a Button because clicking it
-    /// does nothing: a row that lights up under the pointer and then ignores the click would read
-    /// as broken.
+    /// is, and drag feedback (see <see cref="WireEditGroupRow"/>). Not a Button: it is a drop
+    /// target first, and clicking it opens the group on the canvas rather than adding anything.
     /// </summary>
     private FrameworkElement BuildEditGroupRow(OrbitItem group)
     {
@@ -5186,15 +5503,18 @@ public sealed partial class ShellWindow : Window
 
         // What the group holds, listed under it as indented child rows. They sit inside the drop
         // target rather than beside it, so a drop anywhere on the group and its children lands in
-        // the group instead of falling through to the sidebar's add-to-orbit.
-        var body = new StackPanel { IsHitTestVisible = false, Children = { content } };
-        foreach (var child in group.Children.Where(c => !c.IsEmpty))
+        // the group instead of falling through to the sidebar's add-to-orbit. Unlike the header,
+        // each child row takes the pointer itself: it is what is dragged to reorder, what carries
+        // the remove button and what the right-click menu opens on.
+        var childRows = new List<HandBorder>();
+        var children = new StackPanel();
+        var body = new StackPanel { Children = { content, children } };
+        var listed = GroupChildren.Listed(group);
+        foreach (var child in listed)
         {
-            var childContent = BuildEditRowContent(child.Glyph, child.DisplayName, null, null, iconSource: child);
-            childContent.Height = 24;
-            childContent.Margin = new Thickness(20, 0, 0, 0);
-            childContent.Opacity = child.Hidden ? 0.5 : 1;
-            body.Children.Add(childContent);
+            var childRow = BuildEditGroupChildRow(group, child, listed);
+            childRows.Add(childRow);
+            children.Children.Add(childRow);
         }
 
         // Transparent rather than null, so the whole row takes the pointer, not just what is drawn.
@@ -5217,12 +5537,40 @@ public sealed partial class ShellWindow : Window
             row, $"{group.DisplayName}, group, {GroupDropRules.Count(group)} of {GroupDropRules.Capacity} items");
         ToolTipService.SetToolTip(row, full
             ? $"{group.DisplayName} is full ({GroupDropRules.Capacity} items)"
-            : $"Drag an app, file, folder or link here to add it to {group.DisplayName}");
+            : $"Click to see what is in {group.DisplayName}. Drag an app, file, folder or link here to add it to it.");
 
-        WireEditGroupRow(row, group, count);
+        WireEditGroupRow(row, group, count, childRows);
         // Draggable onto the full ring or the corner's quadrant: the group travels as a live
         // reference and the ring drops a copy of it, children included (see CloneOrbitTemplate).
-        WireSidebarDrag(row, group);
+        // Only from the header: a press on one of its child rows is that item's own drag.
+        bool dragged = false;
+        WireSidebarDrag(
+            row, group,
+            onPress: () => dragged = false,
+            onDragged: () => dragged = true,
+            canStart: source => !IsWithin(source, children));
+
+        // Clicked, the group opens on the Orbit screen's canvas with its children on their arc —
+        // what clicking it on the ring does, and what the Tools group has always shown. Without
+        // this the only way to see what a group held, or to watch an add land, was to find the
+        // group on the ring first. A press that became a drag is not a click, as for a Button.
+        row.Tapped += (_, e) =>
+        {
+            if (dragged)
+            {
+                dragged = false;
+                return;
+            }
+            // A tap on one of the children is for that child (its remove button, say), and the list
+            // it was in may be about to be rebuilt under the group it would otherwise open.
+            if (IsWithin(e.OriginalSource, children))
+                return;
+            // A replace is aimed at a place on the ring, which a group open on the canvas hides.
+            if (IsReplacing)
+                return;
+            e.Handled = true;
+            OpenGroup(group);
+        };
 
         // The drag image is a snapshot of the row, taken once DragStarting returns. The fill count
         // is for the row at rest, not something to carry across the screen, so it is hidden (Opacity,
@@ -5243,16 +5591,148 @@ public sealed partial class ShellWindow : Window
         };
         row.DropCompleted += (_, _) => count.Opacity = 1;
 
-        // A group can only be removed: what goes in it is dragged in, and what comes out of it is
-        // managed on the Elements screen.
+        // A group's mark can be changed and the group removed: what goes in it is dragged in, and
+        // what comes out of it is managed on the Elements screen.
+        var editIcon = new MenuFlyoutItem
+        {
+            Text = "Edit icon" + SidebarEllipsis,
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE91B) },
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(editIcon, "Edit icon of " + group.DisplayName);
+        editIcon.Click += (_, _) => ShowIconPicker(group, row);
+
         var removeGroup = new MenuFlyoutItem
         {
             Text = "Remove",
             Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D) },
         };
         removeGroup.Click += (_, _) => RemoveOrbitItem(group);
-        row.ContextFlyout = new MenuFlyout { Items = { removeGroup } };
+        row.ContextFlyout = new MenuFlyout { Items = { editIcon, removeGroup } };
         return row;
+    }
+
+    /// <summary>
+    /// One item listed under a group in the sidebar: its icon and name, a remove button, and a
+    /// right-click menu with Move up, Move down and Remove from group. Dragged onto another of the
+    /// group's items it is put in that place (see <see cref="WireEditGroupRow"/>, which is the drop
+    /// target for the whole group and answers for these rows).
+    /// <para>
+    /// The row takes the pointer as a whole and its content does not, like the group row above it,
+    /// so crossing the icon and the name raises no enter or leave of its own. The remove button is
+    /// the exception and is kept out of the drag's start, as the child rows are out of the group's.
+    /// </para>
+    /// </summary>
+    private HandBorder BuildEditGroupChildRow(OrbitItem group, OrbitItem child, IReadOnlyList<OrbitItem> listed)
+    {
+        var content = BuildEditRowContent(child.Glyph, child.DisplayName, null, null, iconSource: child);
+        content.Height = 24;
+        content.Opacity = child.Hidden ? 0.5 : 1;
+        content.IsHitTestVisible = false;
+
+        var remove = new HandButton
+        {
+            Width = 24,
+            Height = 24,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(4),
+            VerticalAlignment = VerticalAlignment.Center,
+            Content = new FontIcon
+            {
+                Glyph = char.ConvertFromUtf32(0xE711),
+                FontSize = 10,
+                Foreground = ThemeHelper.Brush(Root, "SwiftXMutedBrush"),
+            },
+        };
+        WireOrbitGlyphHover(remove);
+        ToolTipService.SetToolTip(remove, "Remove from " + group.DisplayName);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            remove, $"Remove {child.DisplayName} from {group.DisplayName}");
+        remove.Click += (_, _) => RemoveFromGroup(group, child);
+
+        var layout = new Grid { ColumnSpacing = 4 };
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        layout.Children.Add(content);
+        Grid.SetColumn(remove, 1);
+        layout.Children.Add(remove);
+
+        // Transparent rather than null, so the whole row takes the pointer; the border is only
+        // painted while a reordering drag is over it (see WireEditGroupRow).
+        var row = new HandBorder
+        {
+            Margin = new Thickness(20, 0, 0, 0),
+            CornerRadius = new CornerRadius(4),
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderBrush = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(1),
+            Tag = child,
+            Content = layout,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, $"{child.DisplayName}, in {group.DisplayName}");
+        ToolTipService.SetToolTip(row, $"{child.DisplayName}. Drag onto another item to reorder; right-click for more.");
+
+        // The item travels as a live reference, like every sidebar row (see _sidebarDragTemplate);
+        // dropped on another of the group's items it is moved, dropped on the ring or on another
+        // group it is added there as a copy, like any other.
+        WireSidebarDrag(row, child, canStart: source => !IsWithin(source, remove));
+
+        int at = listed.ToList().FindIndex(c => ReferenceEquals(c, child));
+        var moveUp = new MenuFlyoutItem
+        {
+            Text = "Move up",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74A) },
+            IsEnabled = at > 0,
+        };
+        moveUp.Click += (_, _) => MoveInGroup(group, child, -1);
+        var moveDown = new MenuFlyoutItem
+        {
+            Text = "Move down",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74B) },
+            IsEnabled = at >= 0 && at < listed.Count - 1,
+        };
+        moveDown.Click += (_, _) => MoveInGroup(group, child, +1);
+        var removeItem = new MenuFlyoutItem
+        {
+            Text = "Remove from group",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D) },
+        };
+        removeItem.Click += (_, _) => RemoveFromGroup(group, child);
+        row.ContextFlyout = new MenuFlyout { Items = { moveUp, moveDown, new MenuFlyoutSeparator(), removeItem } };
+
+        return row;
+    }
+
+    /// <summary>Takes one item out of a group, from the sidebar's list of what it holds.</summary>
+    private void RemoveFromGroup(OrbitItem group, OrbitItem child)
+    {
+        if (!GroupChildren.Remove(group, child))
+            return;
+
+        if (ReferenceEquals(_selectedItem, child))
+            HideItemDetails();
+        _manager.NotifyItemsChanged();
+        RefreshAfterGroupChange();
+    }
+
+    /// <summary>Moves one of a group's items a place up or down, from its right-click menu.</summary>
+    private void MoveInGroup(OrbitItem group, OrbitItem child, int delta)
+    {
+        if (!GroupChildren.MoveBy(group, child, delta))
+            return;
+
+        _manager.NotifyItemsChanged();
+        RefreshAfterGroupChange();
+    }
+
+    /// <summary>Whether <paramref name="source"/> is <paramref name="ancestor"/> or something inside it.</summary>
+    private static bool IsWithin(object? source, DependencyObject ancestor)
+    {
+        for (var node = source as DependencyObject; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (ReferenceEquals(node, ancestor))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -5275,7 +5755,8 @@ public sealed partial class ShellWindow : Window
     /// cannot leave the row looking as though nothing were happening.
     /// </para>
     /// </summary>
-    private void WireEditGroupRow(ContentControl row, OrbitItem group, TextBlock count)
+    private void WireEditGroupRow(
+        ContentControl row, OrbitItem group, TextBlock count, IReadOnlyList<HandBorder> childRows)
     {
         // Null while a text payload is still being read to see whether it is a path or a link.
         bool? usable = false;
@@ -5285,11 +5766,52 @@ public sealed partial class ShellWindow : Window
         // answer do not rebuild the same two brushes on every pointer move.
         bool? painted = null;
 
+        // The child row painted as where a reordering drag would land, while one of this group's own
+        // items is being dragged over it. A reorder is painted on the child, not the whole row: the
+        // row's accent says "this goes in the group", which is not what is happening.
+        HandBorder? marked = null;
+
+        void Unmark()
+        {
+            if (marked is null)
+                return;
+            marked.BorderBrush = new SolidColorBrush(Colors.Transparent);
+            marked.Background = new SolidColorBrush(Colors.Transparent);
+            marked = null;
+        }
+
+        void Mark(HandBorder? target)
+        {
+            if (ReferenceEquals(marked, target))
+                return;
+            Unmark();
+            if (target is null)
+                return;
+            var accent = CurrentAccentColor();
+            target.BorderBrush = new SolidColorBrush(accent);
+            target.Background = new SolidColorBrush(Color.FromArgb(48, accent.R, accent.G, accent.B));
+            marked = target;
+        }
+
+        // The child row under the pointer. A drag is raised on the group row as a whole, since that
+        // is what allows the drop, so which child it is over comes from where the pointer is.
+        HandBorder? ChildRowAt(DragEventArgs e)
+        {
+            foreach (var childRow in childRows)
+            {
+                var at = e.GetPosition(childRow);
+                if (at.X >= 0 && at.X < childRow.ActualWidth && at.Y >= 0 && at.Y < childRow.ActualHeight)
+                    return childRow;
+            }
+            return null;
+        }
+
         void Clear()
         {
             if (ReferenceEquals(_orbitEditHotGroupRow, row))
                 _orbitEditHotGroupRow = null;
             painted = null;
+            Unmark();
             row.BorderBrush = new SolidColorBrush(Colors.Transparent);
             row.Background = new SolidColorBrush(Colors.Transparent);
         }
@@ -5326,6 +5848,25 @@ public sealed partial class ShellWindow : Window
         void Answer(DragEventArgs e)
         {
             e.Handled = true;
+
+            // One of this group's own items, dragged by its row here: a reorder. It is accepted only
+            // over another of the group's items, which is where it will be put.
+            if (_sidebarDragTemplate is { } own && GroupChildren.Holds(group, own))
+            {
+                var over = ChildRowAt(e);
+                bool lands = over is not null && !ReferenceEquals(over.Tag, own);
+                Mark(lands ? over : null);
+                e.AcceptedOperation = lands ? DataPackageOperation.Copy : DataPackageOperation.None;
+                if (e.DragUIOverride is { } moveUi)
+                {
+                    moveUi.IsCaptionVisible = lands;
+                    if (lands)
+                        moveUi.Caption = "Move here";
+                    moveUi.IsGlyphVisible = true;
+                }
+                return;
+            }
+
             e.AcceptedOperation = usable != false ? DataPackageOperation.Copy : DataPackageOperation.None;
             if (e.DragUIOverride is { } ui)
             {
@@ -5392,6 +5933,22 @@ public sealed partial class ShellWindow : Window
                 return;
             }
 
+            // One of this group's own items dropped on another of them: a reorder, put where the one
+            // it landed on was. Anywhere else in the group it does nothing — it is already in it.
+            // The pointer is read first: Clear above only repaints, but the list is rebuilt below.
+            if (_sidebarDragTemplate is { } dragged && GroupChildren.Holds(group, dragged))
+            {
+                var landedOn = ChildRowAt(e)?.Tag as OrbitItem;
+                bool moved = landedOn is not null && GroupChildren.Move(group, dragged, landedOn);
+                e.AcceptedOperation = moved ? DataPackageOperation.Copy : DataPackageOperation.None;
+                if (moved)
+                {
+                    _manager.NotifyItemsChanged();
+                    RefreshAfterGroupChange();
+                }
+                return;
+            }
+
             // A sidebar row's own drag: the template is a live field, as it is for the ring (see
             // _sidebarDragTemplate), so there is nothing to read off the DataView. It stays set
             // until the drag's own DropCompleted, which is what releases any rebuild held meanwhile.
@@ -5454,6 +6011,11 @@ public sealed partial class ShellWindow : Window
 
         if (_sidebarDragTemplate is { } template)
         {
+            // Its own item, dragged within it: a reorder, which Check would refuse as a duplicate.
+            // Where it may land is settled by the pointer, over the group's rows (see WireEditGroupRow).
+            if (GroupChildren.Holds(group, template))
+                return (true, null);
+
             var verdict = GroupDropRules.Check(group, template);
             return (verdict == GroupDropVerdict.Allowed, GroupDropRules.Reason(verdict));
         }
@@ -5480,11 +6042,26 @@ public sealed partial class ShellWindow : Window
         if (added > 0)
         {
             _manager.NotifyItemsChanged();
+            RefreshAfterGroupChange();
             count.Text = GroupCountText(group);
         }
 
         if (refusal is { } why && GroupDropRules.Reason(why) is { } text)
             FlashGroupNotice(count, group, text);
+    }
+
+    /// <summary>
+    /// Brings the Orbit screen's canvas and the Elements list up to date with an item just added to
+    /// a group, now rather than on the queued pass <see cref="OrbitManager.ItemsChanged"/> schedules:
+    /// a group open on the canvas shows the new child on its arc at once, and a group on the ring
+    /// gains the arc that says it has something in it. The sidebar's own rebuild is left to that
+    /// queued pass, which holds it back while a drag is still finishing (see
+    /// <see cref="OrbitEditDragInFlight"/>).
+    /// </summary>
+    private void RefreshAfterGroupChange()
+    {
+        RenderPreview();
+        RebuildItemsList();
     }
 
     /// <summary>
@@ -6583,7 +7160,12 @@ public sealed partial class ShellWindow : Window
         bool on = HotCornerEnabledToggle.IsOn;
         HotCornerOptionsRow.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         if (!on)
+        {
             _previewQuadrant = false;
+            // QuickAccess exists only on the corner, so an open one has nothing left to be a view of.
+            if (_expandedGroup is { } open && QuadrantLayout.IsQuickAccess(open))
+                CollapseGroup();
+        }
     }
 
     private void HotCornerEnabled_Toggled(object sender, RoutedEventArgs e)
@@ -6858,7 +7440,7 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private Grid BuildGroupRow(OrbitItem group)
     {
-        int count = group.Children.Count(c => !c.IsTool);
+        int count = group.Children.Count;
 
         return BuildCardShell(
             BuildItemIcon(group),
@@ -7129,7 +7711,7 @@ public sealed partial class ShellWindow : Window
 
         if (item.IsGroup)
         {
-            var names = item.Children.Where(c => !c.IsTool).Select(c => c.DisplayName).ToList();
+            var names = item.Children.Select(c => c.DisplayName).ToList();
             lines.Add("Contains: " + (names.Count == 0 ? "nothing yet" : string.Join(", ", names)));
         }
         else if (!string.IsNullOrWhiteSpace(item.Target))
@@ -7291,7 +7873,7 @@ public sealed partial class ShellWindow : Window
         {
             Glyph = item.Glyph,
             FontSize = GlyphFonts.IsTextGlyph(item.Glyph) ? CardTextGlyphSize : CardGlyphSize,
-            Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
+            Foreground = IconColors.BrushFor(item, ThemeHelper.Brush(Root, "SwiftXForegroundBrush")),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };

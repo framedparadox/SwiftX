@@ -93,7 +93,7 @@ public class ElementSectionsTests
     }
 
     [Fact]
-    public void Tool_items_and_the_builtin_tools_group_are_left_to_the_tools_screen()
+    public void Loose_tool_items_and_the_builtin_tools_group_are_left_to_the_tools_screen()
     {
         var tool = Item(OrbitItemKind.Tool, "Data", "Data");
         var toolsGroup = ToolCatalog.CreateToolsGroup();
@@ -105,8 +105,18 @@ public class ElementSectionsTests
         var groups = Section(sections, ElementCategory.Groups).Entries;
         var entry = Assert.Single(groups);
         Assert.Same(inGroup, entry.Item);
-        Assert.Equal("Notepad", Assert.Single(entry.Children).DisplayName);
         Assert.DoesNotContain(sections, s => s.Category == ElementCategory.Tools);
+    }
+
+    [Fact]
+    public void A_tool_inside_a_users_group_is_listed_with_that_group()
+    {
+        var inGroup = Group("Mine", Item(OrbitItemKind.Tool, "Base64", "Base64"),
+            Item(OrbitItemKind.Application, "Notepad"));
+
+        var entry = Assert.Single(Section(ElementSections.Build(new[] { inGroup }), ElementCategory.Groups).Entries);
+
+        Assert.Equal(new[] { "Base64", "Notepad" }, entry.Children.Select(c => c.DisplayName));
     }
 
     [Fact]

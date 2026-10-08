@@ -210,6 +210,21 @@ public class QuadrantLayoutTests
     }
 
     [Fact]
+    public void Only_the_gathered_QuickAccess_group_is_QuickAccess()
+    {
+        var gathered = QuadrantLayout.BuildQuickAccess(new[] { Link("github") });
+
+        Assert.True(QuadrantLayout.IsQuickAccess(gathered!));
+        // Renaming it on the way past does not change what it is; the marker target does.
+        gathered!.DisplayName = "Renamed";
+        Assert.True(QuadrantLayout.IsQuickAccess(gathered));
+
+        Assert.False(QuadrantLayout.IsQuickAccess(Group("QuickAccess", Link("github"))));
+        Assert.False(QuadrantLayout.IsQuickAccess(ToolCatalog.CreateToolsGroup()));
+        Assert.False(QuadrantLayout.IsQuickAccess(Link("github")));
+    }
+
+    [Fact]
     public void An_almost_empty_orbit_still_gets_its_built_ins()
     {
         var quadrant = QuadrantLayout.Compose(new List<OrbitItem>(), SystemOrbitItems.CreateSettings());

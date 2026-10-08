@@ -85,7 +85,18 @@ public static class IconService
                 }
             }
 
-            // 2. Kind-specific resolution.
+            // 2. A logo SwiftX ships for the site, where its favicon would not read on the orbit
+            // (see BrandIcons). Ahead of the favicon so it is used offline too, and so the first
+            // summon does not show a glyph that turns into a picture a download later.
+            if (item.Kind == OrbitItemKind.WebLink && BrandIcons.PathFor(item) is { } brand)
+            {
+                var logo = await FromFileAsync(brand, decodePixelWidth);
+                if (logo is not null)
+                    return logo;
+                Diag.Log($"IconService: bundled logo '{brand}' didn't decode — using the favicon");
+            }
+
+            // 3. Kind-specific resolution.
             switch (item.Kind)
             {
                 case OrbitItemKind.Application:

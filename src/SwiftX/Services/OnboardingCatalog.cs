@@ -129,11 +129,11 @@ public static class OnboardingCatalog
             Environment.SpecialFolder.MyPictures);
 
         // Links. Nothing to existence-check — whether a site answers is not something to decide on
-        // the user's behalf at first run. GitHub carries SeedDefaults' own glyph so the default
-        // orbit is identical either way; a link's real favicon replaces it once IconService
-        // resolves one.
-        Link("github", "GitHub", "github.com", "https://github.com", glyph: GitHubGlyph, on: true);
-        Link("stackoverflow", "Stack Overflow", "stackoverflow.com", "https://stackoverflow.com");
+        // the user's behalf at first run. Neither carries a glyph, which is also how SeedDefaults
+        // plants GitHub, so the default orbit is identical either way: GitHub shows the logo
+        // SwiftX ships (see BrandIcons) and Google its favicon once IconService has fetched it.
+        Link("github", "GitHub", "github.com", "https://github.com", on: true);
+        Link("google", "Google", "google.com", "https://www.google.com");
 
         // The built-in tools, as the one group that owns all of them — see
         // ToolCatalog.EnsureToolsGroup, which keeps an existing orbit in that shape too.
@@ -145,18 +145,6 @@ public static class OnboardingCatalog
 
         return list;
     }
-
-    /// <summary>
-    /// GitHub's mark on the orbit, matching what <see cref="OrbitManager.SeedDefaults"/> plants so
-    /// the default orbit is byte-identical whether it came from the guide or from the seed.
-    /// <para>
-    /// Built from the codepoint rather than written as a literal character in source: a private-use
-    /// glyph is invisible in an editor and in a diff, so a literal one can be silently swapped for
-    /// a different — or blank — character by a stray copy/paste and nobody sees it until the orbit
-    /// renders a tofu box. The same reason the tool glyphs in ShellWindow are built this way.
-    /// </para>
-    /// </summary>
-    private static readonly string GitHubGlyph = char.ConvertFromUtf32(0xE943);
 
     /// <summary>
     /// The tools tile's subtitle, listed from the catalog rather than written out, so a tool added

@@ -1076,7 +1076,7 @@ public sealed partial class OrbitWindow : Window
         // Shared with the group arc below, and animated alongside the tint by ApplyBubbleFill —
         // see tintBrush there for why the fill is one brush per bubble rather than a new one each
         // time the state changes.
-        var glyphBrush = new SolidColorBrush(ThemeColor("SwiftXForegroundBrush"));
+        var glyphBrush = new SolidColorBrush(RestGlyphColor(item));
         var glyph = new FontIcon
         {
             Glyph = item.Glyph,
@@ -2128,7 +2128,7 @@ public sealed partial class OrbitWindow : Window
         Color foreground = destructive ? ThemeColor("OrbitCloseHoverForeground")
             : invert ? ThemeColor("OrbitBubbleBackground")
             : tint ? OrbitHover.OnTint(tintColor)
-            : ThemeColor("SwiftXForegroundBrush");
+            : RestGlyphColor(bubble.Item);
 
         bubble.TintFade = AnimateBrushTo(bubble.TintFade, bubble.TintBrush, background, HoverMs);
         bubble.GlyphFade = AnimateBrushTo(bubble.GlyphFade, bubble.GlyphBrush, foreground, HoverMs);
@@ -2145,6 +2145,16 @@ public sealed partial class OrbitWindow : Window
     /// firmer under a hexagon, which has no acrylic behind it to be translucent over.
     /// </summary>
     private Color RestTint() => OrbitItemGeometry.RestTint(ThemeColor("OrbitBubbleGlassTint"));
+
+    /// <summary>
+    /// The colour a bubble's glyph (and a group's arc, which shares its brush) is drawn in when the
+    /// fill under it is the resting glass: the colour the user gave the item, else the theme's
+    /// foreground. The hover states that replace the fill with an opaque one pick their own
+    /// contrast colour instead (see <see cref="ApplyBubbleFill"/>) — a colour chosen against the
+    /// glass says nothing about legibility on an inverted or tinted disc.
+    /// </summary>
+    private Color RestGlyphColor(OrbitItem item) =>
+        IconColors.TryGet(item, out var custom) ? custom : ThemeColor("SwiftXForegroundBrush");
 
     private static bool IsCloseItem(OrbitItem item) =>
         string.Equals(item.Target, SystemOrbitItems.CloseTarget, StringComparison.OrdinalIgnoreCase);
