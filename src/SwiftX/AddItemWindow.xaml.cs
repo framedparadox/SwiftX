@@ -72,10 +72,16 @@ public sealed partial class AddItemWindow : Window
     /// item's identity and its off-form fields across (see <see cref="PrefillFrom"/> and
     /// <see cref="Add_Click"/>). Null for every add, which is every other caller.
     /// </param>
+    /// <param name="startAsGroup">
+    /// Opens on the Group tile for an add. The sidebar's "New group…" is a request for exactly
+    /// that, and making the user find the tile in a window they have just been sent to would be
+    /// asking the question twice. Has no effect on an edit, or where groups are not offered.
+    /// </param>
     public AddItemWindow(
         OrbitManager manager, Action<OrbitItem>? onAdded, List<OrbitItem> targetList,
         bool isGenericAddItem = false, bool allowGroups = true,
-        string? heading = null, string? confirmLabel = null, OrbitItem? existing = null)
+        string? heading = null, string? confirmLabel = null, OrbitItem? existing = null,
+        bool startAsGroup = false)
     {
         _manager = manager;
         _onAdded = onAdded;
@@ -156,7 +162,7 @@ public sealed partial class AddItemWindow : Window
         // go through SelectType, so the form is in the same consistent state either way — it is
         // what shows and hides the target row and the tool picker, and nothing else does.
         if (existing is null)
-            SelectType(AddKind.App);
+            SelectType(startAsGroup && allowGroups ? AddKind.Group : AddKind.App);
         else
             PrefillFrom(existing);
     }
@@ -854,6 +860,9 @@ public sealed partial class AddItemWindow : Window
             item.Arguments = _existing.Arguments;
             item.CustomIconPath = _existing.CustomIconPath;
             item.CustomGlyph = _existing.CustomGlyph;
+            // Also off the form, and the one thing the glyph re-derivations below do not touch: a
+            // group or tool keeps the colour the user gave its mark through a rename.
+            item.CustomIconColor = _existing.CustomIconColor;
         }
 
         if (_kind == AddKind.Tool)
@@ -871,7 +880,11 @@ public sealed partial class AddItemWindow : Window
         {
             item.Kind = OrbitItemKind.Group;
             item.DisplayName = string.IsNullOrWhiteSpace(NameBox.Text) ? "Group" : NameBox.Text.Trim();
-            item.CustomGlyph = "\uE838";
+            // A group wears the group mark \u2014 unless an edit is of one the user gave a mark of their
+            // own, which a rename must not undo.
+            item.CustomGlyph = _existing is { IsGroup: true } && !string.IsNullOrEmpty(_existing.CustomGlyph)
+                ? _existing.CustomGlyph
+                : "\uE838";
             // A group is the one kind with no target row and no field describing its contents, so
             // an edit of one has to bring both across itself. Without this, renaming a group would
             // empty it — which is the opposite of what anyone opens "Edit" on a group to do.

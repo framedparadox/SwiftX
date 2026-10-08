@@ -153,16 +153,19 @@ public static class ToolCatalog
     };
 
     /// <summary>
-    /// Gathers every tool on the orbit into a single "Tools" group and makes sure that group holds
-    /// all of them, so tools are always one parent item deep instead of scattered across the orbit
-    /// (some at the top level, some inside a group, some missing entirely).
+    /// Gathers the tools loose on the orbit into a single "Tools" group and makes sure that group
+    /// holds all of them, so a tool never takes an orbit slot of its own and none is missing.
     /// <para>
     /// The group is found by <see cref="ToolsGroupTarget"/> first and by name second, which is
     /// what adopts the "Dev tools" group earlier builds seeded rather than leaving it beside a
-    /// new one. Tools found anywhere else are moved in — keeping the order they already had, and
-    /// dropping duplicates of a kind the group already holds — and any built-in tool that is on
-    /// the orbit nowhere at all is added. A group created here takes the orbit slot of the first
+    /// new one. Tools found at the top level are moved in — keeping the order they already had,
+    /// and dropping duplicates of a kind the group already holds — and any built-in tool that is
+    /// on the orbit nowhere at all is added. A group created here takes the orbit slot of the first
     /// tool it absorbed, so the tools stay roughly where the user last saw them.
+    /// </para>
+    /// <para>
+    /// A tool inside any other group is left where it is. It is a copy the user put there on
+    /// purpose (see <see cref="GroupDropRules"/>), and the Tools group keeps its own.
     /// </para>
     /// <para>
     /// Returns true if anything changed, matching <see cref="MigrateLegacyTargets"/> and
@@ -177,27 +180,15 @@ public static class ToolCatalog
         var loose = new List<OrbitItem>();
         int firstLooseIndex = -1;
 
-        void Collect(List<OrbitItem> list, bool topLevel)
+        for (int i = items.Count - 1; i >= 0; i--)
         {
-            for (int i = list.Count - 1; i >= 0; i--)
-            {
-                var item = list[i];
-                if (ReferenceEquals(item, group))
-                    continue;
-                if (item.IsGroup)
-                {
-                    Collect(item.Children, topLevel: false);
-                    continue;
-                }
-                if (!item.IsTool)
-                    continue;
-                loose.Insert(0, item);
-                list.RemoveAt(i);
-                if (topLevel)
-                    firstLooseIndex = i;
-            }
+            var item = items[i];
+            if (ReferenceEquals(item, group) || !item.IsTool)
+                continue;
+            loose.Insert(0, item);
+            items.RemoveAt(i);
+            firstLooseIndex = i;
         }
-        Collect(items, topLevel: true);
 
         if (group is null)
         {
