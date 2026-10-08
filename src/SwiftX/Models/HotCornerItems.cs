@@ -60,10 +60,57 @@ public static class HotCornerItems
         if (string.Equals(entry.Target, ToolCatalog.ToolsGroupTarget, StringComparison.OrdinalIgnoreCase))
             return FindByTarget(config.Primary.Items, ToolCatalog.ToolsGroupTarget) ?? entry;
 
-        if (string.Equals(entry.Target, QuadrantLayout.QuickAccessTarget, StringComparison.OrdinalIgnoreCase))
-            return QuadrantLayout.BuildQuickAccess(config.Primary.Items) ?? entry;
+        if (QuadrantLayout.IsQuickAccess(entry))
+        {
+            var gathered = QuadrantLayout.BuildQuickAccess(config.Primary.Items);
+            return gathered is null ? entry : WithStoredIcon(gathered, entry);
+        }
 
         return FindById(config.Primary.Items, entry.Id) ?? entry;
+    }
+
+    /// <summary>
+    /// Keeps an icon the user gave the corner's QuickAccess group. That group is gathered anew every
+    /// time the corner resolves it, so an icon set on the instance on screen would be gone on the
+    /// next resolve; it is written onto the corner's stored entry for the group instead, which
+    /// <see cref="Resolve"/> carries back onto each new one. Anything that is not QuickAccess is
+    /// ignored: the other items are the orbit's own, and an edit to one is already an edit to the
+    /// thing the corner shows.
+    /// </summary>
+    /// <param name="gathered">The QuickAccess group the icon was changed on.</param>
+    public static void KeepGatheredIcon(AppConfig config, OrbitItem settings, OrbitItem gathered)
+    {
+        if (!QuadrantLayout.IsQuickAccess(gathered))
+            return;
+
+        var stored = Edit(config, settings).FirstOrDefault(QuadrantLayout.IsQuickAccess);
+        if (stored is null || ReferenceEquals(stored, gathered))
+            return;
+
+        stored.CustomGlyph = gathered.CustomGlyph;
+        stored.CustomIconPath = gathered.CustomIconPath;
+        stored.CustomIconColor = gathered.CustomIconColor;
+    }
+
+    /// <summary>
+    /// Puts the icon stored on <paramref name="entry"/> onto a freshly gathered QuickAccess group. A
+    /// picture wins over a glyph, as it does everywhere else; with neither stored the group keeps the
+    /// one <see cref="QuadrantLayout.BuildQuickAccess"/> gave it, which is what a reset goes back to.
+    /// </summary>
+    private static OrbitItem WithStoredIcon(OrbitItem gathered, OrbitItem entry)
+    {
+        if (!string.IsNullOrWhiteSpace(entry.CustomIconPath))
+        {
+            gathered.CustomIconPath = entry.CustomIconPath;
+            gathered.CustomGlyph = null;
+        }
+        else if (!string.IsNullOrEmpty(entry.CustomGlyph))
+        {
+            gathered.CustomGlyph = entry.CustomGlyph;
+        }
+
+        gathered.CustomIconColor = entry.CustomIconColor;
+        return gathered;
     }
 
     private static OrbitItem? FindByTarget(List<OrbitItem> items, string target) =>

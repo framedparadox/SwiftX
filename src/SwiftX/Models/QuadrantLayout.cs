@@ -26,6 +26,15 @@ public static class QuadrantLayout
     /// exactly the way it already does for the orbit's own Tools group.</summary>
     public const string QuickAccessTarget = "swiftx:quickaccess";
 
+    /// <summary>
+    /// Whether <paramref name="item"/> is the synthesized QuickAccess group. It is gathered afresh
+    /// from the orbit each time the corner resolves it (see <see cref="HotCornerItems.Resolve"/>),
+    /// so it is never the same object twice and anything added to or reordered inside it would be
+    /// lost on the next resolve: what it holds is read off the orbit, not kept in it.
+    /// </summary>
+    public static bool IsQuickAccess(OrbitItem item) =>
+        item.IsGroup && string.Equals(item.Target, QuickAccessTarget, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Glyph the QuickAccess group wears on a quadrant — the same one a lone Shortcut
     /// item falls back to (see <see cref="OrbitItem.Glyph"/>), since the group is exactly that
     /// kind of item, gathered up.</summary>

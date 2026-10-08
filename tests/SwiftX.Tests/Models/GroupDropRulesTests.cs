@@ -46,12 +46,35 @@ public class GroupDropRulesTests
         Assert.Equal(GroupDropVerdict.NestedGroup, GroupDropRules.Check(Group("Work"), Group("Play")));
     }
 
-    [Fact]
-    public void A_tool_cannot_go_inside_a_user_group()
-    {
-        var tool = new OrbitItem { Kind = OrbitItemKind.Tool, DisplayName = "Base64", Target = "Base64" };
+    private static OrbitItem Tool(string target) =>
+        new() { Kind = OrbitItemKind.Tool, DisplayName = target, Target = target };
 
-        Assert.Equal(GroupDropVerdict.Tool, GroupDropRules.Check(Group("Work"), tool));
+    [Fact]
+    public void A_tool_may_go_inside_a_user_group()
+    {
+        var group = Group("Work", App("code"));
+
+        Assert.Equal(GroupDropVerdict.Allowed, GroupDropRules.Check(group, Tool("Base64")));
+        Assert.Equal(GroupDropVerdict.Allowed, GroupDropRules.TryAdd(group, Tool("Base64")));
+        Assert.Equal(new[] { "code", "Base64" }, group.Children.Select(c => c.DisplayName));
+    }
+
+    [Fact]
+    public void A_tool_is_held_back_by_the_same_rules_as_any_other_item()
+    {
+        var group = Group("Work", Tool("Base64"));
+
+        Assert.Equal(GroupDropVerdict.Duplicate, GroupDropRules.Check(group, Tool("Base64")));
+        Assert.Equal(GroupDropVerdict.Full, GroupDropRules.Check(Full("Busy"), Tool("Base64")));
+    }
+
+    [Fact]
+    public void A_tool_cannot_go_inside_the_built_in_tools_group()
+    {
+        // The Tools screen owns that group, so it takes nothing, a tool included.
+        Assert.Equal(
+            GroupDropVerdict.ToolsGroup,
+            GroupDropRules.Check(ToolCatalog.CreateToolsGroup(), Tool("Base64")));
     }
 
     [Fact]

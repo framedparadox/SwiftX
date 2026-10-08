@@ -32,9 +32,10 @@ public static class ElementSections
     /// (and an empty category said so) rather than a heading appearing only once it has something
     /// under it.
     /// <para>
-    /// The Tools category is left out on purpose, as are tool items and the built-in Tools group:
-    /// the Tools screen owns them, and listing them here too would duplicate that screen instead of
-    /// showing something new. See <see cref="IsListed"/>.
+    /// The Tools category is left out on purpose, as are loose tool items and the built-in Tools
+    /// group: the Tools screen owns them, and listing them here too would duplicate that screen
+    /// instead of showing something new. A tool the user put inside a group of their own is that
+    /// group's content like any other item, so it is listed with the group. See <see cref="IsListed"/>.
     /// </para>
     /// </summary>
     public static IReadOnlyList<ElementSection> Build(IEnumerable<OrbitItem> topLevel)
@@ -54,7 +55,7 @@ public static class ElementSections
                 continue;
 
             var children = item.IsGroup
-                ? item.Children.Where(c => !c.IsTool).ToList()
+                ? item.Children.ToList()
                 : new List<OrbitItem>();
             bucket.Entries.Add(new ElementEntry(item, children));
         }

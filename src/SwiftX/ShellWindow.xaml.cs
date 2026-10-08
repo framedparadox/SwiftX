@@ -358,7 +358,7 @@ public sealed partial class ShellWindow : Window
             SyncAccentControls();
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             SyncDesktopShortcutToggle();
-            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.1");
+            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.3");
             FillAboutDetails();
             // Wired here rather than in XAML because ThemeShadow.Receivers is a collection with no
             // XAML syntax of its own on a shared resource. Without a receiver the Home tiles
@@ -515,8 +515,7 @@ public sealed partial class ShellWindow : Window
             // An edit from elsewhere (e.g. a delete on the Elements screen) can remove the
             // item the Orbit screen currently has selected or expanded — drop stale state rather than
             // leave the inspector or children row pointing at something that no longer exists.
-            if (_expandedGroup is not null && !ItemExists(_manager.Config.Primary.Items, _expandedGroup))
-                CollapseGroup();
+            RefreshOpenGroup();
             if (_selectedItem is not null && !ItemExists(_manager.Config.Primary.Items, _selectedItem))
                 HideItemDetails();
             RenderPreview();
@@ -567,6 +566,41 @@ public sealed partial class ShellWindow : Window
         StopGroupNoticeFlash();
         OrbitMetrics.Changed -= OnMetricsChanged;
         _manager.ItemsChanged -= OnItemsChanged;
+    }
+
+    /// <summary>
+    /// Keeps the group the canvas has open honest after the orbit changed under it: closes it when
+    /// the thing it showed is gone, and swaps in the live object when it was only ever a snapshot.
+    /// <para>
+    /// A group opened from the corner preview is not always one of the orbit's own items. The
+    /// corner's QuickAccess is gathered afresh every time it is resolved (see
+    /// <see cref="QuadrantLayout.IsQuickAccess"/>), so the object held here goes stale on the next
+    /// link added or removed and is re-gathered rather than closed; it closes only when nothing is
+    /// left to gather. A group the corner holds a copy of after the orbit dropped it is kept for
+    /// as long as the corner holds it.
+    /// </para>
+    /// </summary>
+    private void RefreshOpenGroup()
+    {
+        var group = _expandedGroup;
+        if (group is null)
+            return;
+
+        if (QuadrantLayout.IsQuickAccess(group))
+        {
+            var fresh = QuadrantLayout.BuildQuickAccess(_manager.Config.Primary.Items);
+            if (fresh is null)
+                CollapseGroup();
+            else
+                _expandedGroup = fresh;
+            return;
+        }
+
+        if (ItemExists(_manager.Config.Primary.Items, group))
+            return;
+        if (_manager.Config.HotCornerOrbit.Any(entry => ReferenceEquals(entry, group)))
+            return;
+        CollapseGroup();
     }
 
     private static bool ItemExists(List<OrbitItem> items, OrbitItem target)
@@ -2325,6 +2359,9 @@ public sealed partial class ShellWindow : Window
             _dragTentativeGroupSlot = target;
             if (target < 0) return;
 
+            // A gathered group has no order of its own to change (see GroupAddEnds).
+            if (QuadrantLayout.IsQuickAccess(_expandedGroup)) return;
+
             var children = _expandedGroup.Children.Where(c => !c.Hidden).ToList();
             int from = children.IndexOf(_dragItem);
             if (from < 0) return;
@@ -2332,13 +2369,13 @@ public sealed partial class ShellWindow : Window
             // slot index is one ahead of the child index it targets; the trailing add slot clamps
             // down to the last child the same way dropping past the end of the top-level orbit
             // clamps to its last occupied slot.
-            int to = Math.Clamp(target - 1, 0, children.Count - 1);
+            int to = Math.Clamp(target - GroupAddEnds(_expandedGroup), 0, children.Count - 1);
             if (to != from)
             {
                 children.RemoveAt(from);
                 children.Insert(to, _dragItem);
             }
-            ReflowGroupBorders(children);
+            ReflowGroupBorders(_expandedGroup, children);
             return;
         }
 
@@ -2409,14 +2446,16 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>Group-arc counterpart of <see cref="ReflowOrbitBorders"/>. <paramref name="tentativeOrder"/>
     /// is indexed by child position; the arc slot for child <c>i</c> is <c>i + 1</c>, since slot 0
-    /// is always the leading "add" end (see <see cref="GroupSlotAt"/>).</summary>
-    private void ReflowGroupBorders(List<OrbitItem> tentativeOrder)
+    /// is the leading "add" end (see <see cref="GroupSlotAt"/>, and <see cref="GroupAddEnds"/> for
+    /// the group that has none).</summary>
+    private void ReflowGroupBorders(OrbitItem group, List<OrbitItem> tentativeOrder)
     {
         int count = _groupSlotBorders.Count;
         if (count == 0) return;
 
         double step = OrbitMetrics.FlyoutStepDegreesFor(_previewRadius) * Math.PI / 180.0;
         double first = -((count - 1) / 2.0) * step;
+        int ends = GroupAddEnds(group);
 
         for (int i = 0; i < tentativeOrder.Count; i++)
         {
@@ -2424,7 +2463,7 @@ public sealed partial class ShellWindow : Window
             if (ReferenceEquals(item, _dragItem)) continue;
             var border = FindSlotBorder(_groupSlotBorders, item);
             if (border is null) continue;
-            double angle = first + (i + 1) * step;
+            double angle = first + (i + ends) * step;
             double x = _previewCenter.X + _previewRadius * Math.Cos(angle) - _previewBubble / 2;
             double y = _previewCenter.Y + _previewRadius * Math.Sin(angle) - _previewBubble / 2;
             AnimateBubbleTo(border, x, y);
@@ -2523,7 +2562,13 @@ public sealed partial class ShellWindow : Window
             }
             else if (item is not null)
             {
-                ShowItemDetails(item, e.GetCurrentPoint(PreviewCanvas).Position);
+                // A group opens onto its children, as it does on the ring: the corner's Tools and
+                // QuickAccess are groups, and a click on one that only showed its details gave no
+                // way to see what was in it. The canvas's centre closes it again, back to the corner.
+                if (item.IsGroup)
+                    OpenGroup(item);
+                else
+                    ShowItemDetails(item, e.GetCurrentPoint(PreviewCanvas).Position);
             }
             else
             {
@@ -2843,7 +2888,7 @@ public sealed partial class ShellWindow : Window
     private MenuFlyout? BuildQuadrantItemMenu(Point point)
     {
         int slot = QuadrantSlotAt(point);
-        if (slot < 0 || _quadrantSlotBorders[slot]?.Tag is not OrbitItem item)
+        if (slot < 0 || _quadrantSlotBorders[slot] is not { Tag: OrbitItem item } slotBorder)
             return null;
 
         // The last item stays: a corner with nothing on it would summon an empty screen. Shown
@@ -2856,7 +2901,12 @@ public sealed partial class ShellWindow : Window
             replace: () => ReplaceQuadrantItem(slot),
             remove: () => RemoveQuadrantItem(slot),
             removeLabel: "Remove from corner",
-            canRemove: count > 1);
+            canRemove: count > 1,
+            // A group's mark is the one thing about it with no other way to change, here as on the
+            // ring (see BuildOrbitItemMenu). A group on the corner is the orbit's own group, so the
+            // mark is changed on it and the ring shows the same one; QuickAccess, which only the
+            // corner has, keeps its own (see ApplyIconChoice).
+            editIcon: item.IsGroup ? () => ShowIconPicker(item, slotBorder) : null);
     }
 
     private static MenuFlyout BuildItemMenu(
@@ -3016,6 +3066,10 @@ public sealed partial class ShellWindow : Window
     {
         if (_dragBorder is not null)
             _dragBorder.RenderTransform = null;
+        // Preview_PointerMoved hides the name pills for the length of a drag and a render puts them
+        // back, but a drop that changes nothing (onto its own place, or in a group whose order is
+        // fixed) never renders.
+        PreviewLabelCanvas.Visibility = Visibility.Visible;
         _dragBorder = null;
         _dragItem = null;
         _dragSlot = -1;
@@ -3375,13 +3429,13 @@ public sealed partial class ShellWindow : Window
     private void ReorderGroupChild(OrbitItem dragged, int targetSlot)
     {
         var group = _expandedGroup;
-        if (group is null || targetSlot < 0) return;
+        if (group is null || targetSlot < 0 || QuadrantLayout.IsQuickAccess(group)) return;
 
         var visible = group.Children.Where(c => !c.Hidden).ToList();
         int from = visible.IndexOf(dragged);
         if (from < 0) return;
 
-        int to = Math.Clamp(targetSlot - 1, 0, visible.Count - 1);
+        int to = Math.Clamp(targetSlot - GroupAddEnds(group), 0, visible.Count - 1);
         if (to == from) return;
 
         visible.RemoveAt(from);
@@ -3781,18 +3835,31 @@ public sealed partial class ShellWindow : Window
         };
     }
 
+    /// <summary>Icons and swatches to a row in the icon picker, each a square tile with a gap between.</summary>
+    private const int IconPickerColumns = 6;
+    private const double IconPickerTile = 34;
+    private const double IconPickerGap = 4;
+
+    /// <summary>
+    /// The width of one row of tiles, which is the width the whole picker is held to: the
+    /// full-width buttons below the grid and the caption line up with the tiles instead of
+    /// stretching to a width of their own and leaving the grid short of the flyout's right edge.
+    /// </summary>
+    private const double IconPickerWidth =
+        IconPickerColumns * IconPickerTile + (IconPickerColumns - 1) * IconPickerGap;
+
     /// <summary>
     /// The glyph grid behind the pencil. Six to a row, which is what fits the card's width without
     /// the flyout growing wider than the card it hangs off.
     /// </summary>
     private Flyout BuildIconPicker(OrbitItem item)
     {
-        var grid = new Grid { ColumnSpacing = 4, RowSpacing = 4 };
-        for (int c = 0; c < 6; c++)
+        var grid = new Grid { ColumnSpacing = IconPickerGap, RowSpacing = IconPickerGap };
+        for (int c = 0; c < IconPickerColumns; c++)
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var choices = IconChoices.All;
-        for (int r = 0; r <= (choices.Count - 1) / 6; r++)
+        for (int r = 0; r <= (choices.Count - 1) / IconPickerColumns; r++)
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         for (int i = 0; i < choices.Count; i++)
@@ -3800,8 +3867,8 @@ public sealed partial class ShellWindow : Window
             var choice = choices[i];
             var button = new Button
             {
-                Width = 34,
-                Height = 34,
+                Width = IconPickerTile,
+                Height = IconPickerTile,
                 Padding = new Thickness(0),
                 CornerRadius = new CornerRadius(6),
                 Content = new FontIcon
@@ -3814,8 +3881,8 @@ public sealed partial class ShellWindow : Window
             ToolTipService.SetToolTip(button, choice.Name);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, choice.Name);
             button.Click += (_, _) => ApplyIconChoice(item, choice.Glyph, null);
-            Grid.SetRow(button, i / 6);
-            Grid.SetColumn(button, i % 6);
+            Grid.SetRow(button, i / IconPickerColumns);
+            Grid.SetColumn(button, i % IconPickerColumns);
             grid.Children.Add(button);
         }
 
@@ -3838,7 +3905,7 @@ public sealed partial class ShellWindow : Window
             ApplyIconChoice(item, null, null);
         };
 
-        var panel = new StackPanel { Spacing = 8, MinWidth = 300 };
+        var panel = new StackPanel { Spacing = 8, Width = IconPickerWidth };
         panel.Children.Add(new TextBlock
         {
             Text = "CHOOSE AN ICON",
@@ -3850,15 +3917,23 @@ public sealed partial class ShellWindow : Window
         panel.Children.Add(module);
         panel.Children.Add(reset);
 
+        // A flyout will not go narrower than its presenter's own minimum width (320 by default),
+        // which is wider than a row of tiles plus the presenter's padding. Left alone it would
+        // stretch every full-width button past the grid, so the minimum is dropped and the panel's
+        // own width is what sets it.
+        //
+        // No scrollbar, ever: the content is a fixed height (the free colour picker is its own
+        // flyout, see BuildCustomColorFlyout) and fits whole, so the presenter's own vertical
+        // scrolling is switched off as well and nothing here caps the height.
+        var presenterStyle = new Style(typeof(FlyoutPresenter));
+        presenterStyle.Setters.Add(new Setter(FrameworkElement.MinWidthProperty, 0d));
+        presenterStyle.Setters.Add(new Setter(
+            ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled));
+
         var flyout = new Flyout
         {
-            Content = new ScrollViewer
-            {
-                MaxHeight = 460,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Content = panel,
-            },
+            FlyoutPresenterStyle = presenterStyle,
+            Content = panel,
         };
 
         // Remembered while it is up, so applying a choice can close it wherever it was opened from
@@ -3888,11 +3963,9 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// The colour half of the icon picker: a row of swatches, a tile that reveals a full colour
-    /// picker for anything else, and a way back to the theme's own colour. The swatches apply as
-    /// soon as they are clicked; the free picker applies on its button, because its ColorChanged
-    /// fires continuously through a drag and every apply rebuilds the sidebar the picker may be
-    /// anchored to.
+    /// The colour half of the icon picker: a row of swatches, a tile that opens a full colour
+    /// picker for anything else (see <see cref="BuildCustomColorFlyout"/>), and a way back to the
+    /// theme's own colour. The swatches apply as soon as they are clicked.
     /// <para>
     /// Only a glyph is tinted (see <see cref="OrbitItem.CustomIconColor"/>), which is what the
     /// caption under the swatches says for an item showing a picture.
@@ -3911,26 +3984,8 @@ public sealed partial class ShellWindow : Window
             Style = (Style)Root.Resources["SidebarEyebrow"],
         });
 
-        var picker = new ColorPicker
-        {
-            IsAlphaEnabled = false,
-            IsMoreButtonVisible = true,
-            Color = hasColor ? current : accent,
-            Visibility = Visibility.Collapsed,
-        };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(picker, "Icon colour picker");
-
-        var use = new Button
-        {
-            Content = "Use this colour",
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Style = (Style)Application.Current.Resources["AccentButtonStyle"],
-            Visibility = Visibility.Collapsed,
-        };
-        use.Click += (_, _) => ApplyIconColor(item, picker.Color);
-
-        const int columns = 6;
-        var swatches = new Grid { ColumnSpacing = 4, RowSpacing = 4 };
+        const int columns = IconPickerColumns;
+        var swatches = new Grid { ColumnSpacing = IconPickerGap, RowSpacing = IconPickerGap };
         for (int c = 0; c < columns; c++)
             swatches.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -3947,8 +4002,8 @@ public sealed partial class ShellWindow : Window
 
             var button = new Button
             {
-                Width = 34,
-                Height = 34,
+                Width = IconPickerTile,
+                Height = IconPickerTile,
                 Padding = new Thickness(0),
                 CornerRadius = new CornerRadius(6),
                 Content = new Border
@@ -3972,12 +4027,13 @@ public sealed partial class ShellWindow : Window
             swatches.Children.Add(button);
         }
 
-        // The last tile: any other colour. Revealed rather than always shown because the picker is
-        // tall, and most of the time one of the swatches is the answer.
+        // The last tile: any other colour. It opens the full picker in a flyout of its own rather
+        // than unfolding it here, because the picker is far taller than everything else in this
+        // one put together and the whole icon picker has to stay a fixed height with no scrollbar.
         var custom = new Button
         {
-            Width = 34,
-            Height = 34,
+            Width = IconPickerTile,
+            Height = IconPickerTile,
             Padding = new Thickness(0),
             CornerRadius = new CornerRadius(6),
             Content = new FontIcon
@@ -3986,22 +4042,15 @@ public sealed partial class ShellWindow : Window
                 FontSize = 16,
                 Foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush"),
             },
+            Flyout = BuildCustomColorFlyout(item, hasColor ? current : accent),
         };
         ToolTipService.SetToolTip(custom, "Pick another colour");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(custom, "Pick another icon colour");
-        custom.Click += (_, _) =>
-        {
-            var shown = picker.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
-            picker.Visibility = shown;
-            use.Visibility = shown;
-        };
         Grid.SetRow(custom, IconColors.Presets.Count / columns);
         Grid.SetColumn(custom, IconColors.Presets.Count % columns);
         swatches.Children.Add(custom);
 
         section.Children.Add(swatches);
-        section.Children.Add(picker);
-        section.Children.Add(use);
 
         var defaultColor = new Button
         {
@@ -4017,8 +4066,47 @@ public sealed partial class ShellWindow : Window
             Text = "Colours the icon's mark; an app's or site's own picture keeps its colours.",
             Style = (Style)Root.Resources["SidebarCaption"],
             TextWrapping = TextWrapping.Wrap,
+            // Held to the tiles' width: a wrapping line left to size itself runs out to its full
+            // one-line length and sets the width of the whole picker.
+            MaxWidth = IconPickerWidth,
         });
         return section;
+    }
+
+    /// <summary>
+    /// The free colour picker behind the palette tile: a full <see cref="ColorPicker"/> and the button
+    /// that applies it. Applied on the button, not as the colour changes, because ColorChanged fires
+    /// continuously through a drag and every apply rebuilds the sidebar the icon picker may be
+    /// anchored to. The icon picker under it goes down with it, as it does for a swatch.
+    /// </summary>
+    private Flyout BuildCustomColorFlyout(OrbitItem item, Color initial)
+    {
+        var picker = new ColorPicker
+        {
+            IsAlphaEnabled = false,
+            IsMoreButtonVisible = true,
+            Color = initial,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(picker, "Icon colour picker");
+
+        var use = new Button
+        {
+            Content = "Use this colour",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"],
+        };
+
+        var flyout = new Flyout
+        {
+            Content = new StackPanel { Spacing = 8, Children = { picker, use } },
+        };
+        use.Click += (_, _) =>
+        {
+            // Both go: hiding the icon picker does not by itself take a flyout opened from it down.
+            flyout.Hide();
+            ApplyIconColor(item, picker.Color);
+        };
+        return flyout;
     }
 
     /// <summary>
@@ -4030,6 +4118,7 @@ public sealed partial class ShellWindow : Window
     {
         _iconPickerFlyout?.Hide();
         item.CustomIconColor = color is { } c ? IconColors.ToStored(c) : null;
+        HotCornerItems.KeepGatheredIcon(_manager.Config, SystemOrbitItems.CreateSettings(), item);
 
         _manager.NotifyItemsChanged();
         RenderPreview();
@@ -4050,6 +4139,9 @@ public sealed partial class ShellWindow : Window
         item.CustomIconPath = imagePath;
         item.IconImage = null;
         item.IconSignature = null;
+        // Reset (both null) is what the item resolves to unaided; QuickAccess's own is its default
+        // glyph, which KeepGatheredIcon leaves to the group when nothing is stored.
+        HotCornerItems.KeepGatheredIcon(_manager.Config, SystemOrbitItems.CreateSettings(), item);
 
         _manager.NotifyItemsChanged();
         RenderPreview();
@@ -4327,8 +4419,11 @@ public sealed partial class ShellWindow : Window
 
         var children = group.Children.Where(c => !c.Hidden).ToList();
 
-        // One dashed slot either side of the children, so the arc always has at least the two.
-        int count = children.Count + 2;
+        // One dashed slot either side of the children, so the arc always has at least the two —
+        // except on a group that is gathered rather than kept (see GroupAddEnds), which has
+        // nothing to add to.
+        int ends = GroupAddEnds(group);
+        int count = children.Count + 2 * ends;
         double step = OrbitMetrics.FlyoutStepDegreesFor(radius) * Math.PI / 180.0;
         double first = -((count - 1) / 2.0) * step;
 
@@ -4338,8 +4433,8 @@ public sealed partial class ShellWindow : Window
             double x = cx + radius * Math.Cos(angle) - bubble / 2;
             double y = cy + radius * Math.Sin(angle) - bubble / 2;
 
-            bool isAdd = i == 0 || i == count - 1;
-            var child = isAdd ? null : children[i - 1];
+            bool isAdd = ends > 0 && (i == 0 || i == count - 1);
+            var child = isAdd ? null : children[i - ends];
 
             var border = new Border
             {
@@ -4386,6 +4481,15 @@ public sealed partial class ShellWindow : Window
             PreviewCanvas.Children.Add(border);
         }
     }
+
+    /// <summary>
+    /// How many dashed "add" slots <paramref name="group"/>'s arc has at each end: one, or none for
+    /// the corner's QuickAccess (see <see cref="QuadrantLayout.IsQuickAccess"/>). That group is
+    /// gathered from the orbit's links and shortcuts every time it is resolved, so an item added
+    /// to it or moved within it would be gone on the next redraw. It is shown for what it holds,
+    /// and its children are changed where they live.
+    /// </summary>
+    private static int GroupAddEnds(OrbitItem group) => QuadrantLayout.IsQuickAccess(group) ? 0 : 1;
 
     /// <summary>
     /// Adds to whichever group the canvas currently has open, through the same dialog the top-level
@@ -4918,8 +5022,10 @@ public sealed partial class ShellWindow : Window
 
     /// <summary>
     /// The right-click menu of a suggestion row: put a copy in one of the orbit's groups (or in a
-    /// new one), or take the thing off the orbit wherever it sits. A tool is neither: the Tools
-    /// group owns them and puts them back on every launch, so both entries are greyed.
+    /// new one), or take the thing off the orbit wherever it sits. A tool can go in a group like
+    /// anything else, but cannot be taken off the orbit from here: the Tools group owns it and puts
+    /// it back on every launch, so Remove is greyed. A copy in a group of the user's own is removed
+    /// from that group's own rows.
     /// </summary>
     private MenuFlyout BuildEditRowMenu(FrameworkElement anchor, OrbitItem template, bool present)
     {
@@ -4929,7 +5035,6 @@ public sealed partial class ShellWindow : Window
         {
             Text = "Add to group",
             Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE8F4) },
-            IsEnabled = !template.IsTool,
         };
         foreach (var group in ElementLibrary.UserGroups(_manager.Config.Primary.Items))
         {
@@ -7055,7 +7160,12 @@ public sealed partial class ShellWindow : Window
         bool on = HotCornerEnabledToggle.IsOn;
         HotCornerOptionsRow.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         if (!on)
+        {
             _previewQuadrant = false;
+            // QuickAccess exists only on the corner, so an open one has nothing left to be a view of.
+            if (_expandedGroup is { } open && QuadrantLayout.IsQuickAccess(open))
+                CollapseGroup();
+        }
     }
 
     private void HotCornerEnabled_Toggled(object sender, RoutedEventArgs e)
@@ -7330,7 +7440,7 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private Grid BuildGroupRow(OrbitItem group)
     {
-        int count = group.Children.Count(c => !c.IsTool);
+        int count = group.Children.Count;
 
         return BuildCardShell(
             BuildItemIcon(group),
@@ -7601,7 +7711,7 @@ public sealed partial class ShellWindow : Window
 
         if (item.IsGroup)
         {
-            var names = item.Children.Where(c => !c.IsTool).Select(c => c.DisplayName).ToList();
+            var names = item.Children.Select(c => c.DisplayName).ToList();
             lines.Add("Contains: " + (names.Count == 0 ? "nothing yet" : string.Join(", ", names)));
         }
         else if (!string.IsNullOrWhiteSpace(item.Target))

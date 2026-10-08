@@ -88,8 +88,39 @@ public class ToolsGroupTests
         Assert.Equal(
             ToolCatalog.All.Select(t => t.Kind.ToString()).OrderBy(t => t),
             Targets(group.Children).OrderBy(t => t));
-        // The unrelated group keeps its non-tool item and loses only the tool.
-        Assert.Equal(new[] { "calc" }, nested.Children.Select(i => i.DisplayName));
+        // The Tools group's own count is what "exactly once" is about: the unrelated group's copy
+        // is the user's own and stays (see the next test).
+        Assert.Equal(new[] { "Data", "calc" }, nested.Children.Select(i => i.DisplayName));
+    }
+
+    [Fact]
+    public void A_tool_the_user_put_in_another_group_stays_there()
+    {
+        var work = Group("Work", Tool("Base64"), App("calc"));
+        var items = new List<OrbitItem> { ToolCatalog.CreateToolsGroup(), work };
+
+        // Nothing moved and nothing missing, so nothing to persist.
+        Assert.False(ToolCatalog.EnsureToolsGroup(items));
+
+        Assert.Equal(new[] { "Base64", "calc" }, work.Children.Select(i => i.DisplayName));
+        // And the Tools group still holds its own copy.
+        Assert.Equal(
+            ToolCatalog.All.Select(t => t.Kind.ToString()),
+            Targets(items[0].Children));
+    }
+
+    [Fact]
+    public void A_copy_in_another_group_does_not_bring_back_a_Tools_group_that_was_deleted()
+    {
+        // The user removed the Tools group and keeps one tool in a group of their own: that is not
+        // a loose tool, so there is nothing to gather and no group to create.
+        var work = Group("Work", Tool("Base64"));
+        var items = new List<OrbitItem> { App("notepad"), work };
+
+        Assert.False(ToolCatalog.EnsureToolsGroup(items));
+
+        Assert.Equal(new[] { "notepad", "Work" }, items.Select(i => i.DisplayName));
+        Assert.Equal(new[] { "Base64" }, work.Children.Select(i => i.DisplayName));
     }
 
     [Fact]

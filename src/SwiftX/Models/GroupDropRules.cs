@@ -14,9 +14,6 @@ public enum GroupDropVerdict
     /// <summary>The thing is itself a group.</summary>
     NestedGroup,
 
-    /// <summary>The thing is a built-in tool.</summary>
-    Tool,
-
     /// <summary>The group already holds something with the same target.</summary>
     Duplicate,
 
@@ -51,10 +48,12 @@ public static class GroupDropRules
     /// Whether <paramref name="candidate"/> may become a child of <paramref name="group"/>.
     /// <para>
     /// A group inside a group is refused because the orbit expands one flyout ring and has no third
-    /// to open a nested group into (the add dialog hides its Group type for the same reason). A tool
-    /// is refused because <see cref="ToolCatalog.EnsureToolsGroup"/> gathers every tool into the
-    /// Tools group on each launch: one dropped anywhere else would be moved out again the next time
-    /// SwiftX started, which is worse than not letting it in.
+    /// to open a nested group into (the add dialog hides its Group type for the same reason).
+    /// </para>
+    /// <para>
+    /// A tool is allowed, like anything else: what goes in is a copy, and the Tools group keeps its
+    /// own (see <see cref="ToolCatalog.EnsureToolsGroup"/>, which leaves a tool inside another group
+    /// where it was put).
     /// </para>
     /// </summary>
     public static GroupDropVerdict Check(OrbitItem group, OrbitItem candidate)
@@ -65,8 +64,6 @@ public static class GroupDropRules
             return GroupDropVerdict.ToolsGroup;
         if (candidate.IsGroup)
             return GroupDropVerdict.NestedGroup;
-        if (candidate.IsTool)
-            return GroupDropVerdict.Tool;
         if (ElementLibrary.ContainsTarget(group.Children, candidate.Target))
             return GroupDropVerdict.Duplicate;
         if (IsFull(group))
@@ -93,7 +90,6 @@ public static class GroupDropRules
         GroupDropVerdict.NotAGroup => "Not a group",
         GroupDropVerdict.ToolsGroup => "Managed on the Tools screen",
         GroupDropVerdict.NestedGroup => "Groups cannot hold groups",
-        GroupDropVerdict.Tool => "Tools stay in the Tools group",
         GroupDropVerdict.Duplicate => "Already in this group",
         GroupDropVerdict.Full => $"Group is full ({Capacity} items)",
         _ => null,

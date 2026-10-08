@@ -296,7 +296,10 @@ palettes and not one). What it shows is what the orbit draws, at the current siz
   group with. The toolbar's **Orbit Layout** title gives way to that group's name while it is open,
   and the header's Home button stays put as on every other screen. The way out is the group's own
   mark at the centre: it turns into a close mark under the pointer, and a click returns to the
-  whole orbit. A dashed slot at each end of the arc adds to the group.
+  whole orbit. A dashed slot at each end of the arc adds to the group. The corner's **Quadrant**
+  view works the same way: click Tools, QuickAccess or a group of your own and the canvas opens onto
+  its children, and the centre returns to the quadrant. QuickAccess is gathered from the orbit's
+  links and shortcuts rather than kept, so its arc has no dashed slots and cannot be reordered.
 - **Drag an item** to another slot to rearrange. A drop lands on the nearest slot, even out past
   the bubbles — the intent is the nearest place, not a pixel-perfect landing.
 - **Right-click an item** for **Replace…** and **Delete**. Replace opens the same form the `+`
@@ -386,7 +389,10 @@ view the corner is editable:
 - **Click the empty place** (the `+`) to add — the item belongs to the corner, not the orbit.
 - **Right-click an item** for **Replace…** and **Remove from corner**. The orbit keeps whatever you
   take off. On the last item Remove is greyed out — a corner with nothing on it would summon an
-  empty screen.
+  empty screen. A group (Tools, QuickAccess, or one of yours) also offers **Edit icon…**, the same
+  picker the ring's groups use. A group of yours or Tools wears the one mark on the ring and the
+  corner alike; QuickAccess, which only the corner has, keeps its own as part of the corner's
+  arrangement.
 
 Nothing else is drawn: no guide arc through the places, and no remove badge pinned to every item.
 
@@ -612,11 +618,11 @@ itself does not.
 2. Orbit items pointing at the retired `Json` / `Xml` tool targets are rewritten to `Data`, and the
    duplicates that creates are collapsed.
 3. **Tools are gathered into one group.** The group is found by its marker target first and by name
-   second (which adopts the "Dev tools" group earlier builds seeded), tools from the top level and
-   from other groups are moved in, duplicate kinds are dropped, and any built-in tool the orbit had
-   no item for is added. A group created by this step takes the orbit slot of the first tool it
-   absorbed. An orbit with no tools *and* no group is left alone — deleting them should not undo
-   itself on the next launch.
+   second (which adopts the "Dev tools" group earlier builds seeded), tools loose at the top level
+   are moved in, duplicate kinds are dropped, and any built-in tool the orbit had no item for is
+   added. A tool inside a group of your own is a copy you put there and is left where it is. A group
+   created by this step takes the orbit slot of the first tool it absorbed. An orbit with no tools
+   *and* no group is left alone — deleting them should not undo itself on the next launch.
 4. Every tool item's `Hidden` flag is re-pointed at the Tools page's switches.
 
 The config is re-saved only when one of these actually changed something.
