@@ -2651,8 +2651,9 @@ public sealed partial class ShellWindow : Window
         // not added beside, and a tool is not swappable at all (see DropOntoPreviewSlot) — so the
         // drag says no over one rather than accepting a drop it would then quietly ignore.
         var occupant = border?.Tag as OrbitItem;
-        bool intoGroup = !_previewQuadrant && occupant is { IsGroup: true } &&
+        bool intoGroup = occupant is { IsGroup: true } &&
                          !ElementLibrary.IsBuiltInToolsGroup(occupant) &&
+                         !QuadrantLayout.IsQuickAccess(occupant) &&
                          _sidebarDragTemplate is not { IsGroup: true };
         bool blocked = occupant is { IsTool: true };
         e.AcceptedOperation = blocked ? DataPackageOperation.None : DataPackageOperation.Copy;
@@ -2759,8 +2760,21 @@ public sealed partial class ShellWindow : Window
         if (_previewQuadrant)
         {
             if (slot < 0 || slot >= _quadrantSlotBorders.Length) return;
-            if (_quadrantSlotBorders[slot]?.Tag is OrbitItem existing &&
-                ReferenceEquals(_selectedItem, existing))
+            var occupant = _quadrantSlotBorders[slot]?.Tag as OrbitItem;
+            // A group in the corner is a place to put things, as on the ring: dropping an item on it
+            // adds to it. The gathered QuickAccess group and the Tools group are not the user's to fill.
+            if (occupant is { IsGroup: true } && !added.IsGroup &&
+                !ElementLibrary.IsBuiltInToolsGroup(occupant) && !QuadrantLayout.IsQuickAccess(occupant))
+            {
+                if (GroupDropRules.TryAdd(occupant, added) != GroupDropVerdict.Allowed) return;
+                _manager.Save();
+                EndArmedReplaceAfterDrop();
+                RenderPreview();
+                DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
+                return;
+            }
+
+            if (occupant is not null && ReferenceEquals(_selectedItem, occupant))
                 HideItemDetails();
             PutInQuadrantSlot(slot, added);
             EndArmedReplaceAfterDrop();
