@@ -2,6 +2,22 @@
 
 All notable changes to SwiftX will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- A **Hex nest** layout for the orbit, from the dock studies in `docs/orbit-dock-alternatives.html`.
+  Choose it in the Orbit screen's sidebar under **Layout** (Ring / Hex nest); the full orbit and a
+  hot corner's quadrant both follow it. Items become hexagonal cells that share their edges, each
+  showing its name, with Settings and Close set one ring further out and drawn fainter. The quadrant
+  puts its hub in the corner and its items on the nearest cells that fit wholly on screen.
+- On the hex nest, clicking a group opens it in place: the group's cell becomes **Back** and its
+  children take its siblings' cells, spilling one ring further out only when there are more of them.
+  Back, Esc or the centre mark closes it.
+
+### Changed
+- Item shape and Orbit radius are dimmed and inactive while Layout is set to Hex nest, since the
+  cells are always hexagons and sit edge to edge.
+
 ## [2.0.3] - 2026-10-07
 
 ### Added

@@ -104,6 +104,29 @@ public static class OrbitItemGeometry
     private const byte HexagonRestAlpha = 0xD0;
 
     /// <summary>
+    /// The resting fill of a hex nest cell (<see cref="OrbitArrangement.HexNest"/>). A cell has no
+    /// acrylic under it for the same reason a hexagon bubble has none, so it is firmed up the same
+    /// way. A <paramref name="muted"/> cell — Settings and Close, set one ring further out — is left
+    /// fainter than the rest, so the cells you launch from read first.
+    /// </summary>
+    public static Windows.UI.Color CellTint(Windows.UI.Color glassTint, bool muted)
+    {
+        byte alpha = Math.Max(glassTint.A, HexagonRestAlpha);
+        glassTint.A = muted ? (byte)(alpha * MutedCellOpacity) : alpha;
+        return glassTint;
+    }
+
+    /// <summary>How much of a cell's resting opacity a muted one keeps.</summary>
+    private const double MutedCellOpacity = 0.72;
+
+    /// <summary>
+    /// How far each corner of a hex nest cell is rounded, as a fraction of its size. Much less than
+    /// <see cref="HexagonCorner"/>: cells sit edge to edge, and well-rounded corners would open a
+    /// triangle of desktop at every point where three of them meet.
+    /// </summary>
+    public const double CellCorner = 0.05;
+
+    /// <summary>
     /// The colour of the ring drawn over the acrylic disc's hard edge: the glass tint's own colour
     /// at (nearly) full strength. It has to be close to opaque to do its job — whatever of the
     /// acrylic's stair-step shows through it is the contrast between glass and desktop times what
@@ -145,7 +168,11 @@ public static class OrbitItemGeometry
     /// size. Measured on the live dock at 100% scaling: up to one pixel.</summary>
     public const double AcrylicEdgeOvershootPx = 1;
 
-    public static Geometry RoundedHexagon(double size)
+    /// <summary>
+    /// A pointy-top hexagon inscribed in a <paramref name="size"/>-square box, each corner rounded
+    /// by <paramref name="cornerFraction"/> of the size.
+    /// </summary>
+    public static Geometry RoundedHexagon(double size, double cornerFraction = HexagonCorner)
     {
         double r = size / 2;
         var verts = new Point[6];
@@ -156,7 +183,7 @@ public static class OrbitItemGeometry
         }
 
         double edge = Distance(verts[0], verts[1]);
-        double cr = Math.Min(size * HexagonCorner, edge * 0.42);
+        double cr = Math.Min(size * cornerFraction, edge * 0.42);
 
         var figure = new PathFigure { IsClosed = true, IsFilled = true };
         for (int i = 0; i < 6; i++)

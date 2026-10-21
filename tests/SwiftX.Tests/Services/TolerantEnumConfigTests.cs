@@ -138,6 +138,20 @@ public class TolerantEnumConfigTests : IDisposable
         Assert.Equal(OrbitItemShape.Circle, config.ItemShape);
     }
 
+    [Fact]
+    public void An_unknown_arrangement_falls_back_to_ring_and_keeps_the_orbit()
+    {
+        var config = ReadAndKeepTheOrbit("\"Arrangement\": \"Spiral\",");
+        Assert.Equal(OrbitArrangement.Ring, config.Arrangement);
+    }
+
+    [Fact]
+    public void A_hex_nest_arrangement_is_read_back_by_name()
+    {
+        var config = ReadAndKeepTheOrbit("\"Arrangement\": \"HexNest\",");
+        Assert.Equal(OrbitArrangement.HexNest, config.Arrangement);
+    }
+
     /// <summary>
     /// The one nested inside the item list rather than beside it, so it also pins that the
     /// tolerance reaches through the object graph and not merely across the top-level properties.

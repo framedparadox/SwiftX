@@ -253,6 +253,14 @@ public sealed class AppConfig
     /// </summary>
     public OrbitItemShape ItemShape { get; set; } = OrbitItemShape.Circle;
 
+    /// <summary>
+    /// How those items are laid out around the hub — see <see cref="OrbitArrangement"/>. Ring by
+    /// default, for the same reason <see cref="ItemShape"/> is Circle: a config written before this
+    /// setting existed comes back looking exactly as it was left. Both the orbit and a hot corner's
+    /// quadrant follow it.
+    /// </summary>
+    public OrbitArrangement Arrangement { get; set; } = OrbitArrangement.Ring;
+
     public double? OrbitRadius { get; set; }
     public bool ShowDataTool { get; set; } = true;
     public bool ShowQuickFormatTool { get; set; } = true;
@@ -406,6 +414,7 @@ public sealed class AppConfig
         HotCornerOrbit = new List<OrbitItem>(other.HotCornerOrbit);
         ItemSize = other.ItemSize;
         ItemShape = other.ItemShape;
+        Arrangement = other.Arrangement;
         OrbitRadius = other.OrbitRadius;
         ShowDataTool = other.ShowDataTool;
         ShowQuickFormatTool = other.ShowQuickFormatTool;

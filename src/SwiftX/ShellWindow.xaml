@@ -725,7 +725,9 @@
                                       HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Disabled"
                                       VerticalScrollMode="Disabled">
-                            <StackPanel Spacing="14">
+                            <!-- 12 rather than 14: the Layout row took its height out of the gaps
+                                 between sections, since nothing here scrolls. -->
+                            <StackPanel Spacing="12">
                                 <TextBlock Text="ORBIT SETTINGS" Style="{StaticResource SidebarEyebrow}" />
 
                                 <StackPanel Spacing="6">
@@ -843,6 +845,49 @@
                                                      Checked="ItemShape_Checked" />
                                     </Grid>
                                 </StackPanel>
+
+                                <Border Height="1" Background="{ThemeResource OrbitSidebarBorderBrush}" />
+
+                                <!-- One row, title and options side by side, rather than a title
+                                     over a row of options like the sections around it: this panel
+                                     does not scroll (see the Hover style note below), and a second
+                                     row here is height Hover style would lose at the bottom. -->
+                                <Grid ColumnSpacing="6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Layout" Style="{StaticResource SidebarHeading}"
+                                               VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Style="{StaticResource SidebarInfoButton}"
+                                            AutomationProperties.Name="About layout">
+                                        <FontIcon Glyph="&#xE946;" FontSize="11"
+                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                                  Foreground="{ThemeResource SettingsMutedBrush}" />
+                                        <Button.Flyout>
+                                            <Flyout Placement="Bottom">
+                                                <TextBlock Text="Ring spaces the items evenly around the centre. Hex nest packs them into cells that share their edges, each with its name; click a group to open it in place, and Back to close it. A hot corner's quadrant follows the same choice. Item shape and Orbit radius apply to Ring only."
+                                                           Style="{StaticResource SidebarCaption}"
+                                                           MaxWidth="220" />
+                                            </Flyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                    <RadioButton Grid.Column="3"
+                                                 x:Name="ArrangementRingOption" Content="Ring" Tag="Ring"
+                                                 GroupName="Arrangement" Style="{StaticResource SidebarRadio}"
+                                                 AutomationProperties.Name="Layout: Ring"
+                                                 Checked="Arrangement_Checked" />
+                                    <RadioButton Grid.Column="4"
+                                                 x:Name="ArrangementHexNestOption" Content="Hex nest" Tag="HexNest"
+                                                 GroupName="Arrangement" Style="{StaticResource SidebarRadio}"
+                                                 Margin="6,0,0,0"
+                                                 AutomationProperties.Name="Layout: Hex nest"
+                                                 ToolTipService.ToolTip="Cells that share their edges, each with its name"
+                                                 Checked="Arrangement_Checked" />
+                                </Grid>
 
                                 <Border Height="1" Background="{ThemeResource OrbitSidebarBorderBrush}" />
 

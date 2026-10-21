@@ -547,6 +547,17 @@ public sealed class OrbitManager
         _orbitWindow?.ReloadItems();
     }
 
+    /// <summary>
+    /// The arrangement counterpart of <see cref="SetItemShape"/>, less the <see cref="OrbitMetrics"/>
+    /// step: only the orbit window reads it, and that window has the config to read it from.
+    /// </summary>
+    public void SetArrangement(OrbitArrangement arrangement)
+    {
+        Config.Arrangement = arrangement;
+        Save();
+        _orbitWindow?.ReloadItems();
+    }
+
     public void SetRadius(double? radius, bool persist = true)
     {
         Config.OrbitRadius = radius;

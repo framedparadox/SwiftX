@@ -32,6 +32,7 @@ More screenshots are spread through the sections below, next to what they show.
   - [Hot corner](#hot-corner)
 - [Using the orbit](#using-the-orbit)
 - [The corner quadrant](#the-corner-quadrant)
+- [The hex nest](#the-hex-nest)
 - [Settings](#settings)
   - [Home](#home)
   - [General](#general)
@@ -207,6 +208,31 @@ back inside the quarter if it would otherwise throw half of them off the screen.
 
 ---
 
+## The hex nest
+
+**Layout → Hex nest** draws the orbit as hexagonal cells that share their edges, the "Hex nest"
+study in [docs/orbit-dock-alternatives.html](docs/orbit-dock-alternatives.html). The full orbit and
+the corner quadrant both follow the setting.
+
+- **Every name is visible.** Each cell carries its icon and its name, so the dock reads at a glance
+  rather than one hover at a time. The hover pill only appears for a name too long to fit in its cell.
+- **No gaps.** The cells tile the screen, so the pointer is always on exactly one of them: the
+  hub's own cell (the dead zone), a cell with an item, or an empty one.
+- **The full orbit** puts the six user slots on the ring of cells touching the hub, in slot order,
+  clockwise from the upper right. Settings and Close sit one ring further out, below, drawn fainter.
+- **The quadrant** puts its hub in the corner, set in just far enough that every cell lands wholly
+  on screen, and its items on the nearest cells, in the same edge-to-edge order the quarter circle
+  uses.
+- **A group opens in place.** Click it: its own cell becomes **Back**, and its children take the
+  cells its siblings held, spilling one ring further out only when there are more of them than
+  siblings. Settings and Close keep their cells. **Back**, **Esc** or the hub closes it. Groups open
+  on a click rather than on hover here, because swapping the cells under a passing pointer would
+  move the cell it was heading for. A group is marked by a short stroke on its outward edge.
+
+Item size scales the cells, and Item shape and Orbit radius apply to the ring only.
+
+---
+
 ## The SwiftX app
 
 The companion window behind the orbit's Settings item — where you customize what the orbit holds,
@@ -327,8 +353,8 @@ where the screen departs from Logi deliberately: Logi's sidebar is only ever its
 accordion, and its ring settings are a separate screen behind a nav button. SwiftX has one screen
 for the orbit, so the sidebar is what changes.
 
-By default it is the orbit's own settings — Item size, Item shape, Orbit radius, Hot corner and
-Hover style. Pressing **Edit** swaps it for **Apps /
+By default it is the orbit's own settings — Item size, Item shape, Layout, Orbit radius, Hot corner
+and Hover style. Pressing **Edit** swaps it for **Apps /
 Shortcuts / Links / Tools**, an accordion of things that can go on the orbit: the apps, folders and
 links this machine actually has (the same existence-checked catalog the first-run guide offers
 from) and the built-in tools. Click a row to put it in the first free slot; anything already on the
@@ -350,6 +376,12 @@ one question, what fills it is another. One place turns the setting into geometr
 (`OrbitMetrics.CornerRadiusFor`), expressed as a fraction of the bubble rather than a fixed corner,
 so the orbit, its flyout band, the corner quadrant and this preview cannot drift into drawing three
 different shapes from one setting.
+
+**Layout** — **Ring** or **Hex nest**, on one row: how the items are laid out around the hub, on
+the full orbit and the corner quadrant alike (see [The hex nest](#the-hex-nest)). The preview canvas
+stays a ring either way, since it is where slots are arranged and the nest takes its cells in that
+same order. Item shape and Radius go dead under Hex nest, whose cells are always hexagons and sit
+edge to edge.
 
 **Radius** — 80–220 px from the hub to each item's center.
 
@@ -568,6 +600,7 @@ pre-rename build is a file you can still pick.
 | `HotCornerLayout` | `Orbit`/`Quadrant` | `Orbit` | Whether that corner opens the whole orbit or the quarter circle. |
 | `HotCornerOrbit` | array | empty | Your corner arrangement. Empty means "follow the orbit" — see below. |
 | `ItemShape` | `Circle`/`Squircle`/`Square` | `Circle` | The outline orbit items are drawn with. |
+| `Arrangement` | `Ring`/`HexNest` | `Ring` | How the items are laid out around the hub, on the orbit and the corner quadrant alike. An unknown name reads as `Ring`. |
 | `ItemSize` | `Small`/`Medium`/`Large` | `Medium` | How large orbit items are drawn. |
 | `OrbitRadius` | number or null | `null` (100) | Distance from hub to item centers, 80–220. |
 | `ShowDataTool` | bool | `true` | Data Formatter in the orbit's Tools item. |
@@ -649,6 +682,7 @@ src/SwiftX/
     ToolCatalog.cs         The built-in tools, and the Tools-group migration
     HotCorner.cs           Corner enum, layout enum, and the trigger-patch test
     QuadrantLayout.cs      The quarter circle: radius, angles, corner mapping, item pick
+    HexNestLayout.cs       The hex nest: cells, hit test, corner placement, where a group opens
     HotCornerItems.cs      What the corner shows: default pick vs stored arrangement
     HotkeyGesture.cs       Parse/format a system-wide shortcut
 
@@ -708,6 +742,10 @@ The suite covers the parts that can be reasoned about without a window on screen
   and which items the corner picks by default: QuickAccess gathering links and shortcuts from
   anywhere on the orbit (skipping hidden ones, dropping out when there's nothing to gather), and
   Notepad preferring the orbit's own over the synthesized fallback.
+- `Models/HexNestLayoutTests` — cells that share edges and keep their gap, a hit test with no gaps
+  in it, the orbit's slot order and where Settings and Close go, every quadrant cell wholly on screen
+  from all four corners, and where a group's children land — its siblings' places first, then the
+  nearest free cells, never Settings, Close or the hub.
 - `Models/HotCornerItemsTests` — following the orbit until edited, seeding on first edit, an
   arrangement surviving orbit changes, QuickAccess and Tools staying live once locked into an
   arrangement, the fallback copy for an item that left the orbit, reset, and the four-place cap.

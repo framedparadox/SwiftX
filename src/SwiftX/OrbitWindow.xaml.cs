@@ -101,6 +101,19 @@ public sealed partial class OrbitWindow : Window
     private readonly OrbitItem _settingsItem = SystemOrbitItems.CreateSettings();
     private readonly OrbitItem _closeItem = SystemOrbitItems.CreateClose();
 
+    /// <summary>
+    /// The cell an open group leaves in its own place on the hex nest, which closes it again (see
+    /// <see cref="OpenNest"/>). Never stored and never launched, so it is told apart by reference
+    /// rather than by a target.
+    /// </summary>
+    private readonly OrbitItem _backItem = new()
+    {
+        Kind = OrbitItemKind.Application,
+        DisplayName = "Back",
+        CustomGlyph = "\uE72B",
+        IsSystem = true,
+    };
+
     private BubbleView? _flyoutParent;
     private Border? _hub;
     private double _hubSize;
@@ -145,6 +158,23 @@ public sealed partial class OrbitWindow : Window
     private double _flyoutBandStart = OrbitMetrics.FlyoutBandStart;
     private double _flyoutStepDegrees = OrbitMetrics.FlyoutStepDegrees;
     private double _contentRadius = OrbitMetrics.ContentRadius;
+
+    /// <summary>
+    /// Whether this summon is drawn as a hex nest (<see cref="OrbitArrangement.HexNest"/>) rather
+    /// than a ring. Resolved alongside the band radii in <see cref="UpdateGeometry"/>, so a single
+    /// summon never mixes the two.
+    /// </summary>
+    private bool _hexNest;
+
+    /// <summary>One hex nest cell's share of the grid — see <see cref="HexNestLayout.CellRadius"/>.</summary>
+    private double _cellRadius = HexNestLayout.CellRadius(OrbitMetrics.ItemSize);
+
+    // The places a group's siblings hold on the hex nest now on screen, in layout order, and the
+    // free cells past them: what a group opening hands its children (see OpenNest). Set with the
+    // cells themselves, by AddHexCells.
+    private IReadOnlyList<HexCell> _hexPlaces = Array.Empty<HexCell>();
+    private IReadOnlyList<HexCell> _hexSpare = Array.Empty<HexCell>();
+
     private bool _isOpen;
     private bool _isAnimating;
 
@@ -249,10 +279,15 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     private void RecenterForMetrics()
     {
-        // A quarter circle is anchored on its corner and never recentered — clamping it inward
-        // would pull the fan off the very point the pointer is sitting on.
-        if (_quadrant is not null)
+        // A quarter circle is anchored on its corner and never clamped — clamping it inward would
+        // pull the fan off the very point the pointer is sitting on. Its center is still worked out
+        // again: a hex nest's hub sits in from the corner by an amount that follows the cell size,
+        // and the arrangement itself may be what just changed.
+        if (_quadrant is { } corner)
+        {
+            (_cx, _cy) = CornerCenter(corner);
             return;
+        }
         double r = _contentRadius;
         _cx = ClampCenter(_cx, OrbitCanvas.Width, r);
         _cy = ClampCenter(_cy, OrbitCanvas.Height, r);
@@ -274,6 +309,13 @@ public sealed partial class OrbitWindow : Window
         _flyoutBandStart = OrbitMetrics.FlyoutBandStartFor(_itemRadius);
         _flyoutStepDegrees = OrbitMetrics.FlyoutStepDegreesFor(_flyoutRadius);
         _contentRadius = OrbitMetrics.ContentRadiusFor(_itemRadius);
+
+        // A hex nest has no bands: its cells sit edge to edge at whatever size the items are, and
+        // the disc that takes input only has to reach as far as its furthest cell can be.
+        _hexNest = _manager.Config.Arrangement == OrbitArrangement.HexNest;
+        _cellRadius = HexNestLayout.CellRadius(OrbitMetrics.ItemSize);
+        if (_hexNest)
+            _contentRadius = HexNestLayout.ContentRadius(PlanHexNest().Reach, _cellRadius);
     }
 
     /// <summary>
@@ -445,7 +487,24 @@ public sealed partial class OrbitWindow : Window
         OrbitCanvas.Width = area.Width / scale;
         OrbitCanvas.Height = area.Height / scale;
 
-        (_cx, _cy) = QuadrantLayout.Center(corner, OrbitCanvas.Width, OrbitCanvas.Height);
+        (_cx, _cy) = CornerCenter(corner);
+    }
+
+    /// <summary>
+    /// Where a quadrant's center goes: the screen corner itself for the quarter circle, whose items
+    /// fan around that point, or — for a hex nest — the middle of the hub's own cell, set in from
+    /// both edges far enough that every cell lands wholly on screen
+    /// (<see cref="HexNestLayout.QuadrantHubInset"/>).
+    /// </summary>
+    private (double X, double Y) CornerCenter(HotCorner corner)
+    {
+        var (x, y) = QuadrantLayout.Center(corner, OrbitCanvas.Width, OrbitCanvas.Height);
+        if (!_hexNest)
+            return (x, y);
+
+        var (sx, sy) = HexNestLayout.Mirror(corner);
+        var (ix, iy) = HexNestLayout.QuadrantHubInset(_cellRadius);
+        return (x + sx * ix, y + sy * iy);
     }
 
     public void Dismiss()
@@ -660,6 +719,68 @@ public sealed partial class OrbitWindow : Window
         return layout;
     }
 
+    /// <summary>
+    /// <see cref="CurrentLayout"/>'s hex nest counterpart: the cell each item takes rather than an
+    /// angle. The full orbit's six user slots go on the ring touching the hub and Settings and Close
+    /// one ring further out; a quadrant's places go on the nearest cells wholly inside its corner,
+    /// in the same order its arc reads in.
+    /// </summary>
+    private HexPlan PlanHexNest()
+    {
+        var cells = new List<(OrbitItem Item, int Index, HexCell Cell)>();
+        var places = new List<HexCell>();
+
+        if (_quadrant is null)
+        {
+            foreach (var (item, slot) in CurrentItems())
+            {
+                var cell = slot switch
+                {
+                    < OrbitMetrics.UserSlotCount => HexNestLayout.FirstRing[slot],
+                    OrbitMetrics.SlotCount - 2 => HexNestLayout.SettingsCell,
+                    _ => HexNestLayout.CloseCell,
+                };
+                cells.Add((item, slot, cell));
+                if (!IsPinned(item))
+                    places.Add(cell);
+            }
+            return new HexPlan(cells, places, HexNestLayout.OrbitSpareCells);
+        }
+
+        var items = HotCornerItems.Resolve(_manager.Config, _settingsItem);
+        var quadrant = HexNestLayout.QuadrantCells(items.Count);
+        for (int i = 0; i < items.Count; i++)
+        {
+            // A place the user emptied stays a gap in the nest, the way it stays one on the arc —
+            // but it is still a place, so a group opening can hand it to one of its children.
+            if (!IsPinned(items[i]))
+                places.Add(quadrant[i]);
+            if (!items[i].IsEmpty)
+                cells.Add((items[i], i, quadrant[i]));
+        }
+        return new HexPlan(cells, places, HexNestLayout.QuadrantSpareCells(items.Count));
+    }
+
+    /// <summary>
+    /// One hex nest, worked out by <see cref="PlanHexNest"/>: each item's cell, the places its
+    /// groups can hand their children (Settings and Close keep theirs), and the free cells past them.
+    /// </summary>
+    private sealed record HexPlan(
+        IReadOnlyList<(OrbitItem Item, int Index, HexCell Cell)> Cells,
+        IReadOnlyList<HexCell> Places,
+        IReadOnlyList<HexCell> Spare)
+    {
+        /// <summary>How far out, in cell radii, the furthest cell this nest can show sits —
+        /// whichever of its groups opens included.</summary>
+        public double Reach => HexNestLayout.Reach(
+            Cells.Select(c => c.Cell),
+            Places,
+            Spare,
+            Cells
+                .Where(c => c.Item.IsGroup)
+                .Select(c => (c.Cell, Math.Min(OrbitMetrics.FlyoutSlotCount, c.Item.Children.Count(ch => !ch.Hidden)))));
+    }
+
     private void RenderCurrent(bool animate = false)
     {
         _renderGeneration++;
@@ -676,19 +797,26 @@ public sealed partial class OrbitWindow : Window
         // actually shows.
         AttachHub();
 
-        foreach (var (item, slot, angle) in CurrentLayout())
+        if (_hexNest)
         {
-            var bubble = CreateBubble(
-                item, slot, angle,
-                radius: _itemRadius,
-                diameter: OrbitMetrics.Bubble,
-                iconSize: OrbitMetrics.Icon,
-                glyphSize: OrbitMetrics.Glyph,
-                origin: Vector2.Zero,
-                isFlyout: false);
-            _bubbles.Add(bubble);
-            OrbitCanvas.Children.Add(bubble.Host);
-            _ = ResolveIconAsync(item, IconDecodePixels);
+            AddHexCells();
+        }
+        else
+        {
+            foreach (var (item, slot, angle) in CurrentLayout())
+            {
+                var bubble = CreateBubble(
+                    item, slot, angle,
+                    radius: _itemRadius,
+                    diameter: OrbitMetrics.Bubble,
+                    iconSize: OrbitMetrics.Icon,
+                    glyphSize: OrbitMetrics.Glyph,
+                    origin: Vector2.Zero,
+                    isFlyout: false);
+                _bubbles.Add(bubble);
+                OrbitCanvas.Children.Add(bubble.Host);
+                _ = ResolveIconAsync(item, IconDecodePixels);
+            }
         }
         ResolveGroupIcons();
 
@@ -865,9 +993,14 @@ public sealed partial class OrbitWindow : Window
     /// Full-orbit hub size — a fixed small mark that no item-size setting scales — or, on a
     /// quarter circle, the size of the corner's own mark. Scales with
     /// <see cref="OrbitMetrics.Bubble"/> so it grows and shrinks along with the corner dock's own
-    /// items rather than sitting at one fixed size regardless of theirs.
+    /// items rather than sitting at one fixed size regardless of theirs. On a hex nest the box is
+    /// held inside the hub's own cell (<see cref="HexNestLayout.HubBox"/>), so its corners never sit
+    /// over a neighbouring cell's ground.
     /// </summary>
-    private double HubSize => _quadrant is null ? OrbitMetrics.Hub : OrbitMetrics.Bubble;
+    private double HubSize =>
+        _hexNest ? HexNestLayout.HubBox(_cellRadius)
+        : _quadrant is null ? OrbitMetrics.Hub
+        : OrbitMetrics.Bubble;
 
     /// <summary>
     /// The hub is the app's own mark and nothing else: no plate, no border, no fill — the logo
@@ -1036,14 +1169,16 @@ public sealed partial class OrbitWindow : Window
     /// the edge of the screen. Instead the box is pushed diagonally into the screen, clearing each
     /// of the corner's two edges by <see cref="QuadrantLayout.EdgeMargin"/> — the same clearance
     /// the fanned-out items themselves keep off these same two edges — so the entire mark lands on
-    /// screen rather than being bisected by either one.
+    /// screen rather than being bisected by either one. A hex nest's quadrant has already moved its
+    /// center in off the corner, onto the hub's own cell (<see cref="CornerCenter"/>), so its hub is
+    /// centered there the way the full orbit's is.
     /// </summary>
     private void PositionHub(double hub)
     {
         if (_hub is null)
             return;
 
-        if (_quadrant is not { } corner)
+        if (_quadrant is not { } corner || _hexNest)
         {
             Canvas.SetLeft(_hub, _cx - hub / 2);
             Canvas.SetTop(_hub, _cy - hub / 2);
@@ -1300,6 +1435,370 @@ public sealed partial class OrbitWindow : Window
         };
     }
 
+    // ---- Hex nest --------------------------------------------------------------------------------
+
+    /// <summary>
+    /// <see cref="CreateBubble"/>'s hex nest counterpart: a hexagonal cell that shares its edges with
+    /// its neighbours and carries the item's name under its icon, as the "Hex nest" study in
+    /// docs/orbit-dock-alternatives.html draws it. It returns the same <see cref="BubbleView"/>, so
+    /// entrance, hover, fill, selection and dismissal all run through the code the ring uses.
+    /// <para>
+    /// No acrylic and no rim: the outline is a Path, and live acrylic can only be clipped to a
+    /// rounded rectangle (see <see cref="OrbitItemGeometry.Apply(SystemBackdropElement, double)"/>),
+    /// so the fill is firmed up instead (<see cref="OrbitItemGeometry.CellTint"/>). The host box is
+    /// square, twice the cell's radius, so every motion that scales about the middle of
+    /// <see cref="BubbleView.Diameter"/> scales about the cell's own center. Only the outline takes
+    /// the pointer, so the box's empty corners never cover a neighbouring cell.
+    /// </para>
+    /// </summary>
+    private BubbleView CreateHexCell(OrbitItem item, int index, HexCell cell, Vector2 origin, bool isFlyout)
+    {
+        var (restX, restY) = HexOffset(cell);
+        double radius = HexNestLayout.DrawnRadius(_cellRadius);
+        double box = radius * 2;
+        bool muted = !isFlyout && IsPinned(item);
+
+        var icon = new Image
+        {
+            Width = OrbitMetrics.Icon,
+            Height = OrbitMetrics.Icon,
+            Stretch = Stretch.Uniform,
+            Source = item.IconImage,
+            Visibility = item.ImageVisibility,
+        };
+
+        // Shared by the glyph, the name and the group mark, which all invert with the fill.
+        var glyphBrush = new SolidColorBrush(RestGlyphColor(item));
+        var glyph = new FontIcon
+        {
+            Glyph = item.Glyph,
+            FontSize = OrbitMetrics.Glyph,
+            Foreground = glyphBrush,
+            Visibility = item.GlyphVisibility,
+        };
+        if (GlyphFonts.IsTextGlyph(item.Glyph))
+            glyph.FontFamily = new FontFamily("Segoe UI");
+
+        var label = new TextBlock
+        {
+            Text = item.DisplayName,
+            FontSize = HexNestLayout.LabelFontSize(OrbitMetrics.ItemSize),
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = glyphBrush,
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.WrapWholeWords,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxLines = 2,
+            MaxWidth = HexNestLayout.LabelWidth(radius),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Visibility = LabelVisibility(item),
+        };
+
+        PropertyChangedEventHandler onItemChanged = (_, e) =>
+        {
+            if (e.PropertyName is nameof(OrbitItem.IconImage) or nameof(OrbitItem.ImageVisibility) or nameof(OrbitItem.GlyphVisibility))
+            {
+                icon.Source = item.IconImage;
+                icon.Visibility = item.ImageVisibility;
+                glyph.Visibility = item.GlyphVisibility;
+            }
+            else if (e.PropertyName is nameof(OrbitItem.DisplayName))
+            {
+                label.Text = item.DisplayName;
+                label.Visibility = LabelVisibility(item);
+            }
+        };
+        item.PropertyChanged += onItemChanged;
+
+        var picture = new Grid { Width = OrbitMetrics.Icon, Height = OrbitMetrics.Icon };
+        picture.Children.Add(icon);
+        picture.Children.Add(glyph);
+
+        // Not hit-testable, so a press on the icon or the name falls through to the outline under
+        // it, which is what the host's Tapped hears.
+        var face = new StackPanel
+        {
+            Spacing = 3,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+        };
+        face.Children.Add(picture);
+        face.Children.Add(label);
+
+        // One long-lived brush whose Color is animated, for the reason CreateBubble gives.
+        var tintBrush = new SolidColorBrush(CellRestTint(muted));
+        var outline = new Path
+        {
+            Width = box,
+            Height = box,
+            Data = OrbitItemGeometry.RoundedHexagon(box, OrbitItemGeometry.CellCorner),
+            Fill = tintBrush,
+            Stretch = Stretch.None,
+        };
+
+        var content = new Grid { Width = box, Height = box };
+        content.Children.Add(outline);
+        if (item.IsGroup && !isFlyout && item.Children.Any(c => !c.Hidden))
+            content.Children.Add(BuildCellGroupMark(radius, Math.Atan2(restY, restX), glyphBrush));
+        content.Children.Add(face);
+
+        var border = new Border
+        {
+            Width = box,
+            Height = box,
+            Child = content,
+            Tag = item,
+        };
+        Canvas.SetLeft(border, _cx + restX - box / 2);
+        Canvas.SetTop(border, _cy + restY - box / 2);
+
+        try
+        {
+            ElementCompositionPreview.SetIsTranslationEnabled(border, true);
+        }
+        catch
+        {
+            // Composition may be unavailable in some hosts; the cell still rests where layout put it.
+        }
+
+        // The name on the cell restates the name the cell already carries, so it goes to the raw
+        // view with the rest of the decoration rather than being read out a second time.
+        NameForNarrator(border, item);
+        foreach (var child in face.Children)
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+                child, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+
+        var bubble = new BubbleView
+        {
+            Host = border,
+            Item = item,
+            Index = index,
+            AngleRad = Math.Atan2(restY, restX),
+            RestX = (float)restX,
+            RestY = (float)restY,
+            OriginX = origin.X,
+            OriginY = origin.Y,
+            Diameter = box,
+            IsFlyout = isFlyout,
+            StaggerIndex = index,
+            TintBrush = tintBrush,
+            GlyphBrush = glyphBrush,
+            Cell = cell,
+            Muted = muted,
+            Label = label,
+            Detach = () => item.PropertyChanged -= onItemChanged,
+        };
+
+        // Enter only, for the reason CreateBubble gives; leaving is owned by wherever the pointer
+        // goes next (OrbitCanvas_PointerMoved).
+        border.PointerEntered += (_, _) => SetHovered(bubble);
+        border.Tapped += async (_, e) =>
+        {
+            e.Handled = true;
+            await OnSelectAsync(bubble);
+        };
+
+        return bubble;
+    }
+
+    private static Visibility LabelVisibility(OrbitItem item) =>
+        string.IsNullOrWhiteSpace(item.DisplayName) ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>
+    /// The hex nest's version of <see cref="BuildGroupArc"/>: a short stroke along the middle of the
+    /// edge that faces away from the hub — the cell's outward side, as the arc is the bubble's —
+    /// so a group can be told from an item that launches before it is clicked.
+    /// </summary>
+    private static Path BuildCellGroupMark(double radius, double angleRad, Brush stroke)
+    {
+        double box = radius * 2;
+        double thickness = Math.Max(2, radius * 0.08);
+        double normal = HexNestLayout.EdgeNormalRad(angleRad);
+
+        // An edge's midpoint is the inradius out from the center; pulled in by the stroke so the
+        // mark rides on the edge rather than hanging over it. A hexagon's edge is as long as its
+        // radius, and the mark takes the middle half of it.
+        double reach = radius * Math.Sqrt(3) / 2 - thickness;
+        double half = radius / 4;
+        double mx = radius + reach * Math.Cos(normal);
+        double my = radius + reach * Math.Sin(normal);
+        double dx = -Math.Sin(normal) * half;
+        double dy = Math.Cos(normal) * half;
+
+        return new Path
+        {
+            Width = box,
+            Height = box,
+            Data = new LineGeometry
+            {
+                StartPoint = new Point(mx - dx, my - dy),
+                EndPoint = new Point(mx + dx, my + dy),
+            },
+            Stroke = stroke,
+            StrokeThickness = thickness,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            IsHitTestVisible = false,
+        };
+    }
+
+    /// <summary>
+    /// The signs that turn the hex nest's top-left frame into this summon's — see
+    /// <see cref="HexNestLayout.Mirror"/>. The full orbit needs none.
+    /// </summary>
+    private (int X, int Y) HexMirror => _quadrant is { } corner ? HexNestLayout.Mirror(corner) : (1, 1);
+
+    /// <summary>Where <paramref name="cell"/>'s center sits on the canvas, relative to the hub.</summary>
+    private (double X, double Y) HexOffset(HexCell cell)
+    {
+        var (x, y) = HexNestLayout.Offset(cell, _cellRadius);
+        var (sx, sy) = HexMirror;
+        return (sx * x, sy * y);
+    }
+
+    /// <summary>
+    /// The cell showing at a pointer offset from the hub, or null for the hub's own cell or one
+    /// with nothing in it. An open group's cells are looked at first: the cells they took over are
+    /// still on the canvas, faded out, until it closes.
+    /// </summary>
+    private BubbleView? HexBubbleAt(double dx, double dy)
+    {
+        var (sx, sy) = HexMirror;
+        var cell = HexNestLayout.CellAt(sx * dx, sy * dy, _cellRadius);
+        if (cell == HexCell.Hub)
+            return null;
+
+        return _flyout.FirstOrDefault(b => b.Cell == cell)
+            ?? _bubbles.FirstOrDefault(b => b.Cell == cell && !b.SwappedOut);
+    }
+
+    /// <summary>Whether a pointer offset from the hub lands on the hub's own cell.</summary>
+    private bool IsOnHexHub(double dx, double dy)
+    {
+        var (sx, sy) = HexMirror;
+        return HexNestLayout.CellAt(sx * dx, sy * dy, _cellRadius) == HexCell.Hub;
+    }
+
+    /// <summary>
+    /// <see cref="RenderCurrent"/>'s hex nest half: a cell for every item at the place
+    /// <see cref="PlanHexNest"/> gives it, and the places and spare cells a group will need to open.
+    /// </summary>
+    private void AddHexCells()
+    {
+        var plan = PlanHexNest();
+        _hexPlaces = plan.Places;
+        _hexSpare = plan.Spare;
+
+        foreach (var (item, index, cell) in plan.Cells)
+        {
+            var bubble = CreateHexCell(item, index, cell, origin: Vector2.Zero, isFlyout: false);
+            _bubbles.Add(bubble);
+            OrbitCanvas.Children.Add(bubble.Host);
+            _ = ResolveIconAsync(item, IconDecodePixels);
+        }
+    }
+
+    /// <summary>
+    /// A group opening on the hex nest. Rather than a second ring around the first, the nest trades
+    /// places: the group's own cell becomes <see cref="_backItem"/>, and the cells its siblings held
+    /// go to its children (<see cref="HexNestLayout.FlyoutCells"/>), spilling a ring further out only
+    /// when there are more children than siblings. Settings and Close keep their cells. The children
+    /// are born at the group's cell and travel out on the droplet motion the ring's flyout uses; the
+    /// cells they replace fade where they stand, and come back when the group closes
+    /// (<see cref="CollapseFlyoutAsync"/>).
+    /// </summary>
+    private void OpenNest(BubbleView parent, IReadOnlyList<OrbitItem> children)
+    {
+        if (parent.Cell is not { } groupCell)
+            return;
+
+        // Whatever the pointer is on is about to fade out from under it. The cell that takes its
+        // place picks the hover up on the next move. Cleared before the group is marked open, or
+        // OnHover would keep it lit the way the ring keeps an open group lit.
+        SetHovered(null);
+
+        _flyoutParent = parent;
+        var cells = HexNestLayout.FlyoutCells(groupCell, _hexPlaces, _hexSpare, children.Count);
+        var origin = new Vector2(parent.RestX, parent.RestY);
+
+        foreach (var bubble in _bubbles)
+        {
+            if (!IsPinned(bubble.Item))
+                SwapOut(bubble);
+        }
+
+        var back = CreateHexCell(_backItem, 0, groupCell, origin, isFlyout: true);
+        _flyout.Add(back);
+        OrbitCanvas.Children.Add(back.Host);
+
+        for (int i = 0; i < children.Count && i < cells.Count; i++)
+        {
+            var bubble = CreateHexCell(children[i], i + 1, cells[i], origin, isFlyout: true);
+            _flyout.Add(bubble);
+            OrbitCanvas.Children.Add(bubble.Host);
+            _ = ResolveIconAsync(children[i], IconDecodePixels);
+        }
+
+        foreach (var bubble in _flyout)
+            AnimateDropletOut(bubble, bubble.StaggerIndex);
+    }
+
+    /// <summary>
+    /// Fades a hex nest cell out where it stands while an open group holds its place, and takes it
+    /// out of hit testing and out of Narrator's view until <see cref="SwapIn"/> brings it back.
+    /// </summary>
+    private void SwapOut(BubbleView bubble)
+    {
+        bubble.SwappedOut = true;
+        bubble.Host.IsHitTestVisible = false;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+            bubble.Host, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        StopHoverMotion(bubble);
+        AnimateDropletBack(bubble, 0);
+    }
+
+    /// <summary>
+    /// <see cref="SwapOut"/> undone: the cell grows back into its place, at rest, as the open
+    /// group's cells fade out of it.
+    /// </summary>
+    private void SwapIn(BubbleView bubble)
+    {
+        bubble.SwappedOut = false;
+        bubble.Host.IsHitTestVisible = true;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+            bubble.Host, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Content);
+        ApplyBubbleFill(bubble, active: false);
+
+        try
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(bubble.Host);
+            visual.CenterPoint = new Vector3(
+                (float)(bubble.Diameter / 2), (float)(bubble.Diameter / 2), 0);
+            var compositor = visual.Compositor;
+
+            var scale = compositor.CreateVector3KeyFrameAnimation();
+            scale.InsertKeyFrame(1, new Vector3(bubble.RestScale, bubble.RestScale, 1), HoverEase(compositor));
+            scale.Duration = TimeSpan.FromMilliseconds(CollapseMs);
+            visual.StartAnimation("Scale", scale);
+
+            var opacity = compositor.CreateScalarKeyFrameAnimation();
+            opacity.InsertKeyFrame(1, 1, HoverEase(compositor));
+            opacity.Duration = TimeSpan.FromMilliseconds(CollapseMs);
+            visual.StartAnimation("Opacity", opacity);
+        }
+        catch
+        {
+            ResetBubbleVisual(bubble, rested: true);
+        }
+    }
+
+    /// <summary>
+    /// Settings and Close: the two items every layout keeps in their own places, an open group on
+    /// the hex nest included.
+    /// </summary>
+    private static bool IsPinned(OrbitItem item) => IsSettingsItem(item) || IsCloseItem(item);
+
     /// <summary>
     /// Shared with Settings/chrome via ThemeHelper — never Application.Current.Resources alone,
     /// or Light mode under a Dark OS paints dark surfaces with dark glyphs.
@@ -1392,6 +1891,14 @@ public sealed partial class OrbitWindow : Window
             return;
         }
 
+        // A hex nest cell already has its name written on it. The pill is only for a name too long
+        // to fit there, which is the one case where the cell cannot say it whole.
+        if (bubble.Label is { IsTextTrimmed: false })
+        {
+            HidePill();
+            return;
+        }
+
         _pillText.Text = bubble.Item.DisplayName;
         // Measure explicitly: the position depends on the pill's own size, and the layout pass
         // that would fill DesiredSize in hasn't run yet for the text we just assigned.
@@ -1417,7 +1924,7 @@ public sealed partial class OrbitWindow : Window
         // An item whose label reaches into an open flyout's arc has to clear those children as
         // well as its own circle — including the group itself, whose children fan out around its
         // own angle.
-        if (!bubble.IsFlyout && _flyout.Count > 0 && PointsIntoFlyoutArc(bubble.AngleRad))
+        if (!bubble.IsFlyout && _flyout.Count > 0 && !_hexNest && PointsIntoFlyoutArc(bubble.AngleRad))
         {
             clearance = Math.Max(
                 clearance,
@@ -1765,6 +2272,12 @@ public sealed partial class OrbitWindow : Window
         if (children.Count == 0)
             return;
 
+        if (_hexNest)
+        {
+            OpenNest(parent, children);
+            return;
+        }
+
         _flyoutParent = parent;
         parent.RestScale = ExpandedParentScale;
         ApplyBubbleFill(parent, active: true);
@@ -1907,7 +2420,14 @@ public sealed partial class OrbitWindow : Window
         _flyoutParent = null;
         _flyout.Clear();
 
-        if (parent is not null)
+        if (parent is not null && _hexNest)
+        {
+            // The nest traded places to open (see OpenNest): hand the cells back to their own
+            // items while the group's fade out of them.
+            foreach (var bubble in _bubbles.Where(b => b.SwappedOut))
+                SwapIn(bubble);
+        }
+        else if (parent is not null)
         {
             parent.RestScale = 1f;
             bool hovered = ReferenceEquals(_hovered, parent);
@@ -1992,7 +2512,10 @@ public sealed partial class OrbitWindow : Window
             int hoverGen = ++_hoverGeneration;
             int renderGen = _renderGeneration;
 
-            if (bubble is null || bubble.IsFlyout)
+            // The hex nest opens a group by trading places with the cells around it, which under a
+            // passing pointer would move the very cell it was heading for. A click opens it there
+            // instead (see OnSelectAsync), and Back, Esc or the hub close it.
+            if (_hexNest || bubble is null || bubble.IsFlyout)
                 return;
 
             bool wantsOpen = bubble.Item.IsGroup && !ReferenceEquals(_flyoutParent, bubble);
@@ -2020,6 +2543,11 @@ public sealed partial class OrbitWindow : Window
     private void OnHover(BubbleView bubble, bool entered)
     {
         AnimateScale(bubble, entered ? HoverScaleFor(bubble) : bubble.RestScale, HoverMs);
+
+        // Cells share their edges, so one the pointer grows has to come up over its neighbours
+        // rather than slide under whichever of them happened to be added after it.
+        if (bubble.Cell is not null)
+            Canvas.SetZIndex(bubble.Host, entered ? 1 : 0);
 
         // An expanded group stays lit while its flyout is open, so exiting it must not reset the
         // fill the way exiting an ordinary bubble does.
@@ -2123,7 +2651,7 @@ public sealed partial class OrbitWindow : Window
         Color background = destructive ? ThemeColor("OrbitCloseHoverBackground")
             : invert ? ThemeColor("SwiftXForegroundBrush")
             : tint ? tintColor
-            : RestTint();
+            : RestTintFor(bubble);
 
         Color foreground = destructive ? ThemeColor("OrbitCloseHoverForeground")
             : invert ? ThemeColor("OrbitBubbleBackground")
@@ -2132,7 +2660,8 @@ public sealed partial class OrbitWindow : Window
 
         bubble.TintFade = AnimateBrushTo(bubble.TintFade, bubble.TintBrush, background, HoverMs);
         bubble.GlyphFade = AnimateBrushTo(bubble.GlyphFade, bubble.GlyphBrush, foreground, HoverMs);
-        AnimateOpacity(bubble.Backdrop, opaque ? 0f : 1f, HoverMs);
+        if (bubble.Backdrop is { } backdrop)
+            AnimateOpacity(backdrop, opaque ? 0f : 1f, HoverMs);
 
         // The rim exists only to hide the acrylic's edge, so it goes when the acrylic does: an
         // opaque fill is its own clean antialiased silhouette.
@@ -2145,6 +2674,17 @@ public sealed partial class OrbitWindow : Window
     /// firmer under a hexagon, which has no acrylic behind it to be translucent over.
     /// </summary>
     private Color RestTint() => OrbitItemGeometry.RestTint(ThemeColor("OrbitBubbleGlassTint"));
+
+    /// <summary>
+    /// What a hex nest cell is filled with when nothing is happening to it — see
+    /// <see cref="OrbitItemGeometry.CellTint"/>, which is also why it is fainter for Settings and Close.
+    /// </summary>
+    private Color CellRestTint(bool muted) =>
+        OrbitItemGeometry.CellTint(ThemeColor("OrbitBubbleGlassTint"), muted);
+
+    /// <summary>The resting fill for this particular bubble: a hex nest cell's, or the ring's.</summary>
+    private Color RestTintFor(BubbleView bubble) =>
+        bubble.Cell is null ? RestTint() : CellRestTint(bubble.Muted);
 
     /// <summary>
     /// The colour a bubble's glyph (and a group's arc, which shares its brush) is drawn in when the
@@ -2331,6 +2871,13 @@ public sealed partial class OrbitWindow : Window
             return;
         }
 
+        // The cell an open group leaves in its own place on the hex nest (see OpenNest).
+        if (ReferenceEquals(item, _backItem))
+        {
+            await CollapseFlyoutAsync();
+            return;
+        }
+
         if (item.IsGroup)
         {
             // Nested groups inside a flyout would need a third orbit to land in; there isn't one,
@@ -2400,7 +2947,9 @@ public sealed partial class OrbitWindow : Window
             double dy = pos.Y - _cy;
             double dist = Math.Sqrt(dx * dx + dy * dy);
 
-            if (dist < OrbitMetrics.DeadZone)
+            // On a hex nest the dead zone is the hub's own cell, which is what the cells around it
+            // are measured against, rather than a circle that could reach into a small one's ground.
+            if (_hexNest ? IsOnHexHub(dx, dy) : dist < OrbitMetrics.DeadZone)
             {
                 // Nothing lives in the dead zone to select, so a press here always means "close this",
                 // whether or not a flyout happens to be open — see the matching gap case below.
@@ -2441,6 +2990,15 @@ public sealed partial class OrbitWindow : Window
         double dx = pos.X - _cx;
         double dy = pos.Y - _cy;
         double dist = Math.Sqrt(dx * dx + dy * dy);
+
+        // A hex nest has no angles to read and no gaps to interpret: the cells tile the plane, so
+        // the pointer is on exactly one of them — the hub's own, or one holding an item, or an
+        // empty one, which hovers nothing.
+        if (_hexNest)
+        {
+            SetHovered(HexBubbleAt(dx, dy));
+            return;
+        }
 
         if (dist < OrbitMetrics.DeadZone || (_bubbles.Count == 0 && _flyout.Count == 0))
         {
@@ -2601,9 +3159,10 @@ public sealed partial class OrbitWindow : Window
         /// <summary>
         /// The live-acrylic disc under the tint. ApplyBubbleFill fades it out whenever the fill
         /// above it goes fully opaque: there is nothing left to see through it then, and an
-        /// acrylic disc under an opaque one is only a chance for the two edges to disagree.
+        /// acrylic disc under an opaque one is only a chance for the two edges to disagree. Null
+        /// for a hex nest cell, which has none (see CreateHexCell).
         /// </summary>
-        public required UIElement Backdrop { get; init; }
+        public UIElement? Backdrop { get; init; }
 
         /// <summary>The ring over the acrylic's edge (see CreateBubble), or null for a shape with
         /// no acrylic. Fades with <see cref="Backdrop"/>.</summary>
@@ -2634,6 +3193,18 @@ public sealed partial class OrbitWindow : Window
         public MotionSpec? ActiveMotion { get; set; }
 
         public Action? Detach { get; set; }
+
+        /// <summary>The hex nest cell this bubble is drawn as (see CreateHexCell), or null on the ring.</summary>
+        public HexCell? Cell { get; init; }
+
+        /// <summary>A hex nest cell drawn fainter than the rest: Settings and Close.</summary>
+        public bool Muted { get; init; }
+
+        /// <summary>The name a hex nest cell carries inside it, or null for a ring bubble, which has none.</summary>
+        public TextBlock? Label { get; init; }
+
+        /// <summary>Whether an open group on the hex nest has this cell's place right now (see OpenNest).</summary>
+        public bool SwappedOut { get; set; }
 
         /// <summary>The <c>Translation</c> that puts the bubble back at its origin (the hub, or a
         /// flyout child's parent): the entrance's first frame. A displacement from the bubble's

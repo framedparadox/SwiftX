@@ -334,6 +334,7 @@ public sealed partial class ShellWindow : Window
             SelectHoverStyle(_manager.Config.HoverStyle);
             SelectItemSize(_manager.Config.ItemSize);
             SelectItemShape(_manager.Config.ItemShape);
+            SelectArrangement(_manager.Config.Arrangement);
             RadiusSlider.Value = _manager.Config.OrbitRadius ?? OrbitMetrics.DefaultRadius;
             HotkeyEnabledToggle.IsOn = _manager.Config.HotkeyEnabled;
             HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
@@ -6553,6 +6554,41 @@ public sealed partial class ShellWindow : Window
         ItemShapeHexagonOption.IsChecked = shape == OrbitItemShape.Hexagon;
     }
 
+    /// <summary>
+    /// Checks the Layout option for <paramref name="arrangement"/>, and with it the controls only
+    /// the ring reads (<see cref="SyncRingOnlyControls"/>).
+    /// </summary>
+    private void SelectArrangement(OrbitArrangement arrangement)
+    {
+        ArrangementRingOption.IsChecked = arrangement == OrbitArrangement.Ring;
+        ArrangementHexNestOption.IsChecked = arrangement == OrbitArrangement.HexNest;
+        SyncRingOnlyControls(arrangement);
+    }
+
+    /// <summary>
+    /// Item shape and Orbit radius go dead under a hex nest rather than disappearing: its cells are
+    /// always hexagons, and they sit edge to edge, so there is neither an outline nor a radius to
+    /// choose. The slider has a disabled look of its own; the rest are dimmed as well, at the half
+    /// opacity a hidden group child's row uses, since the sidebar's radio and icon-button styles
+    /// have none.
+    /// </summary>
+    private void SyncRingOnlyControls(OrbitArrangement arrangement)
+    {
+        bool ring = arrangement == OrbitArrangement.Ring;
+        double opacity = ring ? 1 : 0.5;
+        foreach (var control in new Control[]
+        {
+            ItemShapeCircleOption, ItemShapeSquircleOption, ItemShapeSquareOption, ItemShapeHexagonOption,
+            RadiusResetButton,
+        })
+        {
+            control.IsEnabled = ring;
+            control.Opacity = opacity;
+        }
+        RadiusSlider.IsEnabled = ring;
+        RadiusReadout.Opacity = opacity;
+    }
+
     private void ThemeCard_Click(object sender, RoutedEventArgs e)
     {
         if (_loading || sender is not FrameworkElement card) return;
@@ -6983,6 +7019,7 @@ public sealed partial class ShellWindow : Window
             ApplyTheme();
             _loading = true;
             PopulateLanguageBox();
+            SelectArrangement(_manager.Config.Arrangement);
             HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
             SelectHotCorner(_manager.Config.HotCorner);
             SelectHotCornerLayout(_manager.Config.HotCornerLayout);
@@ -7029,6 +7066,7 @@ public sealed partial class ShellWindow : Window
         // orbit actually draws with.
         _manager.SetItemSize(OrbitItemSize.Medium);
         _manager.SetItemShape(OrbitItemShape.Circle);
+        _manager.SetArrangement(OrbitArrangement.Ring);
         _manager.SetRadius(null);
         _manager.NotifyItemsChanged();
         _manager.ApplyTheme();
@@ -7041,6 +7079,7 @@ public sealed partial class ShellWindow : Window
         SelectHoverStyle(OrbitHoverStyle.Invert);
         SelectItemSize(OrbitItemSize.Medium);
         SelectItemShape(OrbitItemShape.Circle);
+        SelectArrangement(OrbitArrangement.Ring);
         RadiusSlider.Value = OrbitMetrics.DefaultRadius;
         HotkeyEnabledToggle.IsOn = true;
         HotkeyCapture.Gesture = HotkeyGesture.Default;
@@ -7075,6 +7114,21 @@ public sealed partial class ShellWindow : Window
         if (_loading || sender is not RadioButton radio) return;
         if (Enum.TryParse<OrbitItemShape>(radio.Tag as string, out var shape))
             _manager.SetItemShape(shape);
+    }
+
+    /// <summary>
+    /// Shape's own counterpart for how the items are laid out. The preview canvas stays a ring
+    /// either way: it is where slots are arranged, and a hex nest takes its cells in that same
+    /// slot order.
+    /// </summary>
+    private void Arrangement_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_loading || sender is not RadioButton radio) return;
+        if (Enum.TryParse<OrbitArrangement>(radio.Tag as string, out var arrangement))
+        {
+            _manager.SetArrangement(arrangement);
+            SyncRingOnlyControls(arrangement);
+        }
     }
 
     private void RadiusReset_Click(object sender, RoutedEventArgs e)
