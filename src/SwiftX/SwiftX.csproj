@@ -37,9 +37,9 @@
     <Company>SwiftX</Company>
     <Authors>SwiftX</Authors>
     <Description>A quick-access orbit for Windows 11.</Description>
-    <Version>2.0.3.0</Version>
-    <FileVersion>2.0.3.0</FileVersion>
-    <AssemblyVersion>2.0.3.0</AssemblyVersion>
+    <Version>2.0.4.0</Version>
+    <FileVersion>2.0.4.0</FileVersion>
+    <AssemblyVersion>2.0.4.0</AssemblyVersion>
     <NeutralLanguage>en-US</NeutralLanguage>
   </PropertyGroup>
 
@@ -48,7 +48,7 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.6901" />
     <PackageReference Include="System.Drawing.Common" Version="10.0.10" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
-    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.0" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
 
   <ItemGroup>

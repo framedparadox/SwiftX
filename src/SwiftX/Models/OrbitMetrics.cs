@@ -235,16 +235,31 @@ public static class OrbitMetrics
         radius + (Bubble / 2) * HoverScale + FlyoutGap / 2;
 
     /// <summary>
-    /// Angular spacing between adjacent flyout items, chosen so their circles keep a constant
-    /// pixel gap at the current <see cref="FlyoutRadius"/> instead of a fixed angle that would
-    /// crowd at a small radius and scatter at a large one.
+    /// Angular spacing between adjacent flyout items on the live orbit, chosen so their circles
+    /// keep a constant pixel gap at the current <see cref="FlyoutRadius"/> instead of a fixed angle
+    /// that would crowd at a small radius and scatter at a large one.
     /// </summary>
     public static double FlyoutStepDegrees => FlyoutStepDegreesFor(FlyoutRadius);
 
-    /// <summary><see cref="FlyoutStepDegrees"/> at an arbitrary flyout radius.</summary>
-    public static double FlyoutStepDegreesFor(double flyoutRadius)
+    /// <summary>
+    /// Pixel gap <see cref="FlyoutStepDegreesFor"/> keeps between two adjacent flyout bubbles'
+    /// edges on the live orbit — the group/Tools arc's own counterpart to the inner orbit's
+    /// <see cref="FlyoutGap"/>. The original value, restored: a larger one was tried here and read
+    /// as too much room on the live dock specifically, where this is the default every caller gets.
+    /// <see cref="ShellWindow"/>'s own Settings-canvas arc wants more room than the live dock does —
+    /// see its own call sites, which pass <paramref name="itemGap"/> explicitly instead of taking
+    /// this default, rather than this constant trying to be the right answer in both places at once.
+    /// </summary>
+    private const double FlyoutItemGap = 12;
+
+    /// <summary>
+    /// <see cref="FlyoutStepDegrees"/> at an arbitrary flyout radius and, optionally, an arbitrary
+    /// item gap in place of <see cref="FlyoutItemGap"/> — see that constant's own remarks on why a
+    /// caller would want to.
+    /// </summary>
+    public static double FlyoutStepDegreesFor(double flyoutRadius, double itemGap = FlyoutItemGap)
     {
-        double chord = (FlyoutBubble + 12) / 2;
+        double chord = (FlyoutBubble + itemGap) / 2;
         double ratio = Math.Clamp(chord / Math.Max(1, flyoutRadius), 0, 1);
         double step = 2 * Math.Asin(ratio) * 180.0 / Math.PI;
         return Math.Clamp(step, 14, 40);
@@ -307,10 +322,13 @@ public static class OrbitMetrics
     public const int SlotCount = 8;
 
     /// <summary>
-    /// Slots available to user items: the last two are reserved for the built-in Settings and
-    /// Close entries, which are always on the orbit (see <see cref="SystemOrbitItems"/>).
+    /// Slots available to user items — everything but the last, which is reserved for the orbit
+    /// logo, the one entry still always on the orbit (see <see cref="SystemOrbitItems.CreateOrbitLogo"/>).
+    /// Home, Settings and Close are no longer reserved here: they are optional now, stored in
+    /// <see cref="OrbitProfile.Items"/> like any other item the user chose to add, so they count
+    /// against this same budget instead of sitting outside it.
     /// </summary>
-    public const int UserSlotCount = SlotCount - 2;
+    public const int UserSlotCount = SlotCount - 1;
 
     /// <summary>
     /// The slot (0..<see cref="SlotCount"/>-1) angularly nearest a pointer at offset

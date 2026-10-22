@@ -132,11 +132,14 @@ internal static partial class NativeMethods
     public static partial uint GetDpiForWindow(nint hwnd);
 
     // Mouse buttons, read through the same GetAsyncKeyState below. The hot-corner watcher needs
-    // them: a pointer arriving at a corner with a button held is a drag — a window being thrown
-    // at a corner for Windows' own snap, or a selection — not a request to summon the orbit.
+    // the first three: a pointer arriving at a corner with a button held is a drag — a window
+    // being thrown at a corner for Windows' own snap, or a selection — not a request to summon
+    // the orbit. All five are what MouseTriggerWatcher polls for its own long-press summon.
     public const int VK_LBUTTON = 0x01;
     public const int VK_RBUTTON = 0x02;
     public const int VK_MBUTTON = 0x04;
+    public const int VK_XBUTTON1 = 0x05;
+    public const int VK_XBUTTON2 = 0x06;
 
     // Modifier keys, read the same way while capturing a hotkey: XAML's KeyDown reports the
     // pressed key but not which modifiers are held with it, and the Windows key never reaches

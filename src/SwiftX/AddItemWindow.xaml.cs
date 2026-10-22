@@ -934,7 +934,17 @@ public sealed partial class AddItemWindow : Window
             _onAdded(item);
         else if (_existing is null)
         {
-            _targetList.Add(item);
+            // OrbitSlots.Place, not a plain list Add — the same fallback ShellWindow.AddToTopLevel
+            // uses for the sidebar's own "Add item…" (a full orbit still takes it at the end there
+            // too, as it always did). This is the path the live dock's own empty "+" slot takes
+            // (OrbitManager.HandleItemActivation's AddNewTarget case calls OpenAddItem with no
+            // callback): a plain Add appended past whatever empty slot the user actually clicked —
+            // past the last visible slot entirely once the orbit already had UserSlotCount entries,
+            // counting empty ones — which left the item saved to config (so it looked "added"
+            // everywhere that reads the list) but never drawn on the ring itself. Place fills the
+            // first empty slot in place, which is what clicking one asked for.
+            if (!OrbitSlots.Place(_targetList, item))
+                _targetList.Add(item);
             _manager.NotifyItemsChanged();
         }
         Close();

@@ -33,6 +33,13 @@ public class HotCornerItemsTests
         Target = @"C:\Windows\System32\notepad.exe",
     };
 
+    private static OrbitItem Group(string name, params OrbitItem[] children)
+    {
+        var group = new OrbitItem { Kind = OrbitItemKind.Group, DisplayName = name };
+        group.Children.AddRange(children);
+        return group;
+    }
+
     private static AppConfig ConfigWith(params OrbitItem[] items)
     {
         var config = new AppConfig().EnsurePrimary();
@@ -245,6 +252,95 @@ public class HotCornerItemsTests
         Assert.Equal(
             new[] { "QuickAccess", "Notepad", "Settings" },
             HotCornerItems.Resolve(config, SystemOrbitItems.CreateSettings()).Select(i => i.DisplayName));
+    }
+
+    [Fact]
+    public void A_group_dragged_onto_the_corner_stays_the_orbits_group_and_follows_what_is_added_to_it()
+    {
+        var work = Group("Work", App("code"));
+        var config = ConfigWith(Notepad(), work);
+        var settings = SystemOrbitItems.CreateSettings();
+
+        // What a drop from the sidebar's Groups list stores: a copy of the row's group, handed to
+        // Entry. The copy is a different object, as an entry read back from the file would be.
+        var stored = HotCornerItems.Entry(Group("Work", App("code")), work, config.Primary.Items);
+        HotCornerItems.Edit(config, settings).Add(stored);
+        Assert.NotSame(work, stored);
+
+        // Something added to the group from the sidebar afterwards, on the orbit's own object.
+        work.Children.Add(App("calc"));
+
+        var shown = Assert.Single(HotCornerItems.Resolve(config, settings), i => i.DisplayName == "Work");
+        Assert.Same(work, shown);
+        Assert.Equal(new[] { "code", "calc" }, shown.Children.Select(c => c.DisplayName));
+    }
+
+    [Fact]
+    public void A_copy_under_an_id_of_its_own_is_a_group_of_its_own_and_stays_as_it_was_dragged()
+    {
+        // This is what the corner stored before Entry: the sidebar's Groups list only holds the
+        // orbit's groups, so nothing in it could ever add to the copy, and it showed the corner a
+        // group that stopped matching the one in the list the moment that one changed.
+        var work = Group("Work", App("code"));
+        var config = ConfigWith(Notepad(), work);
+        var settings = SystemOrbitItems.CreateSettings();
+
+        var frozen = Group("Work", App("code"));
+        HotCornerItems.Edit(config, settings).Add(frozen);
+
+        work.Children.Add(App("calc"));
+
+        var shown = Assert.Single(HotCornerItems.Resolve(config, settings), i => i.DisplayName == "Work");
+        Assert.Same(frozen, shown);
+        Assert.Equal(new[] { "code" }, shown.Children.Select(c => c.DisplayName));
+    }
+
+    [Fact]
+    public void Only_a_copy_of_a_group_on_the_orbit_takes_that_groups_id()
+    {
+        var work = Group("Work", App("code"));
+        var calc = App("calc");
+        var config = ConfigWith(work, calc);
+        var orbit = config.Primary.Items;
+
+        // A group the orbit has: the copy names it.
+        var linked = HotCornerItems.Entry(Group("Work"), work, orbit);
+        Assert.Equal(work.Id, linked.Id);
+
+        // Everything else keeps the id its copy was made with. A group the orbit does not have
+        // (the sidebar's "New group" row is one) ...
+        var newGroupRow = Group("Group");
+        var newGroupCopy = Group("Group");
+        string newGroupCopyId = newGroupCopy.Id;
+        Assert.Equal(newGroupCopyId, HotCornerItems.Entry(newGroupCopy, newGroupRow, orbit).Id);
+
+        // ... the built-in Tools group, which the Tools screen owns and the corner resolves by target ...
+        var toolsOnOrbit = ToolCatalog.CreateToolsGroup();
+        orbit.Add(toolsOnOrbit);
+        var toolsCopy = ToolCatalog.CreateToolsGroup();
+        string toolsCopyId = toolsCopy.Id;
+        Assert.Equal(toolsCopyId, HotCornerItems.Entry(toolsCopy, toolsOnOrbit, orbit).Id);
+
+        // ... and a plain item, which has no children to keep in step.
+        var calcCopy = App("calc");
+        string calcCopyId = calcCopy.Id;
+        Assert.Equal(calcCopyId, HotCornerItems.Entry(calcCopy, calc, orbit).Id);
+    }
+
+    [Fact]
+    public void A_linked_group_keeps_working_from_its_stored_copy_once_the_orbit_drops_it()
+    {
+        var work = Group("Work", App("code"));
+        var config = ConfigWith(Notepad(), work);
+        var settings = SystemOrbitItems.CreateSettings();
+        var stored = HotCornerItems.Entry(Group("Work", App("code")), work, config.Primary.Items);
+        HotCornerItems.Edit(config, settings).Add(stored);
+
+        config.Primary.Items.Remove(work);
+
+        // The corner holds what the orbit does not: the group goes on being there, from the copy.
+        var shown = Assert.Single(HotCornerItems.Resolve(config, settings), i => i.DisplayName == "Work");
+        Assert.Same(stored, shown);
     }
 
     [Fact]

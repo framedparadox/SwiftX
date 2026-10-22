@@ -315,6 +315,179 @@ public static class IconService
         return (raw, null);
     }
 
+    // ---- Tool window icons -------------------------------------------------
+
+    /// <summary>Per-tool rendered icon files, keyed by <see cref="ToolKind"/> and built once per
+    /// process (see <see cref="GetToolIconPath"/>).</summary>
+    private static readonly ConcurrentDictionary<ToolKind, string> ToolIconFiles = new();
+
+    /// <summary>
+    /// The taskbar/Alt+Tab icon for one tool window, rasterized once from the tool's own Segoe
+    /// Fluent glyph (the same codepoint <see cref="Controls.AppTitleBar"/> draws in its custom
+    /// title bar) rather than every <see cref="ToolWindows.ToolWindowBase"/> inheriting the
+    /// process's default icon (<c>Assets\SwiftX.ico</c>), which made every tool look identical
+    /// there. There are no per-tool .ico assets to ship, so this draws the glyph onto a small
+    /// bitmap and writes it to disk as a real .ico — <c>AppWindow.SetIcon</c> only takes a file
+    /// path, not in-memory bytes, unlike the PNG encoding <see cref="TryEncodeIconPng"/> does for
+    /// the rest of this service. Cached per <see cref="ToolKind"/> for the life of the process, and
+    /// on disk under the icon cache directory so a later launch does not re-render it either.
+    /// Returns null (→ caller keeps the default icon) if the render or write fails for any reason.
+    /// </summary>
+    public static string? GetToolIconPath(ToolKind kind, string glyph)
+    {
+        if (ToolIconFiles.TryGetValue(kind, out var cached))
+            return cached;
+
+        try
+        {
+            string dir = Path.Combine(CacheDir, "Tools");
+            Directory.CreateDirectory(dir);
+            // ".v3": each previous suffix is a format this has already tried and moved on from —
+            // see RenderGlyphIcon's own remarks — and bumping it is what makes a stale file from an
+            // earlier attempt simply never get read again, rather than quietly satisfying this
+            // File.Exists check forever and leaving the fix above unseen.
+            string path = Path.Combine(dir, kind + ".v3.ico");
+            if (!File.Exists(path))
+                RenderGlyphIcon(glyph, path);
+            ToolIconFiles[kind] = path;
+            return path;
+        }
+        catch (Exception ex)
+        {
+            Diag.Log($"IconService: tool icon for {kind} not created: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Draws one glyph centered on a filled accent circle — a plain glyph is mostly thin strokes
+    /// that all but disappear at the 16/32px the taskbar actually draws — and saves the result as
+    /// a .ico file. <see cref="GlyphFonts.IsTextGlyph"/> is the same test
+    /// <see cref="Controls.AppTitleBar"/> uses to pick the matching font, since Base64's glyph is
+    /// literal text ("B64") rather than a Segoe Fluent Icons codepoint.
+    /// <para>
+    /// Written as a raw 32-bit DIB (<see cref="WriteIcon"/>) — the second format this has tried.
+    /// The first, <c>Bitmap.GetHicon()</c>/<c>Icon.FromHandle</c>, builds its HICON from a 1-bit AND
+    /// mask rather than the bitmap's real per-pixel alpha, so the circle's anti-aliased edge came out
+    /// a jagged, dark-fringed ring instead of a clean disc — a long-known GDI+ interop gap. Swapping
+    /// that for a PNG-compressed .ico payload kept the alpha intact but still did not show correctly:
+    /// PNG-compressed icon entries, though technically valid since Vista, have a long history of
+    /// being skipped specifically by the taskbar/Alt+Tab icon loader even where Explorer's own
+    /// preview accepts them — several independent reports describe exactly that split. A raw,
+    /// uncompressed 32-bit BGRA bitmap plus an all-clear AND mask is what every Windows icon loader
+    /// has handled since XP without exception, and is what a normal .ico asset built by Visual
+    /// Studio's own resource compiler already looks like — no compression left to be unsupported.
+    /// </para>
+    /// </summary>
+    private static void RenderGlyphIcon(string glyph, string path)
+    {
+        const int size = 32;
+        using var bitmap = new System.Drawing.Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var g = System.Drawing.Graphics.FromImage(bitmap))
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            g.Clear(System.Drawing.Color.Transparent);
+
+            using var bg = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(255, 0, 99, 177));
+            g.FillEllipse(bg, 0, 0, size, size);
+
+            bool isText = GlyphFonts.IsTextGlyph(glyph);
+            float fontSize = isText ? size * 0.34f : size * 0.56f;
+            using var font = new System.Drawing.Font(
+                isText ? "Segoe UI" : "Segoe Fluent Icons", fontSize, System.Drawing.FontStyle.Regular,
+                System.Drawing.GraphicsUnit.Pixel);
+            using var brush = new System.Drawing.SolidBrush(System.Drawing.Color.White);
+            using var format = new System.Drawing.StringFormat
+            {
+                Alignment = System.Drawing.StringAlignment.Center,
+                LineAlignment = System.Drawing.StringAlignment.Center,
+            };
+            g.DrawString(glyph, font, brush, new System.Drawing.RectangleF(0, 0, size, size), format);
+        }
+
+        WriteIcon(bitmap, size, path);
+    }
+
+    /// <summary>
+    /// Writes a single-image .ico file carrying <paramref name="bitmap"/> as an uncompressed 32-bit
+    /// DIB — ICONDIR / ICONDIRENTRY (the common header every .ico has) followed by a BITMAPINFOHEADER,
+    /// the colour data, and an AND mask, exactly the layout a real icon-editing tool would produce.
+    /// <para>
+    /// Two format quirks worth knowing before touching this again: <c>biHeight</c> is conventionally
+    /// double the actual pixel height (the XOR colour bitmap and the AND mask are counted as one
+    /// combined image, even though they are written as two separate blocks, not interleaved rows) —
+    /// see <see href="https://learn.microsoft.com/previous-versions/ms997538(v=msdn.10)"/>. And the
+    /// AND mask below is written all-zero ("nothing forced transparent") rather than left out: a
+    /// 32-bit icon's real transparency lives entirely in each pixel's own alpha byte, which every
+    /// Windows version since XP honours, but the mask still has to be present and correctly sized
+    /// for the file to parse as a valid icon at all.
+    /// </para>
+    /// </summary>
+    private static void WriteIcon(System.Drawing.Bitmap bitmap, int size, string path)
+    {
+        int xorRowBytes = size * 4;
+        int xorSize = xorRowBytes * size;
+        int maskRowBytes = ((size + 31) / 32) * 4;
+        int maskSize = maskRowBytes * size;
+        int imageDataSize = 40 + xorSize + maskSize;
+
+        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write);
+        using var w = new BinaryWriter(fs);
+
+        // ICONDIR: reserved, type (1 = icon), image count.
+        w.Write((short)0);
+        w.Write((short)1);
+        w.Write((short)1);
+
+        // ICONDIRENTRY: width/height (0 means 256, so 32 is written as-is), no palette, 1 plane,
+        // 32 bits/pixel, payload length, payload offset (immediately after this one entry).
+        w.Write((byte)size);
+        w.Write((byte)size);
+        w.Write((byte)0);
+        w.Write((byte)0);
+        w.Write((short)1);
+        w.Write((short)32);
+        w.Write(imageDataSize);
+        w.Write(6 + 16);
+
+        // BITMAPINFOHEADER.
+        w.Write(40);           // biSize
+        w.Write(size);         // biWidth
+        w.Write(size * 2);     // biHeight — see the class remarks on why this is doubled
+        w.Write((short)1);     // biPlanes
+        w.Write((short)32);    // biBitCount
+        w.Write(0);            // biCompression: BI_RGB, uncompressed
+        w.Write(xorSize);      // biSizeImage
+        w.Write(0);            // biXPelsPerMeter
+        w.Write(0);            // biYPelsPerMeter
+        w.Write(0);            // biClrUsed
+        w.Write(0);            // biClrImportant
+
+        // XOR (colour) data: bottom-up, BGRA bytes per pixel — the same byte order
+        // Format32bppArgb already stores in memory, so each row is copied out as-is; only the row
+        // order (top-down in the bitmap, bottom-up in a DIB) needs reversing.
+        var rect = new System.Drawing.Rectangle(0, 0, size, size);
+        var data = bitmap.LockBits(
+            rect, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        try
+        {
+            byte[] row = new byte[xorRowBytes];
+            for (int y = size - 1; y >= 0; y--)
+            {
+                Marshal.Copy(data.Scan0 + y * data.Stride, row, 0, xorRowBytes);
+                w.Write(row);
+            }
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+
+        // AND mask: all-clear, as the class remarks describe.
+        w.Write(new byte[maskSize]);
+    }
+
     /// <summary>
     /// Extracts the icon's true 32bpp BGRA pixels directly via <c>GetIconInfo</c>/<c>GetDIBits</c>
     /// and encodes them as PNG — bypassing <see cref="System.Drawing.Icon.ToBitmap"/>'s

@@ -21,9 +21,13 @@
          already holds (the orbit preview's slot geometry and drag state chief among it) instead of
          rebuilding it on every navigation.
 
-         WinUI Window has no Resources; shared styles live on the root Grid. -->
-    <Grid x:Name="Root" Background="{ThemeResource ShellBackgroundBrush}">
-        <Grid.Resources>
+         WinUI Window has no Resources; shared styles live on the root Grid.
+
+         CursorHost rather than plain Grid: it is what lets the orbit ring's bubbles (plain Border,
+         which cannot carry a cursor of its own — see Controls/HandCursor.cs) show the hand cursor
+         on hover, by setting it here instead for exactly as long as the pointer is over one. -->
+    <controls:CursorHost x:Name="Root" Background="{ThemeResource ShellBackgroundBrush}">
+        <controls:CursorHost.Resources>
             <!-- Logi's card: SettingsCardBackgroundBrush over SettingsCardBorderBrush at 1px and
                  CornerRadius 8, carried here as the Shell* tokens (Themes/Colors.xaml). Padding is
                  SwiftX's own 16,14 rather than Logi's 24 — these cards hold a control on the right
@@ -219,6 +223,12 @@
                  Loaded handler), so there is exactly one of them to populate. -->
             <ThemeShadow x:Key="BoxShadow" />
 
+            <!-- The orbit ring's own drop shadow: one shared ThemeShadow for every disc, pill and
+                 the group back button RenderPreview / RenderGroupArc draw onto PreviewCanvas, lifted
+                 with Translation the same way BoxShadow is. Matches docs/orbit-screen-layouts.html's
+                 .disc / .pill box-shadow — a soft shadow under each bubble, no border around it. -->
+            <ThemeShadow x:Key="OrbitBubbleShadow" />
+
             <!-- Hairline between Home header actions: Elements | theme | Settings. -->
             <Style x:Key="HeaderToolbarDivider" TargetType="Border">
                 <Setter Property="Width" Value="1" />
@@ -236,12 +246,12 @@
                 <Setter Property="HorizontalAlignment" Value="Center" />
                 <Setter Property="Foreground" Value="{ThemeResource SettingsAccentBrush}" />
             </Style>
-        </Grid.Resources>
+        </controls:CursorHost.Resources>
 
-        <Grid.RowDefinitions>
+        <controls:CursorHost.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+        </controls:CursorHost.RowDefinitions>
 
         <!-- Row 0 is the shared Controls.AppTitleBar (the same one the tool windows use), built in
              code-behind because its constructor takes glyph/title and XAML object elements need a
@@ -645,6 +655,14 @@
                          becoming a drag target or swallowing a press meant for the bubble behind
                          it, and it is why none of the drag code had to learn about pills. -->
                     <Grid Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <!-- A ThemeShadow receiver must not be an ancestor of whatever casts onto
+                             it (see EnsureOrbitShadowReceivers) — PreviewCanvas/PreviewLabelCanvas
+                             are the parents of the discs and pills they would have received shadows
+                             from, which is exactly the illegal case, and why registering either one
+                             threw on every attempt rather than only sometimes. A dedicated plate
+                             behind both, the same shape HomeShadowPlate already is for the Home
+                             tiles above, is a sibling instead. -->
+                        <Grid x:Name="PreviewShadowPlate" />
                         <Canvas x:Name="PreviewCanvas" Width="470" Height="470"
                                 Background="Transparent" />
                         <Canvas x:Name="PreviewLabelCanvas" Width="640" Height="470" />
@@ -1176,6 +1194,7 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock x:Name="OrbitEditEyebrow" Grid.Column="0"
                                                    Text="ADD TO ORBIT" Style="{StaticResource SidebarEyebrow}"
@@ -1184,7 +1203,27 @@
                                                          Content="Cancel" Style="{StaticResource AccentLink}"
                                                          Visibility="Collapsed"
                                                          Click="OrbitEditCancel_Click" />
-                                        <Button x:Name="OrbitEditResetButton" Grid.Column="2"
+                                        <!-- The summary UpdateOrbitEditSummary used to keep on screen
+                                             all the time now lives in this info button's flyout — same
+                                             SidebarInfoButton/Flyout idiom the ORBIT SETTINGS sidebar
+                                             uses for its own "About ..." buttons — so the row above the
+                                             category list stays one line. -->
+                                        <Button x:Name="OrbitEditInfoButton" Grid.Column="2"
+                                                Style="{StaticResource SidebarInfoButton}"
+                                                Margin="0,0,6,0"
+                                                AutomationProperties.Name="About adding to the orbit">
+                                            <FontIcon Glyph="&#xE946;" FontSize="13"
+                                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                                      Foreground="{ThemeResource SettingsMutedBrush}" />
+                                            <Button.Flyout>
+                                                <Flyout Placement="Bottom">
+                                                    <TextBlock x:Name="OrbitEditSummary"
+                                                               Style="{StaticResource SidebarCaption}"
+                                                               TextWrapping="Wrap" MaxWidth="220" />
+                                                </Flyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                        <Button x:Name="OrbitEditResetButton" Grid.Column="3"
                                                 Style="{StaticResource ChromeIconButton}"
                                                 Click="ResetDefaults_Click"
                                                 AutomationProperties.Name="Reset to default apps and links"
@@ -1194,8 +1233,6 @@
                                                       Foreground="{ThemeResource SettingsHeaderBrush}" />
                                         </Button>
                                     </Grid>
-                                    <TextBlock x:Name="OrbitEditSummary" Style="{StaticResource SidebarCaption}"
-                                               TextWrapping="Wrap" />
                                     <TextBlock Text="Drag an app, folder, shortcut or link here, or pick one below. Drop one on a group to add it to that group."
                                                Style="{StaticResource SidebarCaption}" />
                                     <!-- Categories are built in code (BuildOrbitEditSidebar) because
@@ -1803,6 +1840,50 @@
                                 </Grid>
                             </Border>
 
+                            <!-- The mouse-only counterpart to Invoke above — a long press of a
+                                 configurable button, anywhere on the desktop, same as the keyboard
+                                 shortcut (see Services/MouseTriggerWatcher.cs). The button picker is
+                                 a plain ComboBox over five fixed rows rather than a capture control
+                                 like HotkeyCapture: there are only ever five buttons to choose from,
+                                 none of which needs to be "listened for" the way an arbitrary key
+                                 combination does. -->
+                            <Border Style="{StaticResource Card}">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE962;"
+                                              FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                              VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="Mouse trigger" Style="{StaticResource SettingTitle}" />
+                                        <TextBlock Text="Show or hide the orbit with a long press of a mouse button."
+                                                   Style="{StaticResource SettingBody}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10"
+                                                VerticalAlignment="Center" HorizontalAlignment="Right">
+                                        <ComboBox x:Name="MouseTriggerButtonBox" Width="140" Height="38"
+                                                  CornerRadius="6" VerticalAlignment="Center"
+                                                  AutomationProperties.Name="Mouse trigger button"
+                                                  AutomationProperties.AutomationId="SettingsMouseTriggerButtonBox"
+                                                  SelectionChanged="MouseTriggerButtonBox_SelectionChanged">
+                                            <ComboBoxItem Content="Left button" Tag="Left" />
+                                            <ComboBoxItem Content="Right button" Tag="Right" />
+                                            <ComboBoxItem Content="Middle button" Tag="Middle" />
+                                            <ComboBoxItem Content="Back button" Tag="X1" />
+                                            <ComboBoxItem Content="Forward button" Tag="X2" />
+                                        </ComboBox>
+                                        <ToggleSwitch x:Name="MouseTriggerEnabledToggle"
+                                                      OnContent="" OffContent="" MinWidth="0"
+                                                      AutomationProperties.Name="Mouse trigger"
+                                                      VerticalAlignment="Center"
+                                                      Toggled="MouseTriggerEnabled_Toggled" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
                             <!-- Language on the left, Accent colour on the right: each is a
                                  single row of icon, title, and control — no body copy. -->
                             <Grid ColumnSpacing="14">
@@ -2134,5 +2215,5 @@
                 </ScrollViewer>
             </Grid>
         </Grid>
-    </Grid>
+    </controls:CursorHost>
 </Window>
