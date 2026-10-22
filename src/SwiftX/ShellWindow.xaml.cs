@@ -271,6 +271,18 @@ public sealed partial class ShellWindow : Window
         Root.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(Root_Activity), handledEventsToo: true);
         Root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(Root_Activity), handledEventsToo: true);
 
+        // The Orbit screen's own "ORBIT SETTINGS" sidebar (item size/shape, radius, hot corner,
+        // hover style) is every bit as clickable as the ring and the "Add to Orbit" sidebar rows,
+        // both of which already show the hand cursor (see WirePreviewHover/HandButton/HandBorder) —
+        // its radio buttons, buttons, the slider and the toggle just never got the same treatment.
+        // Deferred to OrbitSidebarSettings.SizeChanged rather than walked right here, for the same
+        // reason EnsureOrbitShadowReceivers defers to PreviewCanvas's: OrbitSidebarSettings starts
+        // Collapsed (nested in OrbitScreen, itself Collapsed until Orbit is first shown), and a
+        // ScrollViewer's own template — which is what makes its content reachable from
+        // VisualTreeHelper at all — is not applied until its first real layout pass, which a
+        // Collapsed element never gets. SizeChanged firing is that pass having happened.
+        OrbitSidebarSettings.SizeChanged += WireSidebarSettingsCursorsOnceSized;
+
         // See OnRatingValueChanged for why this is a DP callback and not the ValueChanged event.
         ExperienceRating.RegisterPropertyChangedCallback(
             RatingControl.ValueProperty, (_, _) => OnRatingValueChanged());
@@ -467,6 +479,47 @@ public sealed partial class ShellWindow : Window
         catch (Exception ex)
         {
             Diag.Log("EnsureOrbitShadowReceivers failed (orbit ring will render without shadows): " + ex);
+        }
+    }
+
+    private bool _sidebarSettingsCursorsWired;
+
+    /// <summary>
+    /// Runs <see cref="WireSidebarSettingsCursors"/> once OrbitSidebarSettings actually has a size —
+    /// see the subscription's own remarks for why a Collapsed ScrollViewer cannot be walked before
+    /// that — then unsubscribes; nothing later ever un-sizes it back to zero, so there is no reason
+    /// to keep listening.
+    /// </summary>
+    private void WireSidebarSettingsCursorsOnceSized(object sender, SizeChangedEventArgs e)
+    {
+        if (_sidebarSettingsCursorsWired) return;
+        if (OrbitSidebarSettings.ActualWidth == 0 || OrbitSidebarSettings.ActualHeight == 0) return;
+
+        WireSidebarSettingsCursors(OrbitSidebarSettings);
+        _sidebarSettingsCursorsWired = true;
+        OrbitSidebarSettings.SizeChanged -= WireSidebarSettingsCursorsOnceSized;
+    }
+
+    /// <summary>
+    /// Gives every RadioButton, Button, Slider and ToggleSwitch under <paramref name="root"/> the
+    /// same hand cursor the ring and the sidebar rows already show on hover (see
+    /// <see cref="Controls.CursorHost"/>) — plain controls have no cursor of their own to set (see
+    /// <see cref="Controls.HandCursor"/>'s own remarks), so Root borrows its for exactly as long as
+    /// the pointer is over one, same as <see cref="HighlightPreviewPair"/> already does for a bubble.
+    /// </summary>
+    private void WireSidebarSettingsCursors(DependencyObject root)
+    {
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is RadioButton or Button or Slider or ToggleSwitch)
+            {
+                var element = (UIElement)child;
+                element.PointerEntered += (_, _) => Root.SetCursor(InputSystemCursorShape.Hand);
+                element.PointerExited += (_, _) => Root.ClearCursor();
+            }
+            WireSidebarSettingsCursors(child);
         }
     }
 
@@ -1827,6 +1880,17 @@ public sealed partial class ShellWindow : Window
     private const double PillOverlapFraction = 0.20;
 
     /// <summary>
+    /// The Settings canvas's own group/Tools arc gap, in place of <see cref="OrbitMetrics.FlyoutStepDegreesFor"/>'s
+    /// default — passed explicitly at every call in this file so the live orbit (<c>OrbitWindow</c>,
+    /// which takes that default unchanged) and this canvas can each have the spacing that actually
+    /// suits them, after a shared constant tried to be both at once and read as too tight on one and
+    /// then too loose on the other. Keep every call site below in step: they compute the same arc
+    /// that <see cref="GroupSlotAt"/> hit-tests against, and disagreeing would misalign a click from
+    /// what <see cref="RenderGroupArc"/> actually drew.
+    /// </summary>
+    private const double SettingsGroupArcItemGap = 40;
+
+    /// <summary>
     /// The outward name pill for one filled slot, on <c>PreviewLabelCanvas</c> rather than the
     /// canvas the bubbles live on.
     /// <para>
@@ -2578,7 +2642,7 @@ public sealed partial class ShellWindow : Window
         int count = _groupSlotBorders.Count;
         if (count == 0) return;
 
-        double step = OrbitMetrics.FlyoutStepDegreesFor(_previewRadius) * Math.PI / 180.0;
+        double step = OrbitMetrics.FlyoutStepDegreesFor(_previewRadius, SettingsGroupArcItemGap) * Math.PI / 180.0;
         double first = -((count - 1) / 2.0) * step;
         int ends = GroupAddEnds(group);
 
@@ -3371,7 +3435,7 @@ public sealed partial class ShellWindow : Window
         int count = _groupSlotBorders.Count;
         if (count == 0) return -1;
 
-        double step = OrbitMetrics.FlyoutStepDegreesFor(_previewRadius) * Math.PI / 180.0;
+        double step = OrbitMetrics.FlyoutStepDegreesFor(_previewRadius, SettingsGroupArcItemGap) * Math.PI / 180.0;
         double first = -((count - 1) / 2.0) * step;
 
         int best = -1;
@@ -4777,7 +4841,7 @@ public sealed partial class ShellWindow : Window
         // nothing to add to.
         int ends = GroupAddEnds(group);
         int count = children.Count + 2 * ends;
-        double step = OrbitMetrics.FlyoutStepDegreesFor(radius) * Math.PI / 180.0;
+        double step = OrbitMetrics.FlyoutStepDegreesFor(radius, SettingsGroupArcItemGap) * Math.PI / 180.0;
         double first = -((count - 1) / 2.0) * step;
 
         for (int i = 0; i < count; i++)
