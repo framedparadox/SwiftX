@@ -101,6 +101,10 @@ public sealed class OrbitManager
             // The default GitHub link used to carry the Data tool's "code" glyph; it shows the
             // GitHub logo now, and an orbit seeded by an earlier build should too.
             repaired |= BrandIcons.MigrateLegacyGitHubGlyph(Config.Primary.Items);
+            // A group an earlier build copied onto the hot corner is a group of its own, frozen as it
+            // was dragged. Link it back to the orbit group it was cut from, so the corner and the dock
+            // show what the sidebar adds to that group — see HotCornerItems.RelinkOrbitGroups.
+            repaired |= HotCornerItems.RelinkOrbitGroups(Config);
         }
 
         // After the migrations, not inside one: a tool item EnsureToolsGroup has just added starts

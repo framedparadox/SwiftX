@@ -203,7 +203,10 @@ QuickAccess picks it up. Your first edit writes the current selection into the c
 then on the corner is your own arrangement; any of the four can be swapped for anything else.
 
 Groups still work inside a quadrant: expanding one fans its children out into an outer arc, slid
-back inside the quarter if it would otherwise throw half of them off the screen.
+back inside the quarter if it would otherwise throw half of them off the screen. A group dragged onto
+the corner from **Add to orbit**'s Groups list is that same group, not a copy of it: what you add to
+it from the list, or drop onto it on the canvas, shows on the corner and on the dock together. A
+group that only the corner has is listed there too, so it can be added to from the list as well.
 
 ---
 

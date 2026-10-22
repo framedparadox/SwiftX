@@ -2,6 +2,37 @@
 
 All notable changes to SwiftX will be documented in this file.
 
+## [2.0.4] - 2026-10-20
+
+### Added
+- Dropping an item on a group in the Orbit screen's **Quadrant** preview now adds it to that group,
+  as it already did on the ring. QuickAccess (gathered from the orbit) and the Tools group do not
+  take drops, and a group that is full or already holds the item refuses it, as it does on the ring.
+- A group that only the hot corner has (made on the corner's own canvas) is now listed under Groups
+  in **Add to orbit**, and offered in an item's **Add to group** menu, beside the orbit's groups.
+  Before, nothing added from the sidebar could reach it. Its row says in its tooltip that it is on the
+  corner only, and its Remove takes it off the corner.
+
+### Changed
+- A group dragged from the **Add to orbit** Groups list onto the hot corner's Quadrant is now that
+  same group, not a copy frozen at the moment it was dragged. Items added to it from the sidebar, or
+  dropped on it in the preview, show on the corner and on the dock together. Dropped on the ring, a
+  group is still copied.
+- Bumped the project, assembly, file, and package identity versions to 2.0.4.0, and the About box
+  fallback version to match.
+
+### Fixed
+- Groups an earlier version copied onto the Quadrant are linked back to the group they were copied
+  from when SwiftX starts (and when a configuration is imported), so they show what has been added to
+  it since. A copy is matched by name and by holding only things that group holds; one that matches
+  no group, holds nothing, or fits two groups is left exactly as it was.
+- Adding an item to a group on the Quadrant preview now brings the dock up to date. The drop only
+  saved the change, so a dock left open kept showing the group as it was, and the Elements list did
+  not move until something else refreshed it. It now tells both, the same way a drop on the ring
+  does.
+- Placing, moving or removing an item in the Quadrant preview reaches a dock that is open at once,
+  instead of the next time it is summoned.
+
 ## [2.0.3] - 2026-10-07
 
 ### Added

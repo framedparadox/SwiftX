@@ -358,7 +358,7 @@ public sealed partial class ShellWindow : Window
             SyncAccentControls();
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             SyncDesktopShortcutToggle();
-            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.3");
+            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.4");
             FillAboutDetails();
             // Wired here rather than in XAML because ThemeShadow.Receivers is a collection with no
             // XAML syntax of its own on a shared resource. Without a receiver the Home tiles
@@ -516,7 +516,11 @@ public sealed partial class ShellWindow : Window
             // item the Orbit screen currently has selected or expanded — drop stale state rather than
             // leave the inspector or children row pointing at something that no longer exists.
             RefreshOpenGroup();
-            if (_selectedItem is not null && !ItemExists(_manager.Config.Primary.Items, _selectedItem))
+            // The corner can hold an item the orbit does not (see HotCornerItems), and its own edits
+            // come through here now: one of those being selected is not a stale selection.
+            if (_selectedItem is not null &&
+                !ItemExists(_manager.Config.Primary.Items, _selectedItem) &&
+                !ItemExists(_manager.Config.HotCornerOrbit, _selectedItem))
                 HideItemDetails();
             RenderPreview();
             RebuildItemsList();
@@ -2722,7 +2726,7 @@ public sealed partial class ShellWindow : Window
         if (_sidebarDragTemplate is { } template)
         {
             e.AcceptedOperation = DataPackageOperation.Copy;
-            DropOntoPreviewSlot(slot, CloneOrbitTemplate(template));
+            DropOntoPreviewSlot(slot, CopyForPreviewDrop(template));
             return;
         }
 
@@ -2750,6 +2754,31 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
+    /// What a sidebar row's drag puts on the canvas: a fresh copy, as everywhere else, except that a
+    /// group already on the orbit goes onto the corner under its own id.
+    /// <para>
+    /// The corner stores copies and maps each one back to the orbit's item of the same id when it
+    /// is drawn (see <see cref="HotCornerItems.Resolve"/>). A copy that carries the group's id is
+    /// therefore another place to see that group, not another group: what is added to it from the
+    /// sidebar's Groups list shows on the corner and on the dock at once, and what is dropped on it
+    /// on the corner shows in the list. A copy with an id of its own was a group of its own, frozen
+    /// as it was dragged, and nothing in the sidebar could add to it afterwards.
+    /// </para>
+    /// <para>
+    /// Only on the corner. A drop on the ring puts a second group beside the first, which is the
+    /// point of dragging one there, and two groups of the same id on the ring would be one group
+    /// drawn twice.
+    /// </para>
+    /// </summary>
+    private OrbitItem CopyForPreviewDrop(OrbitItem template)
+    {
+        var copy = CloneOrbitTemplate(template);
+        return _previewQuadrant
+            ? HotCornerItems.Entry(copy, template, _manager.Config.Primary.Items)
+            : copy;
+    }
+
+    /// <summary>
     /// Fills an empty ring slot, or replaces whatever is already in it, with <paramref name="added"/>
     /// — the drop counterpart of clicking an empty slot / the right-click menu's "Replace…". A
     /// standalone tool item is left alone, same as <see cref="BuildOrbitItemMenu"/>'s own guard: a
@@ -2767,9 +2796,13 @@ public sealed partial class ShellWindow : Window
                 !ElementLibrary.IsBuiltInToolsGroup(occupant) && !QuadrantLayout.IsQuickAccess(occupant))
             {
                 if (GroupDropRules.TryAdd(occupant, added) != GroupDropVerdict.Allowed) return;
-                _manager.Save();
+                // Through the manager, as the ring's drop below does, and not a bare Save: the group
+                // may be the orbit's own, and the dock if it is open, the Elements list and the
+                // sidebar's counts all show what is in it.
+                _manager.NotifyItemsChanged();
                 EndArmedReplaceAfterDrop();
                 RenderPreview();
+                RebuildItemsList();
                 DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
                 return;
             }
@@ -2982,7 +3015,14 @@ public sealed partial class ShellWindow : Window
     private void RemoveOrbitItem(OrbitItem item)
     {
         if (!OrbitSlots.Vacate(_manager.Config.Primary.Items, item))
+        {
+            // Not on the orbit: a group only the hot corner has, which the sidebar lists beside the
+            // orbit's (see SidebarGroups). Removing it takes it off the corner.
+            int slot = _manager.Config.HotCornerOrbit.FindIndex(entry => ReferenceEquals(entry, item));
+            if (slot >= 0)
+                RemoveQuadrantItem(slot);
             return;
+        }
 
         if (ReferenceEquals(_expandedGroup, item)) CollapseGroup();
         if (ReferenceEquals(_selectedItem, item)) HideItemDetails();
@@ -3178,9 +3218,17 @@ public sealed partial class ShellWindow : Window
         list.Clear();
         list.AddRange(moved);
         OrbitSlots.TrimTrailing(list);
-        _manager.Save();
+        SaveCornerArrangement();
         RenderPreview();
     }
+
+    /// <summary>
+    /// Writes a change to the corner's own arrangement (<see cref="AppConfig.HotCornerOrbit"/>) and
+    /// tells everything that shows it. Through <see cref="OrbitManager.NotifyItemsChanged"/> and not
+    /// <see cref="OrbitManager.Save"/> alone: a bare save leaves the file right and a dock that is
+    /// open beside this window drawing the arrangement it had before, until it is next summoned.
+    /// </summary>
+    private void SaveCornerArrangement() => _manager.NotifyItemsChanged();
 
     /// <summary>
     /// Takes one item off the corner. The orbit itself keeps it, and the other items stay where they
@@ -3193,7 +3241,7 @@ public sealed partial class ShellWindow : Window
             return;
 
         OrbitSlots.Vacate(list, list[slot]);
-        _manager.Save();
+        SaveCornerArrangement();
         HideItemDetails();
         RenderPreview();
     }
@@ -3212,7 +3260,7 @@ public sealed partial class ShellWindow : Window
             list[slot] = added;
         else
             OrbitSlots.PlaceAt(list, slot, added, QuadrantLayout.ItemCount);
-        _manager.Save();
+        SaveCornerArrangement();
     }
 
     /// <summary>
@@ -4714,10 +4762,9 @@ public sealed partial class ShellWindow : Window
 
         foreach (var category in ElementCategories.All)
         {
-            var items = ElementLibrary.RowsFor(category, catalog, orbit);
             var rows = category == ElementCategory.Groups
-                ? BuildEditGroupRows(items)
-                : items.Select(BuildEditRow).ToList();
+                ? BuildEditGroupRows(SidebarGroups())
+                : ElementLibrary.RowsFor(category, catalog, orbit).Select(BuildEditRow).ToList();
             OrbitEditCategories.Children.Add(BuildEditCategory(category, rows));
         }
 
@@ -4734,6 +4781,17 @@ public sealed partial class ShellWindow : Window
         _orbitEditBuilt = true;
         UpdateOrbitEditSummary();
     }
+
+    /// <summary>
+    /// Every group the sidebar can put something in: the orbit's own, then any the hot corner has
+    /// that the orbit does not (see <see cref="HotCornerItems.OwnGroups"/>). Both are listed because
+    /// both are shown on the dock, and a group the sidebar cannot reach is a group nothing added
+    /// there can ever show up in.
+    /// </summary>
+    private IReadOnlyList<OrbitItem> SidebarGroups() =>
+        ElementLibrary.UserGroups(_manager.Config.Primary.Items)
+            .Concat(HotCornerItems.OwnGroups(_manager.Config, SystemOrbitItems.CreateSettings()))
+            .ToList();
 
     /// <summary>
     /// How many of the orbit's user slots are free, said in the sidebar rather than discovered by
@@ -5050,7 +5108,7 @@ public sealed partial class ShellWindow : Window
             Text = "Add to group",
             Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE8F4) },
         };
-        foreach (var group in ElementLibrary.UserGroups(_manager.Config.Primary.Items))
+        foreach (var group in SidebarGroups())
         {
             var verdict = GroupDropRules.Check(group, template);
             var entry = new MenuFlyoutItem
@@ -5549,13 +5607,19 @@ public sealed partial class ShellWindow : Window
         bool full = GroupDropRules.IsFull(group);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
             row, $"{group.DisplayName}, group, {GroupDropRules.Count(group)} of {GroupDropRules.Capacity} items");
+        // A group only the hot corner has is listed like the orbit's, so it can be added to from here;
+        // the tooltip is where it says whose it is.
+        string place = ElementLibrary.IsOrbitUserGroup(_manager.Config.Primary.Items, group)
+            ? group.DisplayName
+            : $"{group.DisplayName} (on the hot corner only)";
         ToolTipService.SetToolTip(row, full
-            ? $"{group.DisplayName} is full ({GroupDropRules.Capacity} items)"
-            : $"Click to see what is in {group.DisplayName}. Drag an app, file, folder or link here to add it to it.");
+            ? $"{place} is full ({GroupDropRules.Capacity} items)"
+            : $"Click to see what is in {place}. Drag an app, file, folder or link here to add it to it.");
 
         WireEditGroupRow(row, group, count, childRows);
         // Draggable onto the full ring or the corner's quadrant: the group travels as a live
-        // reference and the ring drops a copy of it, children included (see CloneOrbitTemplate).
+        // reference. The ring drops a copy of it, children included (see CloneOrbitTemplate); the
+        // corner is shown the group itself, by id (see CopyForPreviewDrop).
         // Only from the header: a press on one of its child rows is that item's own drag.
         bool dragged = false;
         WireSidebarDrag(
@@ -6976,6 +7040,9 @@ public sealed partial class ShellWindow : Window
             _manager.Config.Orbits.Clear();
             _manager.Config.Orbits.AddRange(imported.Orbits);
             _manager.Config.EnsurePrimary();
+            // A file exported by an earlier build can carry corner copies of groups; the same repair
+            // the app makes at launch (see OrbitManager.Start), here because an import skips it.
+            HotCornerItems.RelinkOrbitGroups(_manager.Config);
             _manager.NotifyItemsChanged();
             _manager.ApplyTheme();
             _manager.ApplyLanguage();

@@ -93,6 +93,16 @@ public static class ElementLibrary
             .ToList();
 
     /// <summary>
+    /// Whether <paramref name="item"/> is one of the orbit's own groups — the live object a Groups
+    /// row in the sidebar stands for — rather than a copy of one, or a group that lives only on the
+    /// hot corner. Compared by reference: a copy has the same name and the same children and is
+    /// still not that group, which is the whole difference between a group that follows what is
+    /// added to it from the sidebar and one that does not.
+    /// </summary>
+    public static bool IsOrbitUserGroup(IEnumerable<OrbitItem> orbitItems, OrbitItem item) =>
+        item.IsGroup && UserGroups(orbitItems).Any(group => ReferenceEquals(group, item));
+
+    /// <summary>
     /// The rows of one category. <paramref name="catalog"/> is everything that could be offered
     /// (the machine-scanned suggestions and the tool catalog, in the order they should appear);
     /// <paramref name="orbitItems"/> is <c>Config.Primary.Items</c>.
