@@ -15,6 +15,7 @@ public sealed class OrbitManager
     private TrayIconService? _tray;
     private HotkeyService? _hotkeys;
     private HotCornerWatcher? _hotCorner;
+    private MouseTriggerWatcher? _mouseTrigger;
     private ShellWindow? _shellWindow;
     private OnboardingWindow? _onboardingWindow;
     private AddItemWindow? _addItemWindow;
@@ -155,10 +156,14 @@ public sealed class OrbitManager
             return;
         }
 
-        // Every later launch just opens the app window. The desktop-shortcut prompt is not offered
-        // from here: it is a first-run question, and on a first run the guide above asks it outright
-        // (or, if the guide was dismissed, hands it to the app window itself — see OpenOnboarding).
-        OpenSettings();
+        // Every later launch brings up the orbit dock itself, exactly as the hotkey or hot-corner
+        // would — not the app window, which used to open here and is now reached from the dock's
+        // own Settings bubble, the tray menu, or either of those summons, same as any other time.
+        // ToggleOrbit rather than a direct Summon so this shares its IsOpen/IsClosing guards; at
+        // this point in a fresh process neither is true, but there is no reason to duplicate them.
+        // The pre-warm kicked off above is still safe to leave running: Summon flips _isOpen before
+        // PrewarmAsync's delay elapses, so its own guard (see PrewarmAsync) skips it as a no-op.
+        ToggleOrbit();
     }
 
     public void Save() => OrbitStore.Save(Config);
@@ -250,6 +255,13 @@ public sealed class OrbitManager
             _hotCorner = new HotCornerWatcher(_messageWindow);
             _hotCorner.Triggered += SummonFromHotCorner;
             ApplyHotCorner();
+
+            // ToggleOrbit, the same as the tray icon and the hotkey: a long press has no position
+            // of its own the way a hot-corner summon does, so there is no quadrant anchor to pick —
+            // it is the full orbit under the pointer, exactly as the keyboard shortcut summons it.
+            _mouseTrigger = new MouseTriggerWatcher(_messageWindow);
+            _mouseTrigger.Triggered += ToggleOrbit;
+            ApplyMouseTrigger();
         }
         catch (Exception ex)
         {
@@ -274,6 +286,11 @@ public sealed class OrbitManager
     /// either the corner or whether it is on.</summary>
     public void ApplyHotCorner() =>
         _hotCorner?.Configure(Config.HotCornerEnabled, Config.HotCorner);
+
+    /// <summary>Puts <see cref="Config"/>'s mouse-trigger choice into effect. Call after changing
+    /// either the button or whether it is on.</summary>
+    public void ApplyMouseTrigger() =>
+        _mouseTrigger?.Configure(Config.MouseTriggerEnabled, Config.MouseTriggerButton);
 
     /// <summary>
     /// The mouse-only counterpart to the summon hotkey (see <see cref="HotCornerWatcher"/>).
@@ -327,33 +344,64 @@ public sealed class OrbitManager
     /// <summary>
     /// Opens the SwiftX app window (<see cref="ShellWindow"/>) on its Home screen.
     /// <para>
-    /// Still called <c>OpenSettings</c> because that is what every caller is asking for — the tray
-    /// menu's Settings entry, the orbit's own Settings bubble, and a second launch of the app
-    /// handed here by <see cref="SingleInstanceSignal"/>. Settings is now one screen inside that
-    /// window rather than the window itself, and the gear on Home is one click away.
+    /// Still called <c>OpenSettings</c> because that is what most callers are asking for — the tray
+    /// menu's Settings entry and a second launch of the app handed here by
+    /// <see cref="SingleInstanceSignal"/>. Settings is one screen inside that window rather than the
+    /// window itself; <see cref="OpenHomeScreen"/>, <see cref="OpenSettingsScreen"/> and
+    /// <see cref="OpenOrbitScreen"/> land on a specific one, for the orbit's own Home/Settings
+    /// bubbles and its one pinned logo slot.
     /// </para>
     /// </summary>
-    public void OpenSettings() => OpenSettings(offerDesktopShortcut: false);
+    public void OpenSettings() => OpenSettingsOn(screen: null, offerDesktopShortcut: false);
 
     /// <param name="offerDesktopShortcut">
     /// Opens on Settings › General with the prompt offering to put a SwiftX shortcut on the
     /// desktop. Only ever true for a first launch whose set-up guide did not run or was dismissed
     /// — the guide asks the same question itself, so it is not asked twice. See <see cref="Start"/>.
     /// </param>
-    public void OpenSettings(bool offerDesktopShortcut)
+    public void OpenSettings(bool offerDesktopShortcut) =>
+        OpenSettingsOn(screen: null, offerDesktopShortcut);
+
+    /// <summary>Opens the app window already on its Home screen — <see cref="SystemOrbitItems.CreateHome"/>'s
+    /// destination once it is added to the orbit from the sidebar's Controls section.</summary>
+    public void OpenHomeScreen() => OpenSettingsOn(ShellWindow.ScreenHome, offerDesktopShortcut: false);
+
+    /// <summary>Opens the app window already on its Settings screen — <see cref="SystemOrbitItems.CreateSettings"/>'s
+    /// destination, distinct from the orbit's own pinned logo slot (<see cref="OpenOrbitScreen"/>).</summary>
+    public void OpenSettingsScreen() => OpenSettingsOn(ShellWindow.ScreenSettings, offerDesktopShortcut: false);
+
+    /// <summary>Opens the app window already on its Orbit screen — the orbit's one pinned slot,
+    /// <see cref="SystemOrbitItems.CreateOrbitLogo"/>'s destination.</summary>
+    public void OpenOrbitScreen() => OpenSettingsOn(ShellWindow.ScreenOrbit, offerDesktopShortcut: false);
+
+    /// <summary>
+    /// What every <c>OpenSettings*</c>/<c>Open*Screen</c> overload above funnels through: creates
+    /// the app window if it is not already open (landing on <paramref name="screen"/> if given, else
+    /// its own Home default — see <see cref="ShellWindow"/>'s constructor), or, if it is already
+    /// open, jumps it straight to <paramref name="screen"/> rather than leaving it wherever it was
+    /// — asking for Settings while the window happens to be sitting on Tools should not require a
+    /// second click once it is already on screen.
+    /// </summary>
+    private void OpenSettingsOn(string? screen, bool offerDesktopShortcut)
     {
         if (_shellWindow is null)
         {
-            _shellWindow = new ShellWindow(this, offerDesktopShortcut);
+            _shellWindow = new ShellWindow(this, offerDesktopShortcut, screen);
             _shellWindow.Closed += (_, _) => _shellWindow = null;
         }
-        else if (_shellWindow.AppWindow.Presenter is OverlappedPresenter presenter &&
-                 presenter.State == OverlappedPresenterState.Minimized)
+        else
         {
-            // Activate() on a minimized window shows it but leaves it minimized, so an app window
-            // the user had put away would answer a fresh launch of the app with a taskbar flash and
-            // nothing else.
-            presenter.Restore();
+            if (screen is not null)
+                _shellWindow.NavigateTo(screen);
+
+            if (_shellWindow.AppWindow.Presenter is OverlappedPresenter presenter &&
+                presenter.State == OverlappedPresenterState.Minimized)
+            {
+                // Activate() on a minimized window shows it but leaves it minimized, so an app
+                // window the user had put away would answer a fresh launch of the app with a
+                // taskbar flash and nothing else.
+                presenter.Restore();
+            }
         }
 
         _shellWindow.Activate();
@@ -465,7 +513,19 @@ public sealed class OrbitManager
 
         if (string.Equals(item.Target, SystemOrbitItems.SettingsTarget, StringComparison.OrdinalIgnoreCase))
         {
-            OpenSettings();
+            OpenSettingsScreen();
+            return;
+        }
+
+        if (string.Equals(item.Target, SystemOrbitItems.HomeTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            OpenHomeScreen();
+            return;
+        }
+
+        if (string.Equals(item.Target, SystemOrbitItems.OrbitLogoTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            OpenOrbitScreen();
             return;
         }
 
@@ -565,10 +625,12 @@ public sealed class OrbitManager
         _tray?.Dispose();
         _hotkeys?.Dispose();
         _hotCorner?.Dispose();
+        _mouseTrigger?.Dispose();
         _messageWindow?.Dispose();
         _tray = null;
         _hotkeys = null;
         _hotCorner = null;
+        _mouseTrigger = null;
         _messageWindow = null;
     }
 

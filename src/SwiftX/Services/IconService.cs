@@ -315,6 +315,93 @@ public static class IconService
         return (raw, null);
     }
 
+    // ---- Tool window icons -------------------------------------------------
+
+    /// <summary>Per-tool rendered icon files, keyed by <see cref="ToolKind"/> and built once per
+    /// process (see <see cref="GetToolIconPath"/>).</summary>
+    private static readonly ConcurrentDictionary<ToolKind, string> ToolIconFiles = new();
+
+    /// <summary>
+    /// The taskbar/Alt+Tab icon for one tool window, rasterized once from the tool's own Segoe
+    /// Fluent glyph (the same codepoint <see cref="Controls.AppTitleBar"/> draws in its custom
+    /// title bar) rather than every <see cref="ToolWindows.ToolWindowBase"/> inheriting the
+    /// process's default icon (<c>Assets\SwiftX.ico</c>), which made every tool look identical
+    /// there. There are no per-tool .ico assets to ship, so this draws the glyph onto a small
+    /// bitmap and writes it to disk as a real .ico — <c>AppWindow.SetIcon</c> only takes a file
+    /// path, not in-memory bytes, unlike the PNG encoding <see cref="TryEncodeIconPng"/> does for
+    /// the rest of this service. Cached per <see cref="ToolKind"/> for the life of the process, and
+    /// on disk under the icon cache directory so a later launch does not re-render it either.
+    /// Returns null (→ caller keeps the default icon) if the render or write fails for any reason.
+    /// </summary>
+    public static string? GetToolIconPath(ToolKind kind, string glyph)
+    {
+        if (ToolIconFiles.TryGetValue(kind, out var cached))
+            return cached;
+
+        try
+        {
+            string dir = Path.Combine(CacheDir, "Tools");
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, kind + ".ico");
+            if (!File.Exists(path))
+                RenderGlyphIcon(glyph, path);
+            ToolIconFiles[kind] = path;
+            return path;
+        }
+        catch (Exception ex)
+        {
+            Diag.Log($"IconService: tool icon for {kind} not created: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Draws one glyph centered on a filled accent circle — a plain glyph is mostly thin strokes
+    /// that all but disappear at the 16/32px the taskbar actually draws — and saves the result as
+    /// a .ico file. <see cref="GlyphFonts.IsTextGlyph"/> is the same test
+    /// <see cref="Controls.AppTitleBar"/> uses to pick the matching font, since Base64's glyph is
+    /// literal text ("B64") rather than a Segoe Fluent Icons codepoint.
+    /// </summary>
+    private static void RenderGlyphIcon(string glyph, string path)
+    {
+        const int size = 32;
+        using var bitmap = new System.Drawing.Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var g = System.Drawing.Graphics.FromImage(bitmap))
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            g.Clear(System.Drawing.Color.Transparent);
+
+            using var bg = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(255, 0, 99, 177));
+            g.FillEllipse(bg, 0, 0, size, size);
+
+            bool isText = GlyphFonts.IsTextGlyph(glyph);
+            float fontSize = isText ? size * 0.34f : size * 0.56f;
+            using var font = new System.Drawing.Font(
+                isText ? "Segoe UI" : "Segoe Fluent Icons", fontSize, System.Drawing.FontStyle.Regular,
+                System.Drawing.GraphicsUnit.Pixel);
+            using var brush = new System.Drawing.SolidBrush(System.Drawing.Color.White);
+            using var format = new System.Drawing.StringFormat
+            {
+                Alignment = System.Drawing.StringAlignment.Center,
+                LineAlignment = System.Drawing.StringAlignment.Center,
+            };
+            g.DrawString(glyph, font, brush, new System.Drawing.RectangleF(0, 0, size, size), format);
+        }
+
+        nint hIcon = bitmap.GetHicon();
+        try
+        {
+            using var icon = System.Drawing.Icon.FromHandle(hIcon);
+            using var fs = new FileStream(path, FileMode.Create, FileAccess.Write);
+            icon.Save(fs);
+        }
+        finally
+        {
+            NativeMethods.DestroyIcon(hIcon);
+        }
+    }
+
     /// <summary>
     /// Extracts the icon's true 32bpp BGRA pixels directly via <c>GetIconInfo</c>/<c>GetDIBits</c>
     /// and encodes them as PNG — bypassing <see cref="System.Drawing.Icon.ToBitmap"/>'s

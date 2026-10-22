@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Composition.SystemBackdrops;
+using Microsoft.UI.Input;
 using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -61,6 +63,9 @@ public sealed partial class ShellWindow : Window
     // Latched in the constructor and acted on once the tree is loaded, since the InfoBar it opens
     // and the nav item it selects don't exist yet when the constructor runs.
     private readonly bool _offerDesktopShortcut;
+    // Same reason: ShowScreen needs the tree built first. Null means the ordinary Home default:
+    // only OrbitManager's OpenHomeScreen/OpenSettingsScreen/OpenOrbitScreen ever pass one.
+    private readonly string? _initialScreen;
     private readonly nint _hwnd;
     private readonly AppWindow _appWindow;
     private readonly AppTitleBar _titleBar;
@@ -125,7 +130,7 @@ public sealed partial class ShellWindow : Window
     private readonly Border?[] _emptySlotBorders = new Border?[OrbitMetrics.SlotCount];
     private Border? _hoveredPreviewOrigin;
     private readonly Dictionary<Border, Border> _previewHoverPartners = new();
-    private readonly List<(Border Element, Brush? Brush, Thickness Thickness)> _hoveredPreviewRestores = new();
+    private readonly List<Action> _hoveredPreviewRestores = new();
     private Point _previewCenter;
     private double _previewRadius;
     private double _previewBubble;
@@ -191,10 +196,11 @@ public sealed partial class ShellWindow : Window
     /// cannot create that shortcut at install time and so has to ask for it once, from inside the
     /// app.
     /// </param>
-    public ShellWindow(OrbitManager manager, bool offerDesktopShortcut = false)
+    public ShellWindow(OrbitManager manager, bool offerDesktopShortcut = false, string? initialScreen = null)
     {
         _manager = manager;
         _offerDesktopShortcut = offerDesktopShortcut;
+        _initialScreen = initialScreen;
         InitializeComponent();
 
         // No backdrop is attached here any more: ApplyTheme below attaches whichever one the theme
@@ -336,6 +342,8 @@ public sealed partial class ShellWindow : Window
             SelectItemShape(_manager.Config.ItemShape);
             RadiusSlider.Value = _manager.Config.OrbitRadius ?? OrbitMetrics.DefaultRadius;
             HotkeyEnabledToggle.IsOn = _manager.Config.HotkeyEnabled;
+            MouseTriggerEnabledToggle.IsOn = _manager.Config.MouseTriggerEnabled;
+            SelectMouseTriggerButton(_manager.Config.MouseTriggerButton);
             HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
             SelectHotCorner(_manager.Config.HotCorner);
             SelectHotCornerLayout(_manager.Config.HotCornerLayout);
@@ -365,12 +373,34 @@ public sealed partial class ShellWindow : Window
             // cast no shadow at all (outside a popup a ThemeShadow draws only onto its receivers),
             // which is the whole point of lifting them with Translation. Guarded on the resource
             // lookup rather than assumed: an element that is not yet in the visual tree cannot be a
-            // receiver, and Loaded is the first moment HomeShadowPlate is.
-            if (Root.Resources["BoxShadow"] is ThemeShadow boxShadow &&
-                !boxShadow.Receivers.Contains(HomeShadowPlate))
+            // receiver, and Loaded is the first moment HomeShadowPlate is. Try/catch for the same
+            // reason EnsureOrbitShadowReceivers below has one: Receivers.Add on this exact
+            // UIElementWeakCollection type has thrown "The parameter is incorrect" in a case Contains
+            // and an ActualWidth/Height check both read as already safe, and a drop shadow is never
+            // worth crashing the window over.
+            try
             {
-                boxShadow.Receivers.Add(HomeShadowPlate);
+                if (Root.Resources["BoxShadow"] is ThemeShadow boxShadow &&
+                    !boxShadow.Receivers.Contains(HomeShadowPlate))
+                {
+                    boxShadow.Receivers.Add(HomeShadowPlate);
+                }
             }
+            catch (Exception ex)
+            {
+                Diag.Log("Home shadow receiver registration failed (Home tiles will render without shadows): " + ex);
+            }
+
+            // Same trick for the orbit ring's discs, the group back button and the name pills: the
+            // discs and the button sit on PreviewCanvas, the pills on PreviewLabelCanvas stacked
+            // above it (see ShellWindow.xaml), so both need to be receivers (OrbitBubbleShadow,
+            // in the resources above). Unlike HomeShadowPlate, OrbitScreen starts Collapsed (Home
+            // is shown first below), so the canvases have no realized size yet here — registering
+            // a zero-size element as a ThemeShadow receiver throws "The parameter is incorrect."
+            // Deferred to EnsureOrbitShadowReceivers, which runs once the canvas actually has a
+            // size (first visit to the Orbit screen).
+            PreviewCanvas.SizeChanged += EnsureOrbitShadowReceivers;
+            EnsureOrbitShadowReceivers(PreviewCanvas, null);
 
             _loading = false;
             RenderPreview();
@@ -385,11 +415,59 @@ public sealed partial class ShellWindow : Window
             {
                 // Land on Settings › General rather than Home so the offer and the switch it
                 // corresponds to are both on screen at once — an InfoBar on a page the user has to
-                // be told to go to is just a notification with extra steps.
+                // be told to go to is just a notification with extra steps. Takes priority over
+                // _initialScreen below: the two never really coincide (a first run whose guide was
+                // dismissed is not a launch that also named a specific screen), but if they ever
+                // did, a one-time question the user hasn't answered yet outranks it.
                 GoToGeneralPage();
                 DesktopShortcutOffer.IsOpen = true;
             }
+            else if (_initialScreen is not null)
+            {
+                ShowScreen(_initialScreen);
+            }
         };
+    }
+
+    // PreviewCanvas is zero-size while OrbitScreen is Collapsed (Home shows first), and a
+    // ThemeShadow.Receivers.Add on a zero-size element throws "The parameter is incorrect." This
+    // fires on every PreviewCanvas SizeChanged until it has a real size — which happens the first
+    // time the user opens the Orbit screen — then unsubscribes itself; the Contains guards make it
+    // safe to also call eagerly from Loaded in case the canvas somehow already has a size by then.
+    // Whether the ring's shadow receivers are registered — see EnsureOrbitShadowReceivers. A flag
+    // rather than trusting ThemeShadow.Receivers.Contains (a UIElementWeakCollection, whose
+    // membership check has not reliably prevented the add it was meant to guard — see that
+    // method's own remarks) to tell this window it has already succeeded.
+    private bool _orbitShadowReceiversRegistered;
+
+    /// <summary>
+    /// The actual root cause of every "The parameter is incorrect" this has thrown: a ThemeShadow
+    /// receiver must not be an ancestor of whatever casts a shadow onto it, and PreviewCanvas /
+    /// PreviewLabelCanvas — the original receivers — are exactly that, the parents of the discs and
+    /// pills ApplyBubbleShadow lifts off them. That is a hard API rule, not a timing fluke, which is
+    /// why it failed on the very first Receivers.Add every single time rather than intermittently.
+    /// PreviewShadowPlate (see ShellWindow.xaml) is the fix: a dedicated sibling behind both
+    /// canvases, the same shape HomeShadowPlate already is for the Home tiles, which is why that one
+    /// never threw. Still deferred to a SizeChanged and wrapped in try/catch — a drop shadow is pure
+    /// polish, never worth a crash over, and there is no reason to trust a next WinUI quirk here any
+    /// more than the last one.
+    /// </summary>
+    private void EnsureOrbitShadowReceivers(object sender, SizeChangedEventArgs? e)
+    {
+        if (_orbitShadowReceiversRegistered) return;
+        if (PreviewCanvas.ActualWidth == 0 || PreviewCanvas.ActualHeight == 0) return;
+
+        try
+        {
+            if (Root.Resources["OrbitBubbleShadow"] is ThemeShadow orbitShadow)
+                orbitShadow.Receivers.Add(PreviewShadowPlate);
+            _orbitShadowReceiversRegistered = true;
+            PreviewCanvas.SizeChanged -= EnsureOrbitShadowReceivers;
+        }
+        catch (Exception ex)
+        {
+            Diag.Log("EnsureOrbitShadowReceivers failed (orbit ring will render without shadows): " + ex);
+        }
     }
 
     private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
@@ -1018,11 +1096,14 @@ public sealed partial class ShellWindow : Window
     // screen keep its live slot geometry, drag state and group expansion across a navigation
     // instead of rebuilding them every time.
 
-    private const string ScreenHome = "home";
-    private const string ScreenOrbit = "orbit";
-    private const string ScreenTools = "tools";
-    private const string ScreenElements = "elements";
-    private const string ScreenSettings = "settings";
+    // Internal rather than private: OrbitManager's OpenHomeScreen/OpenSettingsScreen/OpenOrbitScreen
+    // pass these straight through to the constructor's initialScreen and to NavigateTo, so there is
+    // exactly one place these five strings are spelled.
+    internal const string ScreenHome = "home";
+    internal const string ScreenOrbit = "orbit";
+    internal const string ScreenTools = "tools";
+    internal const string ScreenElements = "elements";
+    internal const string ScreenSettings = "settings";
 
     private const string SectionGeneral = "general";
     private const string SectionFeedback = "feedback";
@@ -1038,6 +1119,14 @@ public sealed partial class ShellWindow : Window
     /// SelectionChanged used to carry, unchanged: the orbit canvas, the elements grid and the tool
     /// list are all built imperatively and would otherwise show whatever they last drew.
     /// </summary>
+    /// <summary>
+    /// Switches an already-open window straight to <paramref name="screen"/> — what
+    /// <see cref="OrbitManager"/>'s <c>OpenHomeScreen</c>/<c>OpenSettingsScreen</c>/<c>OpenOrbitScreen</c>
+    /// call when this window already exists, so asking for one of them lands there even if the
+    /// window was sitting on something else.
+    /// </summary>
+    internal void NavigateTo(string screen) => ShowScreen(screen);
+
     private void ShowScreen(string screen)
     {
         _currentScreen = screen;
@@ -1693,6 +1782,29 @@ public sealed partial class ShellWindow : Window
     private const double PreviewCanvasSize = 470;
 
     /// <summary>
+    /// How far, in device-independent pixels, a disc/pill/back-button is lifted off PreviewCanvas
+    /// so its shared <c>OrbitBubbleShadow</c> (ShellWindow.xaml) has something to cast onto —
+    /// ThemeShadow only draws once the element wearing it has a positive Z-translation. The value
+    /// itself only has to be big enough that the shadow it produces is visible; it is not a real
+    /// depth anything else on the canvas measures against.
+    /// </summary>
+    private const float BubbleElevation = 24;
+
+    /// <summary>
+    /// Lifts <paramref name="element"/> onto the ring's shared drop shadow — see
+    /// <see cref="BubbleElevation"/> and the <c>OrbitBubbleShadow</c> resource in
+    /// ShellWindow.xaml, whose only receiver is PreviewCanvas (wired in the window's Loaded
+    /// handler). Matches docs/orbit-screen-layouts.html's <c>.disc</c> / <c>.pill</c> box-shadow —
+    /// a soft shadow and no outline, rather than the 1px ring a BorderBrush used to draw.
+    /// </summary>
+    private void ApplyBubbleShadow(UIElement element)
+    {
+        element.Translation = new Vector3(0, 0, BubbleElevation);
+        if (Root.Resources["OrbitBubbleShadow"] is ThemeShadow shadow)
+            element.Shadow = shadow;
+    }
+
+    /// <summary>
     /// The label canvas behind it is wider, because a pill reaches further out sideways than the
     /// ring ever does. The two are centred on each other (see ShellWindow.xaml), so converting a
     /// point from the preview's coordinates to the label canvas's is this one constant.
@@ -1701,13 +1813,18 @@ public sealed partial class ShellWindow : Window
     private const double PillCanvasOffsetX = (PillCanvasWidth - PreviewCanvasSize) / 2;
 
     /// <summary>
-    /// Logi's own label pill: 30 tall, 6px corners, 12,4 padding, 12px SemiBold. The gap out from
-    /// the node's edge is SwiftX's — Logi hand-places eight pills for eight fixed labels and can
-    /// tune each one, while these are user-named items of any length placed by formula. Width is
-    /// the title itself: capping and ellipsis produced truncated names on hover ("To….").
+    /// Logi's own label pill: 30 tall, 6px corners, 12,4 padding, 12px SemiBold. Width is the title
+    /// itself: capping and ellipsis produced truncated names on hover ("To….").
     /// </summary>
     private const double PillHeight = 30;
-    private const double PillGap = 22;
+
+    /// <summary>
+    /// How far the pill reaches onto its node, as a fraction of the node's own diameter, rather than
+    /// sitting clear of its edge: a caption overlaying the icon's outer rim, not a separate label
+    /// floating beside it. The glyph inside is centred and far smaller than the 60% of the radius
+    /// this leaves untouched at every bubble size SwiftX offers, so the overlap never reaches it.
+    /// </summary>
+    private const double PillOverlapFraction = 0.20;
 
     /// <summary>
     /// The outward name pill for one filled slot, on <c>PreviewLabelCanvas</c> rather than the
@@ -1730,14 +1847,14 @@ public sealed partial class ShellWindow : Window
         string text = item.DisplayName;
         if (string.IsNullOrWhiteSpace(text)) return null;
 
+        // No BorderBrush/BorderThickness: docs/orbit-screen-layouts.html's .pill carries only a
+        // shadow (ApplyBubbleShadow below), never an outline.
         var pill = new Border
         {
             Height = PillHeight,
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(12, 4, 12, 4),
             Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitLabelPillBrush"),
-            BorderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitLabelPillBorderBrush"),
-            BorderThickness = new Thickness(1),
             Tag = item,
             Child = new TextBlock
             {
@@ -1750,6 +1867,7 @@ public sealed partial class ShellWindow : Window
                 IsHitTestVisible = false,
             },
         };
+        ApplyBubbleShadow(pill);
         ToolTipService.SetToolTip(pill, item.DisplayName);
         pill.Tapped += (_, e) =>
         {
@@ -1785,7 +1903,8 @@ public sealed partial class ShellWindow : Window
         double ux = Math.Cos(angle), uy = Math.Sin(angle);
         double nodeCx = cx + radius * ux;
         double nodeCy = cy + radius * uy;
-        double reach = bubble / 2 + PillGap;
+        // In from the node's edge, not out past it — see PillOverlapFraction.
+        double reach = bubble / 2 - bubble * PillOverlapFraction;
 
         double px, py;
         // The two slots on the vertical axis. Compared against a small epsilon rather than zero
@@ -1871,7 +1990,6 @@ public sealed partial class ShellWindow : Window
         Array.Clear(_emptySlotBorders);
 
         // Resolve against this window's theme — not Application.Current.Resources.
-        var borderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush");
         var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
         var canvasAccent = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasAccentBrush");
@@ -1900,28 +2018,32 @@ public sealed partial class ShellWindow : Window
             double x = cx + radius * Math.Cos(angle) - bubble / 2;
             double y = cy + radius * Math.Sin(angle) - bubble / 2;
 
-            // The orbit synthesizes Settings and Close into the last two slots, so the preview does
-            // the same rather than reading them out of the profile — they are not in it.
+            // The orbit synthesizes the logo into the last slot, so the preview does the same
+            // rather than reading it out of the profile — it is not in it (see SystemOrbitItems).
+            // Home, Settings and Close are regular items now, found the normal way below.
             bool pinned = i >= OrbitMetrics.UserSlotCount;
             OrbitItem? item = pinned
-                ? (i == OrbitMetrics.UserSlotCount ? SystemOrbitItems.CreateSettings() : SystemOrbitItems.CreateClose())
+                ? SystemOrbitItems.CreateOrbitLogo()
                 : i < items.Count && !items[i].IsEmpty ? items[i] : null;
 
+            // No BorderBrush/BorderThickness: the reference study's .disc has no outline, only the
+            // soft shadow ApplyBubbleShadow adds below. A filled or pinned item gets that shadow,
+            // an empty "add" slot does not, so the shadow is what marks a disc as occupied.
             var border = new Border
             {
                 Width = bubble,
                 Height = bubble,
                 Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
-                BorderBrush = borderBrush,
-                BorderThickness = new Thickness(1),
                 Tag = item,
             };
 
             if (pinned)
             {
-                border.Child = PreviewBubbleContent(item!, glyphSize, canvasAccent, bubble, angle);
-                border.BorderBrush = canvasAccent;
-                border.BorderThickness = new Thickness(1.5);
+                // The SwiftX mark itself, not a glyph — see SystemOrbitItems.CreateOrbitLogo. Flat
+                // (AppLogo.Create), not CreateFloating: the bubble's own ApplyBubbleShadow already
+                // lifts it, and a second shadow from the mark would double up.
+                border.Child = AppLogo.Create(bubble * 0.6);
+                ApplyBubbleShadow(border);
                 ToolTipService.SetToolTip(border, $"{item!.DisplayName} — always on the orbit");
             }
             else if (item is null)
@@ -1934,6 +2056,7 @@ public sealed partial class ShellWindow : Window
                 border.Child = PreviewBubbleContent(item, glyphSize, foreground, bubble, angle);
                 ToolTipService.SetToolTip(border, $"{item.DisplayName} — right-click to replace or delete");
                 _slotBorders[i] = border;
+                ApplyBubbleShadow(border);
             }
 
             OrbitItemGeometry.Apply(border, bubble);
@@ -1952,7 +2075,7 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// While the radius slider is held, the canvas shows only the hub and Settings so the
+    /// While the radius slider is held, the canvas shows only the hub and the orbit logo so the
     /// changing distance is readable. The live dock still updates through
     /// <see cref="OrbitManager.SetRadius"/>. Pointer-up restores the full preview.
     /// </summary>
@@ -1965,7 +2088,6 @@ public sealed partial class ShellWindow : Window
         double scale = size * 0.65 / (2 * (OrbitMetrics.Radius + OrbitMetrics.Bubble / 2));
         double radius = OrbitMetrics.Radius * scale;
         double bubble = OrbitMetrics.Bubble * scale;
-        double glyphSize = Math.Max(10, OrbitMetrics.Glyph * scale);
         double logo = OrbitMetrics.HubLogo * scale;
 
         _previewCenter = new Point(cx, cy);
@@ -1977,18 +2099,17 @@ public sealed partial class ShellWindow : Window
         Canvas.SetTop(hub, cy - logo / 2);
         PreviewCanvas.Children.Add(hub);
 
-        var settings = SystemOrbitItems.CreateSettings();
-        var accent = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasAccentBrush");
         const double angle = -Math.PI / 2;
         var border = new Border
         {
             Width = bubble,
             Height = bubble,
             Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
-            BorderBrush = accent,
-            BorderThickness = new Thickness(1.5),
-            Child = PreviewBubbleContent(settings, glyphSize, accent, bubble, angle),
+            // The orbit logo, not Settings — see RenderPreview's own pinned-slot remarks on why the
+            // logo is what is actually always there now.
+            Child = AppLogo.Create(bubble * 0.6),
         };
+        ApplyBubbleShadow(border);
         OrbitItemGeometry.Apply(border, bubble);
         ToolTipService.SetToolTip(border, "Orbit radius");
         Canvas.SetLeft(border, cx + radius * Math.Cos(angle) - bubble / 2);
@@ -2924,7 +3045,96 @@ public sealed partial class ShellWindow : Window
             // A group's mark is the one thing about it with no other way to change: its name and
             // contents are edited elsewhere, and it is not a shell target with an icon of its own
             // to fall back on.
-            editIcon: item.IsGroup ? () => ShowIconPicker(item, slotBorder) : null);
+            editIcon: item.IsGroup ? () => ShowIconPicker(item, slotBorder) : null,
+            // Already a group: nothing to consolidate it into.
+            newGroup: item.IsGroup ? null : () => CreateGroupFromExistingItem(item));
+    }
+
+    /// <summary>
+    /// Wraps an item already on the orbit in a brand new group, in the exact place that item held
+    /// — the group takes over its slot rather than needing one of its own, so this stays offered
+    /// even when <see cref="OrbitIsFull"/>. The item's own right-click "New group…"
+    /// (<see cref="BuildOrbitItemMenu"/>): unlike <see cref="OpenNewGroupDialog"/>'s plain sidebar
+    /// button, the item to consolidate is already known before the window opens, so there is
+    /// nothing here for <see cref="FinishGroupOntoExistingItem"/>'s picker to pick.
+    /// </summary>
+    private void CreateGroupFromExistingItem(OrbitItem item)
+    {
+        _manager.OpenAddItem(
+            added =>
+            {
+                if (added.IsGroup) ConsolidateIntoGroup(added, item);
+            },
+            _manager.Config.Primary.Items,
+            startAsGroup: true,
+            heading: "New group with " + item.DisplayName);
+    }
+
+    /// <summary>
+    /// What <see cref="OpenNewGroupDialog"/> falls back to once the "Add to orbit" window hands
+    /// back <paramref name="group"/> and the orbit turns out to have no free slot to append it:
+    /// a menu of the orbit's current top-level items, each of which takes over its own slot for a
+    /// group that consolidates it in — the same move <see cref="CreateGroupFromExistingItem"/>
+    /// makes when the item to consolidate was already chosen by a right-click. Listed from
+    /// <see cref="_slotBorders"/> rather than <c>_manager.Config.Primary.Items</c> directly so
+    /// eligibility matches <see cref="BuildOrbitItemMenu"/>'s own by construction: a slot with no
+    /// border recorded is pinned or empty, and a tool is left out there for the same reason it is
+    /// here — it comes off the orbit by switching it off, not by being wrapped.
+    /// </summary>
+    private void FinishGroupOntoExistingItem(OrbitItem group, FrameworkElement anchor)
+    {
+        var candidates = new List<OrbitItem>();
+        for (int slot = 0; slot < OrbitMetrics.UserSlotCount; slot++)
+        {
+            if (_slotBorders[slot] is { Tag: OrbitItem item } && !item.IsTool && !item.IsGroup)
+                candidates.Add(item);
+        }
+
+        if (candidates.Count == 0)
+        {
+            ShowSidebarNotice(anchor, "The orbit is full. Remove something to make room for a group.");
+            return;
+        }
+
+        var menu = new MenuFlyout { Placement = FlyoutPlacementMode.Bottom };
+        menu.Items.Add(new MenuFlyoutItem
+        {
+            Text = $"Orbit is full — start {group.DisplayName} with:",
+            IsEnabled = false,
+        });
+        menu.Items.Add(new MenuFlyoutSeparator());
+        foreach (var item in candidates)
+        {
+            var entry = new MenuFlyoutItem { Text = item.DisplayName };
+            entry.Click += (_, _) => ConsolidateIntoGroup(group, item);
+            menu.Items.Add(entry);
+        }
+        menu.ShowAt(anchor);
+    }
+
+    /// <summary>
+    /// The actual consolidation <see cref="CreateGroupFromExistingItem"/> and
+    /// <see cref="FinishGroupOntoExistingItem"/> both land on: <paramref name="item"/>'s slot
+    /// becomes <paramref name="group"/>'s, with <paramref name="item"/> itself — not a copy — as
+    /// the group's first child, so renaming or re-icon-ing it afterwards still reaches the one
+    /// instance of it that ever existed.
+    /// </summary>
+    private void ConsolidateIntoGroup(OrbitItem group, OrbitItem item)
+    {
+        var items = _manager.Config.Primary.Items;
+        int at = items.IndexOf(item);
+        if (at < 0) return;
+
+        group.Children.Add(item);
+        items[at] = group;
+
+        if (ReferenceEquals(_expandedGroup, item)) CollapseGroup();
+        if (ReferenceEquals(_selectedItem, item)) HideItemDetails();
+
+        _manager.NotifyItemsChanged();
+        RenderPreview();
+        RebuildItemsList();
+        DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
     }
 
     /// <summary>
@@ -2958,7 +3168,7 @@ public sealed partial class ShellWindow : Window
 
     private static MenuFlyout BuildItemMenu(
         string name, Action replace, Action remove, string removeLabel, bool canRemove,
-        Action? editIcon = null)
+        Action? editIcon = null, Action? newGroup = null)
     {
         var menu = new MenuFlyout();
 
@@ -2970,6 +3180,21 @@ public sealed partial class ShellWindow : Window
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(replaceItem, "Replace " + name);
         replaceItem.Click += (_, _) => replace();
         menu.Items.Add(replaceItem);
+
+        // Wraps this item in a new group that takes over its own place, so it is offered even
+        // when every slot is taken: unlike the sidebar's "New group…", this one never needs a
+        // free slot of its own (see CreateGroupFromExistingItem).
+        if (newGroup is not null)
+        {
+            var newGroupItem = new MenuFlyoutItem
+            {
+                Text = "New group…",
+                Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE710) },
+            };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(newGroupItem, "New group from " + name);
+            newGroupItem.Click += (_, _) => newGroup();
+            menu.Items.Add(newGroupItem);
+        }
 
         if (editIcon is not null)
         {
@@ -3426,24 +3651,87 @@ public sealed partial class ShellWindow : Window
         HighlightPreviewBorder(origin);
         if (_previewHoverPartners.TryGetValue(origin, out var partner))
             HighlightPreviewBorder(partner);
+
+        // Border has no cursor of its own to set (see Controls/HandCursor.cs) — Root is a
+        // CursorHost for exactly this, same as the "Add to orbit" sidebar's own hand cursor says
+        // every ring item is just as clickable/draggable as a sidebar row is.
+        Root.SetCursor(InputSystemCursorShape.Hand);
     }
 
+    /// <summary>
+    /// Hover feedback for a disc or a name pill: no outline (docs/orbit-screen-layouts.html's .disc
+    /// and .pill have none, which is why item styling dropped BorderBrush/BorderThickness — see
+    /// ApplyBubbleShadow), so hover instead inverts the bubble to the opposite theme's colours — a
+    /// white disc in light mode goes near-black on hover, exactly as it would look sitting on a dark
+    /// orbit, and the reverse in dark mode. <see cref="PreviewBubbleContent"/>/<see cref="AddSlotLabel"/>
+    /// build every bubble from one of three known shapes — a bare glyph, a glyph plus group arc, or a
+    /// pill's text — so those are matched directly rather than walked generically.
+    /// </summary>
     private void HighlightPreviewBorder(Border border)
     {
-        _hoveredPreviewRestores.Add((border, border.BorderBrush, border.BorderThickness));
-        border.BorderBrush = new SolidColorBrush(CurrentAccentColor());
-        border.BorderThickness = new Thickness(2);
+        bool invertedDark = !ThemeHelper.IsDark(Root);
+        var ink = new SolidColorBrush(ThemeHelper.ColorFor(invertedDark, "SwiftXForegroundBrush"));
+
+        switch (border.Child)
+        {
+            case TextBlock text:
+                InvertBubbleBackground(border, invertedDark, "OrbitLabelPillBrush");
+                InvertIconForeground(text, ink);
+                break;
+            case Grid grid:
+                InvertBubbleBackground(border, invertedDark, "OrbitNodeBackgroundBrush");
+                foreach (var child in grid.Children)
+                {
+                    if (child is FontIcon icon) InvertIconForeground(icon, ink);
+                    else if (child is Microsoft.UI.Xaml.Shapes.Shape shape) InvertShapeStroke(shape, ink);
+                }
+                break;
+            default:
+                // FontIcon (a plain item or an empty "add" slot) and anything else alike: the disc
+                // swap is still a reasonable hover cue on its own.
+                InvertBubbleBackground(border, invertedDark, "OrbitNodeBackgroundBrush");
+                if (border.Child is FontIcon only) InvertIconForeground(only, ink);
+                break;
+        }
+    }
+
+    private void InvertBubbleBackground(Border border, bool invertedDark, string key)
+    {
+        var original = border.Background;
+        border.Background = new SolidColorBrush(ThemeHelper.ColorFor(invertedDark, key));
+        _hoveredPreviewRestores.Add(() => border.Background = original);
+    }
+
+    private void InvertIconForeground(IconElement icon, Brush inverted)
+    {
+        var original = icon.Foreground;
+        icon.Foreground = inverted;
+        _hoveredPreviewRestores.Add(() => icon.Foreground = original);
+    }
+
+    private void InvertIconForeground(TextBlock text, Brush inverted)
+    {
+        var original = text.Foreground;
+        text.Foreground = inverted;
+        _hoveredPreviewRestores.Add(() => text.Foreground = original);
+    }
+
+    private void InvertShapeStroke(Microsoft.UI.Xaml.Shapes.Shape shape, Brush inverted)
+    {
+        var original = shape.Stroke;
+        shape.Stroke = inverted;
+        _hoveredPreviewRestores.Add(() => shape.Stroke = original);
     }
 
     private void ClearPreviewHover()
     {
-        foreach (var (element, brush, thickness) in _hoveredPreviewRestores)
-        {
-            element.BorderBrush = brush;
-            element.BorderThickness = thickness;
-        }
+        foreach (var restore in _hoveredPreviewRestores)
+            restore();
         _hoveredPreviewRestores.Clear();
+        bool wasHovering = _hoveredPreviewOrigin is not null;
         _hoveredPreviewOrigin = null;
+        if (wasHovering)
+            Root.ClearCursor();
     }
 
     private void ReorderItem(OrbitItem dragged, int targetSlot)
@@ -4442,29 +4730,30 @@ public sealed partial class ShellWindow : Window
         _previewRadius = radius;
         _previewBubble = bubble;
 
-        var borderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush");
         var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
         var accent = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasAccentBrush");
 
         // The centre is the way back out as well as the mark of where you are: at rest it is the
         // group's own mark, under the pointer it becomes a close mark, and a click closes the group
-        // and returns to the whole orbit. The header has no back arrow for this, which is what lets
-        // its Home button be the same on every screen. A tap closes it whether or not a pointer
-        // ever hovered (touch), the swap is only the hint.
+        // and returns to the whole orbit. That swap stays for the pointer that finds it, but it is a
+        // hover-only hint - nothing on screen says it exists until a pointer happens to land on the
+        // hub, and there is no hover at all on touch. AddGroupBackButton below is the explicit,
+        // always-visible way out it was missing.
         double markSize = glyphSize * 1.15;
         var groupMark = PreviewBubbleContent(group, markSize, accent, parent, 0);
         var closeMark = PreviewGlyph("\uE711", markSize, accent);
 
+        // No BorderBrush/BorderThickness: see ApplyBubbleShadow - every disc on this canvas now
+        // reads its "filled" state from its shadow alone, the hub included.
         var parentBubble = new Border
         {
             Width = parent,
             Height = parent,
             Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
-            BorderBrush = accent,
-            BorderThickness = new Thickness(1.5),
             Child = groupMark,
         };
+        ApplyBubbleShadow(parentBubble);
         OrbitItemGeometry.Apply(parentBubble, parent);
         ToolTipService.SetToolTip(parentBubble, "Click to close group");
         parentBubble.PointerEntered += (_, _) => parentBubble.Child = closeMark;
@@ -4478,6 +4767,8 @@ public sealed partial class ShellWindow : Window
         Canvas.SetLeft(parentBubble, cx - parent / 2);
         Canvas.SetTop(parentBubble, cy - parent / 2);
         PreviewCanvas.Children.Add(parentBubble);
+
+        AddGroupBackButton(cx, cy, parent, glyphSize, foreground);
 
         var children = group.Children.Where(c => !c.Hidden).ToList();
 
@@ -4498,6 +4789,9 @@ public sealed partial class ShellWindow : Window
             bool isAdd = ends > 0 && (i == 0 || i == count - 1);
             var child = isAdd ? null : children[i - ends];
 
+            // No BorderBrush/BorderThickness here either - an add slot stays recognizable as empty
+            // by having no shadow (ApplyBubbleShadow runs only in the else branch below), the same
+            // rule RenderPreview's own empty slots follow.
             var border = new Border
             {
                 Width = bubble,
@@ -4505,17 +4799,12 @@ public sealed partial class ShellWindow : Window
                 Background = isAdd
                     ? new SolidColorBrush(Colors.Transparent)
                     : ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
-                BorderBrush = borderBrush,
-                BorderThickness = new Thickness(1),
                 Tag = child,
             };
 
             if (isAdd)
             {
-                // Dashed, like the reference's own "Add an action" ends, so an empty slot reads as
-                // an invitation rather than as an item that failed to draw.
                 border.Child = PreviewGlyph("\uE710", glyphSize, muted);
-                border.BorderThickness = new Thickness(1);
                 ToolTipService.SetToolTip(border, "Add something to " + group.DisplayName);
                 // No Tapped handler: an add slot has no OrbitItem to drag, so
                 // Preview_PointerReleased's own "no item at this slot" branch calls
@@ -4526,6 +4815,7 @@ public sealed partial class ShellWindow : Window
             else
             {
                 border.Child = PreviewBubbleContent(child!, glyphSize, foreground, bubble, angle);
+                ApplyBubbleShadow(border);
                 ToolTipService.SetToolTip(border, child!.DisplayName);
                 var pill = AddSlotLabel(child, cx, cy, angle, radius, bubble);
                 // No per-bubble Tapped handler: the canvas-level press/drag/release path (see
@@ -4542,6 +4832,49 @@ public sealed partial class ShellWindow : Window
             Canvas.SetTop(border, y);
             PreviewCanvas.Children.Add(border);
         }
+    }
+
+    /// <summary>How far, in device-independent pixels, the group back button sits outside the
+    /// hub's own edge. Raised from the original 16, which read as crowding the hub.</summary>
+    private const double BackButtonGap = 28;
+
+    /// <summary>
+    /// The explicit way out of an expanded group: a round button to the left of the hub, visible
+    /// for as long as <see cref="_expandedGroup"/> is set, calling <see cref="CollapseGroup"/> on a
+    /// tap. Drawn beside <paramref name="parent"/> (the hub's own diameter) rather than replacing
+    /// its hover-to-close affordance — that stays for the pointer that finds it, this is for anyone
+    /// who does not, touch included.
+    /// <para>
+    /// A Border, not a Button: every other ring element is one, and <see cref="AttachPreviewHover"/>
+    /// is what gives it the same hover invert and hand cursor those get — a stock Button's own
+    /// PointerOver visual state would have fought a Background set from code the same way, which is
+    /// why this never picked up that transition while it was one.
+    /// </para>
+    /// </summary>
+    private void AddGroupBackButton(double cx, double cy, double parent, double glyphSize, Brush foreground)
+    {
+        double size = Math.Max(28, parent * 0.78);
+        var button = new Border
+        {
+            Width = size,
+            Height = size,
+            CornerRadius = new CornerRadius(size / 2),
+            Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
+            Child = PreviewGlyph("", glyphSize, foreground),
+        };
+        ApplyBubbleShadow(button);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, "Back to the orbit");
+        ToolTipService.SetToolTip(button, "Back to the orbit");
+        button.Tapped += (_, e) =>
+        {
+            e.Handled = true;
+            CollapseGroup();
+        };
+        AttachPreviewHover(button);
+
+        Canvas.SetLeft(button, cx - parent / 2 - BackButtonGap - size);
+        Canvas.SetTop(button, cy - size / 2);
+        PreviewCanvas.Children.Add(button);
     }
 
     /// <summary>
@@ -4762,9 +5095,12 @@ public sealed partial class ShellWindow : Window
 
         foreach (var category in ElementCategories.All)
         {
-            var rows = category == ElementCategory.Groups
-                ? BuildEditGroupRows(SidebarGroups())
-                : ElementLibrary.RowsFor(category, catalog, orbit).Select(BuildEditRow).ToList();
+            var rows = category switch
+            {
+                ElementCategory.Groups => BuildEditGroupRows(SidebarGroups()),
+                ElementCategory.Controls => BuildControlRows(),
+                _ => ElementLibrary.RowsFor(category, catalog, orbit).Select(BuildEditRow).ToList(),
+            };
             OrbitEditCategories.Children.Add(BuildEditCategory(category, rows));
         }
 
@@ -4981,15 +5317,25 @@ public sealed partial class ShellWindow : Window
         string glyph = ElementCategories.Glyph(category);
         bool startOpen = _orbitEditOpen.Contains(category);
 
-        var rows = new StackPanel
-        {
-            Spacing = 2,
-            Visibility = startOpen ? Visibility.Visible : Visibility.Collapsed,
-        };
+        var rows = new StackPanel { Spacing = 2 };
         foreach (var item in items)
             rows.Children.Add(item);
         if (items.Count == 0)
             rows.Children.Add(BuildEmptyCategoryRow());
+
+        // The selected (expanded) section's children sit on a card background — the same
+        // ShellCardBackgroundBrush every other card in this window uses — so it is clear at a
+        // glance which category's rows are the ones currently showing.
+        var rowsCard = new Border
+        {
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(4),
+            Visibility = startOpen ? Visibility.Visible : Visibility.Collapsed,
+            Background = startOpen
+                ? ThemeHelper.Brush(Root, _manager.Config.Theme, "ShellCardBackgroundBrush")
+                : new SolidColorBrush(Colors.Transparent),
+            Child = rows,
+        };
 
         var chevron = new FontIcon
         {
@@ -5048,8 +5394,11 @@ public sealed partial class ShellWindow : Window
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, name);
         button.Click += (_, _) =>
         {
-            bool open = rows.Visibility == Visibility.Visible;
-            rows.Visibility = open ? Visibility.Collapsed : Visibility.Visible;
+            bool open = rowsCard.Visibility == Visibility.Visible;
+            rowsCard.Visibility = open ? Visibility.Collapsed : Visibility.Visible;
+            rowsCard.Background = open
+                ? new SolidColorBrush(Colors.Transparent)
+                : ThemeHelper.Brush(Root, _manager.Config.Theme, "ShellCardBackgroundBrush");
             if (open)
                 _orbitEditOpen.Remove(category);
             else
@@ -5060,7 +5409,7 @@ public sealed partial class ShellWindow : Window
         return new StackPanel
         {
             Spacing = 4,
-            Children = { button, rows },
+            Children = { button, rowsCard },
         };
     }
 
@@ -5475,6 +5824,20 @@ public sealed partial class ShellWindow : Window
         !OrbitSlots.HasRoom(_manager.Config.Primary.Items);
 
     /// <summary>
+    /// The Controls category: Home, Settings and Close, offered exactly like any other suggestion
+    /// (<see cref="BuildEditRow"/> — already-on-the-orbit badge, drag, right-click included) rather
+    /// than through <see cref="ElementLibrary.RowsFor"/>'s catalog, since none of the three is
+    /// something a scan could ever find. Fixed order and fixed set: unlike every other category,
+    /// nothing here is ever added to or taken off the list itself, only placed on the orbit or not.
+    /// </summary>
+    private List<FrameworkElement> BuildControlRows() =>
+    [
+        BuildEditRow(SystemOrbitItems.CreateHome()),
+        BuildEditRow(SystemOrbitItems.CreateSettings()),
+        BuildEditRow(SystemOrbitItems.CreateClose()),
+    ];
+
+    /// <summary>
     /// The Groups category: a "New group" row, then one drop-target row for each group on the orbit
     /// (<see cref="ElementLibrary.UserGroups"/>; the built-in Tools group is the Tools screen's).
     /// </summary>
@@ -5501,13 +5864,13 @@ public sealed partial class ShellWindow : Window
     /// <summary>
     /// Opens the "Add to orbit" window already on the Group tile, so naming the group is the whole
     /// of the job; what it returns goes where any other sidebar pick goes
-    /// (<see cref="AddToOrbitFromSidebar"/>), which is what settles an armed replace.
-    /// <para>
-    /// This was a name box in a small flyout, which did nothing visible on the default orbit: every
-    /// user slot is taken, and the only sign of that was a line at the top of the sidebar, well out
-    /// of sight of the Groups list it was answering a click in. A full orbit is therefore said on
-    /// the row that was clicked, and the window is not opened — it could only end in "no room".
-    /// </para>
+    /// (<see cref="AddToOrbitFromSidebar"/>), which is what settles an armed replace. Always opens
+    /// immediately — a full orbit used to be said here, before the window ever showed, which from
+    /// the row that was clicked looked like "New group" simply did nothing. What a full orbit
+    /// actually blocks is appending a brand-new group once this window hands one back (see the
+    /// <see cref="OrbitIsFull"/> check in the callback below, and <see cref="FinishGroupOntoExistingItem"/>),
+    /// which is also the one place "no room" can offer consolidating into an existing item instead
+    /// of simply refusing — there is no such fallback to offer before the group even has a name.
     /// </summary>
     /// <param name="seed">
     /// Something to put in the new group as it is created: the thing a right-click on a suggestion
@@ -5515,20 +5878,24 @@ public sealed partial class ShellWindow : Window
     /// </param>
     private void OpenNewGroupDialog(FrameworkElement anchor, OrbitItem? seed = null)
     {
-        // A replace swaps rather than appends, so it has room whatever the count is.
-        if (!IsReplacing && OrbitIsFull)
-        {
-            UpdateOrbitEditSummary();
-            ShowSidebarNotice(anchor, "The orbit is full. Remove something to make room for a group.");
-            return;
-        }
-
         _manager.OpenAddItem(
             added =>
             {
                 // The tile can be changed in the window; only a group can take the seed.
                 if (seed is not null && added.IsGroup)
                     added.Children.Add(CloneOrbitTemplate(seed));
+
+                // A replace swaps rather than appends, so it has room whatever the count is. Short
+                // of that, a full orbit has nowhere to append a brand-new group — unless the group
+                // can instead take over an existing item's slot, consolidating that item into
+                // itself. Only offered for an actual group: the window lets the Group tile be
+                // swapped for anything else, and a plain item has nothing of its own to consolidate.
+                if (!IsReplacing && OrbitIsFull && added.IsGroup)
+                {
+                    FinishGroupOntoExistingItem(added, anchor);
+                    return;
+                }
+
                 AddToOrbitFromSidebar(added);
             },
             _manager.Config.Primary.Items,
@@ -7046,10 +7413,13 @@ public sealed partial class ShellWindow : Window
             _manager.NotifyItemsChanged();
             _manager.ApplyTheme();
             _manager.ApplyLanguage();
+            _manager.ApplyMouseTrigger();
             _manager.ApplyHotCorner();
             ApplyTheme();
             _loading = true;
             PopulateLanguageBox();
+            MouseTriggerEnabledToggle.IsOn = _manager.Config.MouseTriggerEnabled;
+            SelectMouseTriggerButton(_manager.Config.MouseTriggerButton);
             HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
             SelectHotCorner(_manager.Config.HotCorner);
             SelectHotCornerLayout(_manager.Config.HotCornerLayout);
@@ -7079,6 +7449,8 @@ public sealed partial class ShellWindow : Window
         _manager.Config.HoverAnimation = HoverAnimation.Pulse;
         _manager.Config.Hotkey = HotkeyGesture.Default.ToString();
         _manager.Config.HotkeyEnabled = true;
+        _manager.Config.MouseTriggerEnabled = true;
+        _manager.Config.MouseTriggerButton = MouseTriggerButton.Middle;
         _manager.Config.HotCornerEnabled = true;
         _manager.Config.HotCorner = HotCorner.TopLeft;
         _manager.Config.HotCornerLayout = HotCornerLayout.Orbit;
@@ -7100,6 +7472,7 @@ public sealed partial class ShellWindow : Window
         _manager.NotifyItemsChanged();
         _manager.ApplyTheme();
         _manager.ApplyHotkey();
+        _manager.ApplyMouseTrigger();
         _manager.ApplyHotCorner();
         ApplyTheme();
         _loading = true;
@@ -7111,6 +7484,8 @@ public sealed partial class ShellWindow : Window
         RadiusSlider.Value = OrbitMetrics.DefaultRadius;
         HotkeyEnabledToggle.IsOn = true;
         HotkeyCapture.Gesture = HotkeyGesture.Default;
+        MouseTriggerEnabledToggle.IsOn = true;
+        SelectMouseTriggerButton(MouseTriggerButton.Middle);
         HotCornerEnabledToggle.IsOn = true;
         ExperienceRating.Value = -1;
         UpdateRatingThanks();
@@ -7202,6 +7577,40 @@ public sealed partial class ShellWindow : Window
         _manager.Config.HotkeyEnabled = HotkeyEnabledToggle.IsOn;
         _manager.Save();
         UpdateHotkeyStatus();
+    }
+
+    private void MouseTriggerEnabled_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _manager.Config.MouseTriggerEnabled = MouseTriggerEnabledToggle.IsOn;
+        _manager.Save();
+        _manager.ApplyMouseTrigger();
+    }
+
+    /// <summary>Picks the row in <see cref="MouseTriggerButtonBox"/> whose Tag names
+    /// <paramref name="button"/> — the picker's own counterpart to <see cref="SelectHotCorner"/>.</summary>
+    private void SelectMouseTriggerButton(MouseTriggerButton button)
+    {
+        foreach (var obj in MouseTriggerButtonBox.Items)
+        {
+            if (obj is ComboBoxItem item &&
+                string.Equals(item.Tag as string, button.ToString(), StringComparison.Ordinal))
+            {
+                MouseTriggerButtonBox.SelectedItem = item;
+                return;
+            }
+        }
+    }
+
+    private void MouseTriggerButtonBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || MouseTriggerButtonBox.SelectedItem is not ComboBoxItem item) return;
+        if (Enum.TryParse<MouseTriggerButton>(item.Tag as string, out var button))
+        {
+            _manager.Config.MouseTriggerButton = button;
+            _manager.Save();
+            _manager.ApplyMouseTrigger();
+        }
     }
 
     private void SelectHotCorner(HotCorner corner) => RebuildHotCornerPicker(corner);
@@ -8030,7 +8439,7 @@ public sealed partial class ShellWindow : Window
     // copy/paste. See the memory note on this exact failure mode.
     private static readonly string DataGlyph = char.ConvertFromUtf32(0xE943);
     private static readonly string QuickFormatGlyph = char.ConvertFromUtf32(0xE917);
-    private static readonly string SecureValuesGlyph = char.ConvertFromUtf32(0xE72E);
+    private static readonly string SecureValuesGlyph = char.ConvertFromUtf32(0xEA18);
     private static readonly string CertificateGlyph = char.ConvertFromUtf32(0xEB95);
 
     private static readonly ToolRow[] ToolRows =

@@ -217,6 +217,15 @@ public sealed class AppConfig
     public string Hotkey { get; set; } = HotkeyGesture.Default.ToString();
     public bool HotkeyEnabled { get; set; } = true;
 
+    /// <summary>Whether holding <see cref="MouseTriggerButton"/> down summons the orbit — the
+    /// keyboard shortcut's mouse-only counterpart, alongside the hot corner. See
+    /// <c>Services.MouseTriggerWatcher</c>.</summary>
+    public bool MouseTriggerEnabled { get; set; } = true;
+
+    /// <summary>Which button the long-press summon watches. Middle by default — the one the two
+    /// other buttons' own everyday uses (click, right-click) never reach for.</summary>
+    public MouseTriggerButton MouseTriggerButton { get; set; } = MouseTriggerButton.Middle;
+
     /// <summary>Whether shoving the pointer into <see cref="HotCorner"/> summons the orbit.</summary>
     public bool HotCornerEnabled { get; set; } = true;
 
@@ -394,6 +403,8 @@ public sealed class AppConfig
         HoverAnimation = other.HoverAnimation;
         Hotkey = other.Hotkey;
         HotkeyEnabled = other.HotkeyEnabled;
+        MouseTriggerEnabled = other.MouseTriggerEnabled;
+        MouseTriggerButton = other.MouseTriggerButton;
         HotCornerEnabled = other.HotCornerEnabled;
         HotCorner = other.HotCorner;
         HotCornerLayout = other.HotCornerLayout;

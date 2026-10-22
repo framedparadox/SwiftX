@@ -241,10 +241,21 @@ public static class OrbitMetrics
     /// </summary>
     public static double FlyoutStepDegrees => FlyoutStepDegreesFor(FlyoutRadius);
 
+    /// <summary>
+    /// Pixel gap <see cref="FlyoutStepDegreesFor"/> keeps between two adjacent flyout bubbles'
+    /// edges — the group/Tools arc's own counterpart to the inner orbit's <see cref="FlyoutGap"/>.
+    /// Raised twice now: from the original 12 (crowded — a child's name pill sat right against its
+    /// neighbour's disc at most bubble sizes) to 20, which still read as too tight, to this. At the
+    /// default radius and a Medium bubble this is roughly a 29 degree step rather than 12's ~17,
+    /// comfortably short of the 40 degree ceiling below, so there is still room in that ceiling if
+    /// it ever needs to grow further.
+    /// </summary>
+    private const double FlyoutItemGap = 40;
+
     /// <summary><see cref="FlyoutStepDegrees"/> at an arbitrary flyout radius.</summary>
     public static double FlyoutStepDegreesFor(double flyoutRadius)
     {
-        double chord = (FlyoutBubble + 12) / 2;
+        double chord = (FlyoutBubble + FlyoutItemGap) / 2;
         double ratio = Math.Clamp(chord / Math.Max(1, flyoutRadius), 0, 1);
         double step = 2 * Math.Asin(ratio) * 180.0 / Math.PI;
         return Math.Clamp(step, 14, 40);
@@ -307,10 +318,13 @@ public static class OrbitMetrics
     public const int SlotCount = 8;
 
     /// <summary>
-    /// Slots available to user items: the last two are reserved for the built-in Settings and
-    /// Close entries, which are always on the orbit (see <see cref="SystemOrbitItems"/>).
+    /// Slots available to user items — everything but the last, which is reserved for the orbit
+    /// logo, the one entry still always on the orbit (see <see cref="SystemOrbitItems.CreateOrbitLogo"/>).
+    /// Home, Settings and Close are no longer reserved here: they are optional now, stored in
+    /// <see cref="OrbitProfile.Items"/> like any other item the user chose to add, so they count
+    /// against this same budget instead of sitting outside it.
     /// </summary>
-    public const int UserSlotCount = SlotCount - 2;
+    public const int UserSlotCount = SlotCount - 1;
 
     /// <summary>
     /// The slot (0..<see cref="SlotCount"/>-1) angularly nearest a pointer at offset
