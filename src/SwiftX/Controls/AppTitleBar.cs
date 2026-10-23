@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using SwiftX.Services;
@@ -88,6 +89,60 @@ public sealed class AppTitleBar : Grid
     {
         if (_leading is not null)
             _leading.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// A Home button beside the mark, for the one screen whose own header has nowhere left to put
+    /// it — the Orbit screen gave up that header slot once both of its sidebars became permanent
+    /// (see ShellWindow.xaml's OrbitScreen), so its way back to Home moved up here instead.
+    /// Collapsed by default and built lazily on the first call that asks to show it, the same way
+    /// every other screen keeps its own Back_Click button rather than this one growing into a
+    /// global nav element.
+    /// </summary>
+    private Button? _homeButton;
+
+    /// <summary>Raised when <see cref="_homeButton"/> is clicked. The caller does whatever its own
+    /// Back_Click already does (ending a stale replace, then navigating home) — this control only
+    /// draws the button and reports the click.</summary>
+    public event RoutedEventHandler? HomeClicked;
+
+    /// <summary>See <see cref="_homeButton"/>'s doc comment. Parallels <see cref="SetMarkVisible"/>:
+    /// one call, one bool, called right beside it wherever a screen decides what the caption
+    /// shows.</summary>
+    public void SetHomeButtonVisible(bool visible)
+    {
+        if (_homeButton is null)
+        {
+            if (!visible) return;
+
+            _homeButton = new Button
+            {
+                Width = 32,
+                Height = 32,
+                Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(6),
+                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                BorderThickness = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center,
+                // 16 (the mark's own left margin) + AppMarkSize (its width) + 12 (a breathing gap),
+                // so this sits immediately to the mark's right rather than on top of it.
+                Margin = new Thickness(16 + AppMarkSize + 12, 0, 0, 0),
+                Content = new FontIcon
+                {
+                    Glyph = "",
+                    FontSize = 16,
+                    FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
+                },
+            };
+            AutomationProperties.SetName(_homeButton, "Home");
+            ToolTipService.SetToolTip(_homeButton, "Home");
+            _homeButton.Click += (_, e) => HomeClicked?.Invoke(this, e);
+            Children.Add(_homeButton);
+        }
+
+        _homeButton.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>

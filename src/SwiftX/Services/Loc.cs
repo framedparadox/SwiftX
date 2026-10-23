@@ -44,7 +44,6 @@ public static partial class Loc
             [AppLanguage.Spanish] = Spanish,
             [AppLanguage.Italian] = Italian,
             [AppLanguage.PortugueseBR] = PortugueseBR,
-            [AppLanguage.PortuguesePT] = PortuguesePT,
             [AppLanguage.Dutch] = Dutch,
             [AppLanguage.Polish] = Polish,
             [AppLanguage.Turkish] = Turkish,
@@ -54,8 +53,17 @@ public static partial class Loc
             [AppLanguage.Hindi] = Hindi,
             [AppLanguage.Japanese] = Japanese,
             [AppLanguage.ChineseSimplified] = ChineseSimplified,
-            [AppLanguage.ChineseTraditional] = ChineseTraditional,
             [AppLanguage.Korean] = Korean,
+            [AppLanguage.Ukrainian] = Ukrainian,
+            [AppLanguage.Vietnamese] = Vietnamese,
+            [AppLanguage.Indonesian] = Indonesian,
+            [AppLanguage.Thai] = Thai,
+            [AppLanguage.Swedish] = Swedish,
+            [AppLanguage.Danish] = Danish,
+            [AppLanguage.Norwegian] = Norwegian,
+            [AppLanguage.Czech] = Czech,
+            [AppLanguage.Greek] = Greek,
+            [AppLanguage.Romanian] = Romanian,
         };
 
     /// <summary>The language currently in effect — always a concrete one, never
