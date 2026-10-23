@@ -6,6 +6,25 @@ using Microsoft.UI.Xaml.Markup;
 namespace SwiftX.Controls;
 
 /// <summary>
+/// A <see cref="Grid"/> that exposes <see cref="UIElement.ProtectedCursor"/> through public
+/// methods, for a tree where which cursor to show changes dynamically (on a pointer entering and
+/// leaving a plain <see cref="Border"/>, say) rather than being fixed for one element's whole
+/// lifetime the way <see cref="HandButton"/>/<see cref="HandBorder"/> are. <see cref="Grid"/> takes
+/// a subclass cleanly — unlike <see cref="Border"/>, nothing here needs a template workaround — so
+/// this only ever needs to be the one element high enough in the tree to sit over everything that
+/// wants to borrow its cursor, typically a window's own root panel.
+/// </summary>
+public class CursorHost : Grid
+{
+    public void SetCursor(InputSystemCursorShape shape) =>
+        ProtectedCursor = InputSystemCursor.Create(shape);
+
+    /// <summary>Back to whatever the pointer would otherwise show — the OS default, or another
+    /// element's own cursor if the pointer has moved onto one that sets its own.</summary>
+    public void ClearCursor() => ProtectedCursor = null;
+}
+
+/// <summary>
 /// A <see cref="Button"/> that shows the pointing-hand cursor (index finger out, the others
 /// closed) while the pointer is over it. WinUI exposes the cursor only to subclasses
 /// (<c>UIElement.ProtectedCursor</c>), which is the whole reason these two types exist; the

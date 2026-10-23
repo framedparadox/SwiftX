@@ -96,10 +96,16 @@ public sealed partial class OrbitWindow : Window
     private readonly List<BubbleView> _bubbles = new();
     private readonly List<BubbleView> _flyout = new();
 
-    // Cached rather than rebuilt per render so their resolved icon and PropertyChanged wiring
-    // survive a re-render, exactly like the user's own items do.
+    // Cached rather than rebuilt per render so its resolved icon and PropertyChanged wiring
+    // survive a re-render, exactly like the user's own items do. Still needed here even though
+    // Settings is no longer pinned to the ring: HotCornerItems.Resolve takes it as the live
+    // instance a stored quadrant entry naming Settings maps back onto (see CurrentLayout below).
     private readonly OrbitItem _settingsItem = SystemOrbitItems.CreateSettings();
-    private readonly OrbitItem _closeItem = SystemOrbitItems.CreateClose();
+
+    // The orbit's one truly pinned slot — see SystemOrbitItems.CreateOrbitLogo. Same caching
+    // reason as _settingsItem above, though nothing resolves an icon onto this one: CreateBubble
+    // special-cases its target to draw the SwiftX mark instead.
+    private readonly OrbitItem _orbitLogoItem = SystemOrbitItems.CreateOrbitLogo();
 
     private BubbleView? _flyoutParent;
     private Border? _hub;
@@ -624,9 +630,10 @@ public sealed partial class OrbitWindow : Window
         while (slot < OrbitMetrics.UserSlotCount)
             slots.Add((SystemOrbitItems.CreateAddNew(), slot++));
 
-        // Always last, always present, always in the same place — see SystemOrbitItems.
-        slots.Add((_settingsItem, OrbitMetrics.SlotCount - 2));
-        slots.Add((_closeItem, OrbitMetrics.SlotCount - 1));
+        // Always last, always present, always in the same place — see SystemOrbitItems. Home,
+        // Settings and Close are regular items now, found the normal way in the loop above if the
+        // user added one from the sidebar's Controls section.
+        slots.Add((_orbitLogoItem, OrbitMetrics.SlotCount - 1));
         return slots;
     }
 
@@ -1166,6 +1173,21 @@ public sealed partial class OrbitWindow : Window
             content.Children.Add(rim);
         content.Children.Add(icon);
         content.Children.Add(glyph);
+
+        // The orbit's one pinned slot draws the SwiftX mark itself rather than a glyph — see
+        // SystemOrbitItems.CreateOrbitLogo, whose CustomGlyph is only a fallback for generic code
+        // that never resolves an icon or reads Glyph directly. Explicitly collapsed rather than
+        // left to item.GlyphVisibility (which would show that fallback glyph, since the item has no
+        // IconImage): the mark's petals are separated by a thin transparent channel (see AppLogo's
+        // own remarks), so a glyph merely painted behind it could still peek through the gap. Flat
+        // (AppLogo.Create), not CreateFloating: the tint/backdrop/rim already give this bubble the
+        // same depth every other one has.
+        if (IsOrbitLogoItem(item))
+        {
+            icon.Visibility = Visibility.Collapsed;
+            glyph.Visibility = Visibility.Collapsed;
+            content.Children.Add(AppLogo.Create(iconSize));
+        }
 
         // A group wears a short arc traced on its own outward edge — before you hover it, that
         // arc is the only thing distinguishing an item that opens an orbit of its own from one that
@@ -2159,6 +2181,9 @@ public sealed partial class OrbitWindow : Window
     private static bool IsCloseItem(OrbitItem item) =>
         string.Equals(item.Target, SystemOrbitItems.CloseTarget, StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsOrbitLogoItem(OrbitItem item) =>
+        string.Equals(item.Target, SystemOrbitItems.OrbitLogoTarget, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// The hover style in force right now: the configured one, except that Tint gives way to Invert
     /// under High Contrast and Animate gives way to Zoom when Windows has animations off (see
@@ -2370,20 +2395,24 @@ public sealed partial class OrbitWindow : Window
         await Task.Delay(150);
         _manager.HandleItemActivation(item);
 
-        // Every other selection closes the orbit on activation — Settings and Add-new are the
-        // exceptions: each opens its own window and should stay on screen for as long as that
-        // window is open (see OrbitWindow_Activated's matching IsExemptWindowForeground check,
-        // which keeps the deactivation that follows here from dismissing it too). Selecting either
-        // a second time while its window is already open just re-activates that window (see
-        // OrbitManager.OpenSettings/OpenAddItem) — still no dismiss.
-        bool staysOpen = IsSettingsItem(item) ||
+        // Every other selection closes the orbit on activation — Home, Settings, the orbit logo and
+        // Add-new are the exceptions: each opens its own window (the app window, for the first
+        // three) and should stay on screen for as long as that window is open (see
+        // OrbitWindow_Activated's matching IsExemptWindowForeground check, which keeps the
+        // deactivation that follows here from dismissing it too — that check is keyed to the
+        // window, not which of these opened it, so it already covers all three without its own
+        // change). Selecting any of them a second time while its window is already open just
+        // re-activates that window (see OrbitManager.OpenSettings/OpenAddItem) — still no dismiss.
+        bool staysOpen = OpensAppWindow(item) ||
             string.Equals(item.Target, SystemOrbitItems.AddNewTarget, StringComparison.OrdinalIgnoreCase);
         if (!staysOpen)
             Dismiss();
     }
 
-    private static bool IsSettingsItem(OrbitItem item) =>
-        string.Equals(item.Target, SystemOrbitItems.SettingsTarget, StringComparison.OrdinalIgnoreCase);
+    private static bool OpensAppWindow(OrbitItem item) =>
+        string.Equals(item.Target, SystemOrbitItems.SettingsTarget, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(item.Target, SystemOrbitItems.HomeTarget, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(item.Target, SystemOrbitItems.OrbitLogoTarget, StringComparison.OrdinalIgnoreCase);
 
     // ---- Input ---------------------------------------------------------------------------
 

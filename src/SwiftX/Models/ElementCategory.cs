@@ -13,6 +13,14 @@ public enum ElementCategory
     Links,
     Groups,
     Tools,
+
+    /// <summary>
+    /// Home, Settings and Close (see <see cref="SystemOrbitItems"/>) — not a scannable kind of
+    /// content the way every other category is, so unlike them it has no <see cref="Of"/> mapping
+    /// and is never reached by sorting an orbit item's <c>Kind</c>. Built instead from a fixed list
+    /// the sidebar special-cases, the same way <see cref="Groups"/> already is.
+    /// </summary>
+    Controls,
 }
 
 public static class ElementCategories
@@ -26,6 +34,7 @@ public static class ElementCategories
         ElementCategory.Links,
         ElementCategory.Groups,
         ElementCategory.Tools,
+        ElementCategory.Controls,
     ];
 
     /// <summary>
@@ -56,6 +65,7 @@ public static class ElementCategories
         ElementCategory.Links => "LINKS",
         ElementCategory.Groups => "GROUPS",
         ElementCategory.Tools => "TOOLS",
+        ElementCategory.Controls => "CONTROLS",
         _ => category.ToString().ToUpperInvariant(),
     };
 
@@ -71,6 +81,7 @@ public static class ElementCategories
         ElementCategory.Links => char.ConvertFromUtf32(0xE774),
         ElementCategory.Groups => char.ConvertFromUtf32(0xE838),
         ElementCategory.Tools => char.ConvertFromUtf32(0xE943),
+        ElementCategory.Controls => char.ConvertFromUtf32(0xE713),
         _ => char.ConvertFromUtf32(0xE7C3),
     };
 }

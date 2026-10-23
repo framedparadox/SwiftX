@@ -197,6 +197,37 @@ public class ElementLibraryTests
     }
 
     [Fact]
+    public void A_group_on_the_orbit_is_the_orbits_own_but_a_copy_of_it_is_not()
+    {
+        var work = Group("Work", App("code"));
+        var orbit = new List<OrbitItem> { App("calc"), work };
+
+        Assert.True(ElementLibrary.IsOrbitUserGroup(orbit, work));
+
+        // Same name, same children, even the same id: still another object, and the sidebar's
+        // Groups list holds the orbit's objects, so it is not one a row can add to.
+        var copy = Group("Work", App("code"));
+        copy.Id = work.Id;
+        Assert.False(ElementLibrary.IsOrbitUserGroup(orbit, copy));
+    }
+
+    [Fact]
+    public void Only_the_orbits_user_groups_count_as_the_orbits_own()
+    {
+        var tools = ToolCatalog.CreateToolsGroup();
+        var inner = Group("Inner");
+        var outer = Group("Outer", inner);
+        var app = App("calc");
+        var orbit = new List<OrbitItem> { tools, outer, app };
+
+        Assert.True(ElementLibrary.IsOrbitUserGroup(orbit, outer));
+        Assert.False(ElementLibrary.IsOrbitUserGroup(orbit, tools));   // the Tools screen's, not a place to add to
+        Assert.False(ElementLibrary.IsOrbitUserGroup(orbit, inner));   // the orbit cannot open a group in a group
+        Assert.False(ElementLibrary.IsOrbitUserGroup(orbit, app));     // not a group at all
+        Assert.False(ElementLibrary.IsOrbitUserGroup([], outer));      // a group that is no longer on the orbit
+    }
+
+    [Fact]
     public void NewGroup_uses_the_name_given_and_falls_back_to_Group()
     {
         var named = ElementLibrary.NewGroup("  Work  ");

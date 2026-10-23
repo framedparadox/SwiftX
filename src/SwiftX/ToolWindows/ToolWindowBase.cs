@@ -69,6 +69,13 @@ public sealed class ToolWindowBase : Window
         }
         _appWindow.IsShownInSwitchers = true;
 
+        // Otherwise every tool window inherits the process's default icon (Assets\SwiftX.ico),
+        // and the taskbar/Alt+Tab can't tell Secure values apart from Base64 or the main app
+        // itself. There are no per-tool .ico assets, so IconService rasterizes the tool's own
+        // glyph (the same one AppTitleBar draws in the custom title bar) into one.
+        if (IconService.GetToolIconPath(definition.Kind, definition.Glyph) is { } toolIconPath)
+            _appWindow.SetIcon(toolIconPath);
+
         var (width, height) = definition.WindowSize ?? (900, 640);
         WindowChrome.SetRoundedCorners(_hwnd);
         WindowChrome.SetClientSizeDip(_appWindow, _hwnd, width, height);

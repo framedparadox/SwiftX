@@ -56,7 +56,7 @@ public static class ToolCatalog
         {
             WindowSize = (560, 460),
         },
-        new ToolDefinition(ToolKind.SecureValues, "Secure values", "Store keys and secrets locally (masked).", "\uE72E",
+        new ToolDefinition(ToolKind.SecureValues, "Secure values", "Store keys and secrets locally (masked).", "\uEA18",
             m => new SecureValuesPage(m)),
         new ToolDefinition(ToolKind.Base64, "Base64", "Encode and decode Base64 text.", "B64",
             m => new Base64Page(m)),
