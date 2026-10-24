@@ -134,6 +134,24 @@ public static class WindowChrome
             hwnd, NativeMethods.DWMWA_USE_IMMERSIVE_DARK_MODE, ref immersiveDark, sizeof(int));
     }
 
+    /// <summary>
+    /// Cloaks or uncloaks the window via DWM. While cloaked the window is composed but never drawn
+    /// to screen, so it can be shown, activated, sized and moved entirely invisibly and then revealed
+    /// in a single step once its XAML content has actually painted.
+    /// <para>
+    /// This is what removes the blank frame a WinUI window flashes on a cold open: the OS makes the
+    /// HWND visible the instant <c>Window.Activate()</c> is called, but the composition engine does
+    /// not present the window's first real frame until a beat later, and the gap shows as the window
+    /// class's own background (white) behind the rounded rim. Cloaking from construction until the
+    /// first screen is up means the user only ever sees the painted window.
+    /// </para>
+    /// </summary>
+    public static void SetCloaked(nint hwnd, bool cloaked)
+    {
+        int value = cloaked ? 1 : 0;
+        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_CLOAK, ref value, sizeof(int));
+    }
+
     /// <summary>Applies the Windows 11 rounded-corner treatment to the window.</summary>
     public static void SetRoundedCorners(nint hwnd, bool small = false)
     {
@@ -223,7 +241,8 @@ public static class WindowChrome
     /// paint, and reset any leftover border/caption colour to the DWM default.
     /// </para>
     /// </summary>
-    public static void ApplyShellFrame(AppWindow appWindow, nint hwnd, bool dark, bool frosted, int rim)
+    public static void ApplyShellFrame(
+        AppWindow appWindow, nint hwnd, bool dark, bool frosted, int rim, bool resizable = true)
     {
         SetTitleBarTheme(appWindow, dark);
         SetRoundedCorners(hwnd);
@@ -233,7 +252,13 @@ public static class WindowChrome
             if (appWindow.Presenter is OverlappedPresenter presenter)
             {
                 presenter.SetBorderAndTitleBar(hasBorder: !frosted, hasTitleBar: true);
-                presenter.IsResizable = true;
+                // Written only when it differs, and each window passes its own answer. This runs from
+                // Window.Activated, which fires inside the first Activate(); flipping IsResizable
+                // there (the app window is built fixed-size, this used to force it back to true)
+                // hides the window Activate() is in the middle of showing - it opened as a blank
+                // frame for ~30 ms and then vanished, on every first open of a new window.
+                if (presenter.IsResizable != resizable)
+                    presenter.IsResizable = resizable;
             }
         }
         catch

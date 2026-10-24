@@ -7,26 +7,28 @@ namespace SwiftX.Tests.Services;
 public class LanguageCatalogTests
 {
     [Fact]
-    public void Options_covers_every_AppLanguage_value_exactly_once()
+    public void Options_covers_every_concrete_AppLanguage_exactly_once()
     {
-        var values = Enum.GetValues<AppLanguage>();
+        // System is a stored value that resolves to one of these, not something the picker offers.
+        var values = Enum.GetValues<AppLanguage>().Where(l => l != AppLanguage.System).ToList();
         var optionLanguages = LanguageCatalog.Options.Select(o => o.Language).ToList();
 
-        Assert.Equal(values.Length, optionLanguages.Count);
+        Assert.Equal(values.Count, optionLanguages.Count);
         foreach (var value in values)
             Assert.Single(optionLanguages, l => l == value);
     }
 
     [Fact]
-    public void Only_System_carries_an_empty_culture_tag()
+    public void The_picker_never_offers_System()
+    {
+        Assert.DoesNotContain(LanguageCatalog.Options, o => o.Language == AppLanguage.System);
+    }
+
+    [Fact]
+    public void Every_option_carries_a_culture_tag()
     {
         foreach (var option in LanguageCatalog.Options)
-        {
-            if (option.Language == AppLanguage.System)
-                Assert.Equal("", option.CultureTag);
-            else
-                Assert.False(string.IsNullOrWhiteSpace(option.CultureTag));
-        }
+            Assert.False(string.IsNullOrWhiteSpace(option.CultureTag));
     }
 
     [Theory]
@@ -55,10 +57,20 @@ public class LanguageCatalogTests
     }
 
     [Fact]
-    public void Find_returns_the_matching_option_for_each_language()
+    public void Find_returns_the_matching_option_for_each_concrete_language()
     {
-        foreach (var language in Enum.GetValues<AppLanguage>())
+        foreach (var language in Enum.GetValues<AppLanguage>().Where(l => l != AppLanguage.System))
             Assert.Equal(language, LanguageCatalog.Find(language).Language);
+    }
+
+    [Fact]
+    public void Find_of_System_returns_the_language_System_resolves_to()
+    {
+        // Not Options[0]: with no System entry left, that fall-through would hand a stored System
+        // (every config written before the picker dropped it) Bahasa Indonesia.
+        Assert.Equal(
+            LanguageCatalog.ResolveEffective(AppLanguage.System),
+            LanguageCatalog.Find(AppLanguage.System).Language);
     }
 
     [Theory]
@@ -95,7 +107,6 @@ public class LanguageCatalogTests
         // A duplicated culture tag would make System resolution ambiguous — the first match in
         // Options order would silently win. Every shipped language must own a distinct tag.
         var tags = LanguageCatalog.Options
-            .Where(o => o.Language != AppLanguage.System)
             .Select(o => o.CultureTag.ToLowerInvariant())
             .ToList();
         Assert.Equal(tags.Count, tags.Distinct().Count());

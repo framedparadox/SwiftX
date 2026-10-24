@@ -21,16 +21,13 @@ public sealed record LanguageOption(
 public static class LanguageCatalog
 {
     /// <summary>
-    /// Display order for the Settings language picker: System first (it's the default), then the
-    /// Latin-script languages alphabetized by their own native name, then the non-Latin-script
-    /// ones — those don't share a single alphabetical order with the Latin names, so they are
-    /// grouped afterward (Cyrillic and Greek, then the right-to-left scripts, then Devanagari,
-    /// then Thai, then CJK).
+    /// Display order for the Settings language picker: Latin-script languages alphabetized by
+    /// their own native name, then the non-Latin-script ones — those don't share a single
+    /// alphabetical order with the Latin names, so they are grouped afterward (Cyrillic and Greek,
+    /// then the right-to-left scripts, then Devanagari, then Thai, then CJK).
     /// </summary>
     public static readonly IReadOnlyList<LanguageOption> Options = new[]
     {
-        new LanguageOption(AppLanguage.System, "System", ""),
-
         // Latin script, alphabetical by native name.
         new LanguageOption(AppLanguage.Indonesian, "Bahasa Indonesia", "id-ID"),
         new LanguageOption(AppLanguage.Czech, "Čeština", "cs-CZ"),
@@ -85,7 +82,6 @@ public static class LanguageCatalog
         {
             foreach (var option in Options)
             {
-                if (option.Language == AppLanguage.System) continue;
                 if (string.Equals(option.CultureTag, culture.Name, StringComparison.OrdinalIgnoreCase))
                     return option.Language;
             }
@@ -130,8 +126,14 @@ public static class LanguageCatalog
         _ => AppLanguage.EnglishUS,
     };
 
+    /// <summary>
+    /// The option for <paramref name="language"/>. <see cref="AppLanguage.System"/> has no entry of its
+    /// own any more (the picker offers real languages only; a stored System is still honoured), so it
+    /// is resolved first rather than falling through to whichever language happens to be listed first.
+    /// </summary>
     public static LanguageOption Find(AppLanguage language)
     {
+        language = ResolveEffective(language);
         foreach (var option in Options)
             if (option.Language == language)
                 return option;

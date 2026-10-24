@@ -175,8 +175,8 @@ public static partial class Loc
         ["OrbitLayout.AddToOrbit.OneFreeSlot"] = "One free slot. Click anything below to put it there.",
         ["OrbitLayout.AddToOrbit.FreeSlots"] = "{0} free slots. Click anything below to fill one.",
 
-        // Right sidebar: "ORBIT SETTINGS".
-        ["OrbitLayout.Settings.Eyebrow"] = "ORBIT SETTINGS",
+        // Right sidebar: "CONFIGURE ORBIT".
+        ["OrbitLayout.Settings.Eyebrow"] = "CONFIGURE ORBIT",
 
         ["OrbitLayout.ItemSize.Heading"] = "Item size",
         ["OrbitLayout.ItemSize.About"] = "About item size",

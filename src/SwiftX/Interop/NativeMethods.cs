@@ -20,6 +20,14 @@ internal static partial class NativeMethods
     public const int DWMWA_CAPTION_COLOR = 35;
 
     /// <summary>
+    /// DWM "cloak" flag (see WindowChrome.SetCloaked). A cloaked window is composed but not drawn to
+    /// screen — the HWND can be shown, sized, moved and activated while invisible, then revealed in
+    /// one step once its content has painted. Used to hide the blank OS frame that would otherwise
+    /// flash before a WinUI window's first composition frame lands.
+    /// </summary>
+    public const int DWMWA_CLOAK = 13;
+
+    /// <summary>
     /// DWM "no custom border color" sentinel for <see cref="DWMWA_BORDER_COLOR"/>.
     /// Pass this instead of a solid COLORREF when a translucent window must not paint a custom rim.
     /// </summary>

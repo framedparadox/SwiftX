@@ -73,6 +73,10 @@ public sealed partial class ShellWindow : Window
     private readonly AppTitleBar _titleBar;
     private bool _loading = true;
     private bool _radiusAdjusting;
+    private bool _settingsCursorsApplied;
+    private bool _toolsCursorsApplied;
+    private bool _revealed;
+    private DispatcherTimer? _revealFallbackTimer;
 
     /// <summary>Guards <see cref="ResetDefaults_Click"/>'s confirmation dialog against a second
     /// reset starting while the first is still awaiting an answer — the toolbar's own reset
@@ -230,6 +234,14 @@ public sealed partial class ShellWindow : Window
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
         Title = "SwiftX app";
 
+        // Cloaked from here until the first screen has painted (see RevealWindow): OrbitManager
+        // calls Activate() the instant this constructor returns, which makes the HWND visible a beat
+        // before WinUI composes its first frame — and that beat is the blank white frame the window
+        // used to flash on every cold open. Set before Activate so the window is never once drawn
+        // uncloaked; the reveal is driven from the Loaded handler below and guaranteed by a fallback
+        // timer so a slow or failed first paint can delay the window but never hide it for good.
+        WindowChrome.SetCloaked(_hwnd, true);
+
         _titleBar = AppTitleBar.WithAppMark();
         Grid.SetRow(_titleBar, 0);
         Root.Children.Insert(0, _titleBar);
@@ -251,6 +263,23 @@ public sealed partial class ShellWindow : Window
         // wait for — unlike the version string and the toggles, it reads no state.
         AboutMark.Content = AppLogo.Create(56);
         HomeBrandMark.Content = AppLogo.Create(30);
+
+        WireOrbitGlyphHover(OrbitHomeButton);
+
+        WireOrbitGlyphHover(OrbitSettingsButton);
+        OrbitSettingsButton.Click += (_, _) => ShowScreen(ScreenSettings);
+
+        // No disc on hover, same as the orbit's own icon chrome (WireOrbitGlyphHover) — just the
+        // chevron tinting to the accent colour below. A hover/pressed fill used to be written here
+        // too (the theme's own near-black-on-Light/white-on-Dark header colour), which read as the
+        // button's background flipping to its opposite on hover rather than a normal highlight.
+        SuppressChromeFill(SettingsBackButton);
+        SettingsBackButton.PointerEntered += OrbitGlyph_PointerEntered;
+        SettingsBackButton.PointerExited += OrbitGlyph_PointerExited;
+        SettingsBackButton.PointerCanceled += OrbitGlyph_PointerExited;
+        ToolsBackButton.PointerEntered += OrbitGlyph_PointerEntered;
+        ToolsBackButton.PointerExited += OrbitGlyph_PointerExited;
+        ToolsBackButton.PointerCanceled += OrbitGlyph_PointerExited;
         _homeOrbitMark = AppLogo.CreateFloating(160);
         HomeOrbitMarkHost.Content = _homeOrbitMark;
         _homeToolsMark = AppLogo.CreateFloating(160);
@@ -318,6 +347,15 @@ public sealed partial class ShellWindow : Window
             // those without changing the accent. See RepaintThemedContent.
             RepaintThemedContent();
         };
+        // The safety net for the cloak set above: if the Loaded handler's reveal never runs (a first
+        // paint that throws, or is slow enough to be noticed), this fires once and reveals the window
+        // anyway. 600ms is long enough that the Loaded path wins in the normal case and short enough
+        // that a worst case is a brief delay rather than a window that looks like it failed to open.
+        // Stopped in RevealWindow the moment either path reveals, and in OnWindowClosed otherwise.
+        _revealFallbackTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        _revealFallbackTimer.Tick += (_, _) => RevealWindow();
+        _revealFallbackTimer.Start();
+
         // Every subscription below that targets this window is a named method and is removed again
         // in OnWindowClosed — including OnWindowClosed itself. That is load-bearing, not tidiness:
         // see OnWindowClosed for what happens to a window that leaves any of them in place.
@@ -466,6 +504,13 @@ public sealed partial class ShellWindow : Window
             {
                 ShowScreen(_initialScreen);
             }
+
+            // The screen is populated and laid out; reveal the cloaked window now. Low priority so
+            // it lands after this frame's render pass rather than in the middle of it, which is what
+            // makes the window appear already painted instead of mid-build. Idempotent with the
+            // fallback timer — whichever runs first wins (see RevealWindow).
+            DispatcherQueue.TryEnqueue(
+                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, RevealWindow);
         };
     }
 
@@ -983,8 +1028,27 @@ public sealed partial class ShellWindow : Window
         StopHomeOrbitMark();
         CancelHomeHoverHide();
         StopGroupNoticeFlash();
+        _revealFallbackTimer?.Stop();
+        _revealFallbackTimer = null;
         OrbitMetrics.Changed -= OnMetricsChanged;
         _manager.ItemsChanged -= OnItemsChanged;
+    }
+
+    /// <summary>
+    /// Reveals the window that the constructor cloaked (see <see cref="WindowChrome.SetCloaked"/>),
+    /// once — the first caller wins and the fallback timer is stopped. Driven from two places so the
+    /// window is shown the instant it is ready but can never be stranded invisible: the normal path
+    /// is a low-priority enqueue from the Loaded handler, which runs after the first screen has laid
+    /// out and painted; the safety net is <see cref="_revealFallbackTimer"/>, which fires regardless
+    /// if that first paint is slow or throws.
+    /// </summary>
+    private void RevealWindow()
+    {
+        if (_revealed || _closed) return;
+        _revealed = true;
+        _revealFallbackTimer?.Stop();
+        _revealFallbackTimer = null;
+        WindowChrome.SetCloaked(_hwnd, false);
     }
 
     /// <summary>
@@ -1082,6 +1146,7 @@ public sealed partial class ShellWindow : Window
         RebuildToolsList();
         if (_orbitEditBuilt) BuildOrbitEditSidebar();
         if (_howToOpen) BuildHowToGuide();
+        RefreshChromeGlyphColors();
         UpdateElementsGlyphs();
     }
 
@@ -1404,7 +1469,8 @@ public sealed partial class ShellWindow : Window
         WindowChrome.ApplyShellFrame(
             _appWindow, _hwnd, dark,
             frosted: _manager.Config.Theme == AppTheme.FrostedGlass,
-            rim);
+            rim,
+            resizable: false);
     }
 
     /// <summary>
@@ -1486,6 +1552,18 @@ public sealed partial class ShellWindow : Window
         }
         if (screen == ScreenElements) RebuildItemsList();
         if (screen == ScreenTools) RebuildToolsList();
+        if (screen == ScreenSettings && !_settingsCursorsApplied)
+        {
+            _settingsCursorsApplied = true;
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                () => ApplyHandCursors(SettingsScreen));
+        }
+        if (screen == ScreenTools && !_toolsCursorsApplied)
+        {
+            _toolsCursorsApplied = true;
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                () => ApplyHandCursors(ToolsScreen));
+        }
         UpdateElementsGlyphs();
         _titleBar.SetMarkVisible(screen != ScreenHome);
         // Home button lives directly in the Orbit canvas header row (see OrbitScreen in
@@ -2713,6 +2791,59 @@ public sealed partial class ShellWindow : Window
         // to the snapshot.
         if (button == ElementsShortcutButton)
             UpdateElementsGlyphs();
+    }
+
+    /// <summary>
+    /// Re-applies the resting glyph colour of the persistent header/orbit chrome buttons (Home,
+    /// Settings, the theme toggle, the two Back buttons, reset, help) on a theme change.
+    /// <para>
+    /// Those glyphs take their colour from a <c>{ThemeResource}</c> in XAML, which would normally
+    /// re-resolve on its own when the theme changes — except that the accent-tint hover
+    /// (<see cref="OrbitGlyph_PointerEntered"/>/<see cref="OrbitGlyph_PointerExited"/>) writes a
+    /// plain <see cref="SolidColorBrush"/> straight onto <c>Foreground</c>, which replaces the
+    /// theme-resource reference with a static value. After a glyph has been hovered even once it no
+    /// longer follows the theme, so Home and Settings sat on the previous theme's colour until the
+    /// app was relaunched. Re-resolving here, on every repaint, is what lets them keep up without a
+    /// restart. <see cref="ElementsShortcutButton"/> is intentionally not in the list — its glyph is
+    /// owned in both states by <see cref="UpdateElementsGlyphs"/>, which runs in the same repaint.
+    /// </para>
+    /// </summary>
+    private void RefreshChromeGlyphColors()
+    {
+        SetChromeGlyphRest(OrbitHomeButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(OrbitSettingsButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(OrbitHelpButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(OrbitResetButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(ThemeToggleButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(SettingsButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(SettingsBackButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(ToolsBackButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(RadiusResetButton, "SettingsMutedBrush");
+    }
+
+    private void SetChromeGlyphRest(Button button, string key)
+    {
+        var brush = ThemeHelper.Brush(Root, key);
+
+        // Hovered right now: it is showing the accent tint, so updating the saved snapshot rather
+        // than the live Foreground is what makes the colour it restores to on exit the new theme's
+        // rather than the one in force before the switch.
+        if (_orbitGlyphRest.TryGetValue(button, out var saved))
+        {
+            for (int i = 0; i < saved.Count; i++)
+                saved[i] = (saved[i].Target, brush);
+            return;
+        }
+
+        foreach (var node in WalkContent(button))
+        {
+            if (node is IconElement icon)
+                icon.Foreground = brush;
+            else if (node is Shape shape)
+                shape.Fill = brush;
+            else if (node is TextBlock text)
+                text.Foreground = brush;
+        }
     }
 
     private static IEnumerable<DependencyObject> WalkContent(DependencyObject node)
@@ -5219,7 +5350,7 @@ public sealed partial class ShellWindow : Window
             Height = size,
             CornerRadius = new CornerRadius(size / 2),
             Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
-            Child = PreviewGlyph("", glyphSize, foreground),
+            Child = PreviewGlyph("", glyphSize, foreground),
         };
         ApplyBubbleShadow(button);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, "Back to the orbit");
@@ -6995,13 +7126,16 @@ public sealed partial class ShellWindow : Window
     private void PopulateLanguageBox()
     {
         LanguageBox.Items.Clear();
+        var effective = LanguageCatalog.ResolveEffective(_manager.Config.Language);
         foreach (var option in LanguageCatalog.Options)
         {
             var item = new ComboBoxItem { Content = option.NativeName, Tag = option.Language.ToString() };
             LanguageBox.Items.Add(item);
-            if (option.Language == _manager.Config.Language)
+            if (option.Language == effective)
                 LanguageBox.SelectedItem = item;
         }
+        if (LanguageBox.SelectedItem is null && LanguageBox.Items.Count > 0)
+            LanguageBox.SelectedIndex = 0;
     }
 
     /// <summary>
@@ -8901,22 +9035,23 @@ public sealed partial class ShellWindow : Window
             c => c.ShowCertificateTool, (c, v) => c.ShowCertificateTool = v),
     ];
 
-    // Bound as ToolsList's ItemsSource. An ObservableCollection rather than a plain list is what is
-    // left of the drag-to-reorder this used to back: nothing mutates it now but RebuildToolsList's
-    // own Clear-and-refill, and the notifications that once told a finished drag apart from that
-    // refill no longer have a listener. Kept as one because the ItemsSource binding is built on it.
-    private readonly ObservableCollection<Border> _toolCards = new();
-
     private void RebuildToolsList()
     {
-        _toolCards.Clear();
-        foreach (var row in ToolRows)
-            _toolCards.Add(BuildToolCard(row));
-        ToolsList.ItemsSource = _toolCards;
+        ToolsGrid.ColumnDefinitions.Clear();
+        ToolsGrid.Children.Clear();
+        ToolsGrid.ColumnSpacing = 16;
+        for (int i = 0; i < ToolRows.Length; i++)
+            ToolsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        for (int i = 0; i < ToolRows.Length; i++)
+        {
+            var card = BuildToolCard(ToolRows[i]);
+            Grid.SetColumn(card, i);
+            ToolsGrid.Children.Add(card);
+        }
     }
 
     /// <summary>
-    /// One tool's card in the wrapping grid <see cref="ToolsList"/>'s ItemsWrapGrid lays out —
+    /// One tool's card in the single row <see cref="ToolsGrid"/> lays out —
     /// built by <see cref="BuildToolCardShell"/>: the icon, title, description, tag chips and OPEN
     /// footer all centred on the card's own centre line. That is a layout of its own rather than a
     /// call to <see cref="BuildCardShell"/> (the left-aligned shape the Elements screen's cards

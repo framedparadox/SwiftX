@@ -587,19 +587,36 @@
                         <RowDefinition Height="60" />
                     </Grid.RowDefinitions>
 
-                    <!-- Row 0: Home button anchored to the top-left of the canvas column,
-                         immediately to the right of the "ADD TO ORBIT" sidebar. This replaces the
-                         title-bar Home button (SetHomeButtonVisible is now always false). -->
-                    <Button Grid.Row="0" Style="{StaticResource ChromeIconButton}"
-                            HorizontalAlignment="Left" VerticalAlignment="Center"
-                            Margin="16,0,0,0"
-                            Click="Back_Click"
-                            AutomationProperties.Name="Home"
-                            ToolTipService.ToolTip="Home">
-                        <FontIcon Glyph="&#xE72B;" FontSize="18"
-                                  FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                  Foreground="{ThemeResource SettingsHeaderBrush}" />
-                    </Button>
+                    <!-- Row 0: Home logo button (left) and Settings button (right).
+                         Home replaces the title-bar Home button (SetHomeButtonVisible is always
+                         false). Content of OrbitHomeButton is set in code-behind (AppLogo.Create).
+                         Hover: background → SettingsHeaderBrush (opposite-theme), logo → accent. -->
+                    <Grid Grid.Row="0" VerticalAlignment="Center">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="OrbitHomeButton" Grid.Column="0"
+                                Style="{StaticResource ChromeIconButton}"
+                                Margin="16,0,0,0"
+                                Click="Back_Click"
+                                AutomationProperties.Name="Home"
+                                ToolTipService.ToolTip="Home">
+                            <FontIcon Glyph="&#xE80F;" FontSize="18"
+                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                      Foreground="{ThemeResource SettingsHeaderBrush}" />
+                        </Button>
+                        <Button x:Name="OrbitSettingsButton" Grid.Column="2"
+                                Style="{StaticResource ChromeIconButton}"
+                                Margin="0,0,16,0"
+                                AutomationProperties.Name="Settings"
+                                ToolTipService.ToolTip="Settings">
+                            <FontIcon Glyph="&#xE713;" FontSize="18"
+                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                      Foreground="{ThemeResource SettingsHeaderBrush}" />
+                        </Button>
+                    </Grid>
 
                     <!-- Two stacked canvases of the same size. PreviewCanvas is the one that has
                          always been here — hub, bubbles, hit-testing, drag — and is untouched by
@@ -757,7 +774,7 @@
                                       VerticalScrollBarVisibility="Disabled"
                                       VerticalScrollMode="Disabled">
                             <StackPanel Spacing="14">
-                                <TextBlock x:Name="OrbitSettingsEyebrow" Text="ORBIT SETTINGS" Style="{StaticResource SidebarEyebrow}" />
+                                <TextBlock x:Name="OrbitSettingsEyebrow" Text="CONFIGURE ORBIT" Style="{StaticResource SidebarEyebrow}" />
 
                                 <StackPanel Spacing="6">
                                     <Grid>
@@ -1203,10 +1220,10 @@
 
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12"
                             Padding="24,16,24,0" VerticalAlignment="Center">
-                    <Button Style="{StaticResource ChromeIconButton}" Click="Back_Click"
+                    <Button x:Name="ToolsBackButton" Style="{StaticResource ChromeIconButton}" Click="Back_Click"
                             AutomationProperties.Name="Back to home"
                             ToolTipService.ToolTip="Back to home">
-                        <FontIcon Glyph="&#xE72B;" FontSize="18"
+                        <FontIcon Glyph="&#xE76B;" FontSize="18"
                                   FontFamily="{ThemeResource SymbolThemeFontFamily}"
                                   Foreground="{ThemeResource SettingsHeaderBrush}" />
                     </Button>
@@ -1214,51 +1231,12 @@
                 </StackPanel>
 
                 <ScrollViewer Grid.Row="1" Padding="48,8,64,48">
-                    <!-- Widened from the vertical list's 780 cap: four 224-wide card slots (see
-                         ToolsList's ItemsWrapGrid below) need 896px, and the window's own content
-                         budget here (1040 client width minus this ScrollViewer's 48+64 padding) is
-                         928 — 900 leaves a small margin inside that without being so wide it invites
-                         a 5th column if ItemWidth ever changes. -->
-                    <StackPanel Spacing="6" MaxWidth="900" HorizontalAlignment="Left">
+                    <!-- Cards built in code-behind (RebuildToolsList) into a 5-column * Grid so
+                         they stretch to fill the full available width evenly. -->
+                    <StackPanel Spacing="6">
                         <TextBlock Text="Every tool lives inside the Tools item on the orbit. Open one from here or from the dock."
                                    Style="{StaticResource SettingBody}" Margin="0,0,0,8" />
-
-<!-- Rows are built in code-behind (RebuildToolsList) — one per entry in
-                             ToolRows, each shown once here regardless of how many orbit instances
-                             it has. Still a ListView rather than a GridView even now that nothing
-                             is reorderable: the mockups' card grid is an ItemsWrapGrid ItemsPanel,
-                             which a ListView takes as readily (a GridView is literally a ListView
-                             with a grid-flavoured panel and container style), and swapping the
-                             control would mean rebuilding the ItemsSource binding for no visible
-                             change. MaximumRowsOrColumns="4" caps the wrap at four columns outright
-                             rather than leaving it to width math, so the fifth ToolRow wraps to its
-                             own row instead of ever being dropped. Each 224px slot holds a 200px
-                             card (the container's 24px right margin is the gutter between columns)
-                             whose content is centred on the card's own centre line, see
-                             BuildToolCardShell. The container stretches its content both ways so
-                             the card fills its slot exactly, rather than sitting at the left of it
-                             or floating vertically centred when another card in the row is taller,
-                             either of which would read as the card being shifted. -->
-                        <ListView x:Name="ToolsList" SelectionMode="None"
-                                  ScrollViewer.VerticalScrollBarVisibility="Disabled"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListView.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <muxc:ItemsWrapGrid Orientation="Horizontal"
-                                                         MaximumRowsOrColumns="4"
-                                                         ItemWidth="224" />
-                                </ItemsPanelTemplate>
-                            </ListView.ItemsPanel>
-                            <ListView.ItemContainerStyle>
-                                <Style TargetType="ListViewItem">
-                                    <Setter Property="Padding" Value="0" />
-                                    <Setter Property="Margin" Value="0,0,24,24" />
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                                    <Setter Property="MinHeight" Value="0" />
-                                </Style>
-                            </ListView.ItemContainerStyle>
-                        </ListView>
+                        <Grid x:Name="ToolsGrid" />
                     </StackPanel>
                 </ScrollViewer>
             </Grid>
@@ -1330,24 +1308,13 @@
                                 HorizontalAlignment="Left"
                                 AutomationProperties.Name="Back to home"
                                 ToolTipService.ToolTip="Back to home">
-                            <!-- ChromeIconButton leaves the default Fluent Button template in place,
-                                 whose PointerOver/Pressed states animate the template's own
-                                 ButtonBackground* keys regardless of the style's Background="Transparent"
-                                 setter. Those default keys are a very faint translucent tint, which
-                                 reads fine on the Home/Tools/Elements screens' plainer backgrounds but
-                                 is effectively invisible here against the sidebar's Mica-backed canvas —
-                                 no structural bug (no overlay, no IsHitTestVisible/opacity suppression,
-                                 no stray style override) found, just a contrast problem specific to this
-                                 spot. Overriding the keys on the instance, the same mechanism
-                                 SuppressChromeFill/BuildCardFooterButton use from code, gives it the
-                                 same visible pill the app already uses elsewhere for pointer feedback. -->
+                            <!-- No disc on hover/pressed — SuppressChromeFill (constructor) also zeroes the
+                                 background half of this; only the chevron tints, via OrbitGlyph_PointerEntered. -->
                             <Button.Resources>
-                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="Transparent" />
-                                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="Transparent" />
-                                <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="SettingsAccentBrush" />
-                                <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="SettingsAccentBrush" />
+                                <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+                                <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
                             </Button.Resources>
-                            <FontIcon Glyph="&#xE72B;" FontSize="18"
+                            <FontIcon x:Name="SettingsBackChevron" Glyph="&#xE76B;" FontSize="18"
                                       FontFamily="{ThemeResource SymbolThemeFontFamily}"
                                       Foreground="{ThemeResource SettingsHeaderBrush}" />
                         </Button>

@@ -1148,12 +1148,18 @@ public sealed partial class OrbitWindow : Window
         };
         OrbitItemGeometry.Apply(tint, diameter);
 
-        // The ring that hides the acrylic's edge. Near-opaque in the glass tint's own colour, so
-        // it reads as the glass's bezel rather than a second material, and drawn by XAML — its
-        // outer and inner edges are both antialiased. A hexagon has no acrylic under it, so no
-        // edge to hide; its Path is already antialiased.
+        // The ring that covers the live acrylic's hard, aliased edge. It is a near-opaque ring in the
+        // glass tint's own colour — and that is only acceptable on a *light* glass, where it reads as
+        // a pale bezel catching the light. On every dark glass (Dark, Midnight, Frosted glass, and
+        // System when Windows is dark) the tint is near-black, so the same near-opaque ring is simply
+        // a dark circle drawn around every bubble — the "dark border on the circle" the ring was
+        // reported as. There is no dark-glass colour that both hides the acrylic edge and is not itself
+        // a dark ring, so on dark glass the ring is dropped entirely: the acrylic is already inset
+        // (OrbitItemGeometry.BackdropInsetPx) so its edge sits under the tint's own antialiased
+        // silhouette, which becomes the bubble's clean outline. A hexagon has no acrylic under it, so
+        // no edge to hide either way.
         Border? rim = null;
-        if (OrbitMetrics.ItemShape != OrbitItemShape.Hexagon)
+        if (OrbitMetrics.ItemShape != OrbitItemShape.Hexagon && !ThemeHelper.IsDark(Root))
         {
             rim = new Border
             {
