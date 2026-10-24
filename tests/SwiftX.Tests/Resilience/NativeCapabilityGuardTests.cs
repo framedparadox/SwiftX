@@ -31,8 +31,14 @@ public class NativeCapabilityGuardTests
     }
 
     [Fact]
-    public void StoreContext_IsOnlyReferencedInsideTheGuardedStoreFeedbackMethod()
+    public void StoreContext_IsOnlyReferencedInsideAGuardedMethod()
     {
+        // Two files legitimately call into the Store API, each owning its own packaging guard:
+        // StoreFeedback.cs (in-app rating) and StoreUpdateChecker.cs (the real Store update check
+        // that replaced the old GitHub-releases mechanism — see OrbitManager.UpdateChecksSupported
+        // and StoreUpdateChecker's own remarks). Anywhere else, a reference to the Store API has no
+        // guard this test knows to check and is an offender by construction.
+        var allowedFiles = new HashSet<string> { "StoreFeedback.cs", "StoreUpdateChecker.cs" };
         var offenders = new List<string>();
 
         foreach (var file in SourceTree.Files())
@@ -42,24 +48,71 @@ public class NativeCapabilityGuardTests
                 continue;
 
             var name = Path.GetFileName(file);
-            if (name != "StoreFeedback.cs")
+            if (!allowedFiles.Contains(name))
             {
-                offenders.Add($"{name}: touches the Store API outside StoreFeedback.cs, which owns the packaging guard");
+                offenders.Add($"{name}: touches the Store API outside its guarded owner (StoreFeedback.cs / StoreUpdateChecker.cs)");
                 continue;
             }
 
-            // Within StoreFeedback.cs the call has to sit behind the guard: the method that makes
-            // it must only be reached after InAppRatingSupported has been asked.
-            int call = text.IndexOf("StoreContext.GetDefault()", StringComparison.Ordinal);
-            int guard = text.IndexOf("InAppRatingSupported &&", StringComparison.Ordinal);
-            int entry = text.IndexOf("TryInAppRatingAsync(hwnd)", StringComparison.Ordinal);
+            if (name == "StoreFeedback.cs")
+            {
+                // The call has to sit behind the guard: the method that makes it must only be
+                // reached after InAppRatingSupported has been asked.
+                int call = text.IndexOf("StoreContext.GetDefault()", StringComparison.Ordinal);
+                int guard = text.IndexOf("InAppRatingSupported &&", StringComparison.Ordinal);
+                int entry = text.IndexOf("TryInAppRatingAsync(hwnd)", StringComparison.Ordinal);
 
-            if (call < 0 || guard < 0 || entry < 0)
-                offenders.Add("StoreFeedback.cs: the guard-then-call shape this test pins is gone; re-establish it or update the test with the new guard");
-            else if (guard > entry)
-                offenders.Add("StoreFeedback.cs: TryInAppRatingAsync is called before InAppRatingSupported is checked");
+                if (call < 0 || guard < 0 || entry < 0)
+                    offenders.Add("StoreFeedback.cs: the guard-then-call shape this test pins is gone; re-establish it or update the test with the new guard");
+                else if (guard > entry)
+                    offenders.Add("StoreFeedback.cs: TryInAppRatingAsync is called before InAppRatingSupported is checked");
+            }
+            else // StoreUpdateChecker.cs
+            {
+                // Every call is preceded by its own "if (!PackagedRuntime.IsPackaged)" guard,
+                // immediately above it in the same method — checked pairwise in file order rather
+                // than just counting occurrences, so a guard added to one method can never be
+                // mistaken for cover on another.
+                var calls = AllIndicesOf(text, "StoreContext.GetDefault()");
+                var guards = AllIndicesOf(text, "!PackagedRuntime.IsPackaged");
+
+                if (calls.Count == 0)
+                {
+                    offenders.Add("StoreUpdateChecker.cs: no StoreContext.GetDefault() call found — the guard-then-call shape this test pins may have moved");
+                }
+                else if (guards.Count < calls.Count)
+                {
+                    offenders.Add("StoreUpdateChecker.cs: fewer PackagedRuntime.IsPackaged guards than StoreContext.GetDefault() calls");
+                }
+                else
+                {
+                    for (int i = 0; i < calls.Count; i++)
+                    {
+                        if (guards[i] >= calls[i])
+                        {
+                            offenders.Add($"StoreUpdateChecker.cs: a StoreContext.GetDefault() call at offset {calls[i]} has no PackagedRuntime.IsPackaged guard before it");
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
         Assert.True(offenders.Count == 0, string.Join(Environment.NewLine, offenders));
+    }
+
+    /// <summary>Every index in <paramref name="text"/> where <paramref name="marker"/> occurs, in
+    /// order — used to pair each call site in <c>StoreUpdateChecker.cs</c> with its own preceding
+    /// guard rather than one guard covering every call by coincidence of count alone.</summary>
+    private static List<int> AllIndicesOf(string text, string marker)
+    {
+        var indices = new List<int>();
+        int i = 0;
+        while ((i = text.IndexOf(marker, i, StringComparison.Ordinal)) >= 0)
+        {
+            indices.Add(i);
+            i += marker.Length;
+        }
+        return indices;
     }
 }

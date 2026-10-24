@@ -14,6 +14,8 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Shapes;
+using Microsoft.Windows.AppNotifications;
+using Microsoft.Windows.AppNotifications.Builder;
 using SwiftX.Controls;
 using SwiftX.Interop;
 using SwiftX.Models;
@@ -71,6 +73,20 @@ public sealed partial class ShellWindow : Window
     private readonly AppTitleBar _titleBar;
     private bool _loading = true;
     private bool _radiusAdjusting;
+    private bool _settingsCursorsApplied;
+    private bool _toolsCursorsApplied;
+    private bool _revealed;
+    private DispatcherTimer? _revealFallbackTimer;
+    // Orbit Layout preview only: when set, the name pills are hidden and each shows only while its
+    // own node is hovered (see AddSlotLabel / HighlightPreviewPair). A view preference for this
+    // screen, not saved — it resets to "shown" each time Settings opens.
+    private bool _labelsHidden;
+
+    /// <summary>Guards <see cref="ResetDefaults_Click"/>'s confirmation dialog against a second
+    /// reset starting while the first is still awaiting an answer — the toolbar's own reset
+    /// button and the left sidebar's (both wired to the same handler, before the sidebar's copy
+    /// was removed) could otherwise each open their own dialog back to back.</summary>
+    private bool _confirmingResetDefaults;
 
     /// <summary>Set by <c>Closed</c>. A callback queued on the dispatcher just before the window
     /// closed still runs after it, against elements that are no longer on screen.</summary>
@@ -203,6 +219,15 @@ public sealed partial class ShellWindow : Window
         _initialScreen = initialScreen;
         InitializeComponent();
 
+        // Every control this touches already exists once InitializeComponent returns — none of it
+        // is nested inside a ScrollViewer or other template that defers its children past this
+        // point (contrast OrbitSidebarSettings's cursor wiring, which has to wait for SizeChanged).
+        // This window is built once from static XAML and never re-reads the language after that
+        // (see Loc's own class doc comment), so one pass here is enough; a language change picked
+        // in Settings takes effect the next time this window opens, same as every other XAML-literal
+        // window in the app.
+        ApplyLocalizedText();
+
         // No backdrop is attached here any more: ApplyTheme below attaches whichever one the theme
         // calls for (see ApplyBackdrop). Mica is still what four of the five get, and still
         // regardless of which — Light's own brushes stay fully opaque, so it never has anything
@@ -213,9 +238,21 @@ public sealed partial class ShellWindow : Window
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(_hwnd));
         Title = "SwiftX app";
 
+        // Cloaked from here until the first screen has painted (see RevealWindow): OrbitManager
+        // calls Activate() the instant this constructor returns, which makes the HWND visible a beat
+        // before WinUI composes its first frame — and that beat is the blank white frame the window
+        // used to flash on every cold open. Set before Activate so the window is never once drawn
+        // uncloaked; the reveal is driven from the Loaded handler below and guaranteed by a fallback
+        // timer so a slow or failed first paint can delay the window but never hide it for good.
+        WindowChrome.SetCloaked(_hwnd, true);
+
         _titleBar = AppTitleBar.WithAppMark();
         Grid.SetRow(_titleBar, 0);
         Root.Children.Insert(0, _titleBar);
+        // The Orbit screen's own way back to Home lives beside the mark instead of in its own
+        // header now (see SetHomeButtonVisible's call in ShowScreen) — same Back_Click behaviour
+        // as every other screen's own button, just relocated.
+        _titleBar.HomeClicked += TitleBarHome_Click;
 
         // Extend content under the caption so the title bar strip is part of the same surface as
         // the rest of the window (AppTitleBar paints nothing of its own, so the window's own
@@ -230,6 +267,23 @@ public sealed partial class ShellWindow : Window
         // wait for — unlike the version string and the toggles, it reads no state.
         AboutMark.Content = AppLogo.Create(56);
         HomeBrandMark.Content = AppLogo.Create(30);
+
+        WireOrbitGlyphHover(OrbitHomeButton);
+
+        WireOrbitGlyphHover(OrbitSettingsButton);
+        OrbitSettingsButton.Click += (_, _) => ShowScreen(ScreenSettings);
+
+        // No disc on hover, same as the orbit's own icon chrome (WireOrbitGlyphHover) — just the
+        // chevron tinting to the accent colour below. A hover/pressed fill used to be written here
+        // too (the theme's own near-black-on-Light/white-on-Dark header colour), which read as the
+        // button's background flipping to its opposite on hover rather than a normal highlight.
+        SuppressChromeFill(SettingsBackButton);
+        SettingsBackButton.PointerEntered += OrbitGlyph_PointerEntered;
+        SettingsBackButton.PointerExited += OrbitGlyph_PointerExited;
+        SettingsBackButton.PointerCanceled += OrbitGlyph_PointerExited;
+        ToolsBackButton.PointerEntered += OrbitGlyph_PointerEntered;
+        ToolsBackButton.PointerExited += OrbitGlyph_PointerExited;
+        ToolsBackButton.PointerCanceled += OrbitGlyph_PointerExited;
         _homeOrbitMark = AppLogo.CreateFloating(160);
         HomeOrbitMarkHost.Content = _homeOrbitMark;
         _homeToolsMark = AppLogo.CreateFloating(160);
@@ -245,9 +299,8 @@ public sealed partial class ShellWindow : Window
         PreviewCanvas.DragLeave += Preview_DragLeave;
         PreviewCanvas.Drop += Preview_Drop;
 
-        WireOrbitGlyphHover(OrbitElementsButton);
-        WireOrbitGlyphHover(OrbitSidebarSettingsButton);
         WireOrbitGlyphHover(OrbitHelpButton);
+        WireOrbitGlyphHover(LabelToggleButton);
         WireOrbitGlyphHover(OrbitResetButton);
         WireOrbitGlyphHover(ElementsShortcutButton);
         WireOrbitGlyphHover(ThemeToggleButton);
@@ -283,10 +336,6 @@ public sealed partial class ShellWindow : Window
         // Collapsed element never gets. SizeChanged firing is that pass having happened.
         OrbitSidebarSettings.SizeChanged += WireSidebarSettingsCursorsOnceSized;
 
-        // See OnRatingValueChanged for why this is a DP callback and not the ValueChanged event.
-        ExperienceRating.RegisterPropertyChangedCallback(
-            RatingControl.ValueProperty, (_, _) => OnRatingValueChanged());
-
         ApplyTheme();
         Root.ActualThemeChanged += (_, _) =>
         {
@@ -303,6 +352,15 @@ public sealed partial class ShellWindow : Window
             // those without changing the accent. See RepaintThemedContent.
             RepaintThemedContent();
         };
+        // The safety net for the cloak set above: if the Loaded handler's reveal never runs (a first
+        // paint that throws, or is slow enough to be noticed), this fires once and reveals the window
+        // anyway. 600ms is long enough that the Loaded path wins in the normal case and short enough
+        // that a worst case is a brief delay rather than a window that looks like it failed to open.
+        // Stopped in RevealWindow the moment either path reveals, and in OnWindowClosed otherwise.
+        _revealFallbackTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        _revealFallbackTimer.Tick += (_, _) => RevealWindow();
+        _revealFallbackTimer.Start();
+
         // Every subscription below that targets this window is a named method and is removed again
         // in OnWindowClosed — including OnWindowClosed itself. That is load-bearing, not tidiness:
         // see OnWindowClosed for what happens to a window that leaves any of them in place.
@@ -332,14 +390,24 @@ public sealed partial class ShellWindow : Window
         Closed += OnWindowClosed;
 
         if (_appWindow.Presenter is OverlappedPresenter p)
+        {
+            // Maximizing was already disabled (see IsMaximizable below); the window otherwise
+            // defaulted to resizable, which let the user drag it away from the fixed, comfortable
+            // size the three Orbit columns below are tuned for — cramping the canvas or leaving
+            // the sidebars swimming in slack space. Fixed in both axes now, same as the maximize
+            // button already was.
+            p.IsResizable = false;
             p.IsMaximizable = false;
+        }
         _appWindow.IsShownInSwitchers = true;
 
-        // 1040 x 700 is what the layout is measured for: the Tools card is 268 wide and the Orbit
-        // screen splits the same width into Logi's fixed 320px sidebar and a 720px canvas column —
-        // which is exactly the split docs/images/17-app-ring.svg is drawn at, and enough for the
-        // 640px label canvas inside it with a 40px margin either side.
-        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 1040, 700);
+        // 1240 x 700 (was 1180 x 700, before the "ADD TO ORBIT" sidebar grew from 260 to 320 to
+        // match Logi's own settings sidebar exactly): the Tools card is still 268 wide, and the
+        // Orbit screen now splits the width three ways — a fixed 320px "ADD TO ORBIT" sidebar, a
+        // 600px canvas column, and Logi's own fixed 320px settings sidebar — with the canvas
+        // column still wide enough for the (now 520px, see PillCanvasWidth) label canvas inside it
+        // with a 40px margin either side, same as before the left sidebar grew.
+        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 1240, 700);
         WindowChrome.SetRoundedCorners(_hwnd);
         WindowChrome.CenterOnCursor(_appWindow, _appWindow.Id);
 
@@ -356,6 +424,7 @@ public sealed partial class ShellWindow : Window
             HotkeyEnabledToggle.IsOn = _manager.Config.HotkeyEnabled;
             MouseTriggerEnabledToggle.IsOn = _manager.Config.MouseTriggerEnabled;
             SelectMouseTriggerButton(_manager.Config.MouseTriggerButton);
+            SelectMouseTriggerAction(_manager.Config.MouseTriggerAction);
             HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
             SelectHotCorner(_manager.Config.HotCorner);
             SelectHotCornerLayout(_manager.Config.HotCornerLayout);
@@ -367,18 +436,19 @@ public sealed partial class ShellWindow : Window
             // during capture left the button silently armed with no feedback.
             HotkeyCapture.NeedsModifier += () =>
             {
-                HotkeyStatus.Text = "Hold Ctrl, Alt, or Win with that key.";
+                HotkeyStatus.Text = Loc.Get("Settings.General.Hotkey.NeedsModifier");
                 HotkeyStatus.Visibility = Visibility.Visible;
             };
             RebuildToolsList();
-            ExperienceRating.Value = _manager.Config.FeedbackRating > 0
-                ? _manager.Config.FeedbackRating
-                : -1; // RatingControl's own "unset"; 0 would render as a real zero-star rating.
-            UpdateRatingThanks();
+            // The left sidebar's "ADD TO ORBIT" categories used to be built lazily on first entry
+            // into the old "editing" mode; now that the sidebar is permanently on screen there is
+            // no later moment that still counts as lazy, so it is built once here with everything
+            // else this handler already populates up front.
+            BuildOrbitEditSidebar();
             SyncAccentControls();
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             SyncDesktopShortcutToggle();
-            VersionText.Text = "Version " + (typeof(App).Assembly.GetName().Version?.ToString() ?? "2.0.4");
+            VersionText.Text = Loc.Format("Settings.About.Version", typeof(App).Assembly.GetName().Version?.ToString() ?? "3.0.0");
             FillAboutDetails();
             // Wired here rather than in XAML because ThemeShadow.Receivers is a collection with no
             // XAML syntax of its own on a shared resource. Without a receiver the Home tiles
@@ -418,6 +488,7 @@ public sealed partial class ShellWindow : Window
             RenderPreview();
             RebuildItemsList();
             UpdateHotkeyStatus();
+            ApplyHandCursors(Root);
             // Home first, with Settings parked on its own default section so the rail is already
             // consistent the moment the gear is pressed.
             SelectSection(SectionGeneral);
@@ -438,7 +509,270 @@ public sealed partial class ShellWindow : Window
             {
                 ShowScreen(_initialScreen);
             }
+
+            // The screen is populated and laid out; reveal the cloaked window now. Low priority so
+            // it lands after this frame's render pass rather than in the middle of it, which is what
+            // makes the window appear already painted instead of mid-build. Idempotent with the
+            // fallback timer — whichever runs first wins (see RevealWindow).
+            DispatcherQueue.TryEnqueue(
+                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, RevealWindow);
         };
+    }
+
+    /// <summary>
+    /// Sets every static, design-time-literal piece of text under the Orbit Layout screen and the
+    /// Settings screen (nav rail, General/Support/Privacy/About, both sidebars, header and toolbar)
+    /// from <see cref="Loc"/>, in <see cref="Loc.CurrentLanguage"/> as it stands at the moment this
+    /// runs. Called once, right after <see cref="InitializeComponent"/>, to localize the window as
+    /// it is first built, and again from <see cref="LanguageBox_SelectionChanged"/> after
+    /// <c>OrbitManager.ApplyLanguage</c> re-points <see cref="Loc.CurrentLanguage"/>, so picking a
+    /// new language takes effect on this window immediately rather than on the next launch. Safe to
+    /// call more than once: it is a flat pass of property assignments with no event-subscription
+    /// side effects. Add item, Onboarding and the orbit's own tooltips are unrelated windows/popups
+    /// and still only pick up a language change the next time they open (see <see cref="Loc"/>'s own
+    /// class doc comment).
+    /// <para>
+    /// Text that is computed at runtime instead of set once here — <see cref="HotkeyStatus"/>,
+    /// <see cref="CheckForUpdatesLink"/>'s two labels, <see cref="VersionText"/>,
+    /// <see cref="AboutFramework"/>, <see cref="RadiusReadout"/>,
+    /// <see cref="HoverZoomDirectionText"/> and <see cref="OrbitEditSummary"/>/
+    /// <see cref="OrbitEditEyebrow"/> — calls <see cref="Loc.Get"/>/<see cref="Loc.Format"/> directly
+    /// at its own call site instead, so it stays correct every time it is recomputed, not just on
+    /// this first pass.
+    /// </para>
+    /// <para>
+    /// The Home screen, AddItemWindow, OnboardingWindow and the live OrbitWindow popup are out of
+    /// scope here (a deliberate, separate follow-up) and untouched. So is everything built in code
+    /// rather than declared in this window's XAML — the orbit canvas's own item-details flyout, the
+    /// "Add to group" context menu, the Elements screen's cards, and the Animate hover style's motion
+    /// picker — none of which is "both sidebars, header, toolbar" of the Orbit Layout screen.
+    /// </para>
+    /// </summary>
+    private void ApplyLocalizedText()
+    {
+        // Mirrors the whole window for Arabic/Hebrew, the same way ToolWindowBase does for the tool
+        // windows — see that type's own FlowDirection assignment. Read once here, like the rest of
+        // this method: a language change takes effect the next time this window opens.
+        Root.FlowDirection = Loc.CurrentIsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+
+        // ---------- Orbit Layout: header / toolbar ----------
+        OrbitLayoutTitle.Text = Loc.Get("OrbitLayout.Title");
+        string howTo = Loc.Get("OrbitLayout.HowTo");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(OrbitHelpButton, howTo);
+        ToolTipService.SetToolTip(OrbitHelpButton, howTo);
+        OrbitHelpRunOnboardingItem.Text = Loc.Get("OrbitLayout.Help.RunOnboarding");
+        OrbitHelpChooseWhatGoesOnItem.Text = Loc.Get("OrbitLayout.Help.ChooseWhatGoesOn");
+        OrbitHelpReadHandbookItem.Text = Loc.Get("OrbitLayout.Help.ReadHandbook");
+        string resetDefaults = Loc.Get("OrbitLayout.ResetDefaults");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(OrbitResetButton, resetDefaults);
+        ToolTipService.SetToolTip(OrbitResetButton, resetDefaults);
+
+        // ---------- Orbit Layout: left sidebar ("ADD TO ORBIT") ----------
+        OrbitEditEyebrow.Text = Loc.Get("OrbitLayout.AddToOrbit.Eyebrow");
+        OrbitEditCancelButton.Content = Loc.Get("Common.Cancel");
+        OrbitEditCaption.Text = Loc.Get("OrbitLayout.AddToOrbit.Caption");
+        OrbitEditDropOverlayText.Text = Loc.Get("OrbitLayout.AddToOrbit.DropToAdd");
+
+        // ---------- Orbit Layout: right sidebar ("ORBIT SETTINGS") ----------
+        OrbitSettingsEyebrow.Text = Loc.Get("OrbitLayout.Settings.Eyebrow");
+
+        ItemSizeHeading.Text = Loc.Get("OrbitLayout.ItemSize.Heading");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ItemSizeInfoButton, Loc.Get("OrbitLayout.ItemSize.About"));
+        ItemSizeInfoText.Text = Loc.Get("OrbitLayout.ItemSize.Info");
+        string itemSizeSmall = Loc.Get("OrbitLayout.ItemSize.Small");
+        string itemSizeMedium = Loc.Get("OrbitLayout.ItemSize.Medium");
+        string itemSizeLarge = Loc.Get("OrbitLayout.ItemSize.Large");
+        ItemSizeSmallOption.Content = itemSizeSmall;
+        ItemSizeMediumOption.Content = itemSizeMedium;
+        ItemSizeLargeOption.Content = itemSizeLarge;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ItemSizeSmallOption, Loc.Format("OrbitLayout.ItemSize.NameTemplate", itemSizeSmall));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ItemSizeMediumOption, Loc.Format("OrbitLayout.ItemSize.NameTemplate", itemSizeMedium));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ItemSizeLargeOption, Loc.Format("OrbitLayout.ItemSize.NameTemplate", itemSizeLarge));
+
+        ItemShapeHeading.Text = Loc.Get("OrbitLayout.ItemShape.Heading");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ItemShapeInfoButton, Loc.Get("OrbitLayout.ItemShape.About"));
+        ItemShapeInfoText.Text = Loc.Get("OrbitLayout.ItemShape.Info");
+        string itemShapeCircle = Loc.Get("OrbitLayout.ItemShape.Circle");
+        string itemShapeSquircle = Loc.Get("OrbitLayout.ItemShape.Squircle");
+        string itemShapeSquare = Loc.Get("OrbitLayout.ItemShape.Square");
+        string itemShapeHexagon = Loc.Get("OrbitLayout.ItemShape.Hexagon");
+        ItemShapeCircleOption.Content = itemShapeCircle;
+        ItemShapeSquircleOption.Content = itemShapeSquircle;
+        ItemShapeSquareOption.Content = itemShapeSquare;
+        ItemShapeHexagonOption.Content = itemShapeHexagon;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ItemShapeCircleOption, Loc.Format("OrbitLayout.ItemShape.NameTemplate", itemShapeCircle));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ItemShapeSquircleOption, Loc.Format("OrbitLayout.ItemShape.NameTemplate", itemShapeSquircle));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ItemShapeSquareOption, Loc.Format("OrbitLayout.ItemShape.NameTemplate", itemShapeSquare));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ItemShapeHexagonOption, Loc.Format("OrbitLayout.ItemShape.NameTemplate", itemShapeHexagon));
+        ToolTipService.SetToolTip(ItemShapeSquircleOption, Loc.Get("OrbitLayout.ItemShape.SquircleTooltip"));
+        ToolTipService.SetToolTip(ItemShapeHexagonOption, Loc.Get("OrbitLayout.ItemShape.HexagonTooltip"));
+
+        RadiusHeading.Text = Loc.Get("OrbitLayout.Radius.Heading");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(RadiusInfoButton, Loc.Get("OrbitLayout.Radius.About"));
+        RadiusInfoText.Text = Loc.Get("OrbitLayout.Radius.Info");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(RadiusResetButton, Loc.Get("OrbitLayout.Radius.ResetName"));
+        ToolTipService.SetToolTip(RadiusResetButton, Loc.Get("OrbitLayout.Radius.ResetTooltip"));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(RadiusSlider, Loc.Get("OrbitLayout.Radius.SliderName"));
+
+        HotCornerHeading.Text = Loc.Get("OrbitLayout.HotCorner.Heading");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HotCornerInfoButton, Loc.Get("OrbitLayout.HotCorner.About"));
+        HotCornerInfoText.Text = Loc.Get("OrbitLayout.HotCorner.Info");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HotCornerEnabledToggle, Loc.Get("OrbitLayout.HotCorner.ToggleName"));
+        HotCornerLayoutOrbit.Content = Loc.Get("OrbitLayout.HotCorner.Orbit");
+        HotCornerLayoutQuadrant.Content = Loc.Get("OrbitLayout.HotCorner.Quadrant");
+
+        HoverStyleHeading.Text = Loc.Get("OrbitLayout.HoverStyle.Heading");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HoverStyleInfoButton, Loc.Get("OrbitLayout.HoverStyle.About"));
+        HoverStyleInfoText.Text = Loc.Get("OrbitLayout.HoverStyle.Info");
+        string hoverInvert = Loc.Get("OrbitLayout.HoverStyle.Invert");
+        string hoverZoom = Loc.Get("OrbitLayout.HoverStyle.Zoom");
+        string hoverTint = Loc.Get("OrbitLayout.HoverStyle.Tint");
+        string hoverAnimate = Loc.Get("OrbitLayout.HoverStyle.Animate");
+        HoverStyleInvertText.Text = hoverInvert;
+        HoverStyleZoomText.Text = hoverZoom;
+        HoverStyleTintText.Text = hoverTint;
+        HoverStyleAnimateText.Text = hoverAnimate;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HoverStyleInvertButton, Loc.Format("OrbitLayout.HoverStyle.NameTemplate", hoverInvert));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HoverStyleZoomButton, Loc.Format("OrbitLayout.HoverStyle.NameTemplate", hoverZoom));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HoverStyleTintButton, Loc.Format("OrbitLayout.HoverStyle.NameTemplate", hoverTint));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HoverStyleAnimateButton, Loc.Format("OrbitLayout.HoverStyle.NameTemplate", hoverAnimate));
+        string hoverColor = Loc.Get("OrbitLayout.HoverStyle.HoverColor");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HoverTintButton, hoverColor);
+        ToolTipService.SetToolTip(HoverTintButton, hoverColor);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HoverTintPicker, Loc.Get("OrbitLayout.HoverStyle.HoverColorPicker"));
+        HoverTintResetButton.Content = Loc.Get("Common.ResetToDefault");
+
+        // ---------- Settings: nav rail ----------
+        NavGeneralText.Text = Loc.Get("Settings.Nav.General");
+        NavFeedbackText.Text = Loc.Get("Settings.Nav.Support");
+        NavPrivacyText.Text = Loc.Get("Settings.Nav.Privacy");
+        NavAboutText.Text = Loc.Get("Settings.Nav.About");
+        string backToHome = Loc.Get("Settings.Nav.BackToHome");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(SettingsBackButton, backToHome);
+        ToolTipService.SetToolTip(SettingsBackButton, backToHome);
+        SettingsEditorialSettingsText.Text = Loc.Get("Tray.Settings");
+
+        DesktopShortcutOffer.Title = Loc.Get("Settings.General.DesktopOffer.Title");
+        DesktopShortcutOffer.Message = Loc.Get("Settings.General.DesktopOffer.Message");
+        CreateDesktopShortcutButton.Content = Loc.Get("Settings.General.DesktopOffer.CreateShortcut");
+
+        // ---------- Settings: General ----------
+        GeneralHeader.Text = Loc.Get("Settings.General.Header");
+        ColorThemeHeading.Text = Loc.Get("Settings.General.ColorTheme");
+        string themeFollowOs = Loc.Get("Settings.General.Theme.FollowOs");
+        string themeLight = Loc.Get("Settings.General.Theme.Light");
+        string themeDark = Loc.Get("Settings.General.Theme.Dark");
+        string themeMidnight = Loc.Get("Settings.General.Theme.Midnight");
+        string themeFrostedGlass = Loc.Get("Settings.General.Theme.FrostedGlass");
+        ThemeCardSystemLabel.Text = themeFollowOs;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ThemeCardSystemButton, themeFollowOs);
+        ThemeCardLightLabel.Text = themeLight;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ThemeCardLightButton, themeLight);
+        ThemeCardDarkLabel.Text = themeDark;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ThemeCardDarkButton, themeDark);
+        ThemeCardBlackLabel.Text = themeMidnight;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ThemeCardBlackButton, themeMidnight);
+        ThemeCardFrostedLabel.Text = themeFrostedGlass;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ThemeCardFrostedButton, themeFrostedGlass);
+        string frostDark = Loc.Get("Settings.General.Frost.Dark");
+        string frostMedium = Loc.Get("Settings.General.Frost.Medium");
+        string frostLight = Loc.Get("Settings.General.Frost.Light");
+        ToolTipService.SetToolTip(FrostedLevelDarkButton, frostDark);
+        ToolTipService.SetToolTip(FrostedLevelMediumButton, frostMedium);
+        ToolTipService.SetToolTip(FrostedLevelLightButton, frostLight);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(FrostedLevelDarkButton, Loc.Format("Settings.General.Frost.NameTemplate", frostDark));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(FrostedLevelMediumButton, Loc.Format("Settings.General.Frost.NameTemplate", frostMedium));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(FrostedLevelLightButton, Loc.Format("Settings.General.Frost.NameTemplate", frostLight));
+
+        HotkeyCardTitle.Text = Loc.Get("Settings.Hotkey");
+        HotkeyCardBody.Text = Loc.Get("Settings.General.Hotkey.Body");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HotkeyEnabledToggle, Loc.Get("Settings.General.Hotkey.ToggleName"));
+
+        MouseTriggerCardTitle.Text = Loc.Get("Settings.Mouse.Title");
+        MouseTriggerCardBody.Text = Loc.Get("Settings.Mouse.Body");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MouseTriggerButtonBox, Loc.Get("Settings.Mouse.ButtonName"));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MouseTriggerActionBox, Loc.Get("Settings.Mouse.GestureName"));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MouseTriggerEnabledToggle, Loc.Get("Settings.Mouse.ToggleName"));
+        MouseTriggerButtonLeftItem.Content = Loc.Get("Settings.Mouse.LeftButton");
+        MouseTriggerButtonRightItem.Content = Loc.Get("Settings.Mouse.RightButton");
+        MouseTriggerButtonMiddleItem.Content = Loc.Get("Settings.Mouse.MiddleButton");
+        MouseTriggerButtonBackItem.Content = Loc.Get("Settings.Mouse.BackButton");
+        MouseTriggerButtonForwardItem.Content = Loc.Get("Settings.Mouse.ForwardButton");
+        MouseTriggerActionLongPressItem.Content = Loc.Get("Settings.Mouse.LongPress");
+        MouseTriggerActionDoubleClickItem.Content = Loc.Get("Settings.Mouse.DoubleClick");
+        MouseTriggerActionNoneItem.Content = Loc.Get("Settings.Mouse.None");
+
+        LanguageCardTitle.Text = Loc.Get("Settings.General.Language");
+        string accentColor = Loc.Get("Settings.General.AccentColor");
+        AccentColorCardTitle.Text = accentColor;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(AccentColorSwatch, accentColor);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(AccentColorPicker, Loc.Get("Settings.General.AccentColorPicker"));
+        AccentColorResetButton.Content = Loc.Get("Common.ResetToDefault");
+
+        string startWithWindows = Loc.Get("Settings.General.StartWithWindows");
+        StartWithWindowsTitle.Text = startWithWindows;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(StartupToggle, startWithWindows);
+        string desktopShortcut = Loc.Get("Settings.General.DesktopShortcut");
+        DesktopShortcutTitle.Text = desktopShortcut;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(DesktopShortcutToggle, desktopShortcut);
+
+        BackupRestoreTitle.Text = Loc.Get("Settings.General.BackupRestore.Title");
+        BackupRestoreBody.Text = Loc.Get("Settings.General.BackupRestore.Body");
+        ExportButton.Content = Loc.Get("Settings.General.BackupRestore.Export");
+        ImportButton.Content = Loc.Get("Settings.General.BackupRestore.Import");
+
+        string resetTitle = Loc.Get("Settings.General.Reset.Title");
+        ResetCardTitle.Text = resetTitle;
+        ResetAllButton.Content = resetTitle;
+        ResetCardBody.Text = Loc.Get("Settings.General.Reset.Body");
+
+        // ---------- Settings: Support ----------
+        SupportHeader.Text = Loc.Get("Settings.Feedback.Header");
+        SetupGuideHeading.Text = Loc.Get("Settings.Feedback.SetupGuide.Heading");
+        SetupGuideIntro.Text = Loc.Get("Settings.Feedback.SetupGuide.Intro");
+        SetupGuideStep1.Text = Loc.Get("Settings.Feedback.SetupGuide.Step1");
+        SetupGuideStep2.Text = Loc.Get("Settings.Feedback.SetupGuide.Step2");
+        SetupGuideStep3.Text = Loc.Get("Settings.Feedback.SetupGuide.Step3");
+        OpenGuideButton.Content = Loc.Get("Settings.Feedback.SetupGuide.OpenGuide");
+        TroubleshootingHeading.Text = Loc.Get("Settings.Feedback.Troubleshooting.Heading");
+        TroubleshootingBody.Text = Loc.Get("Settings.Feedback.Troubleshooting.Body");
+        ReportIssueLink.Content = Loc.Get("Settings.Feedback.Troubleshooting.Link");
+        FeedbackFooterRun.Text = Loc.Get("Settings.Feedback.Footer");
+        ReadPrivacyLink.Inlines.Clear();
+        ReadPrivacyLink.Inlines.Add(new Run { Text = Loc.Get("Settings.Feedback.ReadPrivacy") });
+
+        // ---------- Settings: Privacy ----------
+        PrivacyHeader.Text = Loc.Get("Settings.Privacy.Header");
+        PrivacyDeviceHeading.Text = Loc.Get("Settings.Privacy.Device.Heading");
+        PrivacyDeviceBody.Text = Loc.Get("Settings.Privacy.Device.Body");
+        PrivacyNoTrackingHeading.Text = Loc.Get("Settings.Privacy.NoTracking.Heading");
+        PrivacyNoTrackingBody.Text = Loc.Get("Settings.Privacy.NoTracking.Body");
+        PrivacySecureValuesHeading.Text = Loc.Get("Settings.Privacy.SecureValues.Heading");
+        PrivacySecureValuesBody.Text = Loc.Get("Settings.Privacy.SecureValues.Body");
+        PrivacyToolsOfflineHeading.Text = Loc.Get("Settings.Privacy.ToolsOffline.Heading");
+        PrivacyToolsOfflineBody.Text = Loc.Get("Settings.Privacy.ToolsOffline.Body");
+        PrivacyNetworkHeading.Text = Loc.Get("Settings.Privacy.Network.Heading");
+        PrivacyNetworkBody.Text = Loc.Get("Settings.Privacy.Network.Body");
+        PrivacyTakeItBackHeading.Text = Loc.Get("Settings.Privacy.TakeItBack.Heading");
+        PrivacyTakeItBackBody.Text = Loc.Get("Settings.Privacy.TakeItBack.Body");
+        PrivacyRatingHeading.Text = Loc.Get("Settings.Privacy.Rating.Heading");
+        PrivacyRatingBody.Text = Loc.Get("Settings.Privacy.Rating.Body");
+
+        // ---------- Settings: About ----------
+        AboutHeader.Text = Loc.Get("Settings.About.Header");
+        AboutBlurb.Text = Loc.Get("Settings.About.Blurb");
+        TermsLink.Content = Loc.Get("Settings.About.TermsAndConditions");
+        AboutPrivacyLink.Content = Loc.Get("Settings.Nav.Privacy");
+
+        FeedbackRatingTitle.Text = Loc.Get("Settings.About.FeedbackRating.Title");
+        FeedbackRatingBody.Text = Loc.Get("Settings.About.FeedbackRating.Body");
+        ShareFeedbackLink.Content = Loc.Get("Settings.About.FeedbackRating.ShareFeedback");
+        RateOnStoreLink.Content = Loc.Get("Settings.About.FeedbackRating.RateOnStore");
+        StarOnGitHubLink.Content = Loc.Get("Settings.About.FeedbackRating.StarOnGitHub");
+
+        // Starts as "check"; CheckForUpdates_Click flips it to the install label itself once a
+        // check finds something, so this only ever needs to set the resting state.
+        CheckForUpdatesLink.Content = Loc.Get("Settings.About.Updates.CheckLink");
     }
 
     // PreviewCanvas is zero-size while OrbitScreen is Collapsed (Home shows first), and a
@@ -699,8 +1033,27 @@ public sealed partial class ShellWindow : Window
         StopHomeOrbitMark();
         CancelHomeHoverHide();
         StopGroupNoticeFlash();
+        _revealFallbackTimer?.Stop();
+        _revealFallbackTimer = null;
         OrbitMetrics.Changed -= OnMetricsChanged;
         _manager.ItemsChanged -= OnItemsChanged;
+    }
+
+    /// <summary>
+    /// Reveals the window that the constructor cloaked (see <see cref="WindowChrome.SetCloaked"/>),
+    /// once — the first caller wins and the fallback timer is stopped. Driven from two places so the
+    /// window is shown the instant it is ready but can never be stranded invisible: the normal path
+    /// is a low-priority enqueue from the Loaded handler, which runs after the first screen has laid
+    /// out and painted; the safety net is <see cref="_revealFallbackTimer"/>, which fires regardless
+    /// if that first paint is slow or throws.
+    /// </summary>
+    private void RevealWindow()
+    {
+        if (_revealed || _closed) return;
+        _revealed = true;
+        _revealFallbackTimer?.Stop();
+        _revealFallbackTimer = null;
+        WindowChrome.SetCloaked(_hwnd, false);
     }
 
     /// <summary>
@@ -732,6 +1085,10 @@ public sealed partial class ShellWindow : Window
         }
 
         if (ItemExists(_manager.Config.Primary.Items, group))
+            return;
+        // A detached group (open from the sidebar's Groups list, off the ring) is not in Items, but
+        // it is not gone either — keep it open so adding an item to it does not close it.
+        if (_manager.Config.Primary.DetachedGroups.Contains(group))
             return;
         if (_manager.Config.HotCornerOrbit.Any(entry => ReferenceEquals(entry, group)))
             return;
@@ -798,6 +1155,8 @@ public sealed partial class ShellWindow : Window
         RebuildToolsList();
         if (_orbitEditBuilt) BuildOrbitEditSidebar();
         if (_howToOpen) BuildHowToGuide();
+        RefreshChromeGlyphColors();
+        UpdateLabelToggleVisual();
         UpdateElementsGlyphs();
     }
 
@@ -1022,8 +1381,6 @@ public sealed partial class ShellWindow : Window
         Root.Resources["SliderThumbBackground"] = normal;
         Root.Resources["SliderThumbBackgroundPointerOver"] = hover;
         Root.Resources["SliderThumbBackgroundPressed"] = pressed;
-        Root.Resources["RatingControlSelectedForeground"] = normal;
-        Root.Resources["RatingControlPointerOverSelectedForeground"] = hover;
 
         // Logi's three accent-derived Settings tokens. They are StaticResource aliases inside each
         // theme dictionary (Themes/Colors.xaml), and a StaticResource alias resolves once, at the
@@ -1122,7 +1479,8 @@ public sealed partial class ShellWindow : Window
         WindowChrome.ApplyShellFrame(
             _appWindow, _hwnd, dark,
             frosted: _manager.Config.Theme == AppTheme.FrostedGlass,
-            rim);
+            rim,
+            resizable: false);
     }
 
     /// <summary>
@@ -1197,18 +1555,30 @@ public sealed partial class ShellWindow : Window
         ArmHomeRestTimer();
         if (screen == ScreenOrbit)
         {
-            // Editing is a mode you are in while arranging the orbit, not a preference — arriving
-            // at the screen should always show what it is set to, not what you were last doing.
-            // An open group is the same: coming back should show the orbit, not whichever group
-            // you happened to be inside when you left.
-            SetOrbitEditing(false);
+            // An open group is not a preference — coming back to the screen should show the
+            // orbit, not whichever group you happened to be inside when you left.
             CollapseGroup();
             RenderPreview();
         }
         if (screen == ScreenElements) RebuildItemsList();
         if (screen == ScreenTools) RebuildToolsList();
+        if (screen == ScreenSettings && !_settingsCursorsApplied)
+        {
+            _settingsCursorsApplied = true;
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                () => ApplyHandCursors(SettingsScreen));
+        }
+        if (screen == ScreenTools && !_toolsCursorsApplied)
+        {
+            _toolsCursorsApplied = true;
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                () => ApplyHandCursors(ToolsScreen));
+        }
         UpdateElementsGlyphs();
         _titleBar.SetMarkVisible(screen != ScreenHome);
+        // Home button lives directly in the Orbit canvas header row (see OrbitScreen in
+        // ShellWindow.xaml), so the title bar never shows it any more.
+        _titleBar.SetHomeButtonVisible(false);
         if (screen != ScreenHome)
         {
             HideHomeOrbitHover();
@@ -1322,10 +1692,6 @@ public sealed partial class ShellWindow : Window
         var accent = new SolidColorBrush(CurrentAccentColor());
         if (ElementsShortcutGlyph is not null)
             ElementsShortcutGlyph.Foreground = _currentScreen == ScreenElements ? accent : rest;
-        if (OrbitElementsGlyph is not null)
-            OrbitElementsGlyph.Foreground = _orbitEditing ? accent : rest;
-        if (OrbitElementsLabel is not null)
-            OrbitElementsLabel.Foreground = _orbitEditing ? accent : rest;
     }
 
     private void HomeOrbitHover_PointerEntered(object sender, PointerRoutedEventArgs e)
@@ -1348,11 +1714,7 @@ public sealed partial class ShellWindow : Window
     private void HomeToolsHover_PointerExited(object sender, PointerRoutedEventArgs e) =>
         ScheduleHomeHoverHide(HideHomeToolsHover);
 
-    private void HomeOrbitHoverAdd_Click(object sender, RoutedEventArgs e)
-    {
-        ShowScreen(ScreenOrbit);
-        SetOrbitEditing(true);
-    }
+    private void HomeOrbitHoverAdd_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenOrbit);
 
     private void ShowHomeOrbitHover()
     {
@@ -1744,6 +2106,25 @@ public sealed partial class ShellWindow : Window
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenSettings);
 
+    /// <summary>Walks the visual tree rooted at <paramref name="root"/> and attaches
+    /// PointerEntered/PointerExited handlers to every interactive control so the root
+    /// <see cref="CursorHost"/> shows the pointing-hand cursor over them.</summary>
+    private void ApplyHandCursors(DependencyObject root)
+    {
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is Button or ComboBox or RadioButton or ToggleSwitch or HyperlinkButton or Slider)
+            {
+                var element = (UIElement)child;
+                element.PointerEntered += (_, _) => Root.SetCursor(InputSystemCursorShape.Hand);
+                element.PointerExited += (_, _) => Root.ClearCursor();
+            }
+            ApplyHandCursors(child);
+        }
+    }
+
     /// <summary>Every sub-screen's back arrow. There is one place to go back to — Home.</summary>
     private void Back_Click(object sender, RoutedEventArgs e)
     {
@@ -1754,6 +2135,10 @@ public sealed partial class ShellWindow : Window
         EndReplace();
         ShowScreen(ScreenHome);
     }
+
+    /// <summary>The Orbit screen's own Home button, relocated to the title bar (see
+    /// SetHomeButtonVisible's call in ShowScreen) — otherwise exactly <see cref="Back_Click"/>.</summary>
+    private void TitleBarHome_Click(object sender, RoutedEventArgs e) => Back_Click(sender, e);
 
     private void NavGeneral_Click(object sender, RoutedEventArgs e) => SelectSection(SectionGeneral);
 
@@ -1830,9 +2215,13 @@ public sealed partial class ShellWindow : Window
     /// <summary>
     /// The orbit preview's own canvas, square because <see cref="RenderQuadrantPreview"/> and
     /// <see cref="AddHotCornerButton"/> both place against <see cref="QuadrantLayout"/>, which
-    /// works in one dimension.
+    /// works in one dimension. 380, not the original 470: shrunk, in the same proportion as
+    /// <see cref="PillCanvasWidth"/>, to make room for the Orbit screen's new left sidebar. Must
+    /// match PreviewCanvas's own Width/Height in ShellWindow.xaml — every position this file
+    /// renders onto that canvas is computed relative to this constant, not read back off the
+    /// element, so the two cannot drift independently.
     /// </summary>
-    private const double PreviewCanvasSize = 470;
+    private const double PreviewCanvasSize = 380;
 
     /// <summary>
     /// How far, in device-independent pixels, a disc/pill/back-button is lifted off PreviewCanvas
@@ -1860,9 +2249,11 @@ public sealed partial class ShellWindow : Window
     /// <summary>
     /// The label canvas behind it is wider, because a pill reaches further out sideways than the
     /// ring ever does. The two are centred on each other (see ShellWindow.xaml), so converting a
-    /// point from the preview's coordinates to the label canvas's is this one constant.
+    /// point from the preview's coordinates to the label canvas's is this one constant. 520, not
+    /// the original 640 (see <see cref="PreviewCanvasSize"/>'s own doc comment) — must match
+    /// PreviewLabelCanvas's own Width in ShellWindow.xaml.
     /// </summary>
-    private const double PillCanvasWidth = 640;
+    private const double PillCanvasWidth = 520;
     private const double PillCanvasOffsetX = (PillCanvasWidth - PreviewCanvasSize) / 2;
 
     /// <summary>
@@ -1878,6 +2269,14 @@ public sealed partial class ShellWindow : Window
     /// this leaves untouched at every bubble size SwiftX offers, so the overlap never reaches it.
     /// </summary>
     private const double PillOverlapFraction = 0.20;
+
+    /// <summary>
+    /// How far a group's or a tool's label is pushed out *past* its node edge instead, as a fraction
+    /// of the node's diameter. Those two wear a mark on their outward rim (the group arc / notch),
+    /// and the usual inward <see cref="PillOverlapFraction"/> would lay the label right over it; this
+    /// keeps the label clear of the edge so the mark stays visible.
+    /// </summary>
+    private const double PillEdgeClearanceFraction = 0.06;
 
     /// <summary>
     /// The Settings canvas's own group/Tools arc gap, in place of <see cref="OrbitMetrics.FlyoutStepDegreesFor"/>'s
@@ -1967,8 +2366,12 @@ public sealed partial class ShellWindow : Window
         double ux = Math.Cos(angle), uy = Math.Sin(angle);
         double nodeCx = cx + radius * ux;
         double nodeCy = cy + radius * uy;
-        // In from the node's edge, not out past it — see PillOverlapFraction.
-        double reach = bubble / 2 - bubble * PillOverlapFraction;
+        // In from the node's edge for a plain item (see PillOverlapFraction); out past it for a group
+        // or a tool, whose outward rim carries a mark the inward overlap would cover (see
+        // PillEdgeClearanceFraction).
+        double reach = item.IsGroup || item.IsTool
+            ? bubble / 2 + bubble * PillEdgeClearanceFraction
+            : bubble / 2 - bubble * PillOverlapFraction;
 
         double px, py;
         // The two slots on the vertical axis. Compared against a small epsilon rather than zero
@@ -1986,8 +2389,37 @@ public sealed partial class ShellWindow : Window
 
         Canvas.SetLeft(pill, Math.Clamp(px + PillCanvasOffsetX, 0, Math.Max(0, PillCanvasWidth - width)));
         Canvas.SetTop(pill, Math.Clamp(py, 0, PreviewCanvasSize - PillHeight));
+        // Labels hidden: the pill stays in the tree (so the disc/pill hover partnership still pairs
+        // it) but is not shown until its node is hovered — see HighlightPreviewPair.
+        if (_labelsHidden)
+            pill.Visibility = Visibility.Collapsed;
         PreviewLabelCanvas.Children.Add(pill);
         return pill;
+    }
+
+    private void LabelToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _labelsHidden = !_labelsHidden;
+        UpdateLabelToggleVisual();
+        RenderPreview();
+    }
+
+    /// <summary>
+    /// Keeps the Hide/Show labels toggle in step with <see cref="_labelsHidden"/>: its glyph goes to
+    /// the accent colour while labels are hidden (the button is "active") and back to the header
+    /// colour when they are shown, and the tooltip/name say which the press will do next. Re-run on a
+    /// theme or accent change through <see cref="RepaintThemedContent"/>, the same way
+    /// <see cref="UpdateElementsGlyphs"/> owns the Elements shortcut's glyph, so the hover save/restore
+    /// never leaves it on a stale colour.
+    /// </summary>
+    private void UpdateLabelToggleVisual()
+    {
+        LabelToggleIcon.Foreground = _labelsHidden
+            ? new SolidColorBrush(CurrentAccentColor())
+            : ThemeHelper.Brush(Root, "SettingsHeaderBrush");
+        string tip = _labelsHidden ? "Show labels" : "Hide labels";
+        ToolTipService.SetToolTip(LabelToggleButton, tip);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(LabelToggleButton, tip);
     }
 
     private void RenderPreview()
@@ -2068,13 +2500,6 @@ public sealed partial class ShellWindow : Window
         PreviewCanvas.Children.Add(hub);
 
         var items = OrbitSlots.Visible(_manager.Config.Primary.Items);
-
-        // A full orbit has no empty slot left to add into, so the button that would open the add
-        // dialog goes away rather than sitting there offering something the orbit cannot take.
-        // Reset defaults stays: it is still meaningful on a full orbit.
-        AddItemButton.Visibility = OrbitSlots.HasRoom(_manager.Config.Primary.Items)
-            ? Visibility.Visible
-            : Visibility.Collapsed;
 
         for (int i = 0; i < OrbitMetrics.SlotCount; i++)
         {
@@ -2409,14 +2834,67 @@ public sealed partial class ShellWindow : Window
         }
 
         // What was saved on entry is the colour from *before* the hover, and a click in between
-        // can change what the resting colour should be. Elements is the case that bites: clicking
-        // it opens the Add to Orbit sidebar and UpdateElementsGlyphs paints it in the accent to
-        // show it is active — then the pointer leaves and the restore above puts back the
-        // inactive colour it saved, so the button reads as off while its sidebar is open. The
-        // active state is re-derived from _orbitEditing / _currentScreen rather than trusted to
-        // the snapshot.
-        if (button == OrbitElementsButton || button == ElementsShortcutButton)
+        // can change what the resting colour should be. The Home screen's Elements shortcut is the
+        // case that bites: clicking it navigates to the Elements screen and UpdateElementsGlyphs
+        // paints it in the accent to show it is active — then the pointer leaves and the restore
+        // above puts back the inactive colour it saved, so the button reads as off while its
+        // screen is open. The active state is re-derived from _currentScreen rather than trusted
+        // to the snapshot.
+        if (button == ElementsShortcutButton)
             UpdateElementsGlyphs();
+    }
+
+    /// <summary>
+    /// Re-applies the resting glyph colour of the persistent header/orbit chrome buttons (Home,
+    /// Settings, the theme toggle, the two Back buttons, reset, help) on a theme change.
+    /// <para>
+    /// Those glyphs take their colour from a <c>{ThemeResource}</c> in XAML, which would normally
+    /// re-resolve on its own when the theme changes — except that the accent-tint hover
+    /// (<see cref="OrbitGlyph_PointerEntered"/>/<see cref="OrbitGlyph_PointerExited"/>) writes a
+    /// plain <see cref="SolidColorBrush"/> straight onto <c>Foreground</c>, which replaces the
+    /// theme-resource reference with a static value. After a glyph has been hovered even once it no
+    /// longer follows the theme, so Home and Settings sat on the previous theme's colour until the
+    /// app was relaunched. Re-resolving here, on every repaint, is what lets them keep up without a
+    /// restart. <see cref="ElementsShortcutButton"/> is intentionally not in the list — its glyph is
+    /// owned in both states by <see cref="UpdateElementsGlyphs"/>, which runs in the same repaint.
+    /// </para>
+    /// </summary>
+    private void RefreshChromeGlyphColors()
+    {
+        SetChromeGlyphRest(OrbitHomeButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(OrbitSettingsButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(OrbitHelpButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(OrbitResetButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(ThemeToggleButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(SettingsButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(SettingsBackButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(ToolsBackButton, "SettingsHeaderBrush");
+        SetChromeGlyphRest(RadiusResetButton, "SettingsMutedBrush");
+    }
+
+    private void SetChromeGlyphRest(Button button, string key)
+    {
+        var brush = ThemeHelper.Brush(Root, key);
+
+        // Hovered right now: it is showing the accent tint, so updating the saved snapshot rather
+        // than the live Foreground is what makes the colour it restores to on exit the new theme's
+        // rather than the one in force before the switch.
+        if (_orbitGlyphRest.TryGetValue(button, out var saved))
+        {
+            for (int i = 0; i < saved.Count; i++)
+                saved[i] = (saved[i].Target, brush);
+            return;
+        }
+
+        foreach (var node in WalkContent(button))
+        {
+            if (node is IconElement icon)
+                icon.Foreground = brush;
+            else if (node is Shape shape)
+                shape.Fill = brush;
+            else if (node is TextBlock text)
+                text.Foreground = brush;
+        }
     }
 
     private static IEnumerable<DependencyObject> WalkContent(DependencyObject node)
@@ -2782,11 +3260,11 @@ public sealed partial class ShellWindow : Window
         }
         else if (slot < OrbitMetrics.UserSlotCount)
         {
-            // The ring's own "+" opens the "ADD TO ORBIT" sidebar, the same place the Elements
-            // button goes, rather than the add dialog in a second window. The dialog stays one
-            // click away through the sidebar's "Add to Orbit…" row.
+            // The ring's own "+" clears any armed replace and refreshes the always-visible
+            // "ADD TO ORBIT" sidebar's summary text, rather than opening the add dialog in a
+            // second window. The dialog stays one click away through the sidebar's own
+            // "Add to Orbit…" row.
             EndReplace();
-            SetOrbitEditing(true);
             UpdateOrbitEditSummary();
         }
     }
@@ -2911,7 +3389,34 @@ public sealed partial class ShellWindow : Window
         if (_sidebarDragTemplate is { } template)
         {
             e.AcceptedOperation = DataPackageOperation.Copy;
-            DropOntoPreviewSlot(slot, CopyForPreviewDrop(template));
+            // A group that is already on the ring is repositioned, not copied. The sidebar's Groups
+            // list is the ring's own groups plus the detached ones, so dragging an on-ring group's
+            // row back onto the ring used to drop a second, independent group of the same name and
+            // contents (CloneOrbitTemplate) — which reads as the one group duplicated. Moving it (the
+            // same thing dragging its ring bubble does) is what the gesture means.
+            if (!_previewQuadrant && template.IsGroup &&
+                _manager.Config.Primary.Items.Contains(template))
+            {
+                ReorderItem(template, slot);
+            }
+            // A detached group (sidebar only) is moved onto the ring: the real group is placed and
+            // taken out of the library, so it lives in exactly one place. If the slot will not take
+            // it, it is put back rather than lost.
+            else if (!_previewQuadrant && template.IsGroup &&
+                     _manager.Config.Primary.DetachedGroups.Remove(template))
+            {
+                DropOntoPreviewSlot(slot, template);
+                if (!_manager.Config.Primary.Items.Contains(template))
+                {
+                    _manager.Config.Primary.DetachedGroups.Add(template);
+                    _manager.NotifyItemsChanged();
+                    DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
+                }
+            }
+            else
+            {
+                DropOntoPreviewSlot(slot, CopyForPreviewDrop(template));
+            }
             return;
         }
 
@@ -3104,7 +3609,9 @@ public sealed partial class ShellWindow : Window
             item.DisplayName,
             replace: () => ReplaceOrbitItem(item),
             remove: () => RemoveOrbitItem(item),
-            removeLabel: "Delete",
+            // Groups are permanently deleted; apps and links are only removed from the layout and
+            // remain findable in the sidebar (their category is a scan / saved list, not the ring).
+            removeLabel: item.IsGroup ? "Delete" : "Remove",
             canRemove: true,
             // A group's mark is the one thing about it with no other way to change: its name and
             // contents are edited elsewhere, and it is not a shell target with an icon of its own
@@ -3119,8 +3626,7 @@ public sealed partial class ShellWindow : Window
     /// — the group takes over its slot rather than needing one of its own, so this stays offered
     /// even when <see cref="OrbitIsFull"/>. The item's own right-click "New group…"
     /// (<see cref="BuildOrbitItemMenu"/>): unlike <see cref="OpenNewGroupDialog"/>'s plain sidebar
-    /// button, the item to consolidate is already known before the window opens, so there is
-    /// nothing here for <see cref="FinishGroupOntoExistingItem"/>'s picker to pick.
+    /// button, the item to consolidate is already known before the window opens.
     /// </summary>
     private void CreateGroupFromExistingItem(OrbitItem item)
     {
@@ -3135,50 +3641,7 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// What <see cref="OpenNewGroupDialog"/> falls back to once the "Add to orbit" window hands
-    /// back <paramref name="group"/> and the orbit turns out to have no free slot to append it:
-    /// a menu of the orbit's current top-level items, each of which takes over its own slot for a
-    /// group that consolidates it in — the same move <see cref="CreateGroupFromExistingItem"/>
-    /// makes when the item to consolidate was already chosen by a right-click. Listed from
-    /// <see cref="_slotBorders"/> rather than <c>_manager.Config.Primary.Items</c> directly so
-    /// eligibility matches <see cref="BuildOrbitItemMenu"/>'s own by construction: a slot with no
-    /// border recorded is pinned or empty, and a tool is left out there for the same reason it is
-    /// here — it comes off the orbit by switching it off, not by being wrapped.
-    /// </summary>
-    private void FinishGroupOntoExistingItem(OrbitItem group, FrameworkElement anchor)
-    {
-        var candidates = new List<OrbitItem>();
-        for (int slot = 0; slot < OrbitMetrics.UserSlotCount; slot++)
-        {
-            if (_slotBorders[slot] is { Tag: OrbitItem item } && !item.IsTool && !item.IsGroup)
-                candidates.Add(item);
-        }
-
-        if (candidates.Count == 0)
-        {
-            ShowSidebarNotice(anchor, "The orbit is full. Remove something to make room for a group.");
-            return;
-        }
-
-        var menu = new MenuFlyout { Placement = FlyoutPlacementMode.Bottom };
-        menu.Items.Add(new MenuFlyoutItem
-        {
-            Text = $"Orbit is full — start {group.DisplayName} with:",
-            IsEnabled = false,
-        });
-        menu.Items.Add(new MenuFlyoutSeparator());
-        foreach (var item in candidates)
-        {
-            var entry = new MenuFlyoutItem { Text = item.DisplayName };
-            entry.Click += (_, _) => ConsolidateIntoGroup(group, item);
-            menu.Items.Add(entry);
-        }
-        menu.ShowAt(anchor);
-    }
-
-    /// <summary>
-    /// The actual consolidation <see cref="CreateGroupFromExistingItem"/> and
-    /// <see cref="FinishGroupOntoExistingItem"/> both land on: <paramref name="item"/>'s slot
+    /// The actual consolidation <see cref="CreateGroupFromExistingItem"/> lands on: <paramref name="item"/>'s slot
     /// becomes <paramref name="group"/>'s, with <paramref name="item"/> itself — not a copy — as
     /// the group's first child, so renaming or re-icon-ing it afterwards still reaches the one
     /// instance of it that ever existed.
@@ -3305,19 +3768,33 @@ public sealed partial class ShellWindow : Window
     {
         if (!OrbitSlots.Vacate(_manager.Config.Primary.Items, item))
         {
-            // Not on the orbit: a group only the hot corner has, which the sidebar lists beside the
-            // orbit's (see SidebarGroups). Removing it takes it off the corner.
+            // Not on the ring. A detached user group is permanently deleted from the store.
+            if (_manager.Config.Primary.DetachedGroups.Remove(item))
+            {
+                if (ReferenceEquals(_expandedGroup, item)) CollapseGroup();
+                if (ReferenceEquals(_selectedItem, item)) HideItemDetails();
+                _manager.NotifyItemsChanged();
+                RenderPreview();
+                RebuildItemsList();
+                DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
+                return;
+            }
+            // A group only the hot corner has — removing it takes it off the corner.
             int slot = _manager.Config.HotCornerOrbit.FindIndex(entry => ReferenceEquals(entry, item));
             if (slot >= 0)
                 RemoveQuadrantItem(slot);
             return;
         }
 
+        // User groups are permanently deleted — no longer kept in a DetachedGroups holding area.
+        _manager.Config.Primary.DetachedGroups.Remove(item);
+
         if (ReferenceEquals(_expandedGroup, item)) CollapseGroup();
         if (ReferenceEquals(_selectedItem, item)) HideItemDetails();
         _manager.NotifyItemsChanged();
         RenderPreview();
         RebuildItemsList();
+        DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
     }
 
     /// <summary>Quadrant counterpart of <see cref="ReplaceOrbitItem"/>: the sidebar's next pick
@@ -3333,19 +3810,18 @@ public sealed partial class ShellWindow : Window
         BeginReplaceViaSidebar();
     }
 
-    /// <summary>Switches the Orbit screen's sidebar to "ADD TO ORBIT" with replace mode already
-    /// armed — <see cref="ReplaceOrbitItem"/> and <see cref="ReplaceQuadrantItem"/> set which place
-    /// is being replaced before calling this.</summary>
+    /// <summary>Arms the always-visible "ADD TO ORBIT" sidebar's replace mode and refreshes its
+    /// summary text to show it — <see cref="ReplaceOrbitItem"/> and <see cref="ReplaceQuadrantItem"/>
+    /// set which place is being replaced before calling this.</summary>
     private void BeginReplaceViaSidebar()
     {
         HideItemDetails();
-        SetOrbitEditing(true);
         UpdateOrbitEditSummary();
     }
 
     /// <summary>Drops out of replace mode without picking anything — the sidebar's Cancel link, and
     /// anywhere else that has to guarantee a stale replace target can't outlive the state it was
-    /// captured from (navigating home, or flipping the sidebar back to the orbit's own settings).</summary>
+    /// captured from (navigating home, or opening Elements' sidebar fresh from a right-click).</summary>
     private void EndReplace()
     {
         _replaceItem = null;
@@ -3714,7 +4190,17 @@ public sealed partial class ShellWindow : Window
         _hoveredPreviewOrigin = origin;
         HighlightPreviewBorder(origin);
         if (_previewHoverPartners.TryGetValue(origin, out var partner))
+        {
+            // With labels hidden, bring this node's own pill up for the duration of the hover, then
+            // put it away again on exit (the restore runs in ClearPreviewHover). The partner is the
+            // pill when its Child is the label's TextBlock.
+            if (_labelsHidden && partner.Visibility == Visibility.Collapsed && partner.Child is TextBlock)
+            {
+                partner.Visibility = Visibility.Visible;
+                _hoveredPreviewRestores.Add(() => partner.Visibility = Visibility.Collapsed);
+            }
             HighlightPreviewBorder(partner);
+        }
 
         // Border has no cursor of its own to set (see Controls/HandCursor.cs) — Root is a
         // CursorHost for exactly this, same as the "Add to orbit" sidebar's own hand cursor says
@@ -4798,15 +5284,11 @@ public sealed partial class ShellWindow : Window
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
         var accent = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasAccentBrush");
 
-        // The centre is the way back out as well as the mark of where you are: at rest it is the
-        // group's own mark, under the pointer it becomes a close mark, and a click closes the group
-        // and returns to the whole orbit. That swap stays for the pointer that finds it, but it is a
-        // hover-only hint - nothing on screen says it exists until a pointer happens to land on the
-        // hub, and there is no hover at all on touch. AddGroupBackButton below is the explicit,
-        // always-visible way out it was missing.
+        // The hub shows the group's mark while the group is open; the back button to the left is
+        // the explicit way out (AddGroupBackButton below), so the hub no longer doubles as a close
+        // target \u2014 clicking it had no visible affordance until hover anyway.
         double markSize = glyphSize * 1.15;
         var groupMark = PreviewBubbleContent(group, markSize, accent, parent, 0);
-        var closeMark = PreviewGlyph("\uE711", markSize, accent);
 
         // No BorderBrush/BorderThickness: see ApplyBubbleShadow - every disc on this canvas now
         // reads its "filled" state from its shadow alone, the hub included.
@@ -4819,14 +5301,7 @@ public sealed partial class ShellWindow : Window
         };
         ApplyBubbleShadow(parentBubble);
         OrbitItemGeometry.Apply(parentBubble, parent);
-        ToolTipService.SetToolTip(parentBubble, "Click to close group");
-        parentBubble.PointerEntered += (_, _) => parentBubble.Child = closeMark;
-        parentBubble.PointerExited += (_, _) => parentBubble.Child = groupMark;
-        parentBubble.Tapped += (_, e) =>
-        {
-            e.Handled = true;
-            CollapseGroup();
-        };
+        ToolTipService.SetToolTip(parentBubble, group.DisplayName);
         AttachPreviewHover(parentBubble);
         Canvas.SetLeft(parentBubble, cx - parent / 2);
         Canvas.SetTop(parentBubble, cy - parent / 2);
@@ -4924,7 +5399,7 @@ public sealed partial class ShellWindow : Window
             Height = size,
             CornerRadius = new CornerRadius(size / 2),
             Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
-            Child = PreviewGlyph("", glyphSize, foreground),
+            Child = PreviewGlyph("", glyphSize, foreground),
         };
         ApplyBubbleShadow(button);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, "Back to the orbit");
@@ -5014,18 +5489,14 @@ public sealed partial class ShellWindow : Window
             RebuildItemsList();
         }, _manager.Config.Primary.Items, isGenericAddItem: true);
 
-    // ===================== the Orbit screen's sidebar, and its two modes =====================
+    // ===================== the Orbit screen's left sidebar =====================
 
     /// <summary>
-    /// Which panel the Orbit screen's sidebar is showing. Not persisted: it is a mode you are in
-    /// while arranging the orbit, not a preference, and coming back to the screen should show you
-    /// its settings again.
-    /// </summary>
-    private bool _orbitEditing;
-
-    /// <summary>
-    /// Built once, on first entry into edit mode, and again whenever the orbit changes under it —
+    /// Built once, right after the window loads, and again whenever the orbit changes under it —
     /// the rows carry an "already on the orbit" state that goes stale the moment one is clicked.
+    /// Used to be deferred to first entry into the sidebar's old "editing" mode (see
+    /// <c>SetOrbitEditing</c>, since removed); now that the sidebar is permanently on screen there
+    /// is no later moment to defer it to.
     /// </summary>
     private bool _orbitEditBuilt;
 
@@ -5048,8 +5519,13 @@ public sealed partial class ShellWindow : Window
     // Built from codepoints rather than written as literals: a private-use character is invisible in
     // an editor, so a stray paste can swap it for another one without anyone seeing why an icon broke.
     private static readonly string SidebarChevronUpGlyph = char.ConvertFromUtf32(0xE70E);
+    private static readonly string SidebarChevronDownGlyph = char.ConvertFromUtf32(0xE70D);
+    private static readonly string SidebarChevronRightGlyph = char.ConvertFromUtf32(0xE76C);
     private static readonly string SidebarAddGlyph = char.ConvertFromUtf32(0xE710);
     private static readonly string SidebarEllipsis = char.ConvertFromUtf32(0x2026);
+
+    /// <summary>Groups whose child list is currently collapsed in the sidebar.</summary>
+    private readonly HashSet<string> _collapsedGroups = new();
 
     /// <summary>
     /// Whether a drag that the sidebar's rows depend on is still going: one of the sidebar's own
@@ -5061,55 +5537,6 @@ public sealed partial class ShellWindow : Window
         _sidebarDragTemplate is not null ||
         _orbitEditHotGroupRow is not null ||
         OrbitEditDropOverlay.Visibility == Visibility.Visible;
-
-    /// <summary>
-    /// Reveals the "ADD TO ORBIT" sidebar — the Elements header button is the way into arranging
-    /// what sits on the ring. Also drops any replace still armed from a right-click or the details
-    /// card's own Replace button: clicking Elements is asking for the plain browse sidebar, not for
-    /// whatever "Replacing X" banner happened to be showing here last, and leaving that in place
-    /// would swap the next thing clicked into a slot the user has since stopped thinking about.
-    /// </summary>
-    private void OrbitElementsButton_Click(object sender, RoutedEventArgs e)
-    {
-        EndReplace();
-        SetOrbitEditing(true);
-        UpdateOrbitEditSummary();
-    }
-
-    /// <summary>Reveals the orbit's own settings sidebar in the same 320px column — not the app's
-    /// Settings screen.</summary>
-    private void OrbitSidebarSettingsButton_Click(object sender, RoutedEventArgs e)
-    {
-        // Backing out to the orbit's own settings is as much a "never mind" as the sidebar's own
-        // Cancel link — a replace left armed here would otherwise resurface, stale, the next time
-        // Elements is opened.
-        EndReplace();
-        SetOrbitEditing(false);
-    }
-
-    /// <summary>
-    /// Swaps the sidebar between the orbit's settings and the list of things that can go on it.
-    /// <para>
-    /// Logi puts these in two different places — its ring settings are a separate screen behind a
-    /// nav button, and its sidebar is only ever the drag-source accordion. SwiftX has one screen
-    /// for the orbit, so the sidebar is what changes instead: the canvas, the toolbar and the
-    /// header stay exactly where they are, and only the 320px column swaps. That is the whole
-    /// reason this is a Visibility swap between two siblings rather than a navigation — the canvas
-    /// keeps its live slot geometry, its selection and its drag state across the change, none of
-    /// which would survive being torn down and rebuilt.
-    /// </para>
-    /// </summary>
-    private void SetOrbitEditing(bool editing)
-    {
-        _orbitEditing = editing;
-
-        if (editing && !_orbitEditBuilt)
-            BuildOrbitEditSidebar();
-
-        OrbitSidebarSettings.Visibility = editing ? Visibility.Collapsed : Visibility.Visible;
-        OrbitSidebarEdit.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
-        UpdateElementsGlyphs();
-    }
 
     /// <summary>
     /// Fills the edit sidebar: one category per <see cref="ElementCategories.All"/> entry (apps,
@@ -5190,6 +5617,7 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private IReadOnlyList<OrbitItem> SidebarGroups() =>
         ElementLibrary.UserGroups(_manager.Config.Primary.Items)
+            .Concat(_manager.Config.Primary.DetachedGroups)
             .Concat(HotCornerItems.OwnGroups(_manager.Config, SystemOrbitItems.CreateSettings()))
             .ToList();
 
@@ -5200,19 +5628,20 @@ public sealed partial class ShellWindow : Window
     private void UpdateOrbitEditSummary()
     {
         bool fillingEmpty = IsReplacing && _replaceItemName is null;
-        OrbitEditEyebrow.Text = IsReplacing && !fillingEmpty ? "REPLACE" : "ADD TO ORBIT";
+        OrbitEditEyebrow.Text = Loc.Get(IsReplacing && !fillingEmpty
+            ? "OrbitLayout.AddToOrbit.Replace"
+            : "OrbitLayout.AddToOrbit.Eyebrow");
         OrbitEditCancelButton.Visibility = IsReplacing ? Visibility.Visible : Visibility.Collapsed;
 
         if (fillingEmpty)
         {
-            OrbitEditSummary.Text = "Click or drag something below to put it in this empty place.";
+            OrbitEditSummary.Text = Loc.Get("OrbitLayout.AddToOrbit.FillEmpty");
             return;
         }
 
         if (IsReplacing)
         {
-            OrbitEditSummary.Text =
-                $"Replacing “{_replaceItemName}” — click or drag something below to swap it in.";
+            OrbitEditSummary.Text = Loc.Format("OrbitLayout.AddToOrbit.ReplacingSummary", _replaceItemName ?? "");
             return;
         }
 
@@ -5220,9 +5649,9 @@ public sealed partial class ShellWindow : Window
         int free = Math.Max(0, OrbitMetrics.UserSlotCount - used);
         OrbitEditSummary.Text = free switch
         {
-            0 => "The orbit is full. Remove something to make room.",
-            1 => "One free slot. Click anything below to put it there.",
-            _ => $"{free} free slots. Click anything below to fill one.",
+            0 => Loc.Get("OrbitLayout.AddToOrbit.Full"),
+            1 => Loc.Get("OrbitLayout.AddToOrbit.OneFreeSlot"),
+            _ => Loc.Format("OrbitLayout.AddToOrbit.FreeSlots", free),
         };
     }
 
@@ -5930,11 +6359,10 @@ public sealed partial class ShellWindow : Window
     /// of the job; what it returns goes where any other sidebar pick goes
     /// (<see cref="AddToOrbitFromSidebar"/>), which is what settles an armed replace. Always opens
     /// immediately — a full orbit used to be said here, before the window ever showed, which from
-    /// the row that was clicked looked like "New group" simply did nothing. What a full orbit
-    /// actually blocks is appending a brand-new group once this window hands one back (see the
-    /// <see cref="OrbitIsFull"/> check in the callback below, and <see cref="FinishGroupOntoExistingItem"/>),
-    /// which is also the one place "no room" can offer consolidating into an existing item instead
-    /// of simply refusing — there is no such fallback to offer before the group even has a name.
+    /// the row that was clicked looked like "New group" simply did nothing. A full ring no longer
+    /// refuses the group at all: the callback below puts a brand-new group that has nowhere to land
+    /// into the sidebar's Groups list as a detached group (<see cref="OrbitProfile.DetachedGroups"/>),
+    /// to be dragged onto the ring once there is room.
     /// </summary>
     /// <param name="seed">
     /// Something to put in the new group as it is created: the thing a right-click on a suggestion
@@ -5950,13 +6378,17 @@ public sealed partial class ShellWindow : Window
                     added.Children.Add(CloneOrbitTemplate(seed));
 
                 // A replace swaps rather than appends, so it has room whatever the count is. Short
-                // of that, a full orbit has nowhere to append a brand-new group — unless the group
-                // can instead take over an existing item's slot, consolidating that item into
-                // itself. Only offered for an actual group: the window lets the Group tile be
-                // swapped for anything else, and a plain item has nothing of its own to consolidate.
+                // of that, a full ring has nowhere to put a brand-new group — so it goes into the
+                // sidebar's Groups list as a detached group (OrbitProfile.DetachedGroups), ready to
+                // be dragged onto the ring once there is room. Nothing is suggested and nothing is
+                // consolidated: making a group makes an empty group, and where it waits is the
+                // sidebar. Only an actual group detaches this way — the window can swap the Group
+                // tile for anything else, and a plain item has no such holding place.
                 if (!IsReplacing && OrbitIsFull && added.IsGroup)
                 {
-                    FinishGroupOntoExistingItem(added, anchor);
+                    _manager.Config.Primary.DetachedGroups.Add(added);
+                    _manager.Save();
+                    DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
                     return;
                 }
 
@@ -6002,7 +6434,6 @@ public sealed partial class ShellWindow : Window
         // pointer across the icon and the name raises no enter or leave of its own to flicker the
         // highlight.
         content.IsHitTestVisible = false;
-        content.Height = 28;
 
         // What the group holds, listed under it as indented child rows. They sit inside the drop
         // target rather than beside it, so a drop anywhere on the group and its children lands in
@@ -6011,7 +6442,6 @@ public sealed partial class ShellWindow : Window
         // the remove button and what the right-click menu opens on.
         var childRows = new List<HandBorder>();
         var children = new StackPanel();
-        var body = new StackPanel { Children = { content, children } };
         var listed = GroupChildren.Listed(group);
         foreach (var child in listed)
         {
@@ -6019,6 +6449,45 @@ public sealed partial class ShellWindow : Window
             childRows.Add(childRow);
             children.Children.Add(childRow);
         }
+
+        // Collapse/expand toggle — chevron in the far-right of the header row.
+        bool collapsed = _collapsedGroups.Contains(group.Id);
+        children.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+
+        var chevronIcon = new FontIcon
+        {
+            Glyph = collapsed ? SidebarChevronRightGlyph : SidebarChevronDownGlyph,
+            FontSize = 10,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(4, 0, 0, 0),
+        };
+        chevronIcon.Tapped += (_, e) =>
+        {
+            e.Handled = true;
+            if (_collapsedGroups.Contains(group.Id))
+            {
+                _collapsedGroups.Remove(group.Id);
+                children.Visibility = Visibility.Visible;
+                chevronIcon.Glyph = SidebarChevronDownGlyph;
+            }
+            else
+            {
+                _collapsedGroups.Add(group.Id);
+                children.Visibility = Visibility.Collapsed;
+                chevronIcon.Glyph = SidebarChevronRightGlyph;
+            }
+        };
+
+        // Header row: content (star) | chevron (auto), height 28.
+        var headerRow = new Grid { Height = 28 };
+        headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(content, 0);
+        Grid.SetColumn(chevronIcon, 1);
+        headerRow.Children.Add(content);
+        headerRow.Children.Add(chevronIcon);
+
+        var body = new StackPanel { Children = { headerRow, children } };
 
         // Transparent rather than null, so the whole row takes the pointer, not just what is drawn.
         // The 1px border that is only painted while a drag is over it is paid for out of the padding,
@@ -6112,7 +6581,7 @@ public sealed partial class ShellWindow : Window
 
         var removeGroup = new MenuFlyoutItem
         {
-            Text = "Remove",
+            Text = "Delete",
             Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D) },
         };
         removeGroup.Click += (_, _) => RemoveOrbitItem(group);
@@ -6661,18 +7130,55 @@ public sealed partial class ShellWindow : Window
     private static bool OrbitHasTarget(List<OrbitItem> items, string target) =>
         ElementLibrary.ContainsTarget(items, target);
 
-    private void ResetDefaults_Click(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Resetting throws away every app, folder, link, group and tool the user has put on the
+    /// orbit — not recoverable short of building it all back up by hand — so this asks first
+    /// rather than acting the instant the button is pressed. No existing yes/no
+    /// <see cref="ContentDialog"/> helper exists elsewhere in this app to reuse (the closest,
+    /// <see cref="ToolWindows.ToolWindowBase"/>'s discard-changes prompt, is a tool window's own
+    /// save/discard/cancel dialog with a custom close-button title row, not a generic
+    /// confirmation), so this builds a minimal one directly.
+    /// </summary>
+    private async void ResetDefaults_Click(object sender, RoutedEventArgs e)
     {
-        // Every item the selection/expansion state could be pointing at is about to be replaced.
-        HideItemDetails();
-        CollapseGroup();
-        // The corner's own arrangement was built out of the items being replaced, so it goes back
-        // to following the orbit rather than holding four copies of the old one.
-        HotCornerItems.Reset(_manager.Config);
-        _manager.SeedDefaults(_manager.Config.Primary);
-        _manager.NotifyItemsChanged();
-        RenderPreview();
-        RebuildItemsList();
+        if (_confirmingResetDefaults) return;
+        _confirmingResetDefaults = true;
+        try
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "Reset to defaults?",
+                Content = new TextBlock
+                {
+                    Text = "This puts the orbit back to its default apps, links and layout. " +
+                           "Anything you have added, removed or rearranged will be lost.",
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                PrimaryButtonText = "Reset",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+            };
+
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                return;
+
+            // Every item the selection/expansion state could be pointing at is about to be
+            // replaced.
+            HideItemDetails();
+            CollapseGroup();
+            // The corner's own arrangement was built out of the items being replaced, so it goes
+            // back to following the orbit rather than holding four copies of the old one.
+            HotCornerItems.Reset(_manager.Config);
+            _manager.SeedDefaults(_manager.Config.Primary);
+            _manager.NotifyItemsChanged();
+            RenderPreview();
+            RebuildItemsList();
+        }
+        finally
+        {
+            _confirmingResetDefaults = false;
+        }
     }
 
     /// <summary>
@@ -6715,13 +7221,16 @@ public sealed partial class ShellWindow : Window
     private void PopulateLanguageBox()
     {
         LanguageBox.Items.Clear();
+        var effective = LanguageCatalog.ResolveEffective(_manager.Config.Language);
         foreach (var option in LanguageCatalog.Options)
         {
             var item = new ComboBoxItem { Content = option.NativeName, Tag = option.Language.ToString() };
             LanguageBox.Items.Add(item);
-            if (option.Language == _manager.Config.Language)
+            if (option.Language == effective)
                 LanguageBox.SelectedItem = item;
         }
+        if (LanguageBox.SelectedItem is null && LanguageBox.Items.Count > 0)
+            LanguageBox.SelectedIndex = 0;
     }
 
     /// <summary>
@@ -6803,11 +7312,12 @@ public sealed partial class ShellWindow : Window
     private void PaintHoverZoomDirection()
     {
         bool zoomIn = _manager.Config.HoverZoomDirection == HoverZoomDirection.In;
-        HoverZoomDirectionText.Text = zoomIn ? "In" : "Out";
+        string zoomDirectionWord = Loc.Get(zoomIn ? "OrbitLayout.HoverStyle.ZoomIn" : "OrbitLayout.HoverStyle.ZoomOut");
+        HoverZoomDirectionText.Text = zoomDirectionWord;
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
-            HoverZoomDirectionButton, zoomIn ? "Zoom direction: In" : "Zoom direction: Out");
+            HoverZoomDirectionButton, Loc.Format("OrbitLayout.HoverStyle.ZoomDirectionNameTemplate", zoomDirectionWord));
         ToolTipService.SetToolTip(
-            HoverZoomDirectionButton, zoomIn ? "Growing. Click to shrink instead." : "Shrinking. Click to grow instead.");
+            HoverZoomDirectionButton, Loc.Get(zoomIn ? "OrbitLayout.HoverStyle.ZoomGrowingTooltip" : "OrbitLayout.HoverStyle.ZoomShrinkingTooltip"));
     }
 
     /// <summary>
@@ -7136,9 +7646,9 @@ public sealed partial class ShellWindow : Window
 
     // ========================== the Orbit toolbar's help menu ==========================
     //
-    // The gear that used to sit beside the help button here now lives in the header
-    // (OrbitSidebarSettingsButton, which just swaps the sidebar rather than navigating away), and
-    // the wrench itself moved down into CanvasActions next to Reset defaults. Only its menu's
+    // The gear that used to sit beside the help button here now lives in the left sidebar's own
+    // "ADD TO ORBIT" panel, permanently on screen rather than behind a header toggle, and the
+    // wrench itself moved down into CanvasActions next to Reset defaults. Only its menu's
     // handlers are still here.
 
     // The wrench's menu mirrors the reference's How To / Support / What's New, re-pointed at
@@ -7149,11 +7659,7 @@ public sealed partial class ShellWindow : Window
     /// <summary>Stands in for the reference's "Customization tips": the fastest way to learn what
     /// can go on the orbit is the panel that lists it, so this opens that rather than describing
     /// it.</summary>
-    private void HowToArrange_Click(object sender, RoutedEventArgs e)
-    {
-        ShowScreen(ScreenOrbit);
-        SetOrbitEditing(true);
-    }
+    private void HowToArrange_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenOrbit);
 
     /// <summary>Stands in for the reference's "How To video library". SwiftX has no videos; it has
     /// a README that documents every screen, which is the same thing in the medium this project
@@ -7192,7 +7698,17 @@ public sealed partial class ShellWindow : Window
         {
             _manager.Config.Language = language;
             _manager.Save();
+            // ApplyLanguage only re-points Loc.CurrentLanguage and refreshes the tray (see its own
+            // doc comment in OrbitManager) — it never touches this window's own controls, which
+            // were localized once from static XAML. ApplyLocalizedText is a flat pass of property
+            // assignments with no event-subscription side effects, so it is safe to run again here
+            // and makes the switch take effect immediately instead of waiting for the next launch.
+            // RebuildItemsList/RebuildToolsList/BuildOrbitEditSidebar are deliberately NOT re-run:
+            // none of what they build (ElementSections, ToolCatalog, ElementCategories, the "Add to
+            // Orbit…" row) calls Loc.Get anywhere — that content is plain English today, not
+            // localized, so there is nothing in it to go stale.
             _manager.ApplyLanguage();
+            ApplyLocalizedText();
         }
     }
 
@@ -7266,50 +7782,6 @@ public sealed partial class ShellWindow : Window
         ShowScreen(ScreenSettings);
         SelectSection(SectionPrivacy);
     }
-
-    /// <summary>
-    /// Persists the star rating and acknowledges it inline. Saved locally and never transmitted —
-    /// see <see cref="AppConfig.FeedbackRating"/> and Settings' own Privacy page.
-    /// <para>
-    /// Driven by a DependencyProperty change callback (registered in the constructor) rather than
-    /// <c>RatingControl.ValueChanged</c>: that event does not fire when Value is set through the
-    /// control's UIA RangeValue provider, so the rating silently failed to save for anyone driving
-    /// Settings with assistive technology — or with an automated UI test, which is how this was
-    /// caught. The DP callback fires for every path that changes the value, pointer and programmatic
-    /// alike.
-    /// </para>
-    /// </summary>
-    private void OnRatingValueChanged()
-    {
-        if (_loading) return;
-        // RatingControl reports -1 for "cleared", which is the same thing as never having rated as
-        // far as the config is concerned; normalise so the stored value is only ever 0-5.
-        var value = ExperienceRating.Value < 0 ? 0 : (int)ExperienceRating.Value;
-        if (value == _manager.Config.FeedbackRating) return;
-        _manager.Config.FeedbackRating = value;
-        _manager.Save();
-        UpdateRatingThanks();
-    }
-
-    /// <summary>
-    /// The line beside the stars. Deliberately does not thank the user for a low rating — "Thanks
-    /// for rating!" next to one star reads as though nobody looked. Hidden entirely until there is
-    /// a rating to acknowledge.
-    /// </summary>
-    private void UpdateRatingThanks()
-    {
-        int rating = _manager.Config.FeedbackRating;
-        if (rating <= 0)
-        {
-            RatingThanks.Visibility = Visibility.Collapsed;
-            return;
-        }
-        RatingThanks.Text = rating >= 4
-            ? "Thanks — glad it's working for you."
-            : "Thanks. If something's wrong, Settings › Support will reach us.";
-        RatingThanks.Visibility = Visibility.Visible;
-    }
-
 
     /// <summary>
     /// Selects a hover style from its main pill. Pressing the pill of the style already in force
@@ -7424,7 +7896,117 @@ public sealed partial class ShellWindow : Window
     {
         string runtime = RuntimeInformation.FrameworkDescription;
         string arch = RuntimeInformation.ProcessArchitecture.ToString().ToUpperInvariant();
-        AboutFramework.Text = $"WinUI 3  •  {runtime}  •  {arch}";
+        AboutFramework.Text = Loc.Format("Settings.About.Framework", runtime, arch);
+
+        // Always visible; disabled with a tooltip on the unpackaged build since StoreContext
+        // requires package identity — see OrbitManager.UpdateChecksSupported.
+        CheckForUpdatesLink.Visibility = Visibility.Visible;
+        if (!_manager.UpdateChecksSupported)
+        {
+            CheckForUpdatesLink.IsEnabled = false;
+            ToolTipService.SetToolTip(CheckForUpdatesLink, "Available in the Microsoft Store build");
+        }
+    }
+
+    /// <summary>Whether a check has found an update the link hasn't yet offered to install. The
+    /// updates themselves stay inside <see cref="StoreUpdateChecker"/> — this window only needs to
+    /// know whether to relabel the link and which method to call next.</summary>
+    private bool _hasPendingStoreUpdate;
+
+    /// <summary>
+    /// The one control the About card's Terms/Privacy row offers for updates (see
+    /// <see cref="OrbitManager.UpdateChecksSupported"/> for why it is disabled on the
+    /// unpackaged build). It does double duty rather than growing a second button: at rest it
+    /// reads "Check for updates" and runs <see cref="StoreUpdateChecker.CheckForUpdateAsync"/>;
+    /// once a check finds something, it relabels itself to "Install update" and the next click
+    /// runs <see cref="StoreUpdateChecker.RequestInstallAsync"/> instead. Either way, the result is
+    /// reported with a real OS toast (see <see cref="ShowUpdateToast"/>) rather than an in-window
+    /// status line — that's what "from the bottom" in the task meant, and it is also what lets this
+    /// stay a single compact link instead of the old dedicated Updates card.
+    /// </summary>
+    private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        if (_hasPendingStoreUpdate)
+        {
+            await InstallStoreUpdateAsync();
+            return;
+        }
+
+        CheckForUpdatesLink.IsEnabled = false;
+        var result = await StoreUpdateChecker.CheckForUpdateAsync();
+        CheckForUpdatesLink.IsEnabled = true;
+
+        if (!result.Ok)
+        {
+            ShowUpdateToast(
+                Loc.Get("Settings.About.Updates.CouldNotCheckTitle"),
+                Loc.Get("Settings.About.Updates.CouldNotCheckBody"));
+            return;
+        }
+
+        if (!result.UpdateAvailable)
+        {
+            ShowUpdateToast(
+                Loc.Get("Settings.About.Updates.UpToDateTitle"),
+                Loc.Get("Settings.About.Updates.UpToDateBody"));
+            return;
+        }
+
+        _hasPendingStoreUpdate = true;
+        CheckForUpdatesLink.Content = Loc.Get("Settings.About.Updates.InstallLink");
+        ShowUpdateToast(
+            Loc.Get("Settings.About.Updates.AvailableTitle"),
+            Loc.Format("Settings.About.Updates.AvailableBody", result.LatestVersion ?? ""));
+    }
+
+    /// <summary>
+    /// Hands the update a prior check found to the Store's own download/install UI — a
+    /// system-owned flow, not one this window draws any progress for itself (see
+    /// <see cref="StoreUpdateChecker.RequestInstallAsync"/>). The link returns to its resting
+    /// "check" state either way: a failed or cancelled install is not this app's to retry blindly,
+    /// and the Store's own UI will have already told the user what happened.
+    /// </summary>
+    private async Task InstallStoreUpdateAsync()
+    {
+        CheckForUpdatesLink.IsEnabled = false;
+        bool installed = await StoreUpdateChecker.RequestInstallAsync(_hwnd);
+        CheckForUpdatesLink.IsEnabled = true;
+
+        _hasPendingStoreUpdate = false;
+        CheckForUpdatesLink.Content = Loc.Get("Settings.About.Updates.CheckLink");
+
+        if (!installed)
+        {
+            ShowUpdateToast(
+                Loc.Get("Settings.About.Updates.InstallFailedTitle"),
+                Loc.Get("Settings.About.Updates.InstallFailedBody"));
+        }
+    }
+
+    /// <summary>
+    /// Posts a real OS-level toast (bottom-right, outside this window) for an update check's
+    /// result — see <see cref="App.OnLaunched"/> for the one-time
+    /// <c>AppNotificationManager.Default.Register()</c> this depends on. Informational only, with
+    /// no buttons of its own: the task that asked for this allowed either an actionable toast or
+    /// install staying a click on <see cref="CheckForUpdatesLink"/>, and the latter needed no new
+    /// <c>Package.appxmanifest</c> extension (<c>windows.toastNotificationActivation</c> is only
+    /// for handling a toast's own click/button, which this doesn't have) — the simpler of the two
+    /// options the task allowed for. Never throws: a toast that fails to post is logged and
+    /// otherwise shrugged off, the same as every other best-effort notification in this app.
+    /// </summary>
+    private static void ShowUpdateToast(string title, string body)
+    {
+        try
+        {
+            var builder = new AppNotificationBuilder().AddText(title);
+            if (!string.IsNullOrEmpty(body))
+                builder.AddText(body);
+            AppNotificationManager.Default.Show(builder.BuildNotification());
+        }
+        catch (Exception ex)
+        {
+            Diag.Log($"ShellWindow: couldn't show the update-check toast: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private async void Export_Click(object sender, RoutedEventArgs e)
@@ -7484,6 +8066,7 @@ public sealed partial class ShellWindow : Window
             PopulateLanguageBox();
             MouseTriggerEnabledToggle.IsOn = _manager.Config.MouseTriggerEnabled;
             SelectMouseTriggerButton(_manager.Config.MouseTriggerButton);
+            SelectMouseTriggerAction(_manager.Config.MouseTriggerAction);
             HotCornerEnabledToggle.IsOn = _manager.Config.HotCornerEnabled;
             SelectHotCorner(_manager.Config.HotCorner);
             SelectHotCornerLayout(_manager.Config.HotCornerLayout);
@@ -7515,6 +8098,7 @@ public sealed partial class ShellWindow : Window
         _manager.Config.HotkeyEnabled = true;
         _manager.Config.MouseTriggerEnabled = true;
         _manager.Config.MouseTriggerButton = MouseTriggerButton.Middle;
+        _manager.Config.MouseTriggerAction = MouseTriggerAction.LongPress;
         _manager.Config.HotCornerEnabled = true;
         _manager.Config.HotCorner = HotCorner.TopLeft;
         _manager.Config.HotCornerLayout = HotCornerLayout.Orbit;
@@ -7550,9 +8134,8 @@ public sealed partial class ShellWindow : Window
         HotkeyCapture.Gesture = HotkeyGesture.Default;
         MouseTriggerEnabledToggle.IsOn = true;
         SelectMouseTriggerButton(MouseTriggerButton.Middle);
+        SelectMouseTriggerAction(MouseTriggerAction.LongPress);
         HotCornerEnabledToggle.IsOn = true;
-        ExperienceRating.Value = -1;
-        UpdateRatingThanks();
         SyncAccentControls();
         SelectHotCorner(HotCorner.TopLeft);
         SelectHotCornerLayout(HotCornerLayout.Orbit);
@@ -7622,7 +8205,7 @@ public sealed partial class ShellWindow : Window
         // (unlike _manager.SetRadius below, which would otherwise re-save on every programmatic
         // Value assignment during the load pass), and it needs to reflect whatever the slider was
         // just set to either way.
-        RadiusReadout.Text = $"{(int)e.NewValue} px";
+        RadiusReadout.Text = Loc.Format("OrbitLayout.Radius.Value", (int)e.NewValue);
         if (_loading) return;
         _manager.SetRadius(e.NewValue, persist: !_radiusAdjusting);
     }
@@ -7672,6 +8255,33 @@ public sealed partial class ShellWindow : Window
         if (Enum.TryParse<MouseTriggerButton>(item.Tag as string, out var button))
         {
             _manager.Config.MouseTriggerButton = button;
+            _manager.Save();
+            _manager.ApplyMouseTrigger();
+        }
+    }
+
+    /// <summary>Picks the row in <see cref="MouseTriggerActionBox"/> whose Tag names
+    /// <paramref name="action"/> — <see cref="SelectMouseTriggerButton"/>'s own counterpart for the
+    /// gesture picker.</summary>
+    private void SelectMouseTriggerAction(MouseTriggerAction action)
+    {
+        foreach (var obj in MouseTriggerActionBox.Items)
+        {
+            if (obj is ComboBoxItem item &&
+                string.Equals(item.Tag as string, action.ToString(), StringComparison.Ordinal))
+            {
+                MouseTriggerActionBox.SelectedItem = item;
+                return;
+            }
+        }
+    }
+
+    private void MouseTriggerActionBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || MouseTriggerActionBox.SelectedItem is not ComboBoxItem item) return;
+        if (Enum.TryParse<MouseTriggerAction>(item.Tag as string, out var action))
+        {
+            _manager.Config.MouseTriggerAction = action;
             _manager.Save();
             _manager.ApplyMouseTrigger();
         }
@@ -7752,7 +8362,7 @@ public sealed partial class ShellWindow : Window
             return;
         }
 
-        HotkeyStatus.Text = "Could not register that hotkey (maybe another app owns it).";
+        HotkeyStatus.Text = Loc.Get("Settings.General.Hotkey.NotRegistered");
         HotkeyStatus.Visibility = Visibility.Visible;
     }
 
@@ -8520,22 +9130,23 @@ public sealed partial class ShellWindow : Window
             c => c.ShowCertificateTool, (c, v) => c.ShowCertificateTool = v),
     ];
 
-    // Bound as ToolsList's ItemsSource. An ObservableCollection rather than a plain list is what is
-    // left of the drag-to-reorder this used to back: nothing mutates it now but RebuildToolsList's
-    // own Clear-and-refill, and the notifications that once told a finished drag apart from that
-    // refill no longer have a listener. Kept as one because the ItemsSource binding is built on it.
-    private readonly ObservableCollection<Border> _toolCards = new();
-
     private void RebuildToolsList()
     {
-        _toolCards.Clear();
-        foreach (var row in ToolRows)
-            _toolCards.Add(BuildToolCard(row));
-        ToolsList.ItemsSource = _toolCards;
+        ToolsGrid.ColumnDefinitions.Clear();
+        ToolsGrid.Children.Clear();
+        ToolsGrid.ColumnSpacing = 16;
+        for (int i = 0; i < ToolRows.Length; i++)
+            ToolsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        for (int i = 0; i < ToolRows.Length; i++)
+        {
+            var card = BuildToolCard(ToolRows[i]);
+            Grid.SetColumn(card, i);
+            ToolsGrid.Children.Add(card);
+        }
     }
 
     /// <summary>
-    /// One tool's card in the wrapping grid <see cref="ToolsList"/>'s ItemsWrapGrid lays out —
+    /// One tool's card in the single row <see cref="ToolsGrid"/> lays out —
     /// built by <see cref="BuildToolCardShell"/>: the icon, title, description, tag chips and OPEN
     /// footer all centred on the card's own centre line. That is a layout of its own rather than a
     /// call to <see cref="BuildCardShell"/> (the left-aligned shape the Elements screen's cards

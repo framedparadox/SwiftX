@@ -157,7 +157,7 @@ public static class OrbitMetrics
     /// <summary>Layout box the centered logo occupies. Nothing paints behind it.</summary>
     public const double Hub = 72;
 
-    public const double HubLogo = 28;
+    public const double HubLogo = 19;
 
     public static double DeadZone => 36;
 

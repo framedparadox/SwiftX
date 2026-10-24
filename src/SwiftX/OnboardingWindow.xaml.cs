@@ -314,7 +314,7 @@ public sealed partial class OnboardingWindow : Window
             0 => ("Welcome to SwiftX",
                   "A quick-access orbit for the apps, folders, links and tools you reach for most."),
             1 => ("What goes on the orbit?",
-                  $"Tick what you want within reach. The orbit holds {OrbitMetrics.UserSlotCount} of your own items — everything here can be changed later from Orbit Settings."),
+                  $"Tick what you want within reach. The orbit holds {OrbitMetrics.UserSlotCount} of your own items — everything here can be changed later from Configure Orbit."),
             _ => ("How should it appear?",
                   "Pick the keys that summon the orbit, and whether a screen corner should do it too."),
         };

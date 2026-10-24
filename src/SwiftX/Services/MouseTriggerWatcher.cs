@@ -5,18 +5,21 @@ namespace SwiftX.Services;
 
 /// <summary>
 /// A mouse-only summon alongside the keyboard shortcut and the hot corner: raises
-/// <see cref="Triggered"/> once the configured button has been held down continuously for
-/// <see cref="LongPressMilliseconds"/>, anywhere on the desktop.
+/// <see cref="Triggered"/> once the configured button has either been held down continuously for
+/// <see cref="LongPressMilliseconds"/>, been double-clicked, or simply pressed, anywhere on the
+/// desktop — whichever gesture <see cref="Models.MouseTriggerAction"/> is currently configured for.
 /// <para>
 /// Polled rather than hooked, for the same reason <see cref="HotCornerWatcher"/> is: a
 /// <c>WH_MOUSE_LL</c> hook sees every click and move system-wide, which is a lot of machinery for
-/// a feature that only ever asks "is this one button still down?". A 50&#160;ms <c>WM_TIMER</c> on
-/// the same hidden <see cref="MessageWindow"/> the hotkeys and the hot corner already share answers
-/// exactly that, on the UI thread, for effectively nothing.
+/// a feature that only ever asks "is this one button still down?" (or, for the double-click and
+/// none gestures, "did it just go down?"). A 50&#160;ms <c>WM_TIMER</c> on the same hidden
+/// <see cref="MessageWindow"/> the hotkeys and the hot corner already share answers exactly that,
+/// on the UI thread, for effectively nothing.
 /// </para>
 /// <para>
-/// Re-arms only once the button is released: holding past the threshold fires <see cref="Triggered"/>
-/// once, not once per poll for as long as the button stays down.
+/// Re-arms only once the button is released: holding past the long-press threshold, completing
+/// a double-click, or the press itself for the none gesture, fires <see cref="Triggered"/> once,
+/// not once per poll for as long as the button stays down or gets clicked again.
 /// </para>
 /// </summary>
 public sealed class MouseTriggerWatcher : IDisposable
@@ -33,14 +36,22 @@ public sealed class MouseTriggerWatcher : IDisposable
 
     private readonly MessageWindow _window;
     private MouseTriggerButton _button = MouseTriggerButton.Middle;
+    private MouseTriggerAction _action = MouseTriggerAction.LongPress;
     private bool _running;
     private bool _disposed;
 
     /// <summary>False between firing and the button being released — see the class remarks.</summary>
     private bool _armed = true;
 
-    /// <summary><c>Environment.TickCount64</c> when the button went down; null while it is up.</summary>
+    /// <summary><c>Environment.TickCount64</c> when the button went down; null while it is up.
+    /// Used by the long-press gesture for how long the current press has lasted, and by the
+    /// double-click gesture for when the previous press in a possible pair happened.</summary>
     private long? _pressedAt;
+
+    /// <summary>The button's state as of the last poll, for the double-click gesture to notice a
+    /// down or up transition against — <see cref="NativeMethods.GetAsyncKeyState"/> reports a
+    /// level, not an edge.</summary>
+    private bool _wasDown;
 
     /// <summary>Raised on the UI thread once the configured button has been held long enough.</summary>
     public event Action? Triggered;
@@ -55,16 +66,18 @@ public sealed class MouseTriggerWatcher : IDisposable
     public bool IsRunning => _running;
 
     /// <summary>
-    /// Points the watcher at <paramref name="button"/> and starts or stops polling. Safe to call
-    /// repeatedly with the same values; any press in progress is discarded, so a button changed
-    /// while the old one happens to be held does not fire on the strength of time spent there
-    /// before the change.
+    /// Points the watcher at <paramref name="button"/> and <paramref name="action"/>, and starts or
+    /// stops polling. Safe to call repeatedly with the same values; any press (or first half of a
+    /// double-click) in progress is discarded, so a button or gesture changed mid-press does not
+    /// fire on the strength of time spent there before the change.
     /// </summary>
-    public void Configure(bool enabled, MouseTriggerButton button)
+    public void Configure(bool enabled, MouseTriggerButton button, MouseTriggerAction action)
     {
         _button = button;
+        _action = action;
         _pressedAt = null;
         _armed = true;
+        _wasDown = false;
 
         if (enabled)
             Start();
@@ -117,6 +130,36 @@ public sealed class MouseTriggerWatcher : IDisposable
 
     private void Poll()
     {
+        switch (PollKindFor(_action))
+        {
+            case MouseTriggerPollKind.DoubleClick:
+                PollDoubleClick();
+                break;
+            case MouseTriggerPollKind.None:
+                PollNone();
+                break;
+            default:
+                PollLongPress();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Which <c>Poll*</c> method <see cref="Poll"/> calls for <paramref name="action"/> — pulled out
+    /// as its own pure mapping, separate from <see cref="Poll"/> itself, so the three-way dispatch
+    /// (and that an unrecognized value falls back to the long-press arm specifically, rather than
+    /// silently reaching double-click or none) can be exercised in a test without needing to drive
+    /// <see cref="NativeMethods.GetAsyncKeyState"/>.
+    /// </summary>
+    internal static MouseTriggerPollKind PollKindFor(MouseTriggerAction action) => action switch
+    {
+        MouseTriggerAction.DoubleClick => MouseTriggerPollKind.DoubleClick,
+        MouseTriggerAction.None => MouseTriggerPollKind.None,
+        _ => MouseTriggerPollKind.LongPress,
+    };
+
+    private void PollLongPress()
+    {
         if (!IsDown(VirtualKeyFor(_button)))
         {
             _pressedAt = null;
@@ -134,6 +177,77 @@ public sealed class MouseTriggerWatcher : IDisposable
             return;
         }
         if (now - since < LongPressMilliseconds)
+            return;
+
+        _armed = false;
+        Triggered?.Invoke();
+    }
+
+    /// <summary>
+    /// The double-click half of <see cref="Poll"/>. Tracks down/up transitions of the configured
+    /// button rather than its level (<see cref="PollLongPress"/>'s "is it still down" is irrelevant
+    /// here) and hands each press-to-press gap to <see cref="MouseDoubleClickDetector"/> — the
+    /// comparison that is actually worth unit-testing — rather than doing the arithmetic inline.
+    /// </summary>
+    private void PollDoubleClick()
+    {
+        bool down = IsDown(VirtualKeyFor(_button));
+        if (down == _wasDown)
+            return;
+        _wasDown = down;
+
+        if (!down)
+        {
+            // The release that follows a trigger is what lets the next press be seen as the
+            // start of a fresh pair, rather than another attempt at the gesture that already fired.
+            if (!_armed)
+            {
+                _armed = true;
+                _pressedAt = null;
+            }
+            return;
+        }
+
+        if (!_armed)
+            return;
+
+        long now = Environment.TickCount64;
+        if (_pressedAt is long since &&
+            MouseDoubleClickDetector.IsDoubleClick(since, now, (int)NativeMethods.GetDoubleClickTime()))
+        {
+            _pressedAt = null;
+            _armed = false;
+            Triggered?.Invoke();
+            return;
+        }
+
+        // Either the first press of a new pair, or a press that arrived too late to pair with the
+        // one before it — either way, it becomes the new "first press" to measure the next one against.
+        _pressedAt = now;
+    }
+
+    /// <summary>
+    /// The "no gesture" half of <see cref="Poll"/>: the button going from up to down while armed is
+    /// itself the whole gesture, so <see cref="Triggered"/> fires on that edge rather than after any
+    /// hold duration. Tracks the down/up transition the same way <see cref="PollDoubleClick"/> does
+    /// — <see cref="IsDown"/> reports a level, not an edge, and a level check here would re-fire on
+    /// every poll for as long as the button stayed down — but keeps <see cref="PollLongPress"/>'s
+    /// re-arm-on-release discipline: once fired, nothing happens again until the button comes back up.
+    /// </summary>
+    private void PollNone()
+    {
+        bool down = IsDown(VirtualKeyFor(_button));
+        if (down == _wasDown)
+            return;
+        _wasDown = down;
+
+        if (!down)
+        {
+            _armed = true;
+            return;
+        }
+
+        if (!_armed)
             return;
 
         _armed = false;
@@ -161,4 +275,13 @@ public sealed class MouseTriggerWatcher : IDisposable
         Stop();
         _window.MessageReceived -= OnMessage;
     }
+}
+
+/// <summary>Which private <c>Poll*</c> method <see cref="MouseTriggerWatcher.Poll"/> should run —
+/// see <see cref="MouseTriggerWatcher.PollKindFor"/>.</summary>
+internal enum MouseTriggerPollKind
+{
+    LongPress,
+    DoubleClick,
+    None,
 }

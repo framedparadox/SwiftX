@@ -44,6 +44,21 @@ public sealed class OrbitManager
     public bool IsAddItemOpen => _addItemWindow is not null;
 
     /// <summary>
+    /// Whether Settings › About should offer "Check for updates" at all.
+    /// <para>
+    /// This used to be the other way around — a GitHub-releases download-and-relaunch mechanism
+    /// for the unpackaged build only, hidden on the Store (MSIX) build because the Store already
+    /// auto-updates those installs. That mechanism is gone (see
+    /// <see cref="Services.StoreUpdateChecker"/>'s own remarks for why): the real check is now a
+    /// Store API call that needs package identity and therefore only works — and only shows — on
+    /// the packaged build. The unpackaged portable build has no update-check UI at all as a
+    /// result; that is the accepted tradeoff of switching to a real Store check rather than
+    /// something to work around.
+    /// </para>
+    /// </summary>
+    public bool UpdateChecksSupported => PackagedRuntime.IsPackaged;
+
+    /// <summary>
     /// Whether the app window, the set-up guide or Add-new currently holds foreground focus —
     /// checked by hwnd against the
     /// live foreground window, not by <see cref="IsSettingsOpen"/>/<see cref="IsAddItemOpen"/>
@@ -256,9 +271,10 @@ public sealed class OrbitManager
             _hotCorner.Triggered += SummonFromHotCorner;
             ApplyHotCorner();
 
-            // ToggleOrbit, the same as the tray icon and the hotkey: a long press has no position
-            // of its own the way a hot-corner summon does, so there is no quadrant anchor to pick —
-            // it is the full orbit under the pointer, exactly as the keyboard shortcut summons it.
+            // ToggleOrbit, the same as the tray icon and the hotkey: neither mouse-trigger gesture
+            // has a position of its own the way a hot-corner summon does, so there is no quadrant
+            // anchor to pick — it is the full orbit under the pointer, exactly as the keyboard
+            // shortcut summons it.
             _mouseTrigger = new MouseTriggerWatcher(_messageWindow);
             _mouseTrigger.Triggered += ToggleOrbit;
             ApplyMouseTrigger();
@@ -288,9 +304,9 @@ public sealed class OrbitManager
         _hotCorner?.Configure(Config.HotCornerEnabled, Config.HotCorner);
 
     /// <summary>Puts <see cref="Config"/>'s mouse-trigger choice into effect. Call after changing
-    /// either the button or whether it is on.</summary>
+    /// the button, the gesture, or whether it is on.</summary>
     public void ApplyMouseTrigger() =>
-        _mouseTrigger?.Configure(Config.MouseTriggerEnabled, Config.MouseTriggerButton);
+        _mouseTrigger?.Configure(Config.MouseTriggerEnabled, Config.MouseTriggerButton, Config.MouseTriggerAction);
 
     /// <summary>
     /// The mouse-only counterpart to the summon hotkey (see <see cref="HotCornerWatcher"/>).
@@ -580,9 +596,12 @@ public sealed class OrbitManager
     /// <see cref="Services.Loc"/> when it next builds its UI already picks this up — the tool
     /// pages construct fresh each time their window opens, and the tray menu rebuilds on every
     /// click — so beyond re-pointing <see cref="Services.Loc"/> itself, the only thing that needs
-    /// an explicit nudge is the tray icon's tooltip, which is set once and left alone otherwise
-    /// (see <see cref="TrayIconService.RefreshTooltip"/>). Windows built once from literal XAML
-    /// text (Settings itself, Add item, the orbit's own tooltips) still need a restart.
+    /// an explicit nudge here is the tray icon's tooltip, which is set once and left alone
+    /// otherwise (see <see cref="TrayIconService.RefreshTooltip"/>). The caller, ShellWindow's own
+    /// <c>LanguageBox_SelectionChanged</c>, follows this with its own <c>ApplyLocalizedText()</c>
+    /// re-pass so the Settings/Orbit Layout window picks the new language up immediately too.
+    /// Add item, Onboarding and the orbit's own tooltips are separate windows/popups built once
+    /// from literal XAML text and still only pick up a language change the next time they open.
     /// </summary>
     public void ApplyLanguage()
     {
@@ -638,6 +657,19 @@ public sealed class OrbitManager
     {
         _shuttingDown = true;
         ReleaseShellIntegration();
+        // Matches the one-time Register() in App.xaml.cs.OnLaunched — both guarded on package
+        // identity the same way, since an unpackaged process never registered in the first place.
+        if (PackagedRuntime.IsPackaged)
+        {
+            try
+            {
+                Microsoft.Windows.AppNotifications.AppNotificationManager.Default.Unregister();
+            }
+            catch (Exception ex)
+            {
+                Diag.Log($"OrbitManager: AppNotificationManager unregister failed: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
         Application.Current.Exit();
     }
 }

@@ -20,6 +20,14 @@ internal static partial class NativeMethods
     public const int DWMWA_CAPTION_COLOR = 35;
 
     /// <summary>
+    /// DWM "cloak" flag (see WindowChrome.SetCloaked). A cloaked window is composed but not drawn to
+    /// screen — the HWND can be shown, sized, moved and activated while invisible, then revealed in
+    /// one step once its content has painted. Used to hide the blank OS frame that would otherwise
+    /// flash before a WinUI window's first composition frame lands.
+    /// </summary>
+    public const int DWMWA_CLOAK = 13;
+
+    /// <summary>
     /// DWM "no custom border color" sentinel for <see cref="DWMWA_BORDER_COLOR"/>.
     /// Pass this instead of a solid COLORREF when a translucent window must not paint a custom rim.
     /// </summary>
@@ -134,7 +142,8 @@ internal static partial class NativeMethods
     // Mouse buttons, read through the same GetAsyncKeyState below. The hot-corner watcher needs
     // the first three: a pointer arriving at a corner with a button held is a drag — a window
     // being thrown at a corner for Windows' own snap, or a selection — not a request to summon
-    // the orbit. All five are what MouseTriggerWatcher polls for its own long-press summon.
+    // the orbit. All five are what MouseTriggerWatcher polls for its own long-press and
+    // double-click summons.
     public const int VK_LBUTTON = 0x01;
     public const int VK_RBUTTON = 0x02;
     public const int VK_MBUTTON = 0x04;
@@ -152,6 +161,12 @@ internal static partial class NativeMethods
 
     [LibraryImport("user32.dll")]
     public static partial short GetAsyncKeyState(int vKey);
+
+    /// <summary>The user's own configured double-click time, in milliseconds (Control Panel's mouse
+    /// settings) — read by <see cref="Services.MouseTriggerWatcher"/>'s double-click gesture so it
+    /// matches whatever the user already has set system-wide, rather than a value SwiftX made up.</summary>
+    [LibraryImport("user32.dll")]
+    public static partial uint GetDoubleClickTime();
 
     // ---- Shell icon extraction (SHGetFileInfo) -----------------------------
     // A fallback icon source for anything the filesystem says exists. Needed because the

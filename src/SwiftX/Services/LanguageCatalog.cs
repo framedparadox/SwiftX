@@ -21,16 +21,17 @@ public sealed record LanguageOption(
 public static class LanguageCatalog
 {
     /// <summary>
-    /// Display order for the Settings language picker: System first (it's the default), then the
-    /// Latin-script languages alphabetized by their own native name, then the non-Latin-script
-    /// ones — those don't share a single alphabetical order with the Latin names, so they are
-    /// grouped afterward (Cyrillic, then the right-to-left scripts, then Devanagari, then CJK).
+    /// Display order for the Settings language picker: Latin-script languages alphabetized by
+    /// their own native name, then the non-Latin-script ones — those don't share a single
+    /// alphabetical order with the Latin names, so they are grouped afterward (Cyrillic and Greek,
+    /// then the right-to-left scripts, then Devanagari, then Thai, then CJK).
     /// </summary>
     public static readonly IReadOnlyList<LanguageOption> Options = new[]
     {
-        new LanguageOption(AppLanguage.System, "System", ""),
-
         // Latin script, alphabetical by native name.
+        new LanguageOption(AppLanguage.Indonesian, "Bahasa Indonesia", "id-ID"),
+        new LanguageOption(AppLanguage.Czech, "Čeština", "cs-CZ"),
+        new LanguageOption(AppLanguage.Danish, "Dansk", "da-DK"),
         new LanguageOption(AppLanguage.German, "Deutsch", "de-DE"),
         new LanguageOption(AppLanguage.EnglishUK, "English (UK)", "en-GB"),
         new LanguageOption(AppLanguage.EnglishUS, "English (US)", "en-US"),
@@ -38,20 +39,25 @@ public static class LanguageCatalog
         new LanguageOption(AppLanguage.French, "Français", "fr-FR"),
         new LanguageOption(AppLanguage.Italian, "Italiano", "it-IT"),
         new LanguageOption(AppLanguage.Dutch, "Nederlands", "nl-NL"),
+        new LanguageOption(AppLanguage.Norwegian, "Norsk", "nb-NO"),
         new LanguageOption(AppLanguage.Polish, "Polski", "pl-PL"),
         new LanguageOption(AppLanguage.PortugueseBR, "Português (Brasil)", "pt-BR"),
-        new LanguageOption(AppLanguage.PortuguesePT, "Português (Portugal)", "pt-PT"),
+        new LanguageOption(AppLanguage.Romanian, "Română", "ro-RO"),
+        new LanguageOption(AppLanguage.Swedish, "Svenska", "sv-SE"),
+        new LanguageOption(AppLanguage.Vietnamese, "Tiếng Việt", "vi-VN"),
         new LanguageOption(AppLanguage.Turkish, "Türkçe", "tr-TR"),
 
         // Other scripts.
         new LanguageOption(AppLanguage.Russian, "Русский", "ru-RU"),
+        new LanguageOption(AppLanguage.Ukrainian, "Українська", "uk-UA"),
+        new LanguageOption(AppLanguage.Greek, "Ελληνικά", "el-GR"),
         new LanguageOption(AppLanguage.Arabic, "العربية", "ar-SA", IsRightToLeft: true),
         new LanguageOption(AppLanguage.Hebrew, "עברית", "he-IL", IsRightToLeft: true),
         new LanguageOption(AppLanguage.Hindi, "हिन्दी", "hi-IN"),
+        new LanguageOption(AppLanguage.Thai, "ไทย", "th-TH"),
         new LanguageOption(AppLanguage.Korean, "한국어", "ko-KR"),
         new LanguageOption(AppLanguage.Japanese, "日本語", "ja-JP"),
         new LanguageOption(AppLanguage.ChineseSimplified, "中文（简体）", "zh-Hans"),
-        new LanguageOption(AppLanguage.ChineseTraditional, "中文（繁體）", "zh-Hant"),
     };
 
     /// <summary>
@@ -76,7 +82,6 @@ public static class LanguageCatalog
         {
             foreach (var option in Options)
             {
-                if (option.Language == AppLanguage.System) continue;
                 if (string.Equals(option.CultureTag, culture.Name, StringComparison.OrdinalIgnoreCase))
                     return option.Language;
             }
@@ -106,11 +111,29 @@ public static class LanguageCatalog
         "ja" => AppLanguage.Japanese,
         // Chinese with no script: Simplified is the larger variant, so it's the safer default.
         "zh" => AppLanguage.ChineseSimplified,
+        "uk" => AppLanguage.Ukrainian,
+        "vi" => AppLanguage.Vietnamese,
+        "id" => AppLanguage.Indonesian,
+        "th" => AppLanguage.Thai,
+        "sv" => AppLanguage.Swedish,
+        "da" => AppLanguage.Danish,
+        "nb" => AppLanguage.Norwegian,
+        // "no" is the generic Norwegian code; real-world systems report both "nb" and plain "no".
+        "no" => AppLanguage.Norwegian,
+        "cs" => AppLanguage.Czech,
+        "el" => AppLanguage.Greek,
+        "ro" => AppLanguage.Romanian,
         _ => AppLanguage.EnglishUS,
     };
 
+    /// <summary>
+    /// The option for <paramref name="language"/>. <see cref="AppLanguage.System"/> has no entry of its
+    /// own any more (the picker offers real languages only; a stored System is still honoured), so it
+    /// is resolved first rather than falling through to whichever language happens to be listed first.
+    /// </summary>
     public static LanguageOption Find(AppLanguage language)
     {
+        language = ResolveEffective(language);
         foreach (var option in Options)
             if (option.Language == language)
                 return option;
