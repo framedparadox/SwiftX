@@ -295,7 +295,7 @@ public static partial class Loc
         ["Settings.About.FeedbackRating.ThanksLow"] = "Dziękujemy. Jeśli coś nie działa, dotrzesz do nas przez Ustawienia › Pomoc.",
         ["Settings.About.FeedbackRating.ShareFeedback"] = "UDOSTĘPNIJ OPINIĘ",
         ["Settings.About.FeedbackRating.RateOnStore"] = "OCEŃ W MICROSOFT STORE",
-        ["Settings.About.FeedbackRating.StarOnGitHub"] = "DAJ NAM GWIAZDKĘ NA GITHUBIE",
+        ["Settings.About.FeedbackRating.StarOnGitHub"] = "DAJ GWIAZDKĘ NA GITHUBIE",
         ["Settings.About.Updates.Title"] = "Aktualizacje",
         ["Settings.About.Updates.Body"] = "SwiftX nie aktualizuje się automatycznie poza Microsoft Store. Sprawdź GitHub w poszukiwaniu nowszej wersji i zainstaluj ją w tym samym miejscu.",
         ["Settings.About.Updates.Check"] = "SPRAWDŹ AKTUALIZACJE",

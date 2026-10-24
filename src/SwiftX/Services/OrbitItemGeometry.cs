@@ -120,24 +120,27 @@ public static class OrbitItemGeometry
     private const byte RimAlpha = 0xF0;
 
     // The acrylic under a bubble is clipped by the compositor to a rounded rectangle whose edge is a
-    // hard stair-step, not an antialiased curve, and no clip set from outside reaches it (an ellipse
-    // clip on the element's own visual left the acrylic a full square). Its edge therefore cannot be
-    // smoothed, only hidden: held inside the bubble's antialiased silhouette, and covered by a ring.
-    // The numbers below are device pixels, not DIPs, because the stair-step is a device-pixel
-    // artifact: a DIP inset is half the protection at 200% scaling.
+    // hard stair-step rather than an antialiased curve. The original treatment held the disc a little
+    // way inside the bubble's edge and covered that inset band with an opaque ring — but on a dark
+    // glass there is no ring colour that both hides the edge and is not itself a dark circle around
+    // every bubble, and dropping the ring instead left the inset band showing through as a *lighter*
+    // ring (tint over the raw desktop, where the interior is tint over the blurred acrylic). Either
+    // way the edge read as a rim. So the inset is now zero: the acrylic fills the whole bubble, the
+    // fill is the same glass from centre to edge, and the tint's own antialiased circle is the
+    // silhouette. The ring is kept only under a light glass, where it still reads as a pale bezel
+    // rather than a dark outline (see OrbitWindow.CreateBubble).
 
     /// <summary>
-    /// How far, in device pixels, the acrylic disc is held inside the bubble's edge, per side. Must
-    /// leave room for the clip's worst-case overshoot of its nominal size
-    /// (<see cref="AcrylicEdgeOvershootPx"/>, seen at the four compass points) plus half a pixel for
-    /// the silhouette's own antialiasing, so that the stair-step never reaches the outline.
+    /// How far, in device pixels, the acrylic disc is held inside the bubble's edge, per side. Zero:
+    /// the acrylic fills the bubble so the glass is consistent edge to edge, with no tint-only band
+    /// at the rim. See the block comment above for why the earlier inset-plus-ring treatment was
+    /// dropped.
     /// </summary>
-    public const double BackdropInsetPx = 1.5;
+    public const double BackdropInsetPx = 0;
 
     /// <summary>
-    /// Width, in device pixels, of the ring drawn over the acrylic's edge. Must reach from the
-    /// bubble's edge back past the disc's innermost possible edge: the inset, the stair-step's half
-    /// pixel the other way, and the half pixel of antialiasing on the ring's own inner edge.
+    /// Width, in device pixels, of the pale bezel ring drawn over the acrylic's edge under a light
+    /// glass only (dark glasses drop it — see the block comment above and OrbitWindow.CreateBubble).
     /// </summary>
     public const double RimWidthPx = 3;
 

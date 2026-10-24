@@ -299,7 +299,7 @@ public static partial class Loc
         ["Settings.About.FeedbackRating.ThanksLow"] = "תודה. אם משהו לא בסדר, הגדרות › תמיכה יעבירו את זה אלינו.",
         ["Settings.About.FeedbackRating.ShareFeedback"] = "שלח משוב",
         ["Settings.About.FeedbackRating.RateOnStore"] = "דרג ב-Microsoft Store",
-        ["Settings.About.FeedbackRating.StarOnGitHub"] = "סמן אותנו בכוכב ב-GitHub",
+        ["Settings.About.FeedbackRating.StarOnGitHub"] = "סמן בכוכב ב-GitHub",
         ["Settings.About.Updates.Title"] = "עדכונים",
         ["Settings.About.Updates.Body"] = "SwiftX לא מתעדכן אוטומטית מחוץ ל-Microsoft Store. בדוק ב-GitHub אם יש גרסה חדשה יותר והתקן אותה במקום הקיימת.",
         ["Settings.About.Updates.Check"] = "בדוק אם יש עדכונים",

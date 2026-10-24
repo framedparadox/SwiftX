@@ -82,7 +82,7 @@ public static class SystemOrbitItems
     public static OrbitItem CreateOrbitLogo() => new()
     {
         Kind = OrbitItemKind.Application,
-        DisplayName = "Orbit Settings",
+        DisplayName = "Configure Orbit",
         Target = OrbitLogoTarget,
         CustomGlyph = SettingsGlyph,
         IsSystem = true,

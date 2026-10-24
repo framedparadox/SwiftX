@@ -404,7 +404,7 @@
                         </StackPanel>
                     </Border>
 
-                    <StackPanel Orientation="Horizontal" Spacing="80"
+                    <StackPanel Orientation="Horizontal" Spacing="200"
                                 HorizontalAlignment="Center" VerticalAlignment="Center"
                                 Margin="0,0,0,24">
 
@@ -624,6 +624,20 @@
                          off. That split is what lets a pill sit outboard of a node without ever
                          becoming a drag target or swallowing a press meant for the bubble behind
                          it, and it is why none of the drag code had to learn about pills. -->
+                    <!-- Hide/show label pills: overlaid at the bottom-left of the canvas row. -->
+                    <Button x:Name="LabelToggleButton"
+                            Grid.Row="1"
+                            Style="{StaticResource ChromeIconButton}"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Bottom"
+                            Margin="8,0,0,8"
+                            Click="LabelToggle_Click"
+                            AutomationProperties.Name="Hide labels"
+                            ToolTipService.ToolTip="Hide labels">
+                        <FontIcon x:Name="LabelToggleIcon" Glyph="&#xE7B3;" FontSize="16"
+                                  FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                  Foreground="{ThemeResource SettingsHeaderBrush}" />
+                    </Button>
                     <Grid Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <!-- A ThemeShadow receiver must not be an ancestor of whatever casts onto
                              it (see EnsureOrbitShadowReceivers) — PreviewCanvas/PreviewLabelCanvas
@@ -660,26 +674,28 @@
                         </Grid.ColumnDefinitions>
                         <Border Grid.Column="0" Grid.ColumnSpan="3" VerticalAlignment="Top" Height="1"
                                 Background="{ThemeResource OrbitCanvasBorderBrush}" />
-                        <Button x:Name="OrbitHelpButton" Grid.Column="0"
-                                Style="{StaticResource ChromeIconButton}"
-                                Margin="16,0,0,0"
-                                VerticalAlignment="Center"
-                                AutomationProperties.Name="How to"
-                                ToolTipService.ToolTip="How to">
-                            <FontIcon Glyph="&#xE946;" FontSize="16"
-                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                      Foreground="{ThemeResource SettingsHeaderBrush}" />
-                            <Button.Flyout>
-                                <MenuFlyout Placement="Top">
-                                    <MenuFlyoutItem x:Name="OrbitHelpRunOnboardingItem" Text="Run the set-up guide"
-                                                    Click="RunOnboarding_Click" />
-                                    <MenuFlyoutItem x:Name="OrbitHelpChooseWhatGoesOnItem" Text="Choose what goes on the orbit"
-                                                    Click="HowToArrange_Click" />
-                                    <MenuFlyoutItem x:Name="OrbitHelpReadHandbookItem" Text="Read the handbook"
-                                                    Click="HowToHandbook_Click" />
-                                </MenuFlyout>
-                            </Button.Flyout>
-                        </Button>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8"
+                                    Margin="16,0,0,0" VerticalAlignment="Center">
+                            <Button x:Name="OrbitHelpButton"
+                                    Style="{StaticResource ChromeIconButton}"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="How to"
+                                    ToolTipService.ToolTip="How to">
+                                <FontIcon Glyph="&#xE946;" FontSize="16"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                          Foreground="{ThemeResource SettingsHeaderBrush}" />
+                                <Button.Flyout>
+                                    <MenuFlyout Placement="Top">
+                                        <MenuFlyoutItem x:Name="OrbitHelpRunOnboardingItem" Text="Run the set-up guide"
+                                                        Click="RunOnboarding_Click" />
+                                        <MenuFlyoutItem x:Name="OrbitHelpChooseWhatGoesOnItem" Text="Choose what goes on the orbit"
+                                                        Click="HowToArrange_Click" />
+                                        <MenuFlyoutItem x:Name="OrbitHelpReadHandbookItem" Text="Read the handbook"
+                                                        Click="HowToHandbook_Click" />
+                                    </MenuFlyout>
+                                </Button.Flyout>
+                            </Button>
+                        </StackPanel>
                         <!-- The screen's title, and in its place while a group is open (OpenGroup /
                              CollapseGroup) that group's name, one shown at a time in the same spot.
                              Tapping the name opens the group's details card. -->
@@ -1984,7 +2000,7 @@
                                 <TextBlock x:Name="SetupGuideStep1" Style="{StaticResource SettingBody}"
                                            Text="1. Welcome — SwiftX is a quick-access orbit for the apps, folders, links and tools you reach for most." />
                                 <TextBlock x:Name="SetupGuideStep2" Style="{StaticResource SettingBody}"
-                                           Text="2. Pick what sits on the orbit. You can change this later from Orbit Settings." />
+                                           Text="2. Pick what sits on the orbit. You can change this later from Configure Orbit." />
                                 <TextBlock x:Name="SetupGuideStep3" Style="{StaticResource SettingBody}"
                                            Text="3. Choose the keyboard shortcut that summons it, and whether a screen corner should do it too." />
                                 <Button x:Name="OpenGuideButton" Content="Open guide" HorizontalAlignment="Left" Margin="0,8,0,0"
@@ -2090,7 +2106,7 @@
                                         <TextBlock x:Name="AboutBlurb" Style="{StaticResource SettingBody}" />
                                         <TextBlock x:Name="AboutDeveloper" FontSize="12"
                                                    Foreground="{ThemeResource SettingsMutedBrush}"
-                                                   Text="Developed by Ajay Kontham" />
+                                                   Text="Developed by ʞɐ / Ajay Kontham" />
                                         <TextBlock x:Name="AboutFramework" FontSize="12"
                                                    Foreground="{ThemeResource SettingsMutedBrush}"
                                                    TextWrapping="NoWrap" />
@@ -2143,7 +2159,7 @@
                                                              Style="{StaticResource AccentLink}"
                                                              AutomationProperties.AutomationId="SettingsFeedbackRateStore"
                                                              Click="RateOnStore_Click" />
-                                            <HyperlinkButton x:Name="StarOnGitHubLink" Content="STAR US ON GITHUB"
+                                            <HyperlinkButton x:Name="StarOnGitHubLink" Content="STAR ON GITHUB"
                                                              Style="{StaticResource AccentLink}"
                                                              AutomationProperties.AutomationId="SettingsFeedbackStarGitHub"
                                                              Click="StarOnGitHub_Click" />

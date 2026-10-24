@@ -301,7 +301,7 @@ public static partial class Loc
         ["Settings.About.FeedbackRating.ThanksLow"] = "شكرًا لك. إذا كان هناك خطأ ما، يمكن الوصول إلينا عبر الإعدادات › الدعم.",
         ["Settings.About.FeedbackRating.ShareFeedback"] = "مشاركة الملاحظات",
         ["Settings.About.FeedbackRating.RateOnStore"] = "التقييم في Microsoft Store",
-        ["Settings.About.FeedbackRating.StarOnGitHub"] = "ضع نجمة لنا على GitHub",
+        ["Settings.About.FeedbackRating.StarOnGitHub"] = "ضع نجمة على GitHub",
         ["Settings.About.Updates.Title"] = "التحديثات",
         ["Settings.About.Updates.Body"] = "لا يُحدَّث SwiftX تلقائيًا خارج Microsoft Store. تحقّق من GitHub بحثًا عن إصدار أحدث وثبّته في مكانه.",
         ["Settings.About.Updates.Check"] = "التحقق من التحديثات",

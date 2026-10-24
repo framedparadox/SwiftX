@@ -77,6 +77,10 @@ public sealed partial class ShellWindow : Window
     private bool _toolsCursorsApplied;
     private bool _revealed;
     private DispatcherTimer? _revealFallbackTimer;
+    // Orbit Layout preview only: when set, the name pills are hidden and each shows only while its
+    // own node is hovered (see AddSlotLabel / HighlightPreviewPair). A view preference for this
+    // screen, not saved — it resets to "shown" each time Settings opens.
+    private bool _labelsHidden;
 
     /// <summary>Guards <see cref="ResetDefaults_Click"/>'s confirmation dialog against a second
     /// reset starting while the first is still awaiting an answer — the toolbar's own reset
@@ -296,6 +300,7 @@ public sealed partial class ShellWindow : Window
         PreviewCanvas.Drop += Preview_Drop;
 
         WireOrbitGlyphHover(OrbitHelpButton);
+        WireOrbitGlyphHover(LabelToggleButton);
         WireOrbitGlyphHover(OrbitResetButton);
         WireOrbitGlyphHover(ElementsShortcutButton);
         WireOrbitGlyphHover(ThemeToggleButton);
@@ -1081,6 +1086,10 @@ public sealed partial class ShellWindow : Window
 
         if (ItemExists(_manager.Config.Primary.Items, group))
             return;
+        // A detached group (open from the sidebar's Groups list, off the ring) is not in Items, but
+        // it is not gone either — keep it open so adding an item to it does not close it.
+        if (_manager.Config.Primary.DetachedGroups.Contains(group))
+            return;
         if (_manager.Config.HotCornerOrbit.Any(entry => ReferenceEquals(entry, group)))
             return;
         CollapseGroup();
@@ -1147,6 +1156,7 @@ public sealed partial class ShellWindow : Window
         if (_orbitEditBuilt) BuildOrbitEditSidebar();
         if (_howToOpen) BuildHowToGuide();
         RefreshChromeGlyphColors();
+        UpdateLabelToggleVisual();
         UpdateElementsGlyphs();
     }
 
@@ -2261,6 +2271,14 @@ public sealed partial class ShellWindow : Window
     private const double PillOverlapFraction = 0.20;
 
     /// <summary>
+    /// How far a group's or a tool's label is pushed out *past* its node edge instead, as a fraction
+    /// of the node's diameter. Those two wear a mark on their outward rim (the group arc / notch),
+    /// and the usual inward <see cref="PillOverlapFraction"/> would lay the label right over it; this
+    /// keeps the label clear of the edge so the mark stays visible.
+    /// </summary>
+    private const double PillEdgeClearanceFraction = 0.06;
+
+    /// <summary>
     /// The Settings canvas's own group/Tools arc gap, in place of <see cref="OrbitMetrics.FlyoutStepDegreesFor"/>'s
     /// default — passed explicitly at every call in this file so the live orbit (<c>OrbitWindow</c>,
     /// which takes that default unchanged) and this canvas can each have the spacing that actually
@@ -2348,8 +2366,12 @@ public sealed partial class ShellWindow : Window
         double ux = Math.Cos(angle), uy = Math.Sin(angle);
         double nodeCx = cx + radius * ux;
         double nodeCy = cy + radius * uy;
-        // In from the node's edge, not out past it — see PillOverlapFraction.
-        double reach = bubble / 2 - bubble * PillOverlapFraction;
+        // In from the node's edge for a plain item (see PillOverlapFraction); out past it for a group
+        // or a tool, whose outward rim carries a mark the inward overlap would cover (see
+        // PillEdgeClearanceFraction).
+        double reach = item.IsGroup || item.IsTool
+            ? bubble / 2 + bubble * PillEdgeClearanceFraction
+            : bubble / 2 - bubble * PillOverlapFraction;
 
         double px, py;
         // The two slots on the vertical axis. Compared against a small epsilon rather than zero
@@ -2367,8 +2389,37 @@ public sealed partial class ShellWindow : Window
 
         Canvas.SetLeft(pill, Math.Clamp(px + PillCanvasOffsetX, 0, Math.Max(0, PillCanvasWidth - width)));
         Canvas.SetTop(pill, Math.Clamp(py, 0, PreviewCanvasSize - PillHeight));
+        // Labels hidden: the pill stays in the tree (so the disc/pill hover partnership still pairs
+        // it) but is not shown until its node is hovered — see HighlightPreviewPair.
+        if (_labelsHidden)
+            pill.Visibility = Visibility.Collapsed;
         PreviewLabelCanvas.Children.Add(pill);
         return pill;
+    }
+
+    private void LabelToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _labelsHidden = !_labelsHidden;
+        UpdateLabelToggleVisual();
+        RenderPreview();
+    }
+
+    /// <summary>
+    /// Keeps the Hide/Show labels toggle in step with <see cref="_labelsHidden"/>: its glyph goes to
+    /// the accent colour while labels are hidden (the button is "active") and back to the header
+    /// colour when they are shown, and the tooltip/name say which the press will do next. Re-run on a
+    /// theme or accent change through <see cref="RepaintThemedContent"/>, the same way
+    /// <see cref="UpdateElementsGlyphs"/> owns the Elements shortcut's glyph, so the hover save/restore
+    /// never leaves it on a stale colour.
+    /// </summary>
+    private void UpdateLabelToggleVisual()
+    {
+        LabelToggleIcon.Foreground = _labelsHidden
+            ? new SolidColorBrush(CurrentAccentColor())
+            : ThemeHelper.Brush(Root, "SettingsHeaderBrush");
+        string tip = _labelsHidden ? "Show labels" : "Hide labels";
+        ToolTipService.SetToolTip(LabelToggleButton, tip);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(LabelToggleButton, tip);
     }
 
     private void RenderPreview()
@@ -3338,7 +3389,34 @@ public sealed partial class ShellWindow : Window
         if (_sidebarDragTemplate is { } template)
         {
             e.AcceptedOperation = DataPackageOperation.Copy;
-            DropOntoPreviewSlot(slot, CopyForPreviewDrop(template));
+            // A group that is already on the ring is repositioned, not copied. The sidebar's Groups
+            // list is the ring's own groups plus the detached ones, so dragging an on-ring group's
+            // row back onto the ring used to drop a second, independent group of the same name and
+            // contents (CloneOrbitTemplate) — which reads as the one group duplicated. Moving it (the
+            // same thing dragging its ring bubble does) is what the gesture means.
+            if (!_previewQuadrant && template.IsGroup &&
+                _manager.Config.Primary.Items.Contains(template))
+            {
+                ReorderItem(template, slot);
+            }
+            // A detached group (sidebar only) is moved onto the ring: the real group is placed and
+            // taken out of the library, so it lives in exactly one place. If the slot will not take
+            // it, it is put back rather than lost.
+            else if (!_previewQuadrant && template.IsGroup &&
+                     _manager.Config.Primary.DetachedGroups.Remove(template))
+            {
+                DropOntoPreviewSlot(slot, template);
+                if (!_manager.Config.Primary.Items.Contains(template))
+                {
+                    _manager.Config.Primary.DetachedGroups.Add(template);
+                    _manager.NotifyItemsChanged();
+                    DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
+                }
+            }
+            else
+            {
+                DropOntoPreviewSlot(slot, CopyForPreviewDrop(template));
+            }
             return;
         }
 
@@ -3531,7 +3609,9 @@ public sealed partial class ShellWindow : Window
             item.DisplayName,
             replace: () => ReplaceOrbitItem(item),
             remove: () => RemoveOrbitItem(item),
-            removeLabel: "Delete",
+            // Groups are permanently deleted; apps and links are only removed from the layout and
+            // remain findable in the sidebar (their category is a scan / saved list, not the ring).
+            removeLabel: item.IsGroup ? "Delete" : "Remove",
             canRemove: true,
             // A group's mark is the one thing about it with no other way to change: its name and
             // contents are edited elsewhere, and it is not a shell target with an icon of its own
@@ -3546,8 +3626,7 @@ public sealed partial class ShellWindow : Window
     /// — the group takes over its slot rather than needing one of its own, so this stays offered
     /// even when <see cref="OrbitIsFull"/>. The item's own right-click "New group…"
     /// (<see cref="BuildOrbitItemMenu"/>): unlike <see cref="OpenNewGroupDialog"/>'s plain sidebar
-    /// button, the item to consolidate is already known before the window opens, so there is
-    /// nothing here for <see cref="FinishGroupOntoExistingItem"/>'s picker to pick.
+    /// button, the item to consolidate is already known before the window opens.
     /// </summary>
     private void CreateGroupFromExistingItem(OrbitItem item)
     {
@@ -3562,50 +3641,7 @@ public sealed partial class ShellWindow : Window
     }
 
     /// <summary>
-    /// What <see cref="OpenNewGroupDialog"/> falls back to once the "Add to orbit" window hands
-    /// back <paramref name="group"/> and the orbit turns out to have no free slot to append it:
-    /// a menu of the orbit's current top-level items, each of which takes over its own slot for a
-    /// group that consolidates it in — the same move <see cref="CreateGroupFromExistingItem"/>
-    /// makes when the item to consolidate was already chosen by a right-click. Listed from
-    /// <see cref="_slotBorders"/> rather than <c>_manager.Config.Primary.Items</c> directly so
-    /// eligibility matches <see cref="BuildOrbitItemMenu"/>'s own by construction: a slot with no
-    /// border recorded is pinned or empty, and a tool is left out there for the same reason it is
-    /// here — it comes off the orbit by switching it off, not by being wrapped.
-    /// </summary>
-    private void FinishGroupOntoExistingItem(OrbitItem group, FrameworkElement anchor)
-    {
-        var candidates = new List<OrbitItem>();
-        for (int slot = 0; slot < OrbitMetrics.UserSlotCount; slot++)
-        {
-            if (_slotBorders[slot] is { Tag: OrbitItem item } && !item.IsTool && !item.IsGroup)
-                candidates.Add(item);
-        }
-
-        if (candidates.Count == 0)
-        {
-            ShowSidebarNotice(anchor, "The orbit is full. Remove something to make room for a group.");
-            return;
-        }
-
-        var menu = new MenuFlyout { Placement = FlyoutPlacementMode.Bottom };
-        menu.Items.Add(new MenuFlyoutItem
-        {
-            Text = $"Orbit is full — start {group.DisplayName} with:",
-            IsEnabled = false,
-        });
-        menu.Items.Add(new MenuFlyoutSeparator());
-        foreach (var item in candidates)
-        {
-            var entry = new MenuFlyoutItem { Text = item.DisplayName };
-            entry.Click += (_, _) => ConsolidateIntoGroup(group, item);
-            menu.Items.Add(entry);
-        }
-        menu.ShowAt(anchor);
-    }
-
-    /// <summary>
-    /// The actual consolidation <see cref="CreateGroupFromExistingItem"/> and
-    /// <see cref="FinishGroupOntoExistingItem"/> both land on: <paramref name="item"/>'s slot
+    /// The actual consolidation <see cref="CreateGroupFromExistingItem"/> lands on: <paramref name="item"/>'s slot
     /// becomes <paramref name="group"/>'s, with <paramref name="item"/> itself — not a copy — as
     /// the group's first child, so renaming or re-icon-ing it afterwards still reaches the one
     /// instance of it that ever existed.
@@ -3732,19 +3768,33 @@ public sealed partial class ShellWindow : Window
     {
         if (!OrbitSlots.Vacate(_manager.Config.Primary.Items, item))
         {
-            // Not on the orbit: a group only the hot corner has, which the sidebar lists beside the
-            // orbit's (see SidebarGroups). Removing it takes it off the corner.
+            // Not on the ring. A detached user group is permanently deleted from the store.
+            if (_manager.Config.Primary.DetachedGroups.Remove(item))
+            {
+                if (ReferenceEquals(_expandedGroup, item)) CollapseGroup();
+                if (ReferenceEquals(_selectedItem, item)) HideItemDetails();
+                _manager.NotifyItemsChanged();
+                RenderPreview();
+                RebuildItemsList();
+                DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
+                return;
+            }
+            // A group only the hot corner has — removing it takes it off the corner.
             int slot = _manager.Config.HotCornerOrbit.FindIndex(entry => ReferenceEquals(entry, item));
             if (slot >= 0)
                 RemoveQuadrantItem(slot);
             return;
         }
 
+        // User groups are permanently deleted — no longer kept in a DetachedGroups holding area.
+        _manager.Config.Primary.DetachedGroups.Remove(item);
+
         if (ReferenceEquals(_expandedGroup, item)) CollapseGroup();
         if (ReferenceEquals(_selectedItem, item)) HideItemDetails();
         _manager.NotifyItemsChanged();
         RenderPreview();
         RebuildItemsList();
+        DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
     }
 
     /// <summary>Quadrant counterpart of <see cref="ReplaceOrbitItem"/>: the sidebar's next pick
@@ -4140,7 +4190,17 @@ public sealed partial class ShellWindow : Window
         _hoveredPreviewOrigin = origin;
         HighlightPreviewBorder(origin);
         if (_previewHoverPartners.TryGetValue(origin, out var partner))
+        {
+            // With labels hidden, bring this node's own pill up for the duration of the hover, then
+            // put it away again on exit (the restore runs in ClearPreviewHover). The partner is the
+            // pill when its Child is the label's TextBlock.
+            if (_labelsHidden && partner.Visibility == Visibility.Collapsed && partner.Child is TextBlock)
+            {
+                partner.Visibility = Visibility.Visible;
+                _hoveredPreviewRestores.Add(() => partner.Visibility = Visibility.Collapsed);
+            }
             HighlightPreviewBorder(partner);
+        }
 
         // Border has no cursor of its own to set (see Controls/HandCursor.cs) — Root is a
         // CursorHost for exactly this, same as the "Add to orbit" sidebar's own hand cursor says
@@ -5224,15 +5284,11 @@ public sealed partial class ShellWindow : Window
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
         var accent = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasAccentBrush");
 
-        // The centre is the way back out as well as the mark of where you are: at rest it is the
-        // group's own mark, under the pointer it becomes a close mark, and a click closes the group
-        // and returns to the whole orbit. That swap stays for the pointer that finds it, but it is a
-        // hover-only hint - nothing on screen says it exists until a pointer happens to land on the
-        // hub, and there is no hover at all on touch. AddGroupBackButton below is the explicit,
-        // always-visible way out it was missing.
+        // The hub shows the group's mark while the group is open; the back button to the left is
+        // the explicit way out (AddGroupBackButton below), so the hub no longer doubles as a close
+        // target \u2014 clicking it had no visible affordance until hover anyway.
         double markSize = glyphSize * 1.15;
         var groupMark = PreviewBubbleContent(group, markSize, accent, parent, 0);
-        var closeMark = PreviewGlyph("\uE711", markSize, accent);
 
         // No BorderBrush/BorderThickness: see ApplyBubbleShadow - every disc on this canvas now
         // reads its "filled" state from its shadow alone, the hub included.
@@ -5245,14 +5301,7 @@ public sealed partial class ShellWindow : Window
         };
         ApplyBubbleShadow(parentBubble);
         OrbitItemGeometry.Apply(parentBubble, parent);
-        ToolTipService.SetToolTip(parentBubble, "Click to close group");
-        parentBubble.PointerEntered += (_, _) => parentBubble.Child = closeMark;
-        parentBubble.PointerExited += (_, _) => parentBubble.Child = groupMark;
-        parentBubble.Tapped += (_, e) =>
-        {
-            e.Handled = true;
-            CollapseGroup();
-        };
+        ToolTipService.SetToolTip(parentBubble, group.DisplayName);
         AttachPreviewHover(parentBubble);
         Canvas.SetLeft(parentBubble, cx - parent / 2);
         Canvas.SetTop(parentBubble, cy - parent / 2);
@@ -5470,8 +5519,13 @@ public sealed partial class ShellWindow : Window
     // Built from codepoints rather than written as literals: a private-use character is invisible in
     // an editor, so a stray paste can swap it for another one without anyone seeing why an icon broke.
     private static readonly string SidebarChevronUpGlyph = char.ConvertFromUtf32(0xE70E);
+    private static readonly string SidebarChevronDownGlyph = char.ConvertFromUtf32(0xE70D);
+    private static readonly string SidebarChevronRightGlyph = char.ConvertFromUtf32(0xE76C);
     private static readonly string SidebarAddGlyph = char.ConvertFromUtf32(0xE710);
     private static readonly string SidebarEllipsis = char.ConvertFromUtf32(0x2026);
+
+    /// <summary>Groups whose child list is currently collapsed in the sidebar.</summary>
+    private readonly HashSet<string> _collapsedGroups = new();
 
     /// <summary>
     /// Whether a drag that the sidebar's rows depend on is still going: one of the sidebar's own
@@ -5563,6 +5617,7 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private IReadOnlyList<OrbitItem> SidebarGroups() =>
         ElementLibrary.UserGroups(_manager.Config.Primary.Items)
+            .Concat(_manager.Config.Primary.DetachedGroups)
             .Concat(HotCornerItems.OwnGroups(_manager.Config, SystemOrbitItems.CreateSettings()))
             .ToList();
 
@@ -6304,11 +6359,10 @@ public sealed partial class ShellWindow : Window
     /// of the job; what it returns goes where any other sidebar pick goes
     /// (<see cref="AddToOrbitFromSidebar"/>), which is what settles an armed replace. Always opens
     /// immediately — a full orbit used to be said here, before the window ever showed, which from
-    /// the row that was clicked looked like "New group" simply did nothing. What a full orbit
-    /// actually blocks is appending a brand-new group once this window hands one back (see the
-    /// <see cref="OrbitIsFull"/> check in the callback below, and <see cref="FinishGroupOntoExistingItem"/>),
-    /// which is also the one place "no room" can offer consolidating into an existing item instead
-    /// of simply refusing — there is no such fallback to offer before the group even has a name.
+    /// the row that was clicked looked like "New group" simply did nothing. A full ring no longer
+    /// refuses the group at all: the callback below puts a brand-new group that has nowhere to land
+    /// into the sidebar's Groups list as a detached group (<see cref="OrbitProfile.DetachedGroups"/>),
+    /// to be dragged onto the ring once there is room.
     /// </summary>
     /// <param name="seed">
     /// Something to put in the new group as it is created: the thing a right-click on a suggestion
@@ -6324,13 +6378,17 @@ public sealed partial class ShellWindow : Window
                     added.Children.Add(CloneOrbitTemplate(seed));
 
                 // A replace swaps rather than appends, so it has room whatever the count is. Short
-                // of that, a full orbit has nowhere to append a brand-new group — unless the group
-                // can instead take over an existing item's slot, consolidating that item into
-                // itself. Only offered for an actual group: the window lets the Group tile be
-                // swapped for anything else, and a plain item has nothing of its own to consolidate.
+                // of that, a full ring has nowhere to put a brand-new group — so it goes into the
+                // sidebar's Groups list as a detached group (OrbitProfile.DetachedGroups), ready to
+                // be dragged onto the ring once there is room. Nothing is suggested and nothing is
+                // consolidated: making a group makes an empty group, and where it waits is the
+                // sidebar. Only an actual group detaches this way — the window can swap the Group
+                // tile for anything else, and a plain item has no such holding place.
                 if (!IsReplacing && OrbitIsFull && added.IsGroup)
                 {
-                    FinishGroupOntoExistingItem(added, anchor);
+                    _manager.Config.Primary.DetachedGroups.Add(added);
+                    _manager.Save();
+                    DispatcherQueue.TryEnqueue(BuildOrbitEditSidebar);
                     return;
                 }
 
@@ -6376,7 +6434,6 @@ public sealed partial class ShellWindow : Window
         // pointer across the icon and the name raises no enter or leave of its own to flicker the
         // highlight.
         content.IsHitTestVisible = false;
-        content.Height = 28;
 
         // What the group holds, listed under it as indented child rows. They sit inside the drop
         // target rather than beside it, so a drop anywhere on the group and its children lands in
@@ -6385,7 +6442,6 @@ public sealed partial class ShellWindow : Window
         // the remove button and what the right-click menu opens on.
         var childRows = new List<HandBorder>();
         var children = new StackPanel();
-        var body = new StackPanel { Children = { content, children } };
         var listed = GroupChildren.Listed(group);
         foreach (var child in listed)
         {
@@ -6393,6 +6449,45 @@ public sealed partial class ShellWindow : Window
             childRows.Add(childRow);
             children.Children.Add(childRow);
         }
+
+        // Collapse/expand toggle — chevron in the far-right of the header row.
+        bool collapsed = _collapsedGroups.Contains(group.Id);
+        children.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+
+        var chevronIcon = new FontIcon
+        {
+            Glyph = collapsed ? SidebarChevronRightGlyph : SidebarChevronDownGlyph,
+            FontSize = 10,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(4, 0, 0, 0),
+        };
+        chevronIcon.Tapped += (_, e) =>
+        {
+            e.Handled = true;
+            if (_collapsedGroups.Contains(group.Id))
+            {
+                _collapsedGroups.Remove(group.Id);
+                children.Visibility = Visibility.Visible;
+                chevronIcon.Glyph = SidebarChevronDownGlyph;
+            }
+            else
+            {
+                _collapsedGroups.Add(group.Id);
+                children.Visibility = Visibility.Collapsed;
+                chevronIcon.Glyph = SidebarChevronRightGlyph;
+            }
+        };
+
+        // Header row: content (star) | chevron (auto), height 28.
+        var headerRow = new Grid { Height = 28 };
+        headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(content, 0);
+        Grid.SetColumn(chevronIcon, 1);
+        headerRow.Children.Add(content);
+        headerRow.Children.Add(chevronIcon);
+
+        var body = new StackPanel { Children = { headerRow, children } };
 
         // Transparent rather than null, so the whole row takes the pointer, not just what is drawn.
         // The 1px border that is only painted while a drag is over it is paid for out of the padding,
@@ -6486,7 +6581,7 @@ public sealed partial class ShellWindow : Window
 
         var removeGroup = new MenuFlyoutItem
         {
-            Text = "Remove",
+            Text = "Delete",
             Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D) },
         };
         removeGroup.Click += (_, _) => RemoveOrbitItem(group);

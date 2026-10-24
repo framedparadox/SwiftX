@@ -306,7 +306,7 @@ public static partial class Loc
         ["Settings.About.FeedbackRating.ThanksLow"] = "ขอบคุณ หากมีสิ่งใดผิดปกติ ไปที่การตั้งค่า › ฝ่ายสนับสนุนเพื่อติดต่อเรา",
         ["Settings.About.FeedbackRating.ShareFeedback"] = "แบ่งปันความคิดเห็น",
         ["Settings.About.FeedbackRating.RateOnStore"] = "ให้คะแนนบน MICROSOFT STORE",
-        ["Settings.About.FeedbackRating.StarOnGitHub"] = "กดดาวให้เราบน GITHUB",
+        ["Settings.About.FeedbackRating.StarOnGitHub"] = "กดดาวบน GITHUB",
         ["Settings.About.Updates.Title"] = "อัปเดต",
         ["Settings.About.Updates.Body"] = "SwiftX จะไม่อัปเดตอัตโนมัตินอกเหนือจาก Microsoft Store ตรวจสอบ GitHub เพื่อหาเวอร์ชันใหม่กว่าและติดตั้งทับเวอร์ชันปัจจุบัน",
         ["Settings.About.Updates.Check"] = "ตรวจสอบอัปเดต",
