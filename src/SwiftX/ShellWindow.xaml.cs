@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Microsoft.UI;
+using Microsoft.UI.Composition;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Input;
 using Microsoft.UI.Text;
@@ -10,6 +11,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Documents;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
@@ -2242,8 +2244,35 @@ public sealed partial class ShellWindow : Window
     private void ApplyBubbleShadow(UIElement element)
     {
         element.Translation = new Vector3(0, 0, BubbleElevation);
-        if (Root.Resources["OrbitBubbleShadow"] is ThemeShadow shadow)
-            element.Shadow = shadow;
+
+        // Midnight paints both the canvas and every disc on it in near-black (see ThemeHelper's
+        // isBlack overrides for OrbitCanvasBackgroundBrush/OrbitNodeBackgroundBrush), and nothing
+        // else outlines a disc — the "no BorderBrush" remark above means the shadow is the only
+        // thing that was ever telling a bubble apart from the canvas behind it. The shared
+        // ThemeShadow every other theme uses is always a dark shadow, so under Midnight it
+        // disappears into the black it is supposed to sit on top of, and the bubble it was
+        // outlining goes with it. A plain white composition shadow is the one thing that still
+        // reads against black-on-black, so Midnight gets that instead.
+        if (_manager.Config.Theme == AppTheme.Black)
+        {
+            try
+            {
+                var visual = ElementCompositionPreview.GetElementVisual(element);
+                var shadow = visual.Compositor.CreateDropShadow();
+                shadow.Color = Colors.White;
+                shadow.Opacity = 0.55f;
+                shadow.BlurRadius = 24f;
+                visual.Shadow = shadow;
+                return;
+            }
+            catch
+            {
+                // Falls through to the shared ThemeShadow below — a dim outline beats none at all.
+            }
+        }
+
+        if (Root.Resources["OrbitBubbleShadow"] is ThemeShadow shadow2)
+            element.Shadow = shadow2;
     }
 
     /// <summary>
@@ -2725,7 +2754,9 @@ public sealed partial class ShellWindow : Window
             CornerRadius = new CornerRadius(diameter / 2),
             Content = logo ?? new FontIcon
             {
-                Glyph = "\uE72B",
+                // Chevron-left (\uE76B) \u2014 the same glyph ToolsBackButton, SettingsBackButton and
+                // AddGroupBackButton use, so every "go back" affordance in the app reads as one icon.
+                Glyph = "\uE76B",
                 FontSize = 14,
             },
         };
@@ -4645,6 +4676,7 @@ public sealed partial class ShellWindow : Window
         OrbitItemKind.Shortcut => "SHORTCUT",
         OrbitItemKind.Group => "GROUP",
         OrbitItemKind.Tool => "TOOL",
+        OrbitItemKind.KeyboardAction => "SHORTCUT",
         _ => "ITEM",
     };
 
@@ -5771,32 +5803,33 @@ public sealed partial class ShellWindow : Window
         if (targets.Count == 0) return;
 
         // Replacing takes one thing, whichever was dropped first — the same one-for-one swap a
-        // sidebar row's click performs, not the batch add the loop below does.
+        // sidebar row's click performs, not the add dialog below. See ReplaceOrbitItem's own
+        // remarks on why replace skips that dialog entirely; a drop while replacing keeps doing
+        // the same direct swap AddToOrbitFromSidebar's click does.
         if (IsReplacing)
         {
             CompleteReplace(OrbitItemFactory.FromTarget(targets[0]));
             return;
         }
 
-        var items = _manager.Config.Primary.Items;
-        bool added = false;
-        foreach (var target in targets)
+        // A plain drop used to land straight on the orbit with whatever OrbitItemFactory.FromTarget
+        // guessed for its name and kind — no chance to rename it or correct a misclassified kind
+        // before it did, and worse, nothing told the user it had actually happened: the preview and
+        // sidebar both rebuild silently, so a drop that missed a free slot (OrbitSlots.Place
+        // returning false) looked exactly like one that worked. Opening the same "Add to orbit"
+        // dialog Browse and the ring's own "+" slot use instead — prefilled from the drop via
+        // AddItemWindow's "existing" parameter — gives a drop the same review step those already
+        // get, and the dialog is the one place that can actually tell the user a slot was unavailable.
+        // Only the first dropped target is used: the dialog edits one item at a time, the same limit
+        // AddItemWindow's own drop zone (Root_Drop) already has.
+        _manager.OpenAddItem(added =>
         {
-            if (!OrbitSlots.Place(items, OrbitItemFactory.FromTarget(target)))
-                break;
-            added = true;
-        }
-
-        if (!added)
-        {
-            UpdateOrbitEditSummary();
-            return;
-        }
-
-        _manager.NotifyItemsChanged();
-        BuildOrbitEditSidebar();
-        RenderPreview();
-        RebuildItemsList();
+            AddToTopLevel(added);
+            _manager.NotifyItemsChanged();
+            BuildOrbitEditSidebar();
+            RenderPreview();
+            RebuildItemsList();
+        }, _manager.Config.Primary.Items, existing: OrbitItemFactory.FromTarget(targets[0]));
     }
 
     /// <summary>
@@ -6317,18 +6350,145 @@ public sealed partial class ShellWindow : Window
         !OrbitSlots.HasRoom(_manager.Config.Primary.Items);
 
     /// <summary>
-    /// The Controls category: Home, Settings and Close, offered exactly like any other suggestion
-    /// (<see cref="BuildEditRow"/> — already-on-the-orbit badge, drag, right-click included) rather
-    /// than through <see cref="ElementLibrary.RowsFor"/>'s catalog, since none of the three is
-    /// something a scan could ever find. Fixed order and fixed set: unlike every other category,
-    /// nothing here is ever added to or taken off the list itself, only placed on the orbit or not.
+    /// The Controls category: Home, Settings, Close and the other default system operations
+    /// (Lock, Sleep, Mute/Unmute, Screenshot, Empty Recycle Bin, Task Manager), each offered
+    /// exactly like any other suggestion (<see cref="BuildEditRow"/> — already-on-the-orbit badge,
+    /// drag, right-click included) rather than through <see cref="ElementLibrary.RowsFor"/>'s
+    /// catalog, since none of them is something a scan could ever find. "Map keyboard action" is
+    /// the one exception — see <see cref="BuildKeyboardActionRow"/>. Fixed order and fixed set:
+    /// unlike every other category, nothing here is ever added to or taken off the list itself,
+    /// only placed on the orbit or not.
     /// </summary>
     private List<FrameworkElement> BuildControlRows() =>
     [
         BuildEditRow(SystemOrbitItems.CreateHome()),
         BuildEditRow(SystemOrbitItems.CreateSettings()),
         BuildEditRow(SystemOrbitItems.CreateClose()),
+        BuildEditRow(SystemOrbitItems.CreateLock()),
+        BuildEditRow(SystemOrbitItems.CreateSleep()),
+        BuildEditRow(SystemOrbitItems.CreateMute()),
+        BuildEditRow(SystemOrbitItems.CreateScreenshot()),
+        BuildEditRow(SystemOrbitItems.CreateEmptyRecycleBin()),
+        BuildEditRow(SystemOrbitItems.CreateTaskManager()),
+        BuildKeyboardActionRow(),
     ];
+
+    /// <summary>
+    /// "Map keyboard action": the one Controls row that is not <see cref="BuildEditRow"/> over a
+    /// fixed-target template, because unlike every other item on this list more than one of these
+    /// can exist, each with its own combination — the same reason <see cref="BuildNewGroupRow"/> is
+    /// its own row rather than a templated one. Opens <see cref="OpenKeyboardActionDialog"/> to
+    /// record the combination before anything is added.
+    /// </summary>
+    private Button BuildKeyboardActionRow()
+    {
+        var row = BuildEditRowShell(
+            char.ConvertFromUtf32(0xE765), "Map keyboard action" + SidebarEllipsis, null, null);
+        ToolTipService.SetToolTip(row, "Record a key combination and put it on the orbit");
+        WireEditRow(row, SystemOrbitItems.CreateKeyboardAction(), () => OpenKeyboardActionDialog());
+        return row;
+    }
+
+    /// <summary>
+    /// The small, purpose-built form behind "Map keyboard action": a name and a recorded
+    /// combination, nothing else. The generic "Add to orbit" dialog's type tiles and target field
+    /// all describe a launchable thing, which this isn't, so it gets a dialog of its own rather
+    /// than a type tile shoehorned into that one — see <see cref="OrbitItemKind.KeyboardAction"/>'s
+    /// own remarks on why this is a real kind rather than another fixed <c>swiftx:</c> target.
+    /// <para>
+    /// Adds a new item when <paramref name="existing"/> is null (going through the same
+    /// replace-or-append branch every other sidebar pick does); otherwise edits it in place. An
+    /// edit needs no callback and no list surgery the way <see cref="EditOrbitItem"/>'s generic
+    /// path does — <paramref name="existing"/> is a live reference already sitting wherever it
+    /// sits on the orbit, so writing its two fields and repainting is the whole of it.
+    /// </para>
+    /// </summary>
+    private async void OpenKeyboardActionDialog(OrbitItem? existing = null)
+    {
+        var nameBox = new TextBox
+        {
+            PlaceholderText = "Shown on the orbit",
+            Text = existing?.DisplayName ?? "",
+        };
+        var nameLabel = new TextBlock { Text = "Display name" };
+        var namePanel = new StackPanel { Spacing = 6 };
+        namePanel.Children.Add(nameLabel);
+        namePanel.Children.Add(nameBox);
+
+        var hotkey = new HotkeyCaptureButton
+        {
+            Label = "Keyboard shortcut",
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        if (existing is not null && HotkeyGesture.TryParse(existing.Arguments, out var current))
+            hotkey.Gesture = current;
+        var hotkeyLabel = new TextBlock { Text = "Keyboard shortcut" };
+        var hotkeyPanel = new StackPanel { Spacing = 6 };
+        hotkeyPanel.Children.Add(hotkeyLabel);
+        hotkeyPanel.Children.Add(hotkey);
+
+        var error = new InfoBar
+        {
+            Severity = InfoBarSeverity.Error,
+            IsOpen = false,
+            IsClosable = false,
+            Message = "Press a key combination with at least one of Ctrl, Alt, Shift or Win.",
+        };
+        hotkey.NeedsModifier += () => error.IsOpen = true;
+
+        var content = new StackPanel { Spacing = 14, Width = 320 };
+        content.Children.Add(namePanel);
+        content.Children.Add(hotkeyPanel);
+        content.Children.Add(error);
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = existing is null ? "Map keyboard action" : "Edit keyboard action",
+            Content = content,
+            PrimaryButtonText = existing is null ? "Add" : "Save",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        dialog.PrimaryButtonClick += (_, args) =>
+        {
+            if (hotkey.Gesture is not { IsValid: true })
+            {
+                error.IsOpen = true;
+                args.Cancel = true;
+            }
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            return;
+
+        string name = string.IsNullOrWhiteSpace(nameBox.Text) ? "Map Keyboard Action" : nameBox.Text.Trim();
+        string gesture = hotkey.Gesture!.ToString();
+
+        if (existing is not null)
+        {
+            existing.DisplayName = name;
+            existing.Arguments = gesture;
+            _manager.NotifyItemsChanged();
+            RenderPreview();
+            RebuildItemsList();
+            return;
+        }
+
+        var added = SystemOrbitItems.CreateKeyboardAction(name, gesture);
+
+        if (IsReplacing)
+        {
+            CompleteReplace(added);
+            return;
+        }
+
+        AddToTopLevel(added);
+        _manager.NotifyItemsChanged();
+        BuildOrbitEditSidebar();
+        RenderPreview();
+        RebuildItemsList();
+    }
 
     /// <summary>
     /// The Groups category: a "New group" row, then one drop-target row for each group on the orbit
@@ -8680,7 +8840,7 @@ public sealed partial class ShellWindow : Window
         return BuildCardShell(
             BuildItemIcon(item),
             item.DisplayName,
-            item.Target ?? "",
+            item.IsKeyboardAction ? (item.Arguments ?? "Not set") : item.Target ?? "",
             BuildElementTooltip(item),
             isHidden: item.Hidden,
             onToggle: isOn =>
@@ -8730,6 +8890,17 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private void EditOrbitItem(OrbitItem item)
     {
+        // The generic dialog below describes a launchable thing — a type tile, a target path — and
+        // a keyboard action has neither: it has no Target at all (see CreateKeyboardAction), which
+        // the generic dialog has no type tile that tolerates and would refuse to save with "Enter a
+        // target path or URL." It gets its own small dialog instead; see
+        // OpenKeyboardActionDialog's own remarks on why an edit there needs no callback.
+        if (item.IsKeyboardAction)
+        {
+            OpenKeyboardActionDialog(item);
+            return;
+        }
+
         var topLevel = _manager.Config.Primary.Items;
         bool isTopLevel = topLevel.Contains(item);
 
@@ -8907,6 +9078,7 @@ public sealed partial class ShellWindow : Window
         OrbitItemKind.WebLink => "Web link",
         OrbitItemKind.Shortcut => "Shortcut",
         OrbitItemKind.Group => "Group",
+        OrbitItemKind.KeyboardAction => "Keyboard shortcut",
         _ => kind.ToString(),
     };
 

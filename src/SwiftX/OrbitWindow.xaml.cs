@@ -143,6 +143,17 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     private HotCorner? _quadrant;
 
+    /// <summary>
+    /// Whatever window held foreground the instant this summon began, before <see cref="Summon"/>
+    /// itself activates the orbit and takes it away. A "Map keyboard action" item plays its
+    /// combination back as a real injected keystroke (see
+    /// <see cref="Services.SystemActions.SendKeyboardAction"/>), and by the time that runs the
+    /// orbit — not whatever the user actually meant the keys for — is the foreground window, so
+    /// <see cref="OrbitManager.HandleItemActivation"/> restores this one first. Zero means "nothing
+    /// was in front" (the desktop, or a summon too fast after process start to have asked yet).
+    /// </summary>
+    public nint SummonedFromHwnd { get; private set; }
+
     // Radii of the current summon's bands. The quarter circle sits further out than the full
     // orbit (it has to clear two screen edges), so these are resolved per summon from
     // OrbitMetrics' *For(radius) helpers rather than read straight off OrbitMetrics.
@@ -289,6 +300,10 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     public void Summon(HotCorner? quadrant = null)
     {
+        // First, before Activate()/ForceForeground below ever gets a chance to make it stale —
+        // see SummonedFromHwnd's own remarks.
+        SummonedFromHwnd = NativeMethods.GetForegroundWindow();
+
         // Cancel any in-flight dismiss hide.
         _renderGeneration++;
         _quadrant = quadrant;
