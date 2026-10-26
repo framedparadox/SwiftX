@@ -2,6 +2,55 @@
 
 All notable changes to SwiftX will be documented in this file.
 
+## [3.0.0] - 2026-10-24
+
+### Added
+- **Mouse trigger** — a second way to summon the orbit without a keyboard. Any mouse button
+  (Left, Right, Middle, X1, or X2) can now summon the orbit on a long press, a double-click,
+  or a plain single press. Middle button with long press is the default. Enable and configure it
+  in **Settings → General → Invoke**; it runs alongside the keyboard shortcut and the hot corner
+  rather than replacing either. `MouseTriggerEnabled`, `MouseTriggerButton`, and
+  `MouseTriggerAction` are the new config keys.
+- **10 new languages** — Czech, Danish, Greek, Indonesian, Norwegian, Romanian, Swedish, Thai,
+  Ukrainian, and Vietnamese join the existing 19, bringing the total to 29 languages plus System.
+  All new tables are fully translated; any key a table doesn't cover falls back to English (US)
+  as existing languages do.
+- **Store update checker** — SwiftX now polls the Microsoft Store in the background for available
+  updates and surfaces a notice in **Settings → About** when one is found, with a button to
+  install it. Nothing is downloaded automatically; the check is silent until there is something to
+  show.
+- **Tool window icons** — the Data Formatter, Secure values, Base64, and Certificate windows now
+  carry the SwiftX mark as their taskbar and Alt+Tab icon, so they are distinguishable from a
+  plain window at a glance.
+- **Hand cursor** — interactive controls in the Orbit Settings sidebar (size, shape, radius, hover
+  style) now show the pointer cursor when hovered, making them feel clickable rather than flat.
+
+### Changed
+- **Window cloaking on activation** — the orbit window is cloaked (invisible to the compositor)
+  between the moment it is activated and the moment the first frame is ready to draw. This
+  eliminates the brief blank/white flash that could appear on first summon or after a theme change.
+  The same guard covers the ShellWindow on first open.
+- The language list in **Settings → General → Language** now shows 29 languages. Language
+  switching and the per-language font-size compensation both cover the new tables.
+- Localization strings for several existing languages were audited and tightened; a handful of
+  keys that previously fell back to English now have proper translations.
+- `LanguageCatalog` carries the culture tag, flow direction, and font-size compensation for every
+  language in one place, replacing scattered per-language constants and making the new tables
+  easier to add.
+- Bumped the project, assembly, file, and package identity versions to 3.0.0.0.
+
+### Fixed
+- `OrbitProfile` now initialises its computed geometry lazily so that a deserialized profile
+  never triggers a metric calculation before its items are fully loaded. Previously, opening a
+  config that had been written by a build with different metric defaults could yield stale slot
+  positions until the first explicit refresh.
+- `OrbitItemGeometry` position calculations are now recomputed whenever the item list changes
+  length, not only when the radius setting changes. Items added to or removed from a profile
+  while the orbit is open now land in the correct positions without requiring a re-summon.
+- `SystemOrbitItems` synthesizes Add-new on the quadrant canvas correctly when the corner holds
+  fewer than four items; previously a synthesized slot could appear one position too far clockwise
+  in edge cases involving a single user item.
+
 ## [2.0.4] - 2026-10-20
 
 ### Added

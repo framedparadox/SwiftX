@@ -84,6 +84,24 @@ public partial class App : Application
             return;
         }
 
+        // Toast notifications (Settings › About's "Check for updates") need the app registered
+        // with AppNotificationManager once per process before anything can be shown — guarded on
+        // package identity like the Store update check itself (see
+        // Services.StoreUpdateChecker and OrbitManager.UpdateChecksSupported): the unpackaged
+        // build never shows the control that would post one, so there is nothing for an
+        // unpackaged registration to serve, and no reason to risk it.
+        if (PackagedRuntime.IsPackaged)
+        {
+            try
+            {
+                Microsoft.Windows.AppNotifications.AppNotificationManager.Default.Register();
+            }
+            catch (Exception ex)
+            {
+                Diag.Log($"App: AppNotificationManager registration failed: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
         var config = OrbitStore.Load();
         Loc.Initialize(config.Language);
         Manager = new OrbitManager(config);

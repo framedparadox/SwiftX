@@ -172,7 +172,7 @@ public sealed class AppConfig
     public FrostedGlassLevel FrostedGlass { get; set; } = FrostedGlassLevel.Light;
 
     /// <summary>The UI language — see <see cref="AppLanguage"/> and <see cref="Services.Loc"/>.</summary>
-    public AppLanguage Language { get; set; } = AppLanguage.System;
+    public AppLanguage Language { get; set; } = AppLanguage.EnglishUS;
 
     /// <summary>
     /// How orbit items respond to the pointer. See <see cref="OrbitHoverStyle"/>.
@@ -222,9 +222,16 @@ public sealed class AppConfig
     /// <c>Services.MouseTriggerWatcher</c>.</summary>
     public bool MouseTriggerEnabled { get; set; } = true;
 
-    /// <summary>Which button the long-press summon watches. Middle by default — the one the two
+    /// <summary>Which button the mouse trigger watches. Middle by default — the one the two
     /// other buttons' own everyday uses (click, right-click) never reach for.</summary>
     public MouseTriggerButton MouseTriggerButton { get; set; } = MouseTriggerButton.Middle;
+
+    /// <summary>Which gesture on <see cref="MouseTriggerButton"/> summons the orbit. Long press by
+    /// default, so this stays the first declared member of <see cref="Models.MouseTriggerAction"/>:
+    /// <see cref="Services.TolerantEnumConverter{T}"/> falls back to an enum's first member for a config that
+    /// predates this setting, so every existing user keeps today's long-press behavior with no
+    /// migration needed.</summary>
+    public MouseTriggerAction MouseTriggerAction { get; set; } = MouseTriggerAction.LongPress;
 
     /// <summary>Whether shoving the pointer into <see cref="HotCorner"/> summons the orbit.</summary>
     public bool HotCornerEnabled { get; set; } = true;
@@ -405,6 +412,7 @@ public sealed class AppConfig
         HotkeyEnabled = other.HotkeyEnabled;
         MouseTriggerEnabled = other.MouseTriggerEnabled;
         MouseTriggerButton = other.MouseTriggerButton;
+        MouseTriggerAction = other.MouseTriggerAction;
         HotCornerEnabled = other.HotCornerEnabled;
         HotCorner = other.HotCorner;
         HotCornerLayout = other.HotCornerLayout;
