@@ -18,4 +18,11 @@ public sealed class OrbitProfile
     /// </para>
     /// </summary>
     public List<OrbitItem> DetachedGroups { get; set; } = new();
+
+    /// <summary>
+    /// Keyboard actions and run-command actions the user has configured but not yet placed on the
+    /// ring. They live in the "ADD TO ORBIT" sidebar's Custom Actions section, ready to be dragged
+    /// onto the orbit. Defaulted empty so an existing <c>orbit.json</c> loads unchanged.
+    /// </summary>
+    public List<OrbitItem> DetachedActions { get; set; } = new();
 }

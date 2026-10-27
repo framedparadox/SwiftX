@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Feedback &amp; suggestions — SwiftX</title>
+  <meta name="description" content="Report a bug, suggest a feature, or share feedback on SwiftX. Everything goes through GitHub Issues and the Microsoft Store.">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="canonical" href="https://www.swiftx-app.com/feedback.html">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SwiftX">
+  <meta property="og:title" content="Feedback &amp; suggestions — SwiftX">
+  <meta property="og:description" content="Report a bug, suggest a feature, or share feedback on SwiftX.">
+  <meta property="og:url" content="https://www.swiftx-app.com/feedback.html">
+  <meta property="og:image" content="https://www.swiftx-app.com/assets/img/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The SwiftX orbit: eight glass items around the four-petal SwiftX mark.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Feedback &amp; suggestions — SwiftX">
+  <meta name="twitter:description" content="Report a bug, suggest a feature, or share feedback on SwiftX. Everything goes through GitHub Issues and the Microsoft Store.">
+  <meta name="twitter:image" content="https://www.swiftx-app.com/assets/img/og.png">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/img/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preload" href="assets/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/theme.css">
+  <script src="assets/js/theme.js"></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "SwiftX", "item": "https://www.swiftx-app.com/" },
+      { "@type": "ListItem", "position": 2, "name": "Feedback & suggestions", "item": "https://www.swiftx-app.com/feedback.html" }
+    ]
+  }
+  </script>
+  <style>
+    /* ── email feedback form ── */
+    .feedback-form { margin-top: 20px; display: flex; flex-direction: column; gap: 18px; }
+    .fb-field { display: flex; flex-direction: column; gap: 6px; }
+    .fb-label { font-size: 14px; font-weight: 600; color: var(--ink); }
+    .fb-label span { font-weight: 400; color: var(--ink-2); }
+    .fb-input,
+    .fb-select,
+    .fb-textarea {
+      font: inherit;
+      font-size: 15px;
+      color: var(--ink);
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 13px;
+      transition: border-color .15s, box-shadow .15s;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .fb-input:focus-visible,
+    .fb-select:focus-visible,
+    .fb-textarea:focus-visible {
+      outline: none;
+      border-color: var(--acc, #1d4adb);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc, #1d4adb) 20%, transparent);
+    }
+    .fb-textarea { resize: vertical; min-height: 140px; line-height: 1.55; }
+    .fb-select { appearance: none; -webkit-appearance: none; cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      background-size: 16px;
+      padding-right: 36px;
+    }
+    .fb-hint { font-size: 13px; color: var(--ink-2); }
+    .fb-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .fb-submit {
+      font: inherit; font-size: 15px; font-weight: 600;
+      color: #fff;
+      background: var(--acc, #1d4adb);
+      border: none; border-radius: 8px;
+      padding: 11px 24px;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .fb-submit:hover { opacity: .88; }
+    .fb-submit:active { opacity: .76; }
+    .fb-note { font-size: 13px; color: var(--ink-2); }
+    .fb-confirm { display: none; font-size: 14px; color: #30a46c; font-weight: 500; margin-top: 4px; }
+    .fb-confirm.show { display: block; }
+  </style>
+</head>
+<body class="doc-page">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <!-- ================================================================ NAV -->
+  <nav class="nav" aria-label="SwiftX" data-open="false">
+    <div class="wrap nav-inner">
+      <a class="brand" href="index.html" aria-label="SwiftX home">
+        <img src="assets/img/mark.svg" alt="" width="24" height="24">SwiftX
+      </a>
+      <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav-links">
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m4 7 5 5 5-5"/></svg>
+      </button>
+      <ul class="nav-links" id="nav-links">
+        <li><a href="index.html#summon">Overview</a></li>
+        <li><a href="index.html#customize">Customize</a></li>
+        <li><a href="index.html#corner">Hot corner</a></li>
+        <li><a href="index.html#tools">Tools</a></li>
+        <li><a href="index.html#privacy">Privacy</a></li>
+        <li><a href="index.html#specs">Specs</a></li>
+        <li><a href="index.html#faq">Support</a></li>
+        <li><a href="changelog.html">Changelog</a></li>
+      </ul>
+      <a class="btn btn-primary btn-sm" href="https://apps.microsoft.com/detail/9pk5wx5sswts">Get from Microsoft Store</a>
+    </div>
+  </nav>
+
+  <main id="main" data-tone="light">
+    <header class="doc-hero">
+      <div class="wrap-narrow">
+        <p class="eyebrow">Support</p>
+        <h1 class="title">Feedback, suggestions &amp; requests</h1>
+        <p class="lede">Found a bug? Have an idea? Want to request a feature? Here is how to reach us.</p>
+        <p class="meta">SwiftX is open source — your feedback shapes it directly.</p>
+      </div>
+    </header>
+
+    <article class="doc">
+      <div class="wrap-narrow">
+
+        <div class="summary" aria-label="At a glance">
+          <div><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Bug reports go to the GitHub issue tracker.</span></div>
+          <div><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Feature requests and suggestions go to GitHub Discussions.</span></div>
+          <div><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Quick feedback or a store rating can go to the Microsoft Store.</span></div>
+          <div><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Nothing you write there passes through SwiftX.</span></div>
+        </div>
+
+        <ol class="toc">
+          <li><a href="#bugs">Report a bug</a></li>
+          <li><a href="#features">Request a feature or enhancement</a></li>
+          <li><a href="#suggestions">Share a suggestion</a></li>
+          <li><a href="#store">Rate or review on the Microsoft Store</a></li>
+          <li><a href="#logs">Attach a diagnostic log</a></li>
+          <li><a href="#email">Send feedback by email</a></li>
+          <li><a href="#privacy-note">A note on privacy</a></li>
+        </ol>
+
+        <h2 id="bugs">1. Report a bug</h2>
+        <p>The best place to report something that isn't working is the <a href="https://github.com/framedparadox/SwiftX/issues">GitHub issue tracker</a>. Before opening a new issue, search to see whether someone else has already reported the same thing.</p>
+        <p>A useful bug report includes:</p>
+        <ul>
+          <li>What you expected to happen, and what happened instead.</li>
+          <li>The steps that reproduce it reliably, or when it first appeared.</li>
+          <li>Your Windows version (Settings → System → About) and whether SwiftX is installed from the Microsoft Store or built from source.</li>
+          <li>The diagnostic log from <code>%TEMP%\swiftx.log</code> — SwiftX recreates it on every launch, so it covers the most recent session. Attach it to the issue rather than pasting it inline.</li>
+        </ul>
+        <p><a class="link-arrow" href="https://github.com/framedparadox/SwiftX/issues/new?labels=bug&amp;template=bug_report.md">Open a bug report on GitHub</a></p>
+
+        <h2 id="features">2. Request a feature or enhancement</h2>
+        <p>New feature requests live in <a href="https://github.com/framedparadox/SwiftX/discussions/categories/ideas">GitHub Discussions — Ideas</a>. Describe the problem you are trying to solve, not only the solution you have in mind. That helps evaluate whether there is a better fit already, or whether the request touches something planned.</p>
+        <p>Before posting, search existing discussions to see whether the same idea has already come up. Upvoting an existing request carries more weight than opening a duplicate.</p>
+        <p><a class="link-arrow" href="https://github.com/framedparadox/SwiftX/discussions/new?category=ideas">Request a feature on GitHub</a></p>
+
+        <h2 id="suggestions">3. Share a suggestion</h2>
+        <p>For ideas that don't fit neatly as a feature request — a wording change, a UX tweak, a question about direction — use <a href="https://github.com/framedparadox/SwiftX/discussions">GitHub Discussions — General</a>. These are read and considered, even when they don't result in an issue.</p>
+        <p><a class="link-arrow" href="https://github.com/framedparadox/SwiftX/discussions/new?category=general">Start a discussion on GitHub</a></p>
+
+        <h2 id="store">4. Rate or review on the Microsoft Store</h2>
+        <p>If you installed SwiftX from the Microsoft Store, a rating or review there helps other people find it and signals what matters to users. You can also open the Windows Feedback Hub from <b>Settings → About → Feedback &amp; rating → Share feedback</b> inside SwiftX.</p>
+        <p><a class="link-arrow" href="https://apps.microsoft.com/detail/9pk5wx5sswts#reviews">Rate SwiftX on the Microsoft Store</a></p>
+
+        <h2 id="logs">5. Attach a diagnostic log</h2>
+        <p>SwiftX writes a diagnostic log to <code>%TEMP%\swiftx.log</code>. It is recreated on every launch and covers events from the most recent session: window activation, shortcut registration, hot-corner detection, and failures that might not surface any other way.</p>
+        <p>To find it, press <kbd>Win</kbd> <kbd>R</kbd>, type <code>%TEMP%\swiftx.log</code>, and press Enter. Attach the file to a GitHub issue rather than pasting its contents inline.</p>
+        <p>The log records only what SwiftX itself does. It does not contain your files, keys, or any values from Secure values.</p>
+
+        <h2 id="email">6. Send feedback by email</h2>
+        <p>Prefer email? Fill in the form below and press <b>Open in email client</b>. It composes a pre-addressed message in your default mail app — nothing is sent automatically, and SwiftX is not involved.</p>
+        <!-- TODO: replace hello@swiftx-app.com with your real contact address -->
+        <form class="feedback-form" id="feedback-form" novalidate>
+          <div class="fb-field">
+            <label class="fb-label" for="fb-category">Category</label>
+            <select class="fb-select" id="fb-category" name="category">
+              <option value="Bug report">Bug report</option>
+              <option value="Feature request">Feature request</option>
+              <option value="Enhancement">Enhancement</option>
+              <option value="General feedback" selected>General feedback</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="fb-field">
+            <label class="fb-label" for="fb-subject">Subject</label>
+            <input class="fb-input" type="text" id="fb-subject" name="subject" placeholder="Describe it in a line" maxlength="200" required>
+          </div>
+          <div class="fb-field">
+            <label class="fb-label" for="fb-message">Message</label>
+            <textarea class="fb-textarea" id="fb-message" name="message" placeholder="What happened, what you expected, steps to reproduce, or your idea…" required></textarea>
+          </div>
+          <div class="fb-field">
+            <label class="fb-label" for="fb-reply">Your email <span>(optional — for a reply)</span></label>
+            <input class="fb-input" type="email" id="fb-reply" name="reply" placeholder="you@example.com" maxlength="254">
+            <span class="fb-hint">Only used to reply to you. Never shared or stored anywhere.</span>
+          </div>
+          <div class="fb-actions">
+            <button class="fb-submit" type="submit">Open in email client</button>
+            <span class="fb-note">Opens your default mail app. Nothing is sent automatically.</span>
+          </div>
+          <p class="fb-confirm" id="fb-confirm" role="status" aria-live="polite">Your email client should have opened. Thank you for the feedback.</p>
+        </form>
+
+        <h2 id="privacy-note">7. A note on privacy</h2>
+        <p>When you open a GitHub or Microsoft Store link from this page or from inside SwiftX, you are visiting a third-party service. SwiftX does not see what you type there, and nothing passes through SwiftX on the way. GitHub and Microsoft's own privacy statements apply to those services.</p>
+        <p>For a full description of what SwiftX itself does and doesn't do with your data, see the <a href="privacy.html">privacy policy</a>.</p>
+
+      </div>
+    </article>
+  </main>
+
+  <!-- ============================================================ FOOTER -->
+  <footer class="footer" data-tone="light">
+    <div class="wrap">
+      <div class="footer-notes">
+        <p>Windows, Windows 11 and Microsoft Store are trademarks of the Microsoft group of companies. SwiftX is an independent open-source project and is not affiliated with or endorsed by Microsoft.</p>
+      </div>
+      <div class="footer-crumb"><img src="assets/img/mark.svg" alt="" width="16" height="16"><span class="chev">›</span><span>SwiftX</span></div>
+      <div class="footer-cols">
+        <div><h4>Explore</h4><ul><li><a href="index.html#summon">Overview</a></li><li><a href="index.html#customize">Customize</a></li><li><a href="index.html#corner">Hot corner</a></li><li><a href="index.html#tools">Built-in tools</a></li><li><a href="index.html#specs">Tech specs</a></li></ul></div>
+        <div><h4>Get SwiftX</h4><ul><li><a href="https://apps.microsoft.com/detail/9pk5wx5sswts">Get from Microsoft Store</a></li><li><a href="changelog.html">Release history</a></li><li><a href="https://github.com/framedparadox/SwiftX/releases">GitHub releases</a></li><li><a href="index.html#start">Build from source</a></li></ul></div>
+        <div><h4>Support</h4><ul><li><a href="index.html#faq">FAQ</a></li><li><a href="feedback.html">Feedback &amp; suggestions</a></li><li><a href="https://github.com/framedparadox/SwiftX/issues">Report an issue</a></li><li><a href="https://github.com/framedparadox/SwiftX#readme">Documentation</a></li></ul></div>
+        <div><h4>Legal</h4><ul><li><a href="privacy.html">Privacy policy</a></li><li><a href="terms.html">Terms and conditions</a></li><li><a href="https://github.com/framedparadox/SwiftX/blob/main/LICENSE">MIT Licence</a></li></ul></div>
+      </div>
+      <div class="footer-legal">
+        <span>Copyright © <span data-year>2026</span> SwiftX. Released under the MIT Licence.</span>
+        <nav aria-label="Legal"><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="https://github.com/framedparadox/SwiftX">GitHub</a></nav>
+      </div>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="assets/js/site.js" defer></script>
+  <script>
+    (function () {
+      /* TODO: replace with your real contact address */
+      var TO = 'hello@swiftx-app.com';
+
+      var form    = document.getElementById('feedback-form');
+      var confirm = document.getElementById('fb-confirm');
+      if (!form) return;
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+
+        var category = document.getElementById('fb-category').value.trim();
+        var subject  = document.getElementById('fb-subject').value.trim();
+        var message  = document.getElementById('fb-message').value.trim();
+        var reply    = document.getElementById('fb-reply').value.trim();
+
+        if (!subject || !message) {
+          var missing = !subject ? document.getElementById('fb-subject') : document.getElementById('fb-message');
+          missing.focus();
+          return;
+        }
+
+        var fullSubject = '[' + category + '] ' + subject;
+        var body = message;
+        if (reply) body += '\n\n-- \nReply to: ' + reply;
+
+        var uri = 'mailto:' + TO
+          + '?subject=' + encodeURIComponent(fullSubject)
+          + '&body='    + encodeURIComponent(body);
+
+        window.location.href = uri;
+
+        confirm.classList.add('show');
+        setTimeout(function () { confirm.classList.remove('show'); }, 6000);
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -527,6 +527,54 @@ public sealed class OrbitManager
             return;
         }
 
+        if (item.Kind == OrbitItemKind.KeyboardAction)
+        {
+            SystemActions.SendKeyboardAction(item, _orbitWindow?.SummonedFromHwnd ?? 0);
+            return;
+        }
+
+        if (item.Kind == OrbitItemKind.CommandAction)
+        {
+            SystemActions.RunCommand(item);
+            return;
+        }
+
+        if (string.Equals(item.Target, SystemOrbitItems.MuteTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            SystemActions.ToggleMute();
+            return;
+        }
+
+        if (string.Equals(item.Target, SystemOrbitItems.LockTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            SystemActions.LockWorkstation();
+            return;
+        }
+
+        if (string.Equals(item.Target, SystemOrbitItems.SleepTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            SystemActions.Sleep();
+            return;
+        }
+
+        if (string.Equals(item.Target, SystemOrbitItems.ScreenshotTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            SystemActions.CaptureScreenshot();
+            return;
+        }
+
+        if (string.Equals(item.Target, SystemOrbitItems.EmptyRecycleBinTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            SystemActions.EmptyRecycleBin();
+            return;
+        }
+
+        if (string.Equals(item.Target, SystemOrbitItems.TaskManagerTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            SystemActions.OpenTaskManager();
+            return;
+        }
+
         if (string.Equals(item.Target, SystemOrbitItems.SettingsTarget, StringComparison.OrdinalIgnoreCase))
         {
             OpenSettingsScreen();

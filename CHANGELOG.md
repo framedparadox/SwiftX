@@ -2,6 +2,34 @@
 
 All notable changes to SwiftX will be documented in this file.
 
+## [3.0.1] - 2026-10-26
+
+### Added
+- **More default system operations** — the "Add to orbit" sidebar's Controls section now also
+  offers Lock, Sleep, Mute/Unmute, Screenshot (to the clipboard), Empty Recycle Bin, and Task
+  Manager, alongside Home/Settings/Close.
+- **Map keyboard action** — a new kind of orbit item that plays back a recorded key combination
+  (reusing the same capture control as the summon shortcut) instead of launching anything. Unlike
+  the other Controls items, more than one can exist, each with its own combination and name; add
+  one from the sidebar's "Map keyboard action…" row, and edit it later from its card's Edit button.
+  The combination is replayed against whatever window had focus before the orbit was summoned, not
+  the orbit itself.
+
+### Fixed
+- **Midnight theme — invisible orbit discs and shadow** — the Orbit Layout preview's discs, pill
+  and back button relied entirely on their drop shadow to read against the canvas, and Midnight's
+  shared system shadow is dark-on-dark there. They now cast a plain white composition shadow under
+  Midnight instead, so every shape is visible again.
+- **Hot corner preview's back button** — swapped its back-arrow glyph for the same chevron-left
+  icon (and matching hover) the group and tool back buttons already use, so every "go back"
+  affordance in the app reads as one icon.
+- **Dropping something on the "Add to Orbit" sidebar** — a drop now opens the Add to Orbit dialog
+  prefilled from what was dropped (name, target, inferred type) instead of adding it straight to
+  the orbit with no chance to review or rename it first.
+
+### Changed
+- Bumped the project, assembly, file, and package identity versions to 3.0.1.0.
+
 ## [3.0.0] - 2026-10-24
 
 ### Added

@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Shapes;
 using SwiftX.Models;
 using Windows.Foundation;
@@ -94,6 +95,29 @@ public static class AppLogo
     /// </summary>
     /// <param name="size">Width and height in DIPs the logo should occupy.</param>
     public static Mark CreateFloating(double size) => new(size, floating: true);
+
+    /// <summary>
+    /// The Configure Orbit icon for a bubble: the bundled orbit-ring PNG
+    /// (<see cref="SystemOrbitItems.ConfigureOrbitImagePath"/>) when present, falling back to the
+    /// flat SwiftX AppLogo mark — the same fallback the live orbit uses via
+    /// <c>OrbitWindow.CreateConfigureOrbitBubbleIcon</c>. Size is the icon area in DIPs, not the
+    /// bubble diameter: match what the call site passes for the glyph or inner logo area.
+    /// </summary>
+    public static FrameworkElement CreateConfigureIcon(double size)
+    {
+        var path = SystemOrbitItems.ConfigureOrbitImagePath.Value;
+        if (!string.IsNullOrEmpty(path))
+        {
+            return new Image
+            {
+                Width = size,
+                Height = size,
+                Stretch = Stretch.Uniform,
+                Source = new BitmapImage(new Uri(path)),
+            };
+        }
+        return Create(size);
+    }
 
     /// <summary>
     /// Springs a single glyph the way <see cref="Mark.PlayEntrance"/> springs the pinwheel, but as

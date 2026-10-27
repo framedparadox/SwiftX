@@ -207,4 +207,21 @@ public class ElementSectionsTests
 
         Assert.Equal(ElementIconKind.Image, ElementSections.IconKindOf(item));
     }
+
+    [Fact]
+    public void Keyboard_actions_land_in_controls_and_are_never_merged_by_target()
+    {
+        // Every "Map keyboard action" item shares the same (empty) Target — see
+        // SystemOrbitItems.CreateKeyboardAction's own remarks on why it has none — so this is the
+        // one case where two items offered under the same category could plausibly collide. They
+        // must not: each is the user's own content, with its own name and combination.
+        var first = SystemOrbitItems.CreateKeyboardAction("Mute Teams", "Ctrl+Shift+M");
+        var second = SystemOrbitItems.CreateKeyboardAction("Next desktop", "Ctrl+Win+Right");
+
+        var sections = ElementSections.Build(new[] { first, second });
+
+        Assert.Equal(new[] { first, second }, Section(sections, ElementCategory.Controls).Entries.Select(e => e.Item));
+        Assert.Empty(Section(sections, ElementCategory.Shortcuts).Entries);
+        Assert.Empty(Section(sections, ElementCategory.Apps).Entries);
+    }
 }
