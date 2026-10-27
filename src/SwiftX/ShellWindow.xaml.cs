@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Microsoft.UI;
-using Microsoft.UI.Composition;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Input;
 using Microsoft.UI.Text;
@@ -409,7 +408,7 @@ public sealed partial class ShellWindow : Window
         // 600px canvas column, and Logi's own fixed 320px settings sidebar — with the canvas
         // column still wide enough for the (now 520px, see PillCanvasWidth) label canvas inside it
         // with a 40px margin either side, same as before the left sidebar grew.
-        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 1240, 700);
+        WindowChrome.SetClientSizeDip(_appWindow, _hwnd, 1280, 720);
         WindowChrome.SetRoundedCorners(_hwnd);
         WindowChrome.CenterOnCursor(_appWindow, _appWindow.Id);
 
@@ -2253,24 +2252,6 @@ public sealed partial class ShellWindow : Window
         // disappears into the black it is supposed to sit on top of, and the bubble it was
         // outlining goes with it. A plain white composition shadow is the one thing that still
         // reads against black-on-black, so Midnight gets that instead.
-        if (_manager.Config.Theme == AppTheme.Black)
-        {
-            try
-            {
-                var visual = ElementCompositionPreview.GetElementVisual(element);
-                var shadow = visual.Compositor.CreateDropShadow();
-                shadow.Color = Colors.White;
-                shadow.Opacity = 0.55f;
-                shadow.BlurRadius = 24f;
-                visual.Shadow = shadow;
-                return;
-            }
-            catch
-            {
-                // Falls through to the shared ThemeShadow below — a dim outline beats none at all.
-            }
-        }
-
         if (Root.Resources["OrbitBubbleShadow"] is ThemeShadow shadow2)
             element.Shadow = shadow2;
     }
@@ -2686,7 +2667,6 @@ public sealed partial class ShellWindow : Window
         _quadrantSlotCount = slots;
         Array.Clear(_quadrantSlotBorders);
 
-        var borderBrush = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasBorderBrush");
         var muted = ThemeHelper.Brush(Root, "SwiftXMutedBrush");
         var foreground = ThemeHelper.Brush(Root, "SwiftXForegroundBrush");
 
@@ -2704,16 +2684,15 @@ public sealed partial class ShellWindow : Window
             {
                 Width = previewBubble,
                 Height = previewBubble,
-                Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitBubbleGlassTint"),
-                BorderBrush = borderBrush,
-                BorderThickness = new Thickness(1),
+                Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
                 Tag = item,
                 Child = item is null
                     ? PreviewGlyph("\uE710", glyphSize, muted)
-                    : PreviewBubbleContent(item, glyphSize,
-                        item.IsSystem ? muted : foreground, previewBubble, angle),
+                    : PreviewBubbleContent(item, glyphSize, foreground, previewBubble, angle),
             };
             OrbitItemGeometry.Apply(border, previewBubble);
+            if (item is not null)
+                ApplyBubbleShadow(border);
             ToolTipService.SetToolTip(border, item is null
                 ? "Add to this corner"
                 : $"{item.DisplayName} — right-click to replace or remove");
@@ -2763,9 +2742,20 @@ public sealed partial class ShellWindow : Window
 
         if (logo is null)
         {
-            // The back chevron is an ordinary glyph, so it tints to the accent like the canvas's
-            // other chrome buttons.
-            WireOrbitGlyphHover(button);
+            // The back button gets the same orbit-bubble background as the other items so it reads
+            // as one of them rather than as a raw chrome button. Glyph hover still tints it.
+            var bg = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush");
+            var transparent = new SolidColorBrush(Colors.Transparent);
+            button.Resources["ButtonBackground"] = bg;
+            button.Resources["ButtonBackgroundPointerOver"] = bg;
+            button.Resources["ButtonBackgroundPressed"] = bg;
+            button.Resources["ButtonBorderBrush"] = transparent;
+            button.Resources["ButtonBorderBrushPointerOver"] = transparent;
+            button.Resources["ButtonBorderBrushPressed"] = transparent;
+            button.PointerEntered += OrbitGlyph_PointerEntered;
+            button.PointerExited += OrbitGlyph_PointerExited;
+            button.PointerCanceled += OrbitGlyph_PointerExited;
+            ApplyBubbleShadow(button);
         }
         else
         {
@@ -7921,6 +7911,9 @@ public sealed partial class ShellWindow : Window
 
     private void OpenTerms_Click(object sender, RoutedEventArgs e) =>
         Launcher.OpenUrl(TermsUrl);
+
+    private void ViewOnGitHub_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(GitHubRepoUrl);
 
     /// <summary>The inline "Read privacy" link at the foot of Feedback &amp; Support.</summary>
     private void OpenPrivacyFromFeedback_Click(Hyperlink sender, HyperlinkClickEventArgs args) =>

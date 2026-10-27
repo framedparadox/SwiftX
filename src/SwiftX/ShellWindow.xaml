@@ -2124,6 +2124,10 @@
                                                                  Style="{StaticResource AccentLink}"
                                                                  AutomationProperties.AutomationId="SettingsAboutPrivacy"
                                                                  Click="OpenPrivacyFromAbout_Click" />
+                                                <HyperlinkButton x:Name="AboutGitHubLink" Content="VIEW ON GITHUB"
+                                                                 Style="{StaticResource AccentLink}"
+                                                                 AutomationProperties.AutomationId="SettingsAboutGitHub"
+                                                                 Click="ViewOnGitHub_Click" />
                                             </StackPanel>
                                             <!-- Packaged-only (see OrbitManager.UpdateChecksSupported): the real Store update
                                                  check needs package identity, so the unpackaged build hides this outright rather
