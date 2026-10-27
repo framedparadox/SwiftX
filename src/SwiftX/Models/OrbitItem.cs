@@ -17,6 +17,25 @@ public enum OrbitItemKind
     Tool,
 
     /// <summary>
+    /// A user-mapped keyboard shortcut: activating it replays the combination stored in
+    /// <see cref="OrbitItem.Arguments"/> (a <see cref="HotkeyGesture"/> string) rather than
+    /// launching anything — see <see cref="Services.SystemActions.SendKeyboardAction"/> and the
+    /// "Map keyboard action" row <see cref="SystemOrbitItems"/> offers. Unlike the orbit's other
+    /// built-ins (Settings, Home, Close), more than one of these can exist at once, each with its
+    /// own combination and name, so it is a real <see cref="OrbitItemKind"/> rather than another
+    /// fixed <c>swiftx:</c> target.
+    /// </summary>
+    KeyboardAction,
+
+    /// <summary>
+    /// A user-defined command: activating it runs the string stored in
+    /// <see cref="OrbitItem.Arguments"/> via <c>cmd.exe /c</c> — see
+    /// <see cref="Services.SystemActions.RunCommand"/>. Like <see cref="KeyboardAction"/>, more than
+    /// one can exist with its own command and name, so it is a real kind rather than a fixed target.
+    /// </summary>
+    CommandAction,
+
+    /// <summary>
     /// A hole in the orbit: the place an item used to be, kept so the items after it do not slide
     /// into it. Never launched or listed — see <see cref="OrbitSlots"/>.
     /// </summary>
@@ -139,6 +158,8 @@ public sealed class OrbitItem : INotifyPropertyChanged
         OrbitItemKind.Group => "\uE838",
         OrbitItemKind.Tool => "\uE943",
         OrbitItemKind.Shortcut => "\uE71B",
+        OrbitItemKind.KeyboardAction => "\uE765",
+        OrbitItemKind.CommandAction => "\uEC37",
         _ => "\uE7C3",
     };
 
@@ -156,6 +177,12 @@ public sealed class OrbitItem : INotifyPropertyChanged
 
     [JsonIgnore]
     public bool IsEmpty => Kind == OrbitItemKind.Empty;
+
+    [JsonIgnore]
+    public bool IsKeyboardAction => Kind == OrbitItemKind.KeyboardAction;
+
+    [JsonIgnore]
+    public bool IsCommandAction => Kind == OrbitItemKind.CommandAction;
 
     [JsonIgnore]
     public bool HasCustomIcon =>

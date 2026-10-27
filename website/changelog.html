@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Release history — SwiftX</title>
+  <meta name="description" content="What changed in every release of SwiftX — added features, improvements, and fixes, version by version.">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="canonical" href="https://www.swiftx-app.com/changelog.html">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SwiftX">
+  <meta property="og:title" content="Release history — SwiftX">
+  <meta property="og:description" content="What changed in every release of SwiftX — added features, improvements, and fixes, version by version.">
+  <meta property="og:url" content="https://www.swiftx-app.com/changelog.html">
+  <meta property="og:image" content="https://www.swiftx-app.com/assets/img/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The SwiftX orbit: eight glass items around the four-petal SwiftX mark.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Release history — SwiftX">
+  <meta name="twitter:description" content="What changed in every release of SwiftX — new features, improvements, and fixes, version by version.">
+  <meta name="twitter:image" content="https://www.swiftx-app.com/assets/img/og.png">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/img/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preload" href="assets/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/theme.css">
+  <script src="assets/js/theme.js"></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "SwiftX", "item": "https://www.swiftx-app.com/" },
+      { "@type": "ListItem", "position": 2, "name": "Release history", "item": "https://www.swiftx-app.com/changelog.html" }
+    ]
+  }
+  </script>
+  <style>
+    /* ── changelog ── */
+
+    /* version jump grid */
+    .cl-index {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 8px;
+      margin: 0 0 48px;
+    }
+    .cl-index a {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      text-decoration: none;
+      transition: border-color .15s, background .15s;
+    }
+    .cl-index a:hover {
+      border-color: var(--acc, #1d4adb);
+      background: rgba(29,74,219,.05);
+    }
+    .cl-index-ver  { font-size: 14px; font-weight: 700; color: var(--ink); }
+    .cl-index-date { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+
+    /* ── release block ── */
+    .cl-release {
+      margin-top: 56px;
+      padding-top: 48px;
+      border-top: 1px solid var(--line);
+    }
+    .cl-release:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
+
+    /* version heading row */
+    .cl-release-head {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      margin-bottom: 28px;
+    }
+    /* override .doc h2 – higher specificity via parent class */
+    .cl-release .cl-release-head h2 {
+      font-size: 28px !important;
+      letter-spacing: -0.025em !important;
+      line-height: 1.15 !important;
+      margin: 0 !important;
+      color: var(--ink);
+    }
+    .cl-release-date {
+      font-size: 13px;
+      color: var(--ink-2);
+      flex: none;
+      padding-bottom: 1px;
+    }
+    .cl-release-link {
+      margin-left: auto;
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--acc, #1d4adb);
+      text-decoration: none;
+    }
+    .cl-release-link:hover { text-decoration: underline; }
+    .cl-release-link svg   { width: 11px; height: 11px; flex: none; }
+
+    /* ── category badge (Added / Changed / Fixed) ── */
+    .cl-section { margin-top: 28px; }
+
+    .cl-section-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+      padding: 4px 10px 4px 8px;
+      border-radius: 999px;
+      margin-bottom: 16px;
+    }
+    .cl-section-label svg { width: 12px; height: 12px; flex: none; }
+
+    /* light */
+    .cl-added   .cl-section-label { background: #dcf5ea; color: #12633f; }
+    .cl-changed .cl-section-label { background: #dde8fd; color: #1a3ba0; }
+    .cl-fixed   .cl-section-label { background: #fff3cd; color: #7a4a00; }
+
+    /* dark – two blocks so both an OS preference and an explicit toggle work */
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) .cl-added   .cl-section-label { background: rgba(18,99,63,.3);  color: #6ee7b7; }
+      html:not([data-theme="light"]) .cl-changed .cl-section-label { background: rgba(26,59,160,.3); color: #93b4fd; }
+      html:not([data-theme="light"]) .cl-fixed   .cl-section-label { background: rgba(122,74,0,.3);  color: #fbbf24; }
+    }
+    html[data-theme="dark"] .cl-added   .cl-section-label { background: rgba(18,99,63,.3);  color: #6ee7b7; }
+    html[data-theme="dark"] .cl-changed .cl-section-label { background: rgba(26,59,160,.3); color: #93b4fd; }
+    html[data-theme="dark"] .cl-fixed   .cl-section-label { background: rgba(122,74,0,.3);  color: #fbbf24; }
+
+    /* ── item list ──
+       Use .doc .cl-items and .doc .cl-item so specificity (0,2,0) beats
+       .doc ul (0,1,1) and .doc li (0,1,1) from site.css. */
+    .doc .cl-items {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .doc .cl-item {
+      position: relative;
+      padding-left: 18px;
+      font-size: 16px !important;
+      line-height: 1.65 !important;
+      color: var(--ink) !important;
+      margin: 0 !important;
+    }
+    .doc .cl-item::before {
+      content: "";
+      position: absolute;
+      left: 2px;
+      top: 10px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--ink-2);
+    }
+    .doc .cl-item b    { font-weight: 600; color: inherit; }
+    .doc .cl-item code {
+      font-size: 13px;
+      font-family: 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      background: var(--line);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    /* packaging-only note (2.0.2) */
+    .cl-note {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--ink-2);
+      font-style: italic;
+      border-left: 3px solid var(--line);
+      padding: 2px 0 2px 14px;
+      margin: 0 0 4px;
+    }
+
+    @media (max-width: 600px) {
+      .cl-release-link { margin-left: 0; }
+    }
+  </style>
+</head>
+<body class="doc-page">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <!-- ================================================================ NAV -->
+  <nav class="nav" aria-label="SwiftX" data-open="false">
+    <div class="wrap nav-inner">
+      <a class="brand" href="index.html" aria-label="SwiftX home">
+        <img src="assets/img/mark.svg" alt="" width="24" height="24">SwiftX
+      </a>
+      <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav-links">
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m4 7 5 5 5-5"/></svg>
+      </button>
+      <ul class="nav-links" id="nav-links">
+        <li><a href="index.html#summon">Overview</a></li>
+        <li><a href="index.html#customize">Customize</a></li>
+        <li><a href="index.html#corner">Hot corner</a></li>
+        <li><a href="index.html#tools">Tools</a></li>
+        <li><a href="index.html#privacy">Privacy</a></li>
+        <li><a href="index.html#specs">Specs</a></li>
+        <li><a href="index.html#faq">Support</a></li>
+        <li><a href="changelog.html">Changelog</a></li>
+      </ul>
+      <a class="btn btn-primary btn-sm" href="https://apps.microsoft.com/detail/9pk5wx5sswts">Get from Microsoft Store</a>
+    </div>
+  </nav>
+
+  <main id="main" data-tone="light">
+    <header class="doc-hero">
+      <div class="wrap-narrow">
+        <p class="eyebrow">History</p>
+        <h1 class="title">Release history</h1>
+        <p class="lede">What changed in every version of SwiftX — new features, improvements, and fixes.</p>
+        <p class="meta">See also the <a href="https://github.com/framedparadox/SwiftX/releases">full release archive on GitHub</a>.</p>
+      </div>
+    </header>
+
+    <article class="doc">
+      <div class="wrap-narrow">
+
+        <!-- version index -->
+        <nav class="cl-index" aria-label="Versions">
+          <a href="#v3-0-1"><span class="cl-index-ver">3.0.1</span><span class="cl-index-date">26 Oct 2026</span></a>
+          <a href="#v3-0-0"><span class="cl-index-ver">3.0.0</span><span class="cl-index-date">24 Oct 2026</span></a>
+          <a href="#v2-0-4"><span class="cl-index-ver">2.0.4</span><span class="cl-index-date">20 Oct 2026</span></a>
+          <a href="#v2-0-3"><span class="cl-index-ver">2.0.3</span><span class="cl-index-date">7 Oct 2026</span></a>
+          <a href="#v2-0-2"><span class="cl-index-ver">2.0.2</span><span class="cl-index-date">5 Oct 2026</span></a>
+          <a href="#v2-0-1"><span class="cl-index-ver">2.0.1</span><span class="cl-index-date">1 Oct 2026</span></a>
+        </nav>
+
+        <!-- ═══════════════════════ 3.0.1 ═══════════════════════ -->
+        <div class="cl-release" id="v3-0-1">
+          <div class="cl-release-head">
+            <h2>3.0.1</h2>
+            <span class="cl-release-date">26 October 2026</span>
+            <a class="cl-release-link" href="https://github.com/framedparadox/SwiftX/releases/tag/v3.0.1" target="_blank" rel="noopener">
+              GitHub release
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>
+            </a>
+          </div>
+
+          <div class="cl-section cl-added">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Added
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item"><b>More default system operations</b> — the Add to orbit sidebar's Controls section now also offers <b>Lock</b>, <b>Sleep</b>, <b>Mute/Unmute</b>, <b>Screenshot</b> (to the clipboard), <b>Empty Recycle Bin</b>, and <b>Task Manager</b>, alongside the existing Home, Settings, and Close items.</li>
+              <li class="cl-item"><b>Map keyboard action</b> — a new orbit item kind that replays a recorded key combination against whatever window had focus before the orbit was summoned. Unlike the other Controls items, more than one can exist on the orbit, each with its own combination and label. Add one from the sidebar's "Map keyboard action…" row; edit the binding later from its card's Edit button.</li>
+            </ul>
+          </div>
+
+          <div class="cl-section cl-fixed">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+              Fixed
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item"><b>Midnight theme — invisible orbit discs and shadow</b> — the Orbit Layout preview's discs, pill, and back button relied entirely on their drop shadow to read against the canvas, but Midnight's system shadow is dark-on-dark there. They now cast a plain white composition shadow under Midnight so every shape is visible.</li>
+              <li class="cl-item"><b>Hot corner preview's back button</b> — the icon now matches the chevron-left already used in every other "go back" affordance in the app (group back, tool back), instead of a different arrow glyph.</li>
+              <li class="cl-item"><b>Dropping something on the "Add to Orbit" sidebar</b> — a drop now opens the Add to Orbit dialog pre-filled from what was dropped (name, target path, inferred item type) rather than placing it on the orbit immediately with no chance to review or rename it first.</li>
+            </ul>
+          </div>
+
+          <div class="cl-section cl-changed">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              Changed
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item">Bumped project, assembly, file, and package identity versions to <code>3.0.1.0</code>.</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- ═══════════════════════ 3.0.0 ═══════════════════════ -->
+        <div class="cl-release" id="v3-0-0">
+          <div class="cl-release-head">
+            <h2>3.0.0</h2>
+            <span class="cl-release-date">24 October 2026</span>
+            <a class="cl-release-link" href="https://github.com/framedparadox/SwiftX/releases/tag/v3.0.0" target="_blank" rel="noopener">
+              GitHub release
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>
+            </a>
+          </div>
+
+          <div class="cl-section cl-added">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Added
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item"><b>Mouse trigger</b> — summon the orbit with a mouse button instead of the keyboard. Any button (Left, Right, Middle, X1, X2) on a long press, double-click, or single press. Middle + long press is the default. Configure it in <b>Settings → General → Invoke</b>; it runs alongside the keyboard shortcut and hot corner. New config keys: <code>MouseTriggerEnabled</code>, <code>MouseTriggerButton</code>, <code>MouseTriggerAction</code>.</li>
+              <li class="cl-item"><b>10 new languages</b> — Czech, Danish, Greek, Indonesian, Norwegian, Romanian, Swedish, Thai, Ukrainian, and Vietnamese, bringing the total to 29 languages plus System. Any key a new table doesn't cover falls back to English (US).</li>
+              <li class="cl-item"><b>Store update checker</b> — SwiftX polls the Microsoft Store in the background and surfaces a notice in <b>Settings → About</b> when an update is available, with a one-click install button. Nothing is downloaded automatically; the check is silent until there is something to show.</li>
+              <li class="cl-item"><b>Tool window icons</b> — the Data Formatter, Secure values, Base64, and Certificate windows now show the SwiftX mark in the taskbar and Alt+Tab, making them distinguishable from a plain window at a glance.</li>
+              <li class="cl-item"><b>Hand cursor in Orbit settings</b> — interactive controls in the sidebar (size, shape, radius, hover style) now show the pointer cursor on hover, making them feel clickable rather than flat.</li>
+            </ul>
+          </div>
+
+          <div class="cl-section cl-changed">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              Changed
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item"><b>Window cloaking on activation</b> — the orbit window is cloaked (invisible to the compositor) between activation and the first rendered frame, eliminating the brief blank or white flash on first summon or after a theme change. The same guard covers the ShellWindow on first open.</li>
+              <li class="cl-item"><b>Language catalog refactor</b> — <code>LanguageCatalog</code> now carries the culture tag, flow direction, and font-size compensation for every language in one place, replacing scattered per-language constants. Language switching and per-language font compensation cover all 29 entries.</li>
+              <li class="cl-item">Several localization strings across existing languages were tightened; a handful of keys that previously fell back to English now have proper translations.</li>
+              <li class="cl-item">Bumped project, assembly, file, and package identity versions to <code>3.0.0.0</code>.</li>
+            </ul>
+          </div>
+
+          <div class="cl-section cl-fixed">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+              Fixed
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item"><code>OrbitProfile</code> now initialises computed geometry lazily, so a deserialized profile never triggers a metric calculation before its items are fully loaded. Previously, opening a configuration written by a build with different metric defaults could yield stale slot positions until the first explicit refresh.</li>
+              <li class="cl-item"><code>OrbitItemGeometry</code> position calculations are now recomputed whenever the item list changes length, not only when the radius setting changes. Items added or removed while the orbit is open land in the correct positions without requiring a re-summon.</li>
+              <li class="cl-item"><code>SystemOrbitItems</code> synthesizes the Add-new slot on the quadrant canvas correctly when the corner holds fewer than four items; previously a synthesized slot could appear one position too far clockwise in certain edge cases involving a single user item.</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- ═══════════════════════ 2.0.4 ═══════════════════════ -->
+        <div class="cl-release" id="v2-0-4">
+          <div class="cl-release-head">
+            <h2>2.0.4</h2>
+            <span class="cl-release-date">20 October 2026</span>
+            <a class="cl-release-link" href="https://github.com/framedparadox/SwiftX/releases/tag/v2.0.4" target="_blank" rel="noopener">
+              GitHub release
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>
+            </a>
+          </div>
+
+          <div class="cl-section cl-added">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Added
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item"><b>Drop onto groups in the Quadrant preview</b> — dropping an item on a group in the Quadrant canvas now adds it to that group, matching the ring's existing behavior. Groups that are full or already hold the item refuse the drop; QuickAccess and the Tools group do not accept drops.</li>
+              <li class="cl-item"><b>Hot-corner-only groups in Add to orbit</b> — a group that exists only on the corner's own canvas is now listed under Groups in <b>Add to orbit</b> and offered in an item's <b>Add to group</b> menu. Its row notes in a tooltip that it lives on the corner only; Remove takes it off the corner.</li>
+            </ul>
+          </div>
+
+          <div class="cl-section cl-changed">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              Changed
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item"><b>Dragging a group onto the Quadrant from the sidebar</b> — the Quadrant now receives the original group rather than a frozen copy. Items added to it from the sidebar, or dropped onto it in the Quadrant preview, reflect on both the corner and the orbit. Groups dropped on the ring are still copied as before.</li>
+              <li class="cl-item">Bumped project, assembly, file, and package identity versions to <code>2.0.4.0</code>.</li>
+            </ul>
+          </div>
+
+          <div class="cl-section cl-fixed">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+              Fixed
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item"><b>Stale Quadrant groups from earlier versions</b> — groups copied onto the Quadrant by an older build are now linked back to their source on startup and on import, so they show items added since. A copy that matches no group, holds nothing, or matches two groups is left untouched.</li>
+              <li class="cl-item"><b>Dock not updating after a Quadrant group drop</b> — adding an item to a group on the Quadrant preview now updates an open dock immediately. Previously only the save was performed, so the dock kept showing the group as it was.</li>
+              <li class="cl-item"><b>Quadrant changes not reaching an open dock</b> — placing, moving, or removing an item in the Quadrant preview now reaches an open dock at once, instead of waiting until the next summon.</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- ═══════════════════════ 2.0.3 ═══════════════════════ -->
+        <div class="cl-release" id="v2-0-3">
+          <div class="cl-release-head">
+            <h2>2.0.3</h2>
+            <span class="cl-release-date">7 October 2026</span>
+            <a class="cl-release-link" href="https://github.com/framedparadox/SwiftX/releases/tag/v2.0.3" target="_blank" rel="noopener">
+              GitHub release
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>
+            </a>
+          </div>
+
+          <div class="cl-section cl-added">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Added
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item"><b>Group editing in Add to orbit</b> — groups can be opened directly from the orbit sidebar. Items inside a group can be reordered with drag-and-drop or Move up / Move down, and each item can be removed individually without leaving the list in a stale state.</li>
+              <li class="cl-item"><b>Icon colour for groups and orbit items</b> — a dedicated swatch picker, custom colour selection via a flyout colour picker, a reset-to-default action, and the group context-menu Edit icon command are all available on items and groups.</li>
+              <li class="cl-item"><b>GitHub logo and link treatment</b> — a dark/light-safe GitHub logo that remains legible across themes without the previous glyph mismatch.</li>
+              <li class="cl-item"><b>Onboarding polish</b> — the first-run guide now points to Google as an initial web link example, and the Add to orbit action label is updated from "Add something else…" to "Add to Orbit…".</li>
+              <li class="cl-item"><b>Tools in user groups</b> — any built-in tool can now be added to a group of your own from a Tools row's right-click <b>Add to group</b> menu, or by dragging it onto a group in the sidebar or on the ring. The copy persists across launches; the Tools group keeps its own copy too.</li>
+            </ul>
+          </div>
+
+          <div class="cl-section cl-changed">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              Changed
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item"><b>New group…</b> in Add to orbit now opens the add-to-orbit window on the group tile and shows a clear status message when the orbit is already full, instead of silently failing.</li>
+              <li class="cl-item"><b>Quadrant group preview</b> — clicking a group (Tools, QuickAccess, or one of your own) on the Quadrant canvas now opens it onto its children, as on the ring. QuickAccess is gathered from the orbit and has no add slots or reorder capability on the Quadrant.</li>
+              <li class="cl-item"><b>Icon picker layout</b> — the picker is now as wide as its icon grid, and the Default colour, Use a picture, Select app/DLL, and Reset buttons no longer stretch beyond it. It opens to a fixed height with no internal scrollbar; the full colour picker opens in a flyout of its own from the palette tile.</li>
+              <li class="cl-item"><b>Quadrant right-click on group</b> — now offers Edit icon…, matching the ring's behavior. QuickAccess keeps its icon as part of the corner's arrangement.</li>
+              <li class="cl-item">Orbits with a default GitHub link still carrying the old Data tool glyph are migrated to the new GitHub branding on next launch. Renaming a group no longer clears the icon previously assigned to it.</li>
+              <li class="cl-item">Group membership updates are applied immediately after adding from Add to orbit, and the orbit preview reflects the group contents as soon as they are added.</li>
+            </ul>
+          </div>
+
+          <div class="cl-section cl-fixed">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+              Fixed
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item">The Add to orbit workflow now behaves consistently when groups are full. Drag reordering and direct remove actions in the list editing UX no longer interfere with each other.</li>
+              <li class="cl-item">Colour and branding updates (icon changes, GitHub logo) are now applied consistently across the orbit, the preview pane, the sidebar, and the Elements cards rather than being left partially applied.</li>
+              <li class="cl-item">Dragging a bubble on the Orbit screen's preview and dropping it exactly on its origin no longer leaves name pills hidden until the next redraw.</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- ═══════════════════════ 2.0.2 ═══════════════════════ -->
+        <div class="cl-release" id="v2-0-2">
+          <div class="cl-release-head">
+            <h2>2.0.2</h2>
+            <span class="cl-release-date">5 October 2026</span>
+            <a class="cl-release-link" href="https://github.com/framedparadox/SwiftX/releases/tag/v2.0.2" target="_blank" rel="noopener">
+              GitHub release
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>
+            </a>
+          </div>
+          <p class="cl-note">Packaging and versioning milestone. No user-facing changes beyond the version number; the feature work from this period was pulled forward into 2.0.3.</p>
+          <div class="cl-section cl-changed">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              Changed
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item">Bumped project, assembly, file, and package identity versions to <code>2.0.2.0</code>.</li>
+              <li class="cl-item">Built and validated x64 and ARM64 MSIX packaging flows for the release.</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- ═══════════════════════ 2.0.1 ═══════════════════════ -->
+        <div class="cl-release" id="v2-0-1">
+          <div class="cl-release-head">
+            <h2>2.0.1</h2>
+            <span class="cl-release-date">1 October 2026</span>
+            <a class="cl-release-link" href="https://github.com/framedparadox/SwiftX/releases/tag/v2.0.1" target="_blank" rel="noopener">
+              GitHub release
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>
+            </a>
+          </div>
+
+          <div class="cl-section cl-changed">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              Changed
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item"><b>Animation timing and icon loading</b> — orbit animation timing was refined and icon-loading logic was tightened to smooth motion and improve reliability during item rendering and updates.</li>
+              <li class="cl-item"><b>About box fallback version</b> — the shell window's fallback version string now stays aligned with the current release metadata when the assembly value is unavailable at runtime.</li>
+              <li class="cl-item">Bumped app manifest and project file version to <code>2.0.1.0</code>.</li>
+            </ul>
+          </div>
+
+          <div class="cl-section cl-added">
+            <div class="cl-section-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Added
+            </div>
+            <ul class="cl-items">
+              <li class="cl-item"><b>Performance and resilience test coverage</b> — new tests cover orbit animation timing, icon decode paths, network hangs (favicon fetches), configuration-shape validation, native capability checks, and allocator budget tracking.</li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+    </article>
+  </main>
+
+  <!-- ============================================================ FOOTER -->
+  <footer class="footer" data-tone="light">
+    <div class="wrap">
+      <div class="footer-notes">
+        <p>Windows, Windows 11 and Microsoft Store are trademarks of the Microsoft group of companies. SwiftX is an independent open-source project and is not affiliated with or endorsed by Microsoft.</p>
+      </div>
+      <div class="footer-crumb"><img src="assets/img/mark.svg" alt="" width="16" height="16"><span class="chev">›</span><span>SwiftX</span></div>
+      <div class="footer-cols">
+        <div><h4>Explore</h4><ul><li><a href="index.html#summon">Overview</a></li><li><a href="index.html#customize">Customize</a></li><li><a href="index.html#corner">Hot corner</a></li><li><a href="index.html#tools">Built-in tools</a></li><li><a href="index.html#specs">Tech specs</a></li></ul></div>
+        <div><h4>Get SwiftX</h4><ul><li><a href="https://apps.microsoft.com/detail/9pk5wx5sswts">Get from Microsoft Store</a></li><li><a href="https://github.com/framedparadox/SwiftX/releases">Release archive</a></li><li><a href="index.html#start">Build from source</a></li></ul></div>
+        <div><h4>Support</h4><ul><li><a href="index.html#faq">FAQ</a></li><li><a href="feedback.html">Feedback &amp; suggestions</a></li><li><a href="https://github.com/framedparadox/SwiftX/issues">Report an issue</a></li><li><a href="https://github.com/framedparadox/SwiftX#readme">Documentation</a></li></ul></div>
+        <div><h4>Legal</h4><ul><li><a href="privacy.html">Privacy policy</a></li><li><a href="terms.html">Terms and conditions</a></li><li><a href="https://github.com/framedparadox/SwiftX/blob/main/LICENSE">MIT Licence</a></li></ul></div>
+      </div>
+      <div class="footer-legal">
+        <span>Copyright © <span data-year>2026</span> SwiftX. Released under the MIT Licence.</span>
+        <nav aria-label="Legal"><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="https://github.com/framedparadox/SwiftX">GitHub</a></nav>
+      </div>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="assets/js/site.js" defer></script>
+</body>
+</html>

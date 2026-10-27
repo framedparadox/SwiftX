@@ -190,4 +190,99 @@ public class SystemOrbitItemsTests
         Assert.True(SystemOrbitItems.Strip(items));
         Assert.Empty(items);
     }
+
+    // ---- The other default system operations -------------------------------------------------
+
+    public static IEnumerable<object[]> AdditionalSystemActions()
+    {
+        yield return new object[] { SystemOrbitItems.CreateMute(), SystemOrbitItems.MuteTarget };
+        yield return new object[] { SystemOrbitItems.CreateLock(), SystemOrbitItems.LockTarget };
+        yield return new object[] { SystemOrbitItems.CreateSleep(), SystemOrbitItems.SleepTarget };
+        yield return new object[] { SystemOrbitItems.CreateScreenshot(), SystemOrbitItems.ScreenshotTarget };
+        yield return new object[]
+            { SystemOrbitItems.CreateEmptyRecycleBin(), SystemOrbitItems.EmptyRecycleBinTarget };
+        yield return new object[] { SystemOrbitItems.CreateTaskManager(), SystemOrbitItems.TaskManagerTarget };
+    }
+
+    [Theory]
+    [MemberData(nameof(AdditionalSystemActions))]
+    public void Each_additional_system_action_builds_an_entry_the_orbit_can_recognise_and_label(
+        OrbitItem item, string expectedTarget)
+    {
+        Assert.Equal(expectedTarget, item.Target);
+        Assert.True(SystemOrbitItems.IsSystemTarget(item.Target));
+        Assert.True(item.IsSystem);
+        Assert.Equal(OrbitItemKind.Application, item.Kind);
+        Assert.False(string.IsNullOrWhiteSpace(item.DisplayName));
+        Assert.False(string.IsNullOrEmpty(item.CustomGlyph));
+    }
+
+    [Fact]
+    public void The_additional_system_actions_each_have_a_target_of_their_own()
+    {
+        var targets = new[]
+        {
+            SystemOrbitItems.CreateMute(), SystemOrbitItems.CreateLock(), SystemOrbitItems.CreateSleep(),
+            SystemOrbitItems.CreateScreenshot(), SystemOrbitItems.CreateEmptyRecycleBin(),
+            SystemOrbitItems.CreateTaskManager(),
+        }.Select(i => i.Target);
+
+        Assert.Equal(targets.Distinct(StringComparer.OrdinalIgnoreCase).Count(), targets.Count());
+    }
+
+    [Theory]
+    [InlineData("swiftx:mute")]
+    [InlineData("SwiftX:Mute")]
+    [InlineData("swiftx:lock")]
+    [InlineData("swiftx:sleep")]
+    [InlineData("swiftx:screenshot")]
+    [InlineData("swiftx:empty-recycle-bin")]
+    [InlineData("swiftx:task-manager")]
+    public void IsSystemTarget_recognises_the_additional_system_actions_in_any_casing(string target)
+    {
+        Assert.True(SystemOrbitItems.IsSystemTarget(target));
+    }
+
+    // ---- "Map keyboard action" ----------------------------------------------------------------
+
+    [Fact]
+    public void CreateKeyboardAction_carries_the_name_and_combination_given_to_it()
+    {
+        var item = SystemOrbitItems.CreateKeyboardAction("Mute Teams", "Ctrl+Shift+M");
+
+        Assert.Equal(OrbitItemKind.KeyboardAction, item.Kind);
+        Assert.True(item.IsKeyboardAction);
+        Assert.Equal("Mute Teams", item.DisplayName);
+        Assert.Equal("Ctrl+Shift+M", item.Arguments);
+    }
+
+    [Fact]
+    public void CreateKeyboardAction_falls_back_to_a_default_name_when_none_is_given()
+    {
+        Assert.Equal("Map Keyboard Action", SystemOrbitItems.CreateKeyboardAction().DisplayName);
+        Assert.Equal("Map Keyboard Action", SystemOrbitItems.CreateKeyboardAction("   ").DisplayName);
+    }
+
+    [Fact]
+    public void CreateKeyboardAction_is_not_a_built_in_system_target()
+    {
+        // It has no target to recognise at all (see its own remarks) — unlike every other item on
+        // this page, a configured instance is the user's own content and must survive a save and
+        // reload the same way any other orbit item does, which IsSystem (never persisted) cannot
+        // provide on its own.
+        var item = SystemOrbitItems.CreateKeyboardAction("Anything", "Ctrl+Alt+T");
+
+        Assert.False(item.IsSystem);
+        Assert.False(SystemOrbitItems.IsSystemTarget(item.Target));
+    }
+
+    [Fact]
+    public void Two_keyboard_actions_are_independent_instances_even_with_the_same_combination()
+    {
+        var a = SystemOrbitItems.CreateKeyboardAction("A", "Ctrl+Alt+T");
+        var b = SystemOrbitItems.CreateKeyboardAction("B", "Ctrl+Alt+T");
+
+        Assert.False(ReferenceEquals(a, b));
+        Assert.NotEqual(a.Id, b.Id);
+    }
 }

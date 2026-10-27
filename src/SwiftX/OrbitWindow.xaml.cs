@@ -143,6 +143,17 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     private HotCorner? _quadrant;
 
+    /// <summary>
+    /// Whatever window held foreground the instant this summon began, before <see cref="Summon"/>
+    /// itself activates the orbit and takes it away. A "Map keyboard action" item plays its
+    /// combination back as a real injected keystroke (see
+    /// <see cref="Services.SystemActions.SendKeyboardAction"/>), and by the time that runs the
+    /// orbit — not whatever the user actually meant the keys for — is the foreground window, so
+    /// <see cref="OrbitManager.HandleItemActivation"/> restores this one first. Zero means "nothing
+    /// was in front" (the desktop, or a summon too fast after process start to have asked yet).
+    /// </summary>
+    public nint SummonedFromHwnd { get; private set; }
+
     // Radii of the current summon's bands. The quarter circle sits further out than the full
     // orbit (it has to clear two screen edges), so these are resolved per summon from
     // OrbitMetrics' *For(radius) helpers rather than read straight off OrbitMetrics.
@@ -289,6 +300,10 @@ public sealed partial class OrbitWindow : Window
     /// </summary>
     public void Summon(HotCorner? quadrant = null)
     {
+        // First, before Activate()/ForceForeground below ever gets a chance to make it stale —
+        // see SummonedFromHwnd's own remarks.
+        SummonedFromHwnd = NativeMethods.GetForegroundWindow();
+
         // Cancel any in-flight dismiss hide.
         _renderGeneration++;
         _quadrant = quadrant;
@@ -1175,19 +1190,16 @@ public sealed partial class OrbitWindow : Window
         content.Children.Add(icon);
         content.Children.Add(glyph);
 
-        // The orbit's one pinned slot draws the SwiftX mark itself rather than a glyph — see
-        // SystemOrbitItems.CreateOrbitLogo, whose CustomGlyph is only a fallback for generic code
-        // that never resolves an icon or reads Glyph directly. Explicitly collapsed rather than
-        // left to item.GlyphVisibility (which would show that fallback glyph, since the item has no
-        // IconImage): the mark's petals are separated by a thin transparent channel (see AppLogo's
-        // own remarks), so a glyph merely painted behind it could still peek through the gap. Flat
-        // (AppLogo.Create), not CreateFloating: the tint/backdrop/rim already give this bubble the
-        // same depth every other one has.
+        // The orbit's one pinned slot draws the Configure Orbit image rather than a glyph — see
+        // SystemOrbitItems.CreateOrbitLogo. Both icon and glyph are explicitly collapsed (not left
+        // to item.GlyphVisibility / item.ImageVisibility): the PNG is added as its own element so
+        // it is always on top and the background glyph can never peek through. Falls back to the
+        // SwiftX AppLogo mark when the bundled asset is absent.
         if (IsOrbitLogoItem(item))
         {
             icon.Visibility = Visibility.Collapsed;
             glyph.Visibility = Visibility.Collapsed;
-            content.Children.Add(AppLogo.Create(iconSize));
+            content.Children.Add(CreateConfigureOrbitBubbleIcon(iconSize));
         }
 
         // A group wears a short arc traced on its own outward edge — before you hover it, that
@@ -2184,6 +2196,14 @@ public sealed partial class OrbitWindow : Window
 
     private static bool IsOrbitLogoItem(OrbitItem item) =>
         string.Equals(item.Target, SystemOrbitItems.OrbitLogoTarget, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The visual element placed inside the orbit logo bubble. Delegates to
+    /// <see cref="AppLogo.CreateConfigureIcon"/> so the preview canvas and the live orbit both
+    /// use the same asset.
+    /// </summary>
+    private static FrameworkElement CreateConfigureOrbitBubbleIcon(double size) =>
+        AppLogo.CreateConfigureIcon(size);
 
     /// <summary>
     /// The hover style in force right now: the configured one, except that Tint gives way to Invert

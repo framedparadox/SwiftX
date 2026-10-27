@@ -638,4 +638,70 @@ internal static partial class NativeMethods
         void Save([MarshalAs(UnmanagedType.LPWStr)] string fileName,
             [MarshalAs(UnmanagedType.Bool)] bool remember);
     }
+
+    // ---- Simulated input, power and shell actions --------------------------
+    //
+    // Backs Services/SystemActions.cs. Muting, taking a screenshot and sending a mapped keyboard
+    // shortcut all go through the same SendInput the physical keys themselves would generate,
+    // rather than a narrower per-feature API, so a mapped combo can be anything the keyboard
+    // itself could send. Lock, sleep and emptying the Recycle Bin have no keyboard equivalent and
+    // go through their own dedicated calls instead.
+
+    public const int INPUT_KEYBOARD = 1;
+    public const uint KEYEVENTF_KEYUP = 0x0002;
+    public const int VK_SNAPSHOT = 0x2C; // Print Screen
+    public const int VK_VOLUME_MUTE = 0xAD;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBDINPUT
+    {
+        public short wVk;
+        public short wScan;
+        public int dwFlags;
+        public int time;
+        public nint dwExtraInfo;
+    }
+
+    /// <summary>
+    /// The real Win32 <c>INPUT</c> is <c>type</c> (padded to 8 bytes for the union's own alignment)
+    /// plus a union wide enough for the largest of <c>MOUSEINPUT</c>/<c>KEYBDINPUT</c>/
+    /// <c>HARDWAREINPUT</c> — <c>MOUSEINPUT</c>, at 32 bytes on either of SwiftX's two supported
+    /// 64-bit platforms (x64, ARM64; see SwiftX.csproj's <c>Platforms</c>), making the true total
+    /// 40. <see cref="KEYBDINPUT"/> alone is only 24, and <c>SendInput</c>'s own <c>cbSize</c>
+    /// parameter — this type's marshalled size, from <c>Marshal.SizeOf</c> — is checked against
+    /// that true total; a struct that marshals smaller makes the whole call fail outright,
+    /// silently returning 0 sent rather than crashing. The explicit <c>Size</c> below pads this
+    /// struct out to the correct 40 without having to declare the <c>MOUSEINPUT</c>/
+    /// <c>HARDWAREINPUT</c> arms this code never uses.
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = 40)]
+    public struct INPUT
+    {
+        [FieldOffset(0)] public int type;
+        [FieldOffset(8)] public KEYBDINPUT ki;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    /// <summary>Locks the session — the same action Win+L performs.</summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool LockWorkStation();
+
+    /// <summary>Suspends the machine; <paramref name="hibernate"/> false is sleep rather than
+    /// hibernate.</summary>
+    [DllImport("powrprof.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetSuspendState(
+        [MarshalAs(UnmanagedType.Bool)] bool hibernate,
+        [MarshalAs(UnmanagedType.Bool)] bool forceCritical,
+        [MarshalAs(UnmanagedType.Bool)] bool disableWakeEvent);
+
+    public const uint SHERB_NOCONFIRMATION = 0x00000001;
+    public const uint SHERB_NOPROGRESSUI = 0x00000002;
+    public const uint SHERB_NOSOUND = 0x00000004;
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int SHEmptyRecycleBin(nint hwnd, string? rootPath, uint flags);
 }
