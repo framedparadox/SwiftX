@@ -23,6 +23,26 @@ public static class SystemOrbitItems
     /// <summary>The one slot that is always pinned — see <see cref="CreateOrbitLogo"/>.</summary>
     public const string OrbitLogoTarget = "swiftx:orbit-logo";
 
+    /// <summary>
+    /// The bundled orbit-ring image (<c>Images/SwiftXConfigure.png</c>) used as the icon for
+    /// every "Configure Orbit" bubble — the hot corner group and the full dock's last ring slot.
+    /// Resolved once per process from the app's base directory; null when the file is absent (an
+    /// out-of-tree dev run, or a build that stripped the asset), in which case callers fall back
+    /// to the gear glyph or the AppLogo mark.
+    /// </summary>
+    public static readonly Lazy<string?> ConfigureOrbitImagePath = new(() =>
+    {
+        var p = Path.Combine(AppContext.BaseDirectory, "Images", "SwiftXConfigure.png");
+        return File.Exists(p) ? p : null;
+    });
+
+    /// <summary>Marker target for the synthesized Configure Orbit group shown on the hot corner —
+    /// see <see cref="CreateConfigureOrbit"/>. Like <see cref="QuadrantLayout.QuickAccessTarget"/>
+    /// this is never stored as a real orbit item; it exists only so
+    /// <see cref="HotCornerItems.Resolve"/> can recognize the entry and re-synthesize the group
+    /// fresh on every resolve.</summary>
+    public const string ConfigureOrbitTarget = "swiftx:configure-orbit";
+
     /// <summary>Placeholder painted onto an empty user slot — see <see cref="CreateAddNew"/>.</summary>
     public const string AddNewTarget = "swiftx:quickadd";
 
@@ -53,6 +73,7 @@ public static class SystemOrbitItems
     private static readonly string EmptyRecycleBinGlyph = char.ConvertFromUtf32(0xE74D);
     private static readonly string TaskManagerGlyph = char.ConvertFromUtf32(0xE9D9);
     private static readonly string KeyboardActionGlyph = char.ConvertFromUtf32(0xE765);
+    private static readonly string CommandActionGlyph = char.ConvertFromUtf32(0xE756);
 
     /// <summary>
     /// Opens the app window on its Settings screen — see <see cref="OrbitManager.HandleItemActivation"/>.
@@ -185,6 +206,40 @@ public static class SystemOrbitItems
     };
 
     /// <summary>
+    /// The hot corner's synthesized "Configure Orbit" group: one tap expands to Orbit Layout (which
+    /// opens the orbit-settings screen), Settings, and Home. Replaces the standalone Settings entry
+    /// in the default quadrant (<see cref="QuadrantLayout.Compose"/>) so orbit configuration is one
+    /// group rather than a single leaf that opens only the general settings screen.
+    /// <para>
+    /// Re-synthesized on every <see cref="HotCornerItems.Resolve"/> so its children are always the
+    /// live instances — exactly the pattern QuickAccess uses.
+    /// </para>
+    /// </summary>
+    public static OrbitItem CreateConfigureOrbit(OrbitItem settings) => new()
+    {
+        Kind = OrbitItemKind.Group,
+        DisplayName = "Configure Orbit",
+        Target = ConfigureOrbitTarget,
+        // CustomGlyph intentionally null: lets IconService resolve the bundled PNG below instead
+        // of short-circuiting. Falls back to the Group's default glyph if the file is absent.
+        CustomIconPath = ConfigureOrbitImagePath.Value,
+        IsSystem = true,
+        Children =
+        [
+            new OrbitItem
+            {
+                Kind = OrbitItemKind.Application,
+                DisplayName = "Orbit Layout",
+                Target = OrbitLogoTarget,
+                CustomGlyph = SettingsGlyph,
+                IsSystem = true,
+            },
+            settings,
+            CreateHome(),
+        ],
+    };
+
+    /// <summary>
     /// A fresh, unconfigured "Map keyboard action" template, as the sidebar's own row builds it
     /// before it ever has a combination — see <see cref="Models.OrbitItemKind.KeyboardAction"/>'s
     /// own remarks on why this is a real kind rather than another fixed target. Not <c>IsSystem</c>:
@@ -199,6 +254,20 @@ public static class SystemOrbitItems
         DisplayName = string.IsNullOrWhiteSpace(displayName) ? "Map Keyboard Action" : displayName.Trim(),
         Arguments = gesture,
         CustomGlyph = KeyboardActionGlyph,
+    };
+
+    /// <summary>
+    /// A fresh, unconfigured "Run command" template, as the sidebar's own row builds it before it
+    /// ever has a command — see <see cref="Models.OrbitItemKind.CommandAction"/>'s own remarks on
+    /// why this is a real kind rather than a fixed target. Not <c>IsSystem</c>: each configured
+    /// instance is the user's own content, persisted across reloads like any other orbit item.
+    /// </summary>
+    public static OrbitItem CreateCommandAction(string? displayName = null, string? command = null) => new()
+    {
+        Kind = OrbitItemKind.CommandAction,
+        DisplayName = string.IsNullOrWhiteSpace(displayName) ? "Run Command" : displayName.Trim(),
+        Arguments = command,
+        CustomGlyph = CommandActionGlyph,
     };
 
     /// <summary>
@@ -218,10 +287,11 @@ public static class SystemOrbitItems
         string.Equals(target, SleepTarget, StringComparison.OrdinalIgnoreCase) ||
         string.Equals(target, ScreenshotTarget, StringComparison.OrdinalIgnoreCase) ||
         string.Equals(target, EmptyRecycleBinTarget, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(target, TaskManagerTarget, StringComparison.OrdinalIgnoreCase);
-    // KeyboardAction is deliberately not here: it has no fixed target (see CreateKeyboardAction),
-    // and each configured instance is the user's own content, not a built-in to strip out of
-    // listings the way the fixed swiftx: targets above are.
+        string.Equals(target, TaskManagerTarget, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(target, ConfigureOrbitTarget, StringComparison.OrdinalIgnoreCase);
+    // KeyboardAction and CommandAction are deliberately not here: they have no fixed targets (see
+    // CreateKeyboardAction / CreateCommandAction), and each configured instance is the user's own
+    // content, not a built-in to strip out of listings the way the fixed swiftx: targets above are.
 
     /// <summary>
     /// Removes any stored orbit-logo entries from <paramref name="items"/> and every nested group.

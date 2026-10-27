@@ -28,6 +28,14 @@ public enum OrbitItemKind
     KeyboardAction,
 
     /// <summary>
+    /// A user-defined command: activating it runs the string stored in
+    /// <see cref="OrbitItem.Arguments"/> via <c>cmd.exe /c</c> — see
+    /// <see cref="Services.SystemActions.RunCommand"/>. Like <see cref="KeyboardAction"/>, more than
+    /// one can exist with its own command and name, so it is a real kind rather than a fixed target.
+    /// </summary>
+    CommandAction,
+
+    /// <summary>
     /// A hole in the orbit: the place an item used to be, kept so the items after it do not slide
     /// into it. Never launched or listed — see <see cref="OrbitSlots"/>.
     /// </summary>
@@ -151,6 +159,7 @@ public sealed class OrbitItem : INotifyPropertyChanged
         OrbitItemKind.Tool => "\uE943",
         OrbitItemKind.Shortcut => "\uE71B",
         OrbitItemKind.KeyboardAction => "\uE765",
+        OrbitItemKind.CommandAction => "\uEC37",
         _ => "\uE7C3",
     };
 
@@ -171,6 +180,9 @@ public sealed class OrbitItem : INotifyPropertyChanged
 
     [JsonIgnore]
     public bool IsKeyboardAction => Kind == OrbitItemKind.KeyboardAction;
+
+    [JsonIgnore]
+    public bool IsCommandAction => Kind == OrbitItemKind.CommandAction;
 
     [JsonIgnore]
     public bool HasCustomIcon =>

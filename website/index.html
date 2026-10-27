@@ -3,25 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>SwiftX — A quick-access orbit for Windows 11</title>
+  <title>SwiftX — Free Radial App Launcher for Windows 11</title>
   <meta name="description" content="SwiftX is a free, open-source radial launcher for Windows 11. Summon an orbit of your apps, files, folders and links with a shortcut, a hot corner or the tray — plus built-in developer tools. No account, no telemetry.">
   <meta name="theme-color" content="#000000">
   <meta name="color-scheme" content="light dark">
-  <link rel="canonical" href="https://YOUR-DOMAIN.COM/swiftx/">
+  <link rel="canonical" href="https://www.swiftx-app.com/">
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="SwiftX">
   <meta property="og:title" content="SwiftX — Everything you reach for. Right where you are.">
   <meta property="og:description" content="A quick-access radial orbit for Windows 11. Launch apps, files, folders and links from one keystroke or a screen corner. Free, open source, private by design.">
-  <meta property="og:url" content="https://YOUR-DOMAIN.COM/swiftx/">
-  <meta property="og:image" content="https://YOUR-DOMAIN.COM/swiftx/assets/img/og.png">
+  <meta property="og:url" content="https://www.swiftx-app.com/">
+  <meta property="og:image" content="https://www.swiftx-app.com/assets/img/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="The SwiftX orbit: eight glass items around the four-petal SwiftX mark.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="SwiftX — A quick-access orbit for Windows 11">
   <meta name="twitter:description" content="Summon your apps, files, folders and links with one keystroke or a screen corner. Free and open source.">
-  <meta name="twitter:image" content="https://YOUR-DOMAIN.COM/swiftx/assets/img/og.png">
+  <meta name="twitter:image" content="https://www.swiftx-app.com/assets/img/og.png">
 
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="icon" href="assets/img/favicon-32.png" sizes="32x32" type="image/png">
@@ -38,16 +38,63 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "SwiftX",
-    "description": "A quick-access radial orbit for Windows 11, with built-in developer tools.",
+    "description": "A free, open-source radial app launcher for Windows 11. Summon an orbit of your apps, files, folders and links with a keyboard shortcut, hot corner or tray icon. Includes built-in developer tools. No account, no telemetry.",
     "applicationCategory": "UtilitiesApplication",
     "operatingSystem": "Windows 10 version 1809 or later, Windows 11",
     "processorRequirements": "x64, ARM64",
-    "softwareVersion": "3.0",
+    "softwareVersion": "3.0.1",
     "license": "https://opensource.org/licenses/MIT",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
     "downloadUrl": "https://apps.microsoft.com/detail/9pk5wx5sswts",
-    "url": "https://YOUR-DOMAIN.COM/swiftx/",
-    "image": "https://YOUR-DOMAIN.COM/swiftx/assets/img/og.png"
+    "url": "https://www.swiftx-app.com/",
+    "image": "https://www.swiftx-app.com/assets/img/og.png",
+    "sameAs": [
+      "https://github.com/framedparadox/SwiftX",
+      "https://apps.microsoft.com/detail/9pk5wx5sswts"
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Is SwiftX really free?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes. SwiftX is open source under the MIT Licence. There's no paid tier, no account and no subscription, for personal or commercial use." }
+      },
+      {
+        "@type": "Question",
+        "name": "Does SwiftX collect any data?",
+        "acceptedAnswer": { "@type": "Answer", "text": "No. There's no telemetry, no analytics and no crash reporting. Your configuration lives in one file on your PC. The only thing SwiftX ever asks the network for, on its own, is a website's icon when you add a web link to the orbit." }
+      },
+      {
+        "@type": "Question",
+        "name": "Why can't I find SwiftX on the taskbar?",
+        "acceptedAnswer": { "@type": "Answer", "text": "That's by design. SwiftX lives in the notification area beside the clock. Left-click its icon to summon the orbit, right-click for Settings and Quit." }
+      },
+      {
+        "@type": "Question",
+        "name": "The keyboard shortcut does nothing. How do I fix it?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Another app already owns that combination, and Windows won't share it. Open Settings → General → Invoke: SwiftX says so there, and your previous shortcut stays live until you pick one that works. A shortcut must include Ctrl, Alt or Win." }
+      },
+      {
+        "@type": "Question",
+        "name": "The hot corner doesn't fire. What should I check?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Check the corner is switched on and selected on the Orbit screen. Hold the pointer in the corner for a moment — passing through doesn't count. Let go of the mouse button; a held button suppresses it on purpose." }
+      },
+      {
+        "@type": "Question",
+        "name": "Does SwiftX run on ARM?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes, natively. Every release is built for both x64 and ARM64." }
+      },
+      {
+        "@type": "Question",
+        "name": "Where are SwiftX settings stored?",
+        "acceptedAnswer": { "@type": "Answer", "text": "In %AppData%\\SwiftX\\orbit.json. Export or import it from Settings → General → Backup & restore. To start over, use Reset, or quit SwiftX and delete the %AppData%\\SwiftX folder." }
+      }
+    ]
   }
   </script>
 </head>
@@ -71,6 +118,7 @@
         <li><a href="#privacy">Privacy</a></li>
         <li><a href="#specs">Specs</a></li>
         <li><a href="#faq">Support</a></li>
+        <li><a href="changelog.html">Changelog</a></li>
       </ul>
       <!-- TODO: replace with real product id when listing goes live (matches StoreFeedback.ProductId in the app) -->
       <a class="btn btn-primary btn-sm" href="https://apps.microsoft.com/detail/9pk5wx5sswts">Download</a>
@@ -735,8 +783,8 @@ dotnet run   --project src/SwiftX/SwiftX.csproj -p:Platform=x64</pre>
       <div class="footer-crumb"><img src="assets/img/mark.svg" alt="" width="16" height="16"><span class="chev">›</span><span>SwiftX</span></div>
       <div class="footer-cols">
         <div><h4>Explore</h4><ul><li><a href="#summon">Overview</a></li><li><a href="#customize">Customize</a></li><li><a href="#corner">Hot corner</a></li><li><a href="#tools">Built-in tools</a></li><li><a href="#specs">Tech specs</a></li></ul></div>
-        <div><h4>Get SwiftX</h4><ul><li><a href="https://apps.microsoft.com/detail/0000000000000">Microsoft Store</a></li><li><a href="https://github.com/framedparadox/SwiftX/releases/latest">GitHub release</a></li><li><a href="https://github.com/framedparadox/SwiftX/releases">Release notes</a></li><li><a href="#start">Build from source</a></li></ul></div>
-        <div><h4>Support</h4><ul><li><a href="#faq">FAQ</a></li><li><a href="https://github.com/framedparadox/SwiftX/issues">Report an issue</a></li><li><a href="https://github.com/framedparadox/SwiftX#readme">Documentation</a></li></ul></div>
+        <div><h4>Get SwiftX</h4><ul><li><a href="https://apps.microsoft.com/detail/0000000000000">Microsoft Store</a></li><li><a href="changelog.html">Release history</a></li><li><a href="https://github.com/framedparadox/SwiftX/releases">GitHub releases</a></li><li><a href="#start">Build from source</a></li></ul></div>
+        <div><h4>Support</h4><ul><li><a href="#faq">FAQ</a></li><li><a href="feedback.html">Feedback &amp; suggestions</a></li><li><a href="https://github.com/framedparadox/SwiftX/issues">Report an issue</a></li><li><a href="https://github.com/framedparadox/SwiftX#readme">Documentation</a></li></ul></div>
         <div><h4>Legal</h4><ul><li><a href="privacy.html">Privacy policy</a></li><li><a href="terms.html">Terms and conditions</a></li><li><a href="https://github.com/framedparadox/SwiftX/blob/main/LICENSE">MIT Licence</a></li></ul></div>
       </div>
       <div class="footer-legal">

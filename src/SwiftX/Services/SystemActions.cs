@@ -79,6 +79,33 @@ public static class SystemActions
     }
 
     /// <summary>
+    /// Runs a <see cref="OrbitItem.Arguments"/>-stored command via <c>cmd.exe /c</c> — what a
+    /// <see cref="OrbitItemKind.CommandAction"/> item does on activation. Does nothing (silently,
+    /// bar the log line) for an item that was never configured.
+    /// </summary>
+    public static void RunCommand(OrbitItem item)
+    {
+        var command = item.Arguments;
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            Diag.Log($"SystemActions.RunCommand: '{item.DisplayName}' has no command (Arguments='{item.Arguments}')");
+            return;
+        }
+        try
+        {
+            Process.Start(new ProcessStartInfo("cmd.exe", $"/c {command}")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            Diag.Log($"SystemActions.RunCommand FAILED for '{command}': {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Plays back a <see cref="OrbitItem.Arguments"/>-stored <see cref="HotkeyGesture"/> as a real
     /// keystroke — what a <see cref="OrbitItemKind.KeyboardAction"/> item does on activation. Does
     /// nothing (silently, bar the log line) for an item that was never configured: that can only

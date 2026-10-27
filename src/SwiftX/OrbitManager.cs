@@ -533,6 +533,12 @@ public sealed class OrbitManager
             return;
         }
 
+        if (item.Kind == OrbitItemKind.CommandAction)
+        {
+            SystemActions.RunCommand(item);
+            return;
+        }
+
         if (string.Equals(item.Target, SystemOrbitItems.MuteTarget, StringComparison.OrdinalIgnoreCase))
         {
             SystemActions.ToggleMute();

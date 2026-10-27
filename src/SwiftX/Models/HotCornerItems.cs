@@ -185,6 +185,9 @@ public static class HotCornerItems
         if (string.Equals(entry.Target, SystemOrbitItems.SettingsTarget, StringComparison.OrdinalIgnoreCase))
             return settings;
 
+        if (string.Equals(entry.Target, SystemOrbitItems.ConfigureOrbitTarget, StringComparison.OrdinalIgnoreCase))
+            return SystemOrbitItems.CreateConfigureOrbit(settings);
+
         if (string.Equals(entry.Target, ToolCatalog.ToolsGroupTarget, StringComparison.OrdinalIgnoreCase))
             return FindByTarget(config.Primary.Items, ToolCatalog.ToolsGroupTarget) ?? entry;
 

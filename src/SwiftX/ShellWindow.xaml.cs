@@ -14,6 +14,7 @@ using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Shapes;
 using Microsoft.Windows.AppNotifications;
 using Microsoft.Windows.AppNotifications.Builder;
@@ -268,6 +269,16 @@ public sealed partial class ShellWindow : Window
         // wait for — unlike the version string and the toggles, it reads no state.
         AboutMark.Content = AppLogo.Create(56);
         HomeBrandMark.Content = AppLogo.Create(30);
+
+        // Configure Orbit logo on the Orbit Layout toolbar and the Hot corner settings heading.
+        // Same bundled PNG the orbit bubbles use (SystemOrbitItems.ConfigureOrbitImagePath); shown
+        // only when the asset is present, so a dev build without the Images tree still works.
+        if (SystemOrbitItems.ConfigureOrbitImagePath.Value is { } configPath)
+        {
+            var logoSource = new BitmapImage(new Uri(configPath));
+            OrbitLayoutMark.Content = new Image { Source = logoSource, Stretch = Stretch.Uniform };
+            HotCornerMark.Content   = new Image { Source = logoSource, Stretch = Stretch.Uniform };
+        }
 
         WireOrbitGlyphHover(OrbitHomeButton);
 
@@ -2538,10 +2549,9 @@ public sealed partial class ShellWindow : Window
 
             if (pinned)
             {
-                // The SwiftX mark itself, not a glyph — see SystemOrbitItems.CreateOrbitLogo. Flat
-                // (AppLogo.Create), not CreateFloating: the bubble's own ApplyBubbleShadow already
-                // lifts it, and a second shadow from the mark would double up.
-                border.Child = AppLogo.Create(bubble * 0.6);
+                // Configure Orbit icon — the same PNG the live bubble uses. Flat (not
+                // CreateFloating): the bubble's own ApplyBubbleShadow already lifts it.
+                border.Child = AppLogo.CreateConfigureIcon(bubble * 0.6);
                 ApplyBubbleShadow(border);
                 ToolTipService.SetToolTip(border, $"{item!.DisplayName} — always on the orbit");
             }
@@ -2604,9 +2614,7 @@ public sealed partial class ShellWindow : Window
             Width = bubble,
             Height = bubble,
             Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
-            // The orbit logo, not Settings — see RenderPreview's own pinned-slot remarks on why the
-            // logo is what is actually always there now.
-            Child = AppLogo.Create(bubble * 0.6),
+            Child = AppLogo.CreateConfigureIcon(bubble * 0.6),
         };
         ApplyBubbleShadow(border);
         OrbitItemGeometry.Apply(border, bubble);
@@ -3701,22 +3709,28 @@ public sealed partial class ShellWindow : Window
         int count = HotCornerItems.Resolve(_manager.Config, SystemOrbitItems.CreateSettings())
             .Count(i => !i.IsEmpty);
 
+        // Configure Orbit is a permanent fixture of the hot corner — it can be moved but not
+        // replaced or removed, so both destructive actions are disabled in its menu.
+        bool isConfigureOrbit = string.Equals(
+            item.Target, SystemOrbitItems.ConfigureOrbitTarget, StringComparison.OrdinalIgnoreCase);
+
         return BuildItemMenu(
             item.DisplayName,
             replace: () => ReplaceQuadrantItem(slot),
             remove: () => RemoveQuadrantItem(slot),
             removeLabel: "Remove from corner",
-            canRemove: count > 1,
+            canRemove: !isConfigureOrbit && count > 1,
             // A group's mark is the one thing about it with no other way to change, here as on the
             // ring (see BuildOrbitItemMenu). A group on the corner is the orbit's own group, so the
             // mark is changed on it and the ring shows the same one; QuickAccess, which only the
             // corner has, keeps its own (see ApplyIconChoice).
-            editIcon: item.IsGroup ? () => ShowIconPicker(item, slotBorder) : null);
+            editIcon: item.IsGroup ? () => ShowIconPicker(item, slotBorder) : null,
+            canReplace: !isConfigureOrbit);
     }
 
     private static MenuFlyout BuildItemMenu(
         string name, Action replace, Action remove, string removeLabel, bool canRemove,
-        Action? editIcon = null, Action? newGroup = null)
+        Action? editIcon = null, Action? newGroup = null, bool canReplace = true)
     {
         var menu = new MenuFlyout();
 
@@ -3724,6 +3738,7 @@ public sealed partial class ShellWindow : Window
         {
             Text = "Replace…",
             Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE70F) },
+            IsEnabled = canReplace,
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(replaceItem, "Replace " + name);
         replaceItem.Click += (_, _) => replace();
@@ -4025,6 +4040,8 @@ public sealed partial class ShellWindow : Window
         var list = HotCornerItems.Edit(_manager.Config, SystemOrbitItems.CreateSettings());
         if (slot < 0 || slot >= list.Count || list[slot].IsEmpty || list.Count(i => !i.IsEmpty) <= 1)
             return;
+        if (string.Equals(list[slot].Target, SystemOrbitItems.ConfigureOrbitTarget, StringComparison.OrdinalIgnoreCase))
+            return;
 
         OrbitSlots.Vacate(list, list[slot]);
         SaveCornerArrangement();
@@ -4104,6 +4121,26 @@ public sealed partial class ShellWindow : Window
     private UIElement PreviewBubbleContent(
         OrbitItem item, double glyphSize, Brush foreground, double diameter, double angleRad)
     {
+        // The Configure Orbit bubble (both the full orbit's pinned slot and the hot corner group)
+        // uses the branded PNG rather than a glyph.
+        if (string.Equals(item.Target, SystemOrbitItems.OrbitLogoTarget, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(item.Target, SystemOrbitItems.ConfigureOrbitTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            var img = AppLogo.CreateConfigureIcon(glyphSize);
+            if (!ShowsGroupArc(item))
+                return img;
+            var imgGrid = new Grid
+            {
+                Width = diameter,
+                Height = diameter,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            imgGrid.Children.Add(img);
+            imgGrid.Children.Add(BuildPreviewGroupArc(diameter, angleRad, IconColors.BrushFor(item, foreground)));
+            return imgGrid;
+        }
+
         // The item's own glyph colour when it has one — the arc follows it, as it does on the dock,
         // where the arc shares the glyph's brush.
         var tinted = IconColors.BrushFor(item, foreground);
@@ -5550,6 +5587,11 @@ public sealed partial class ShellWindow : Window
     private readonly HashSet<string> _collapsedGroups = new();
 
     /// <summary>
+    /// Which Custom Actions parent rows are collapsed: <c>"keyboard"</c> and/or <c>"command"</c>.
+    /// </summary>
+    private readonly HashSet<string> _collapsedActionTypes = new();
+
+    /// <summary>
     /// Whether a drag that the sidebar's rows depend on is still going: one of the sidebar's own
     /// rows being dragged, an outside item held over the sidebar, or one held over a group row.
     /// Rebuilding then would pull the row the drag started from (or the one it is about to land on)
@@ -5612,6 +5654,7 @@ public sealed partial class ShellWindow : Window
             {
                 ElementCategory.Groups => BuildEditGroupRows(SidebarGroups()),
                 ElementCategory.Controls => BuildControlRows(),
+                ElementCategory.CustomActions => BuildCustomActionRows(),
                 _ => ElementLibrary.RowsFor(category, catalog, orbit).Select(BuildEditRow).ToList(),
             };
             OrbitEditCategories.Children.Add(BuildEditCategory(category, rows));
@@ -6344,8 +6387,7 @@ public sealed partial class ShellWindow : Window
     /// (Lock, Sleep, Mute/Unmute, Screenshot, Empty Recycle Bin, Task Manager), each offered
     /// exactly like any other suggestion (<see cref="BuildEditRow"/> — already-on-the-orbit badge,
     /// drag, right-click included) rather than through <see cref="ElementLibrary.RowsFor"/>'s
-    /// catalog, since none of them is something a scan could ever find. "Map keyboard action" is
-    /// the one exception — see <see cref="BuildKeyboardActionRow"/>. Fixed order and fixed set:
+    /// catalog, since none of them is something a scan could ever find. Fixed order and fixed set:
     /// unlike every other category, nothing here is ever added to or taken off the list itself,
     /// only placed on the orbit or not.
     /// </summary>
@@ -6360,24 +6402,85 @@ public sealed partial class ShellWindow : Window
         BuildEditRow(SystemOrbitItems.CreateScreenshot()),
         BuildEditRow(SystemOrbitItems.CreateEmptyRecycleBin()),
         BuildEditRow(SystemOrbitItems.CreateTaskManager()),
-        BuildKeyboardActionRow(),
     ];
 
     /// <summary>
-    /// "Map keyboard action": the one Controls row that is not <see cref="BuildEditRow"/> over a
-    /// fixed-target template, because unlike every other item on this list more than one of these
-    /// can exist, each with its own combination — the same reason <see cref="BuildNewGroupRow"/> is
-    /// its own row rather than a templated one. Opens <see cref="OpenKeyboardActionDialog"/> to
-    /// record the combination before anything is added.
+    /// <summary>
+    /// Shared builder for the two collapsible Custom Actions parent rows (keyboard and command).
+    /// Returns a plain button when there are no children yet; once children exist, wraps the button
+    /// and a chevron toggle in a header row and shows the children beneath it, collapsed or expanded
+    /// based on <see cref="_collapsedActionTypes"/>.
     /// </summary>
-    private Button BuildKeyboardActionRow()
+    private FrameworkElement BuildActionParentRow(
+        string typeKey, int glyphCodepoint, string label,
+        IEnumerable<OrbitItem> actions, Action onClick, OrbitItem dragTemplate)
     {
-        var row = BuildEditRowShell(
-            char.ConvertFromUtf32(0xE765), "Map keyboard action" + SidebarEllipsis, null, null);
-        ToolTipService.SetToolTip(row, "Record a key combination and put it on the orbit");
-        WireEditRow(row, SystemOrbitItems.CreateKeyboardAction(), () => OpenKeyboardActionDialog());
-        return row;
+        var btn = BuildEditRowShell(
+            char.ConvertFromUtf32(glyphCodepoint), label + SidebarEllipsis, null, null);
+        WireEditRow(btn, dragTemplate, onClick);
+
+        var actionList = actions.ToList();
+        if (actionList.Count == 0) return btn;
+
+        bool collapsed = _collapsedActionTypes.Contains(typeKey);
+
+        var children = new StackPanel { Margin = new Thickness(16, 2, 0, 0) };
+        foreach (var action in actionList)
+            children.Children.Add(BuildEditActionRow(action));
+        children.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+
+        var chevronIcon = new FontIcon
+        {
+            Glyph = collapsed ? SidebarChevronRightGlyph : SidebarChevronDownGlyph,
+            FontSize = 10,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+        };
+        var chevronBtn = new Button
+        {
+            Height = 28,
+            Width = 24,
+            Padding = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Top,
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Content = chevronIcon,
+        };
+        chevronBtn.Click += (_, _) =>
+        {
+            if (_collapsedActionTypes.Contains(typeKey))
+            {
+                _collapsedActionTypes.Remove(typeKey);
+                children.Visibility = Visibility.Visible;
+                chevronIcon.Glyph = SidebarChevronDownGlyph;
+            }
+            else
+            {
+                _collapsedActionTypes.Add(typeKey);
+                children.Visibility = Visibility.Collapsed;
+                chevronIcon.Glyph = SidebarChevronRightGlyph;
+            }
+        };
+
+        var headerRow = new Grid();
+        headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(btn, 0);
+        Grid.SetColumn(chevronBtn, 1);
+        headerRow.Children.Add(btn);
+        headerRow.Children.Add(chevronBtn);
+
+        var panel = new StackPanel();
+        panel.Children.Add(headerRow);
+        panel.Children.Add(children);
+        return panel;
     }
+
+    private FrameworkElement BuildKeyboardActionRow() =>
+        BuildActionParentRow("keyboard", 0xE765, "Map keyboard action",
+            _manager.Config.Primary.DetachedActions.Where(a => a.IsKeyboardAction),
+            () => OpenKeyboardActionDialog(),
+            SystemOrbitItems.CreateKeyboardAction());
 
     /// <summary>
     /// The small, purpose-built form behind "Map keyboard action": a name and a recorded
@@ -6473,11 +6576,194 @@ public sealed partial class ShellWindow : Window
             return;
         }
 
-        AddToTopLevel(added);
+        _manager.Config.Primary.DetachedActions.Add(added);
         _manager.NotifyItemsChanged();
         BuildOrbitEditSidebar();
+    }
+
+    private FrameworkElement BuildCommandActionRow() =>
+        BuildActionParentRow("command", 0xE756, "Run command",
+            _manager.Config.Primary.DetachedActions.Where(a => a.IsCommandAction),
+            () => OpenCommandActionDialog(),
+            SystemOrbitItems.CreateCommandAction());
+
+    private async void OpenCommandActionDialog(OrbitItem? existing = null)
+    {
+        var nameBox = new TextBox
+        {
+            PlaceholderText = "Shown on the orbit",
+            Text = existing?.DisplayName ?? "",
+        };
+        var nameLabel = new TextBlock { Text = "Display name" };
+        var namePanel = new StackPanel { Spacing = 6 };
+        namePanel.Children.Add(nameLabel);
+        namePanel.Children.Add(nameBox);
+
+        var cmdBox = new TextBox
+        {
+            PlaceholderText = "e.g. start notepad.exe",
+            Text = existing?.Arguments ?? "",
+            AcceptsReturn = false,
+        };
+        var cmdLabel = new TextBlock { Text = "Command" };
+        var cmdPanel = new StackPanel { Spacing = 6 };
+        cmdPanel.Children.Add(cmdLabel);
+        cmdPanel.Children.Add(cmdBox);
+
+        var error = new InfoBar
+        {
+            Severity = InfoBarSeverity.Error,
+            IsOpen = false,
+            IsClosable = false,
+            Message = "Enter a command to run.",
+        };
+
+        var content = new StackPanel { Spacing = 14, Width = 320 };
+        content.Children.Add(namePanel);
+        content.Children.Add(cmdPanel);
+        content.Children.Add(error);
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = existing is null ? "Run command" : "Edit command",
+            Content = content,
+            PrimaryButtonText = existing is null ? "Add" : "Save",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        dialog.PrimaryButtonClick += (_, args) =>
+        {
+            if (string.IsNullOrWhiteSpace(cmdBox.Text))
+            {
+                error.IsOpen = true;
+                args.Cancel = true;
+            }
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            return;
+
+        string name = string.IsNullOrWhiteSpace(nameBox.Text) ? "Run Command" : nameBox.Text.Trim();
+        string command = cmdBox.Text.Trim();
+
+        if (existing is not null)
+        {
+            existing.DisplayName = name;
+            existing.Arguments = command;
+            _manager.NotifyItemsChanged();
+            RenderPreview();
+            RebuildItemsList();
+            return;
+        }
+
+        var added = SystemOrbitItems.CreateCommandAction(name, command);
+
+        if (IsReplacing)
+        {
+            CompleteReplace(added);
+            return;
+        }
+
+        _manager.Config.Primary.DetachedActions.Add(added);
+        _manager.NotifyItemsChanged();
+        BuildOrbitEditSidebar();
+    }
+
+    /// <summary>
+    /// The Custom Actions category: one expandable row per action type (keyboard and command), each
+    /// with its configured instances listed as indented child rows beneath it. Created actions land
+    /// in <see cref="OrbitProfile.DetachedActions"/> first; the user drags them onto the orbit.
+    /// </summary>
+    private List<FrameworkElement> BuildCustomActionRows() =>
+    [
+        BuildKeyboardActionRow(),
+        BuildCommandActionRow(),
+    ];
+
+    private FrameworkElement BuildEditActionRow(OrbitItem action)
+    {
+        bool present = OrbitHasAction(action.Kind, action.Arguments);
+        var row = BuildEditRowShell(
+            action.Glyph, action.DisplayName,
+            present ? "" : null,
+            present ? ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitCanvasAccentBrush") : null,
+            iconSource: action);
+        ToolTipService.SetToolTip(row, present
+            ? $"{action.DisplayName} is already on the orbit. Drag it onto the ring to add another."
+            : $"Add {action.DisplayName} to the orbit");
+        WireEditRow(row, action, present ? null : () => AddToOrbitFromSidebar(action));
+        row.ContextFlyout = BuildActionRowMenu(row, action, present);
+        return row;
+    }
+
+    private bool OrbitHasAction(OrbitItemKind kind, string? arguments) =>
+        !string.IsNullOrEmpty(arguments) &&
+        _manager.Config.Primary.Items.Any(i =>
+            i.Kind == kind &&
+            string.Equals(i.Arguments, arguments, StringComparison.OrdinalIgnoreCase));
+
+    private MenuFlyout BuildActionRowMenu(FrameworkElement anchor, OrbitItem action, bool present)
+    {
+        var menu = new MenuFlyout();
+
+        var edit = new MenuFlyoutItem
+        {
+            Text = "Edit",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE70F) },
+        };
+        edit.Click += (_, _) =>
+        {
+            if (action.IsKeyboardAction) OpenKeyboardActionDialog(action);
+            else if (action.IsCommandAction) OpenCommandActionDialog(action);
+        };
+        menu.Items.Add(edit);
+
+        if (present)
+        {
+            var removeFromOrbit = new MenuFlyoutItem
+            {
+                Text = "Remove from orbit",
+                Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xEDAE) },
+            };
+            removeFromOrbit.Click += (_, _) => RemoveActionFromOrbit(action.Kind, action.Arguments);
+            menu.Items.Add(removeFromOrbit);
+        }
+
+        menu.Items.Add(new MenuFlyoutSeparator());
+
+        var delete = new MenuFlyoutItem
+        {
+            Text = "Delete",
+            Icon = new FontIcon { Glyph = char.ConvertFromUtf32(0xE74D) },
+        };
+        delete.Click += (_, _) =>
+        {
+            _manager.Config.Primary.DetachedActions.Remove(action);
+            _manager.NotifyItemsChanged();
+            BuildOrbitEditSidebar();
+        };
+        menu.Items.Add(delete);
+
+        return menu;
+    }
+
+    private void RemoveActionFromOrbit(OrbitItemKind kind, string? arguments)
+    {
+        if (string.IsNullOrEmpty(arguments)) return;
+        var items = _manager.Config.Primary.Items;
+        foreach (var item in items
+            .Where(i => i.Kind == kind &&
+                string.Equals(i.Arguments, arguments, StringComparison.OrdinalIgnoreCase))
+            .ToList())
+        {
+            if (ReferenceEquals(_selectedItem, item)) HideItemDetails();
+            OrbitSlots.Vacate(items, item);
+        }
+        _manager.NotifyItemsChanged();
         RenderPreview();
         RebuildItemsList();
+        BuildOrbitEditSidebar();
     }
 
     /// <summary>
@@ -7887,6 +8173,7 @@ public sealed partial class ShellWindow : Window
     /// rating, so it wants the page with the star button on it.
     /// </summary>
     private const string GitHubRepoUrl = "https://github.com/framedparadox/SwiftX";
+    private const string WebsiteUrl = "https://www.swiftx-app.com";
 
     private async void ShareFeedback_Click(object sender, RoutedEventArgs e) =>
         await StoreFeedback.OpenFeedbackHubAsync();
@@ -7904,16 +8191,21 @@ public sealed partial class ShellWindow : Window
     /// outbound links rather than in About's own code so every URL this window can open is in one
     /// place.
     /// </summary>
-    private const string TermsUrl = GitHubRepoUrl + "/blob/main/TERMS.md";
+    private const string TermsUrl = WebsiteUrl + "/terms.html";
+    private const string PrivacyPageUrl = WebsiteUrl + "/privacy.html";
+    private const string FeedbackUrl = WebsiteUrl + "/feedback.html";
 
     private void ReportIssue_Click(object sender, RoutedEventArgs e) =>
-        Launcher.OpenUrl(StoreListingUrl);
+        Launcher.OpenUrl(FeedbackUrl);
 
     private void OpenTerms_Click(object sender, RoutedEventArgs e) =>
         Launcher.OpenUrl(TermsUrl);
 
     private void ViewOnGitHub_Click(object sender, RoutedEventArgs e) =>
         Launcher.OpenUrl(GitHubRepoUrl);
+
+    private void VisitWebsite_Click(object sender, RoutedEventArgs e) =>
+        Launcher.OpenUrl(WebsiteUrl);
 
     /// <summary>The inline "Read privacy" link at the foot of Feedback &amp; Support.</summary>
     private void OpenPrivacyFromFeedback_Click(Hyperlink sender, HyperlinkClickEventArgs args) =>
@@ -8833,7 +9125,7 @@ public sealed partial class ShellWindow : Window
         return BuildCardShell(
             BuildItemIcon(item),
             item.DisplayName,
-            item.IsKeyboardAction ? (item.Arguments ?? "Not set") : item.Target ?? "",
+            item.IsKeyboardAction || item.IsCommandAction ? (item.Arguments ?? "Not set") : item.Target ?? "",
             BuildElementTooltip(item),
             isHidden: item.Hidden,
             onToggle: isOn =>
@@ -8884,13 +9176,17 @@ public sealed partial class ShellWindow : Window
     private void EditOrbitItem(OrbitItem item)
     {
         // The generic dialog below describes a launchable thing — a type tile, a target path — and
-        // a keyboard action has neither: it has no Target at all (see CreateKeyboardAction), which
-        // the generic dialog has no type tile that tolerates and would refuse to save with "Enter a
-        // target path or URL." It gets its own small dialog instead; see
-        // OpenKeyboardActionDialog's own remarks on why an edit there needs no callback.
+        // keyboard/command actions have neither: they have no Target at all, which the generic dialog
+        // has no type tile that tolerates. They each get their own small dialog instead.
         if (item.IsKeyboardAction)
         {
             OpenKeyboardActionDialog(item);
+            return;
+        }
+
+        if (item.IsCommandAction)
+        {
+            OpenCommandActionDialog(item);
             return;
         }
 

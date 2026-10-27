@@ -698,15 +698,21 @@
                         </StackPanel>
                         <!-- The screen's title, and in its place while a group is open (OpenGroup /
                              CollapseGroup) that group's name, one shown at a time in the same spot.
-                             Tapping the name opens the group's details card. -->
-                        <Grid Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <TextBlock x:Name="OrbitLayoutTitle" Text="Orbit Layout"
-                                       Style="{StaticResource ScreenTitle}" />
-                            <TextBlock x:Name="OrbitGroupName" Visibility="Collapsed"
-                                       Style="{StaticResource ScreenTitle}"
-                                       TextTrimming="CharacterEllipsis" MaxWidth="320"
-                                       Tapped="OrbitGroupName_Tapped" />
-                        </Grid>
+                             Tapping the name opens the group's details card. The logo (set in code-
+                             behind) sits to the left of whichever title is showing. -->
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <ContentControl x:Name="OrbitLayoutMark" Width="24" Height="24"
+                                            IsTabStop="False" VerticalAlignment="Center" />
+                            <Grid>
+                                <TextBlock x:Name="OrbitLayoutTitle" Text="Orbit Layout"
+                                           Style="{StaticResource ScreenTitle}" />
+                                <TextBlock x:Name="OrbitGroupName" Visibility="Collapsed"
+                                           Style="{StaticResource ScreenTitle}"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="320"
+                                           Tapped="OrbitGroupName_Tapped" />
+                            </Grid>
+                        </StackPanel>
                         <StackPanel x:Name="CanvasActions" Grid.Column="2" Orientation="Horizontal"
                                     Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center"
                                     Margin="0,0,24,0">
@@ -974,9 +980,14 @@
                                              control, so it moves to column 3, on the right past the
                                              spacer, rather than sitting between the title and the
                                              info button that explains it. -->
-                                        <TextBlock Grid.Column="0" x:Name="HotCornerHeading" Text="Hot corner"
-                                                   Style="{StaticResource SidebarHeading}"
-                                                   VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5"
+                                                    VerticalAlignment="Center">
+                                            <ContentControl x:Name="HotCornerMark" Width="16" Height="16"
+                                                            IsTabStop="False" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="HotCornerHeading" Text="Hot corner"
+                                                       Style="{StaticResource SidebarHeading}"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
                                         <Button Grid.Column="1" x:Name="HotCornerInfoButton" Style="{StaticResource SidebarInfoButton}"
                                                 AutomationProperties.Name="About hot corner">
                                             <FontIcon Glyph="&#xE946;" FontSize="11"
@@ -2124,6 +2135,10 @@
                                                                  Style="{StaticResource AccentLink}"
                                                                  AutomationProperties.AutomationId="SettingsAboutPrivacy"
                                                                  Click="OpenPrivacyFromAbout_Click" />
+                                                <HyperlinkButton x:Name="AboutWebsiteLink" Content="WEBSITE"
+                                                                 Style="{StaticResource AccentLink}"
+                                                                 AutomationProperties.AutomationId="SettingsAboutWebsite"
+                                                                 Click="VisitWebsite_Click" />
                                                 <HyperlinkButton x:Name="AboutGitHubLink" Content="VIEW ON GITHUB"
                                                                  Style="{StaticResource AccentLink}"
                                                                  AutomationProperties.AutomationId="SettingsAboutGitHub"

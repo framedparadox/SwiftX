@@ -16,7 +16,7 @@ namespace SwiftX.Models;
 /// </summary>
 public static class QuadrantLayout
 {
-    /// <summary>Items a quadrant shows: QuickAccess, Notepad, the orbit's Tools item, and Settings.</summary>
+    /// <summary>Items a quadrant shows: QuickAccess, Notepad, the orbit's Tools item, and Configure Orbit.</summary>
     public const int ItemCount = 4;
 
     /// <summary>Stable marker target for the synthesized QuickAccess group — see
@@ -151,7 +151,8 @@ public static class QuadrantLayout
     /// orbit, gathered into one group), then Notepad, then the orbit's Tools item, then Settings —
     /// content first, built-ins last, the same convention the full orbit reads in with Settings and
     /// Close pinned to its own last two slots, so the two layouts never disagree about where
-    /// anything is.
+    /// anything is. Configure Orbit is a group rather than a single leaf: its flyout gives access to
+    /// Orbit Layout (the orbit-settings screen), Settings, and Home without using three places.
     /// <para>
     /// QuickAccess drops out entirely when there is nothing to gather (see
     /// <see cref="BuildQuickAccess"/>) rather than taking a place for an empty group, and Notepad
@@ -178,7 +179,7 @@ public static class QuadrantLayout
         var tail = new List<OrbitItem>();
         if (tools is not null)
             tail.Add(tools);
-        tail.Add(settings);
+        tail.Add(SystemOrbitItems.CreateConfigureOrbit(settings));
 
         var head = new List<OrbitItem>();
         var quickAccess = BuildQuickAccess(visible);

@@ -1190,19 +1190,16 @@ public sealed partial class OrbitWindow : Window
         content.Children.Add(icon);
         content.Children.Add(glyph);
 
-        // The orbit's one pinned slot draws the SwiftX mark itself rather than a glyph — see
-        // SystemOrbitItems.CreateOrbitLogo, whose CustomGlyph is only a fallback for generic code
-        // that never resolves an icon or reads Glyph directly. Explicitly collapsed rather than
-        // left to item.GlyphVisibility (which would show that fallback glyph, since the item has no
-        // IconImage): the mark's petals are separated by a thin transparent channel (see AppLogo's
-        // own remarks), so a glyph merely painted behind it could still peek through the gap. Flat
-        // (AppLogo.Create), not CreateFloating: the tint/backdrop/rim already give this bubble the
-        // same depth every other one has.
+        // The orbit's one pinned slot draws the Configure Orbit image rather than a glyph — see
+        // SystemOrbitItems.CreateOrbitLogo. Both icon and glyph are explicitly collapsed (not left
+        // to item.GlyphVisibility / item.ImageVisibility): the PNG is added as its own element so
+        // it is always on top and the background glyph can never peek through. Falls back to the
+        // SwiftX AppLogo mark when the bundled asset is absent.
         if (IsOrbitLogoItem(item))
         {
             icon.Visibility = Visibility.Collapsed;
             glyph.Visibility = Visibility.Collapsed;
-            content.Children.Add(AppLogo.Create(iconSize));
+            content.Children.Add(CreateConfigureOrbitBubbleIcon(iconSize));
         }
 
         // A group wears a short arc traced on its own outward edge — before you hover it, that
@@ -2199,6 +2196,14 @@ public sealed partial class OrbitWindow : Window
 
     private static bool IsOrbitLogoItem(OrbitItem item) =>
         string.Equals(item.Target, SystemOrbitItems.OrbitLogoTarget, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The visual element placed inside the orbit logo bubble. Delegates to
+    /// <see cref="AppLogo.CreateConfigureIcon"/> so the preview canvas and the live orbit both
+    /// use the same asset.
+    /// </summary>
+    private static FrameworkElement CreateConfigureOrbitBubbleIcon(double size) =>
+        AppLogo.CreateConfigureIcon(size);
 
     /// <summary>
     /// The hover style in force right now: the configured one, except that Tint gives way to Invert
