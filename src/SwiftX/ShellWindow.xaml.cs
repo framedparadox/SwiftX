@@ -1096,6 +1096,12 @@ public sealed partial class ShellWindow : Window
             return;
         }
 
+        // Configure Orbit is synthesized on every HotCornerItems.Resolve so it is never found by
+        // reference in Items, DetachedGroups or HotCornerOrbit. Keep it open — the in-memory child
+        // order from ReorderGroupChild survives for the session even though it is not persisted.
+        if (string.Equals(group.Target, SystemOrbitItems.ConfigureOrbitTarget, StringComparison.OrdinalIgnoreCase))
+            return;
+
         if (ItemExists(_manager.Config.Primary.Items, group))
             return;
         // A detached group (open from the sidebar's Groups list, off the ring) is not in Items, but
@@ -4408,6 +4414,21 @@ public sealed partial class ShellWindow : Window
         }
         for (int i = 0; i < positions.Count; i++)
             items[positions[i]] = visible[i];
+
+        // Persist the new child order so the live hot corner reflects it on next Resolve.
+        if (string.Equals(group.Target, SystemOrbitItems.ConfigureOrbitTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            var stored = _manager.Config.HotCornerOrbit
+                .FirstOrDefault(e => string.Equals(e.Target, SystemOrbitItems.ConfigureOrbitTarget,
+                    StringComparison.OrdinalIgnoreCase));
+            if (stored is not null)
+            {
+                stored.Children.Clear();
+                foreach (var child in group.Children)
+                    stored.Children.Add(new OrbitItem { Target = child.Target });
+                _manager.Save();
+            }
+        }
 
         _manager.NotifyItemsChanged();
         RenderPreview();

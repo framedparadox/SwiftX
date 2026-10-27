@@ -186,7 +186,32 @@ public static class HotCornerItems
             return settings;
 
         if (string.Equals(entry.Target, SystemOrbitItems.ConfigureOrbitTarget, StringComparison.OrdinalIgnoreCase))
-            return SystemOrbitItems.CreateConfigureOrbit(settings);
+        {
+            var fresh = SystemOrbitItems.CreateConfigureOrbit(settings);
+            if (entry.Children.Count > 0)
+            {
+                // The stored stubs carry only Target; use them to re-order the freshly
+                // synthesized children (which carry the live instances) to match the user's order.
+                var byTarget = fresh.Children
+                    .Where(c => !string.IsNullOrEmpty(c.Target))
+                    .ToDictionary(c => c.Target!, StringComparer.OrdinalIgnoreCase);
+                var ordered = new List<OrbitItem>();
+                foreach (var stub in entry.Children)
+                {
+                    if (!string.IsNullOrEmpty(stub.Target) &&
+                        byTarget.TryGetValue(stub.Target, out var match))
+                        ordered.Add(match);
+                }
+                // Keep any fresh children not covered by the stored order (e.g. added in a later build).
+                ordered.AddRange(fresh.Children.Where(c =>
+                    !string.IsNullOrEmpty(c.Target) &&
+                    !entry.Children.Any(e => string.Equals(e.Target, c.Target,
+                        StringComparison.OrdinalIgnoreCase))));
+                fresh.Children.Clear();
+                fresh.Children.AddRange(ordered);
+            }
+            return fresh;
+        }
 
         if (string.Equals(entry.Target, ToolCatalog.ToolsGroupTarget, StringComparison.OrdinalIgnoreCase))
             return FindByTarget(config.Primary.Items, ToolCatalog.ToolsGroupTarget) ?? entry;
