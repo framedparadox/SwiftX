@@ -341,6 +341,22 @@ public static class WindowChrome
     public static void SuppressClientErase(nint hwnd) => InstallNoEraseSubclass(hwnd);
 
     /// <summary>
+    /// Removes the maximize box from the window's native style outright, rather than relying on
+    /// <c>OverlappedPresenter.IsMaximizable = false</c> alone. The presenter flag disables the
+    /// Snap-Layouts-aware caption button WinAppSDK draws for a resizable window, but ShellWindow
+    /// is both non-resizable and non-maximizable from construction — belt and braces against the
+    /// button lingering, greyed out, in the caption instead of disappearing from it.
+    /// </summary>
+    public static void RemoveMaximizeBox(nint hwnd)
+    {
+        long style = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_STYLE);
+        long stripped = style & ~NativeMethods.WS_MAXIMIZEBOX;
+        if (stripped != style)
+            NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GWL_STYLE, (nint)stripped);
+        NotifyFrameChanged(hwnd);
+    }
+
+    /// <summary>
     /// Strips the non-client window frame (caption / resize border) so the client area — and
     /// our glass — extends all the way to the window edge. This removes the ~3px frame whose
     /// inner highlight shows up as a white line around a rounded backdrop window.

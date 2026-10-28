@@ -60,6 +60,9 @@ public sealed partial class OnboardingWindow : Window
     private HotCorner _hotCorner = HotCorner.TopLeft;
     private bool _hotCornerEnabled = true;
     private bool _hotkeyEnabled = true;
+    private MouseTriggerButton _mouseTriggerButton = MouseTriggerButton.Middle;
+    private MouseTriggerAction _mouseTriggerAction = MouseTriggerAction.LongPress;
+    private bool _mouseTriggerEnabled = true;
 
     private int _step;
     private const int StepCount = 3;
@@ -149,7 +152,13 @@ public sealed partial class OnboardingWindow : Window
             HotkeyEnabledToggle.IsOn = _hotkeyEnabled;
             HotCornerEnabledToggle.IsOn = _hotCornerEnabled;
             SelectHotCorner(_hotCorner);
-            SyncHotCornerControls();
+
+            _mouseTriggerEnabled = _manager.Config.MouseTriggerEnabled;
+            _mouseTriggerButton = _manager.Config.MouseTriggerButton;
+            _mouseTriggerAction = _manager.Config.MouseTriggerAction;
+            MouseTriggerEnabledToggle.IsOn = _mouseTriggerEnabled;
+            SelectMouseTriggerButton(_mouseTriggerButton);
+            SelectMouseTriggerAction(_mouseTriggerAction);
 
             StartupToggle.IsOn = await StartupService.IsEnabledAsync();
             DesktopShortcutToggle.IsOn = DesktopShortcutService.Exists();
@@ -604,7 +613,6 @@ public sealed partial class OnboardingWindow : Window
     {
         if (_loading) return;
         _hotCornerEnabled = HotCornerEnabledToggle.IsOn;
-        SyncHotCornerControls();
     }
 
     private void HotCornerBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -626,10 +634,54 @@ public sealed partial class OnboardingWindow : Window
         }
     }
 
-    private void SyncHotCornerControls() =>
-        HotCornerOptionsRow.Visibility = HotCornerEnabledToggle.IsOn
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+    private void MouseTriggerEnabled_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _mouseTriggerEnabled = MouseTriggerEnabledToggle.IsOn;
+    }
+
+    private void MouseTriggerButtonBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || MouseTriggerButtonBox.SelectedItem is not ComboBoxItem item) return;
+        if (Enum.TryParse<MouseTriggerButton>(item.Tag as string, out var button))
+            _mouseTriggerButton = button;
+    }
+
+    private void MouseTriggerActionBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || MouseTriggerActionBox.SelectedItem is not ComboBoxItem item) return;
+        if (Enum.TryParse<MouseTriggerAction>(item.Tag as string, out var action))
+            _mouseTriggerAction = action;
+    }
+
+    /// <summary>Picks the row in <see cref="MouseTriggerButtonBox"/> whose Tag names
+    /// <paramref name="button"/> — this window's own counterpart to <see cref="SelectHotCorner"/>.</summary>
+    private void SelectMouseTriggerButton(MouseTriggerButton button)
+    {
+        foreach (ComboBoxItem item in MouseTriggerButtonBox.Items)
+        {
+            if ((item.Tag as string) == button.ToString())
+            {
+                MouseTriggerButtonBox.SelectedItem = item;
+                return;
+            }
+        }
+    }
+
+    /// <summary>Picks the row in <see cref="MouseTriggerActionBox"/> whose Tag names
+    /// <paramref name="action"/> — <see cref="SelectMouseTriggerButton"/>'s own counterpart for the
+    /// gesture picker.</summary>
+    private void SelectMouseTriggerAction(MouseTriggerAction action)
+    {
+        foreach (ComboBoxItem item in MouseTriggerActionBox.Items)
+        {
+            if ((item.Tag as string) == action.ToString())
+            {
+                MouseTriggerActionBox.SelectedItem = item;
+                return;
+            }
+        }
+    }
 
     /// <summary>
     /// Says whether the chosen combination can actually be registered — without registering it.
@@ -685,10 +737,14 @@ public sealed partial class OnboardingWindow : Window
             _manager.Config.HotkeyEnabled = _hotkeyEnabled;
             _manager.Config.HotCornerEnabled = _hotCornerEnabled;
             _manager.Config.HotCorner = _hotCorner;
+            _manager.Config.MouseTriggerEnabled = _mouseTriggerEnabled;
+            _manager.Config.MouseTriggerButton = _mouseTriggerButton;
+            _manager.Config.MouseTriggerAction = _mouseTriggerAction;
 
             _manager.NotifyItemsChanged();
             _manager.ApplyHotkey();
             _manager.ApplyHotCorner();
+            _manager.ApplyMouseTrigger();
 
             // Both of these touch the OS rather than the config, and both can fail (a policy-locked
             // Run key, a read-only desktop). Awaited before the window closes so a failure is not

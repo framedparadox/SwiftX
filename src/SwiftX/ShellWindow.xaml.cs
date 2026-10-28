@@ -411,6 +411,8 @@ public sealed partial class ShellWindow : Window
             p.IsResizable = false;
             p.IsMaximizable = false;
         }
+        // Belt and braces alongside IsMaximizable above — see RemoveMaximizeBox's own doc comment.
+        WindowChrome.RemoveMaximizeBox(_hwnd);
         _appWindow.IsShownInSwitchers = true;
 
         // 1240 x 700 (was 1180 x 700, before the "ADD TO ORBIT" sidebar grew from 260 to 320 to
@@ -2710,7 +2712,10 @@ public sealed partial class ShellWindow : Window
             ToolTipService.SetToolTip(border, item is null
                 ? "Add to this corner"
                 : $"{item.DisplayName} — right-click to replace or remove");
-            AttachPreviewHover(border);
+            if (item is not null)
+                AttachPreviewHover(border, AddSlotLabel(item, cx, cy, angle, previewRadius, previewBubble));
+            else
+                AttachPreviewHover(border);
             Canvas.SetLeft(border, left);
             Canvas.SetTop(border, top);
             PreviewCanvas.Children.Add(border);
@@ -2738,7 +2743,7 @@ public sealed partial class ShellWindow : Window
         const double inset = 2;
         var corner = _manager.Config.HotCorner;
 
-        var logo = _previewQuadrant ? null : AppLogo.CreateCornerGlyph(28, corner);
+        var logo = _previewQuadrant ? null : AppLogo.CreateCornerGlyph(28, corner, onlyActive: true);
         var button = new Button
         {
             Width = diameter,
@@ -2784,12 +2789,19 @@ public sealed partial class ShellWindow : Window
             button.PointerCanceled += Rest;
         }
 
+        bool canPreviewQuadrant = _manager.Config.HotCornerLayout == HotCornerLayout.Quadrant;
         ToolTipService.SetToolTip(button, _previewQuadrant
             ? "Back to the full orbit"
-            : "Show what this corner opens");
+            : canPreviewQuadrant
+                ? "Show what this corner opens"
+                : "This corner opens the full orbit");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, "Hot corner preview");
         button.Click += (_, _) =>
         {
+            // Nothing to switch to while the corner summons the full orbit rather than a quadrant
+            // — see SyncHotCornerControls, which keeps _previewQuadrant false whenever this is true.
+            if (!canPreviewQuadrant)
+                return;
             _previewQuadrant = !_previewQuadrant;
             RenderPreview();
         };
@@ -8789,7 +8801,10 @@ public sealed partial class ShellWindow : Window
     {
         bool on = HotCornerEnabledToggle.IsOn;
         HotCornerOptionsRow.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
-        if (!on)
+        // The quadrant preview the corner button toggles into only means something when the corner
+        // actually summons a quadrant (see AddHotCornerButton) — off, or back on Orbit layout, there
+        // is nothing left to be a view of.
+        if (!on || _manager.Config.HotCornerLayout != HotCornerLayout.Quadrant)
         {
             _previewQuadrant = false;
             // QuickAccess exists only on the corner, so an open one has nothing left to be a view of.

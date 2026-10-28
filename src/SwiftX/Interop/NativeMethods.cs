@@ -113,6 +113,7 @@ internal static partial class NativeMethods
     public const long WS_THICKFRAME = 0x00040000;
     public const long WS_BORDER = 0x00800000;
     public const long WS_DLGFRAME = 0x00400000;
+    public const long WS_MAXIMIZEBOX = 0x00010000;
 
     public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_FRAMECHANGED = 0x0020;
