@@ -2,6 +2,32 @@
 
 All notable changes to SwiftX will be documented in this file.
 
+## [3.0.2] - 2026-10-28
+
+### Fixed
+- **Configure Orbit label overlap** — the name pill for the Configure Orbit bubble in the hot
+  corner quadrant preview now tracks its bubble's full y-offset rather than only half of it,
+  so it clears the adjacent bubble instead of sitting on top of it.
+- **Group arc (notch) follows item shape** — the 30° notch marking a group bubble on the orbit
+  dock and the settings canvas now samples the shape boundary at each sub-angle and connects
+  the points with line segments, so it hugs a hexagon's flat faces, a squircle's blend of flat
+  and curved edges, and a square's true corner distance rather than always drawing a circular
+  arc. No change for Circle, which a circular arc already describes exactly.
+- **Dock bubble border in light mode** — removed the semi-transparent rim that was drawn over
+  the acrylic edge in light mode; the bubble now shows a unified fill from centre to edge with
+  no visible ring.
+- **Hexagon bubble square shadow on canvas** — hexagon items on the orbit canvas no longer
+  cast a square drop-shadow; the shadow is skipped entirely for the hexagon shape so only the
+  hexagonal fill is visible with no rectangular halo behind it.
+
+### Added
+- **Hot corner pulse** — when the hot corner is enabled, the corner petal icon on the settings
+  canvas pulses to draw attention to the active corner, replacing a mis-targeted animation that
+  was running on the sidebar icon instead.
+
+### Changed
+- Bumped the project, assembly, file, and package identity versions to 3.0.2.0.
+
 ## [3.0.1] - 2026-10-26
 
 ### Added
