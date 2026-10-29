@@ -1125,16 +1125,8 @@ public sealed partial class OrbitWindow : Window
         // one Composition visual (bubble.Host below), so it travels with those animations for
         // free — nothing in the motion code needs to know it's there.
         //
-        // Drawn smaller than the tint above it (OrbitItemGeometry.BackdropInsetPx), and its edge then
-        // covered by a rim (OrbitItemGeometry.RimWidthPx). SystemBackdropElement can only round
-        // itself with a composition rounded-rect clip, whose edge is a hard, unfeathered stair-step
-        // that also overshoots its nominal size by up to a pixel at the four compass points; the
-        // tint's own rounded Background is drawn by XAML and is properly antialiased. Measured over
-        // a bright desktop the stair-step is plainly visible, because the glass is much darker than
-        // what is behind it and the translucent tint cannot hide the step. No clip set from outside
-        // reaches it — an ellipse clip on the element's own visual left the acrylic a full square —
-        // so the step can only be covered, not smoothed: inset the disc until its worst-case edge
-        // sits inside the rim, and let the rim's antialiased outer edge be the silhouette.
+        // BackdropInsetPx is zero, so the acrylic fills the full bubble area; the tint's own
+        // XAML-drawn Background edge is properly antialiased and serves as the silhouette.
         double scale = DeviceScale;
         double backdropInset = OrbitItemGeometry.BackdropInsetPx / scale;
         double backdropSize = Math.Max(1, diameter - backdropInset * 2);
@@ -1163,30 +1155,9 @@ public sealed partial class OrbitWindow : Window
         };
         OrbitItemGeometry.Apply(tint, diameter);
 
-        // A pale bezel over the acrylic's edge — kept under a light glass only. On a dark glass any
-        // opaque ring is a dark circle around every bubble (the reported "dark border"), and dropping
-        // it there is what lets the glass read as one consistent fill from centre to edge now that the
-        // acrylic fills the whole bubble (OrbitItemGeometry.BackdropInsetPx is zero). A hexagon has no
-        // acrylic under it, so no edge to bezel either way.
-        Border? rim = null;
-        if (OrbitMetrics.ItemShape != OrbitItemShape.Hexagon && !ThemeHelper.IsDark(Root))
-        {
-            rim = new Border
-            {
-                Width = diameter,
-                Height = diameter,
-                BorderBrush = new SolidColorBrush(OrbitItemGeometry.RimTint(ThemeColor("OrbitBubbleGlassTint"))),
-                BorderThickness = new Thickness(OrbitItemGeometry.RimWidthPx / scale),
-                IsHitTestVisible = false,
-            };
-            OrbitItemGeometry.Apply(rim, diameter);
-        }
-
         var content = new Grid();
         content.Children.Add(backdrop);
         content.Children.Add(tint);
-        if (rim is not null)
-            content.Children.Add(rim);
         content.Children.Add(icon);
         content.Children.Add(glyph);
 
@@ -1213,7 +1184,9 @@ public sealed partial class OrbitWindow : Window
         // hovering this bubble opens a flyout at all. Settings is a plain launch item and never
         // wears an arc.
         if (item.IsGroup && !isFlyout && item.Children.Any(c => !c.Hidden))
-            content.Children.Add(BuildGroupArc(diameter, angle, glyphBrush));
+            content.Children.Add(BuildGroupArc(diameter,
+                _quadrant is not null ? OrbitItemGeometry.SnapNotchAngle(angle) : angle,
+                glyphBrush));
 
         // No CornerRadius on the host: it paints nothing of its own, and a rounded Border clips
         // its child with the same unfeathered composition rounded rect the backdrop uses — which
@@ -1257,7 +1230,6 @@ public sealed partial class OrbitWindow : Window
             IsFlyout = isFlyout,
             StaggerIndex = index,
             Backdrop = backdrop,
-            Rim = rim,
             TintBrush = tintBrush,
             GlyphBrush = glyphBrush,
             Detach = () => item.PropertyChanged -= onItemChanged,
@@ -1295,29 +1267,25 @@ public sealed partial class OrbitWindow : Window
     private static Path BuildGroupArc(double diameter, double angleRad, Brush stroke)
     {
         const double SweepDegrees = 30;
+        const int Samples = 8;
         double sweep = SweepDegrees * Math.PI / 180.0;
         double thickness = Math.Max(2, diameter * 0.08);
-        double radius = diameter / 2 - thickness / 2;
         double center = diameter / 2;
-        double startAngle = angleRad - sweep / 2;
-        double endAngle = angleRad + sweep / 2;
 
-        var figure = new PathFigure
+        // Sample EdgeDistanceAt at each sub-angle so the arc follows the actual shape
+        // boundary (flat for square/hexagon faces, curved for circle/squircle) rather
+        // than always drawing a circular arc.
+        var figure = new PathFigure { IsClosed = false };
+        for (int i = 0; i <= Samples; i++)
         {
-            StartPoint = new Point(
-                center + radius * Math.Cos(startAngle),
-                center + radius * Math.Sin(startAngle)),
-            IsClosed = false,
-        };
-        figure.Segments.Add(new ArcSegment
-        {
-            Point = new Point(
-                center + radius * Math.Cos(endAngle),
-                center + radius * Math.Sin(endAngle)),
-            Size = new Size(radius, radius),
-            SweepDirection = SweepDirection.Clockwise,
-            IsLargeArc = false,
-        });
+            double a = (angleRad - sweep / 2) + sweep * i / Samples;
+            double r = OrbitItemGeometry.EdgeDistanceAt(diameter, a) - thickness / 2;
+            var pt = new Point(center + r * Math.Cos(a), center + r * Math.Sin(a));
+            if (i == 0)
+                figure.StartPoint = pt;
+            else
+                figure.Segments.Add(new LineSegment { Point = pt });
+        }
 
         var geometry = new PathGeometry();
         geometry.Figures.Add(figure);
@@ -2169,10 +2137,6 @@ public sealed partial class OrbitWindow : Window
         bubble.GlyphFade = AnimateBrushTo(bubble.GlyphFade, bubble.GlyphBrush, foreground, HoverMs);
         AnimateOpacity(bubble.Backdrop, opaque ? 0f : 1f, HoverMs);
 
-        // The rim exists only to hide the acrylic's edge, so it goes when the acrylic does: an
-        // opaque fill is its own clean antialiased silhouette.
-        if (bubble.Rim is { } rim)
-            AnimateOpacity(rim, opaque ? 0f : 1f, HoverMs);
     }
 
     /// <summary>
