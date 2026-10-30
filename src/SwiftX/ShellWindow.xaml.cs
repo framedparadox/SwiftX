@@ -167,6 +167,7 @@ public sealed partial class ShellWindow : Window
     // Purely a preview: toggled by the corner button RenderPreview draws, and never persisted —
     // what the corner actually summons is Config.HotCornerLayout.
     private bool _previewQuadrant;
+    private Storyboard? _hotCornerPulse;
 
     // Group-arc geometry and slot occupancy, RenderGroupArc's counterpart to _slotBorders. A
     // List rather than a fixed array because the slot count is however many children the group
@@ -411,6 +412,8 @@ public sealed partial class ShellWindow : Window
             p.IsResizable = false;
             p.IsMaximizable = false;
         }
+        // Belt and braces alongside IsMaximizable above — see RemoveMaximizeBox's own doc comment.
+        WindowChrome.RemoveMaximizeBox(_hwnd);
         _appWindow.IsShownInSwitchers = true;
 
         // 1240 x 700 (was 1180 x 700, before the "ADD TO ORBIT" sidebar grew from 260 to 320 to
@@ -2419,7 +2422,10 @@ public sealed partial class ShellWindow : Window
         }
         else
         {
-            py = nodeCy - PillHeight / 2;
+            // Nudge the label in the item's uy direction so diagonal labels track their bubble
+            // rather than floating at the same y as every other item on the horizontal axis.
+            // This prevents the Configure Orbit label from overlapping the adjacent bubble.
+            py = nodeCy - PillHeight / 2 + uy * PillHeight;
             px = ux > 0 ? nodeCx + reach : nodeCx - reach - width;
         }
 
@@ -2567,7 +2573,8 @@ public sealed partial class ShellWindow : Window
                 // Configure Orbit icon — the same PNG the live bubble uses. Flat (not
                 // CreateFloating): the bubble's own ApplyBubbleShadow already lifts it.
                 border.Child = AppLogo.CreateConfigureIcon(bubble * 0.6);
-                ApplyBubbleShadow(border);
+                if (OrbitMetrics.ItemShape != OrbitItemShape.Hexagon)
+                    ApplyBubbleShadow(border);
                 ToolTipService.SetToolTip(border, $"{item!.DisplayName} — always on the orbit");
             }
             else if (item is null)
@@ -2580,7 +2587,8 @@ public sealed partial class ShellWindow : Window
                 border.Child = PreviewBubbleContent(item, glyphSize, foreground, bubble, angle);
                 ToolTipService.SetToolTip(border, $"{item.DisplayName} — right-click to replace or delete");
                 _slotBorders[i] = border;
-                ApplyBubbleShadow(border);
+                if (OrbitMetrics.ItemShape != OrbitItemShape.Hexagon)
+                    ApplyBubbleShadow(border);
             }
 
             OrbitItemGeometry.Apply(border, bubble);
@@ -2631,7 +2639,8 @@ public sealed partial class ShellWindow : Window
             Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
             Child = AppLogo.CreateConfigureIcon(bubble * 0.6),
         };
-        ApplyBubbleShadow(border);
+        if (OrbitMetrics.ItemShape != OrbitItemShape.Hexagon)
+            ApplyBubbleShadow(border);
         OrbitItemGeometry.Apply(border, bubble);
         ToolTipService.SetToolTip(border, "Orbit radius");
         Canvas.SetLeft(border, cx + radius * Math.Cos(angle) - bubble / 2);
@@ -2714,12 +2723,15 @@ public sealed partial class ShellWindow : Window
                     : PreviewBubbleContent(item, glyphSize, foreground, previewBubble, angle),
             };
             OrbitItemGeometry.Apply(border, previewBubble);
-            if (item is not null)
+            if (item is not null && OrbitMetrics.ItemShape != OrbitItemShape.Hexagon)
                 ApplyBubbleShadow(border);
             ToolTipService.SetToolTip(border, item is null
                 ? "Add to this corner"
                 : $"{item.DisplayName} — right-click to replace or remove");
-            AttachPreviewHover(border);
+            if (item is not null)
+                AttachPreviewHover(border, AddSlotLabel(item, cx, cy, angle, previewRadius, previewBubble));
+            else
+                AttachPreviewHover(border);
             Canvas.SetLeft(border, left);
             Canvas.SetTop(border, top);
             PreviewCanvas.Children.Add(border);
@@ -2747,7 +2759,7 @@ public sealed partial class ShellWindow : Window
         const double inset = 2;
         var corner = _manager.Config.HotCorner;
 
-        var logo = _previewQuadrant ? null : AppLogo.CreateCornerGlyph(28, corner);
+        var logo = _previewQuadrant ? null : AppLogo.CreateCornerGlyph(28, corner, onlyActive: true);
         var button = new Button
         {
             Width = diameter,
@@ -2791,14 +2803,41 @@ public sealed partial class ShellWindow : Window
             button.PointerEntered += Highlight;
             button.PointerExited += Rest;
             button.PointerCanceled += Rest;
+
+            // Pulse the petal glyph on the canvas while the hot corner is enabled so it
+            // reads as an active, attention-worthy feature rather than a static icon.
+            // Animate the button (not logo) so its circular clip scales with the content
+            // and the petal tips are never trimmed during the scale-up.
+            button.RenderTransformOrigin = new Point(0.5, 0.5);
+            var pulseScale = new ScaleTransform();
+            button.RenderTransform = pulseScale;
+            var pulseEase = new SineEase { EasingMode = EasingMode.EaseInOut };
+            var psx = new DoubleAnimation { From = 1.0, To = 1.2, Duration = TimeSpan.FromMilliseconds(900), AutoReverse = true, EasingFunction = pulseEase };
+            var psy = new DoubleAnimation { From = 1.0, To = 1.2, Duration = TimeSpan.FromMilliseconds(900), AutoReverse = true, EasingFunction = pulseEase };
+            Storyboard.SetTarget(psx, pulseScale);
+            Storyboard.SetTargetProperty(psx, "ScaleX");
+            Storyboard.SetTarget(psy, pulseScale);
+            Storyboard.SetTargetProperty(psy, "ScaleY");
+            var pulseSb = new Storyboard { RepeatBehavior = RepeatBehavior.Forever };
+            pulseSb.Children.Add(psx);
+            pulseSb.Children.Add(psy);
+            pulseSb.Begin();
+            _hotCornerPulse = pulseSb;
         }
 
+        bool canPreviewQuadrant = _manager.Config.HotCornerLayout == HotCornerLayout.Quadrant;
         ToolTipService.SetToolTip(button, _previewQuadrant
             ? "Back to the full orbit"
-            : "Show what this corner opens");
+            : canPreviewQuadrant
+                ? "Show what this corner opens"
+                : "This corner opens the full orbit");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, "Hot corner preview");
         button.Click += (_, _) =>
         {
+            // Nothing to switch to while the corner summons the full orbit rather than a quadrant
+            // — see SyncHotCornerControls, which keeps _previewQuadrant false whenever this is true.
+            if (!canPreviewQuadrant)
+                return;
             _previewQuadrant = !_previewQuadrant;
             RenderPreview();
         };
@@ -4192,29 +4231,29 @@ public sealed partial class ShellWindow : Window
     private static Microsoft.UI.Xaml.Shapes.Path BuildPreviewGroupArc(double diameter, double angleRad, Brush stroke)
     {
         const double SweepDegrees = 30;
+        const int Samples = 8;
+        // Snap to the nearest face or corner of the shape so the notch sits exactly on a
+        // geometric feature (hexagon face, square face or corner) rather than at an
+        // arbitrary angle between features. Circle is unchanged.
+        angleRad = OrbitItemGeometry.SnapNotchAngle(angleRad);
         double sweep = SweepDegrees * Math.PI / 180.0;
         double thickness = Math.Max(2, diameter * 0.08);
-        double radius = diameter / 2 - thickness / 2;
         double center = diameter / 2;
-        double startAngle = angleRad - sweep / 2;
-        double endAngle = angleRad + sweep / 2;
 
-        var figure = new PathFigure
+        // Sample EdgeDistanceAt at each sub-angle so the arc follows the actual shape
+        // boundary (flat for square/hexagon faces, curved for circle/squircle) rather
+        // than always drawing a circular arc.
+        var figure = new PathFigure { IsClosed = false };
+        for (int i = 0; i <= Samples; i++)
         {
-            StartPoint = new Point(
-                center + radius * Math.Cos(startAngle),
-                center + radius * Math.Sin(startAngle)),
-            IsClosed = false,
-        };
-        figure.Segments.Add(new ArcSegment
-        {
-            Point = new Point(
-                center + radius * Math.Cos(endAngle),
-                center + radius * Math.Sin(endAngle)),
-            Size = new Size(radius, radius),
-            SweepDirection = SweepDirection.Clockwise,
-            IsLargeArc = false,
-        });
+            double a = (angleRad - sweep / 2) + sweep * i / Samples;
+            double r = OrbitItemGeometry.EdgeDistanceAt(diameter, a) - thickness / 2;
+            var pt = new Point(center + r * Math.Cos(a), center + r * Math.Sin(a));
+            if (i == 0)
+                figure.StartPoint = pt;
+            else
+                figure.Segments.Add(new LineSegment { Point = pt });
+        }
 
         var geometry = new PathGeometry();
         geometry.Figures.Add(figure);
@@ -4304,11 +4343,28 @@ public sealed partial class ShellWindow : Window
                 InvertIconForeground(text, ink);
                 break;
             case Grid grid:
-                InvertBubbleBackground(border, invertedDark, "OrbitNodeBackgroundBrush");
-                foreach (var child in grid.Children)
+                if (OrbitMetrics.ItemShape == OrbitItemShape.Hexagon)
                 {
-                    if (child is FontIcon icon) InvertIconForeground(icon, ink);
-                    else if (child is Microsoft.UI.Xaml.Shapes.Shape shape) InvertShapeStroke(shape, ink);
+                    // border.Background was cleared by Apply; invert the hexagon path's fill
+                    // so the shape — not a square behind it — gets the inverted colour.
+                    foreach (var child in grid.Children)
+                    {
+                        if (child is Microsoft.UI.Xaml.Shapes.Shape hexPath && hexPath.Fill is not null)
+                            InvertShapeFill(hexPath, invertedDark, "OrbitNodeBackgroundBrush");
+                        else if (child is FontIcon icon) InvertIconForeground(icon, ink);
+                        else if (child is Grid innerGrid)
+                            foreach (var inner in innerGrid.Children)
+                                if (inner is FontIcon innerIcon) InvertIconForeground(innerIcon, ink);
+                    }
+                }
+                else
+                {
+                    InvertBubbleBackground(border, invertedDark, "OrbitNodeBackgroundBrush");
+                    foreach (var child in grid.Children)
+                    {
+                        if (child is FontIcon icon) InvertIconForeground(icon, ink);
+                        else if (child is Microsoft.UI.Xaml.Shapes.Shape shape) InvertShapeStroke(shape, ink);
+                    }
                 }
                 break;
             default:
@@ -4358,6 +4414,13 @@ public sealed partial class ShellWindow : Window
         var original = shape.Stroke;
         shape.Stroke = inverted;
         _hoveredPreviewRestores.Add(() => shape.Stroke = original);
+    }
+
+    private void InvertShapeFill(Microsoft.UI.Xaml.Shapes.Shape shape, bool invertedDark, string key)
+    {
+        var original = shape.Fill;
+        shape.Fill = new SolidColorBrush(ThemeHelper.ColorFor(invertedDark, key));
+        _hoveredPreviewRestores.Add(() => shape.Fill = original);
     }
 
     private void ClearPreviewHover()
@@ -5402,7 +5465,8 @@ public sealed partial class ShellWindow : Window
             Background = ThemeHelper.Brush(Root, _manager.Config.Theme, "OrbitNodeBackgroundBrush"),
             Child = groupMark,
         };
-        ApplyBubbleShadow(parentBubble);
+        if (OrbitMetrics.ItemShape != OrbitItemShape.Hexagon)
+            ApplyBubbleShadow(parentBubble);
         OrbitItemGeometry.Apply(parentBubble, parent);
         ToolTipService.SetToolTip(parentBubble, group.DisplayName);
         AttachPreviewHover(parentBubble);
@@ -5457,7 +5521,8 @@ public sealed partial class ShellWindow : Window
             else
             {
                 border.Child = PreviewBubbleContent(child!, glyphSize, foreground, bubble, angle);
-                ApplyBubbleShadow(border);
+                if (OrbitMetrics.ItemShape != OrbitItemShape.Hexagon)
+                    ApplyBubbleShadow(border);
                 ToolTipService.SetToolTip(border, child!.DisplayName);
                 var pill = AddSlotLabel(child, cx, cy, angle, radius, bubble);
                 // No per-bubble Tapped handler: the canvas-level press/drag/release path (see
@@ -8812,7 +8877,16 @@ public sealed partial class ShellWindow : Window
     {
         bool on = HotCornerEnabledToggle.IsOn;
         HotCornerOptionsRow.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
-        if (!on)
+
+        // Stop any canvas-petal pulse left over from a previous render; AddHotCornerButton
+        // will start a fresh one on the new logo element it creates.
+        _hotCornerPulse?.Stop();
+        _hotCornerPulse = null;
+
+        // The quadrant preview the corner button toggles into only means something when the corner
+        // actually summons a quadrant (see AddHotCornerButton) — off, or back on Orbit layout, there
+        // is nothing left to be a view of.
+        if (!on || _manager.Config.HotCornerLayout != HotCornerLayout.Quadrant)
         {
             _previewQuadrant = false;
             // QuickAccess exists only on the corner, so an open one has nothing left to be a view of.

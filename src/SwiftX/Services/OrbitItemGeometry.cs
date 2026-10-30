@@ -271,6 +271,93 @@ public static class OrbitItemGeometry
         return new PathGeometry { Figures = { figure } };
     }
 
+    /// <summary>
+    /// Snaps a group-arc notch angle to the nearest face normal or corner of the current
+    /// item shape, so the notch sits exactly on a geometric feature rather than at an
+    /// arbitrary inter-feature angle. Circle is returned unchanged — its boundary is uniform.
+    /// <list type="bullet">
+    ///   <item>Hexagon (pointy-top): 6 face normals every 60° starting at 0°.</item>
+    ///   <item>Square / Squircle: 4 face normals (0°, 90°, 180°, 270°) plus 4 corners
+    ///     (45°, 135°, 225°, 315°), snap step 45°.</item>
+    /// </list>
+    /// </summary>
+    public static double SnapNotchAngle(double angleRad)
+    {
+        double step = OrbitMetrics.ItemShape switch
+        {
+            // 6 face normals + 6 vertex angles interleaved every 30°, so items snap to
+            // whichever geometric feature (flat face OR vertex chevron) is nearest.
+            OrbitItemShape.Hexagon  => Math.PI / 6,
+            OrbitItemShape.Square   => Math.PI / 4,  // 4 faces + 4 corners, every 45°
+            OrbitItemShape.Squircle => Math.PI / 4,
+            _                       => 0,            // Circle: no snapping
+        };
+        return step == 0 ? angleRad : Math.Round(angleRad / step) * step;
+    }
+
+    /// <summary>
+    /// Distance from the bubble center to its edge at <paramref name="angleRad"/>, for the
+    /// current <see cref="OrbitMetrics.ItemShape"/>. Used by the group-arc draw code so the
+    /// notch hugs the shape's actual boundary rather than always following a circle.
+    /// </summary>
+    public static double EdgeDistanceAt(double diameter, double angleRad)
+    {
+        double r = diameter / 2;
+        return OrbitMetrics.ItemShape switch
+        {
+            OrbitItemShape.Square => SquareEdgeAt(r, angleRad),
+            OrbitItemShape.Squircle => SquircleEdgeAt(r, OrbitMetrics.CornerRadiusFor(diameter), angleRad),
+            OrbitItemShape.Hexagon => HexagonEdgeAt(r, angleRad),
+            _ => r,
+        };
+    }
+
+    /// <summary>Distance from center to the edge of an axis-aligned square with half-side
+    /// <paramref name="halfSide"/> at angle <paramref name="angleRad"/>.</summary>
+    private static double SquareEdgeAt(double halfSide, double angleRad)
+    {
+        double cosA = Math.Abs(Math.Cos(angleRad));
+        double sinA = Math.Abs(Math.Sin(angleRad));
+        double d = Math.Max(cosA, sinA);
+        return d < 0.001 ? halfSide : halfSide / d;
+    }
+
+    /// <summary>Distance from center to the edge of a rounded square (squircle) with half-side
+    /// <paramref name="halfSide"/> and corner radius <paramref name="cornerRadius"/>.</summary>
+    private static double SquircleEdgeAt(double halfSide, double cornerRadius, double angleRad)
+    {
+        // Fold to the first octant [0, 45°] from the nearest axis.
+        double a = Math.Abs(angleRad % Math.PI);
+        if (a > Math.PI / 2) a = Math.PI - a;
+        if (a > Math.PI / 4) a = Math.PI / 2 - a;
+
+        double cosA = Math.Cos(a), sinA = Math.Sin(a);
+        double s = halfSide, cr = cornerRadius;
+        double A = s - cr; // distance from center to corner-arc center along each axis
+
+        // Ray hits the flat side when it reaches x=s before the corner arc.
+        if (sinA * s <= A * cosA)
+            return s / Math.Max(cosA, 0.001);
+
+        // Ray hits the corner arc: solve (t·cosA − A)² + (t·sinA − A)² = cr²
+        double bHalf = A * (cosA + sinA);
+        double c = 2 * A * A - cr * cr;
+        return bHalf + Math.Sqrt(Math.Max(0, bHalf * bHalf - c));
+    }
+
+    /// <summary>Distance from center to the edge of a pointy-top regular hexagon with
+    /// circumradius <paramref name="circumRadius"/> at angle <paramref name="angleRad"/>.</summary>
+    private static double HexagonEdgeAt(double circumRadius, double angleRad)
+    {
+        // Edge normals are every 60° starting from −60°. Find the angle relative to the
+        // nearest edge normal, then use the apothem / cos(relative) formula.
+        double inradius = circumRadius * Math.Sqrt(3) / 2;
+        double step = Math.PI / 3;
+        double offset = angleRad + Math.PI / 3;
+        double normalized = offset - step * Math.Round(offset / step);
+        return inradius / Math.Cos(Math.Clamp(normalized, -Math.PI / 6, Math.PI / 6));
+    }
+
     private static Point OffsetToward(Point from, Point to, double distance)
     {
         double dx = to.X - from.X, dy = to.Y - from.Y;

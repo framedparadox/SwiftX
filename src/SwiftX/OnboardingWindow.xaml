@@ -170,8 +170,9 @@
 
                         <!-- The pointer half of the same question, asked in the same breath: a
                              shortcut the user could not register (another app owns it) still leaves
-                             them a way in. Second row collapses with the switch rather than sitting
-                             there disabled. -->
+                             them a way in. Position picker sits in the same row as the toggle, same
+                             as the Mouse trigger card below — there is room to spare without
+                             stacking a second row under it. -->
                         <Border Style="{StaticResource Card}">
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>
@@ -179,25 +180,15 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <PathIcon Grid.Row="0" Grid.Column="0" Data="M 0,0 L 14,0 L 0,14 Z"
+                                <PathIcon Grid.Column="0" Data="M 0,0 L 14,0 L 0,14 Z"
                                           VerticalAlignment="Center" HorizontalAlignment="Center" />
-                                <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                     <TextBlock Text="Hot corner" Style="{StaticResource SettingTitle}" />
                                     <TextBlock Text="Shove the pointer into a screen corner to bring the orbit up."
                                                Style="{StaticResource SettingBody}" />
                                 </StackPanel>
-                                <ToggleSwitch x:Name="HotCornerEnabledToggle" Grid.Row="0" Grid.Column="2"
-                                              OnContent="" OffContent="" MinWidth="0"
-                                              AutomationProperties.Name="Hot corner"
-                                              VerticalAlignment="Center" HorizontalAlignment="Right"
-                                              Toggled="HotCornerEnabled_Toggled" />
-                                <StackPanel x:Name="HotCornerOptionsRow" Grid.Row="1" Grid.Column="0"
-                                            Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="12"
-                                            Margin="0,10,0,0">
+                                <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                            Spacing="10" VerticalAlignment="Center">
                                     <ComboBox x:Name="HotCornerBox" MinWidth="0" Width="130"
                                               CornerRadius="6" VerticalAlignment="Center"
                                               AutomationProperties.Name="Hot corner position"
@@ -207,6 +198,60 @@
                                         <ComboBoxItem Content="Bottom left" Tag="BottomLeft" />
                                         <ComboBoxItem Content="Bottom right" Tag="BottomRight" />
                                     </ComboBox>
+                                    <ToggleSwitch x:Name="HotCornerEnabledToggle"
+                                                  OnContent="" OffContent="" MinWidth="0"
+                                                  AutomationProperties.Name="Hot corner"
+                                                  VerticalAlignment="Center"
+                                                  Toggled="HotCornerEnabled_Toggled" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- The mouse-only counterpart to the two triggers above — a configurable
+                             button and gesture, anywhere on the desktop, same card the main Settings
+                             screen uses (see ShellWindow.xaml's own Mouse trigger card). -->
+                        <Border Style="{StaticResource Card}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE962;"
+                                          FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="18"
+                                          VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="Mouse trigger" Style="{StaticResource SettingTitle}" />
+                                    <TextBlock Text="Show or hide the orbit with your mouse."
+                                               Style="{StaticResource SettingBody}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10"
+                                            VerticalAlignment="Center" HorizontalAlignment="Right">
+                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <ComboBox x:Name="MouseTriggerButtonBox" Width="130" Height="38"
+                                                  CornerRadius="6" VerticalAlignment="Center"
+                                                  AutomationProperties.Name="Mouse trigger button"
+                                                  SelectionChanged="MouseTriggerButtonBox_SelectionChanged">
+                                            <ComboBoxItem Content="Left button" Tag="Left" />
+                                            <ComboBoxItem Content="Right button" Tag="Right" />
+                                            <ComboBoxItem Content="Middle button" Tag="Middle" />
+                                            <ComboBoxItem Content="Back button" Tag="X1" />
+                                            <ComboBoxItem Content="Forward button" Tag="X2" />
+                                        </ComboBox>
+                                        <ComboBox x:Name="MouseTriggerActionBox" Width="130" Height="38"
+                                                  CornerRadius="6" VerticalAlignment="Center"
+                                                  AutomationProperties.Name="Mouse trigger gesture"
+                                                  SelectionChanged="MouseTriggerActionBox_SelectionChanged">
+                                            <ComboBoxItem Content="Long press" Tag="LongPress" />
+                                            <ComboBoxItem Content="Double click" Tag="DoubleClick" />
+                                            <ComboBoxItem Content="None" Tag="None" />
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="MouseTriggerEnabledToggle"
+                                                  OnContent="" OffContent="" MinWidth="0"
+                                                  AutomationProperties.Name="Mouse trigger"
+                                                  VerticalAlignment="Center"
+                                                  Toggled="MouseTriggerEnabled_Toggled" />
                                 </StackPanel>
                             </Grid>
                         </Border>

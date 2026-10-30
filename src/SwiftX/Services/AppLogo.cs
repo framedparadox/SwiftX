@@ -175,8 +175,14 @@ public static class AppLogo
     /// each leaf is a hit target; otherwise this is a static glyph (the orbit preview's corner
     /// button).
     /// </summary>
+    /// <param name="onlyActive">
+    /// Skips the other three leaves entirely instead of dimming them, leaving just the selected
+    /// corner's own petal. Used where a dimmed four-leaf mark would read as the full logo (and so
+    /// be confused with the Configure Orbit bubble, which always shows all four at full strength) —
+    /// the orbit canvas's own corner button, never the sidebar's four-way picker.
+    /// </param>
     public static FrameworkElement CreateCornerGlyph(
-        double size, HotCorner selected, Action<HotCorner>? onPicked = null)
+        double size, HotCorner selected, Action<HotCorner>? onPicked = null, bool onlyActive = false)
     {
         double edge = size > 0 ? size : NominalSize;
         var canvas = new Canvas
@@ -188,8 +194,11 @@ public static class AppLogo
 
         void AddPetal(int column, int row, Windows.UI.Color outer, Windows.UI.Color inner, HotCorner corner)
         {
-            var petal = Petal(column, row, outer, inner);
             bool isSelected = corner == selected;
+            if (onlyActive && !isSelected)
+                return;
+
+            var petal = Petal(column, row, outer, inner);
             petal.Opacity = isSelected ? 1 : DimmedPetalOpacity;
             petal.IsHitTestVisible = false;
             // Read back by SetCornerGlyphHighlighted, which has to know which leaf to leave lit
