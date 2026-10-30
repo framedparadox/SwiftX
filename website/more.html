@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>More from the developer — SwiftX</title>
+  <meta name="description" content="Other apps, developer tools, and MCP servers by the developer behind SwiftX — for Windows, VS Code, and the Model Context Protocol.">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="canonical" href="https://www.swiftx-app.com/more.html">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SwiftX">
+  <meta property="og:title" content="More from the developer — SwiftX">
+  <meta property="og:description" content="Other apps, developer tools, and MCP servers by the developer behind SwiftX.">
+  <meta property="og:url" content="https://www.swiftx-app.com/more.html">
+  <meta property="og:image" content="https://www.swiftx-app.com/assets/img/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The SwiftX orbit: eight glass items around the four-petal SwiftX mark.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="More from the developer — SwiftX">
+  <meta name="twitter:description" content="Other apps, developer tools, and MCP servers by the developer behind SwiftX.">
+  <meta name="twitter:image" content="https://www.swiftx-app.com/assets/img/og.png">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/img/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preload" href="assets/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/theme.css">
+  <script src="assets/js/theme.js"></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "SwiftX", "item": "https://www.swiftx-app.com/" },
+      { "@type": "ListItem", "position": 2, "name": "More from the developer", "item": "https://www.swiftx-app.com/more.html" }
+    ]
+  }
+  </script>
+  <style>
+    /* ── more-from-the-developer page ── */
+
+    .more-group { margin-top: 56px; }
+    .more-group:first-of-type { margin-top: 0; }
+    .more-group-head { margin-bottom: 24px; }
+    .more-group-head h2 {
+      font-size: 22px !important;
+      letter-spacing: -0.02em !important;
+      margin: 0 0 4px !important;
+      color: var(--ink);
+    }
+    .doc .more-group-head p { margin: 0 !important; font-size: 14px !important; color: var(--ink-2) !important; }
+
+    .more-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
+    }
+
+    .app-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 22px;
+      border-radius: 18px;
+      background: var(--paper-2);
+      box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(0,0,0,.03);
+      color: inherit;
+      overflow: hidden;
+      transition: transform .32s var(--ease-spring), box-shadow .32s var(--ease-out);
+      transform: translateZ(0);
+    }
+    .app-card:hover,
+    .app-card:focus-within {
+      transform: translateY(-4px) scale(1.012);
+      box-shadow: 0 0 0 1px var(--line), 0 20px 44px rgba(0,0,0,.12);
+    }
+    .app-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: var(--brand);
+      opacity: 0;
+      transition: opacity .32s var(--ease-out);
+      pointer-events: none;
+    }
+    .app-card:hover::before { opacity: .035; }
+
+    .app-card-top { display: flex; align-items: flex-start; gap: 14px; }
+    .app-icon {
+      flex: none;
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; font-weight: 700;
+      color: #fff;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), 0 6px 14px rgba(0,0,0,.14);
+      transition: transform .32s var(--ease-spring);
+    }
+    .app-card:hover .app-icon { transform: scale(1.08) rotate(-3deg); }
+    .app-icon svg { width: 24px; height: 24px; }
+    .app-icon.has-logo { background: var(--paper-3); padding: 8px; box-shadow: inset 0 0 0 1px var(--line); }
+    .app-icon.has-logo img { width: 100%; height: 100%; object-fit: contain; }
+
+    .app-meta { min-width: 0; }
+    .doc .app-name { font-size: 17px !important; font-weight: 650 !important; letter-spacing: -0.01em; color: var(--ink) !important; margin: 0 0 2px !important; }
+    .app-kicker { font-size: 12px; font-weight: 600; letter-spacing: .04em; color: var(--ink-3); text-transform: uppercase; }
+
+    .doc .app-desc { font-size: 14.5px !important; line-height: 1.55 !important; color: var(--ink-2) !important; margin: 0 !important; flex: 1; }
+
+    .app-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+    .app-link {
+      position: relative;
+      z-index: 1;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--ink);
+      background: var(--paper-3);
+      border-radius: 999px;
+      padding: 6px 12px;
+      text-decoration: none;
+      transition: background .18s, color .18s, transform .18s var(--ease-out);
+    }
+    .app-link:hover { background: var(--ink); color: var(--paper); transform: translateY(-1px); }
+    .app-link svg { width: 12px; height: 12px; flex: none; }
+
+    .doc .more-note {
+      margin-top: 48px !important;
+      font-size: 14px !important;
+      color: var(--ink-2) !important;
+      border-top: 1px solid var(--line);
+      padding-top: 24px;
+    }
+
+    @media (max-width: 480px) {
+      .app-card { padding: 18px; }
+    }
+  </style>
+</head>
+<body class="doc-page">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <!-- ================================================================ NAV -->
+  <nav class="nav" aria-label="SwiftX" data-open="false">
+    <div class="wrap nav-inner">
+      <a class="brand" href="index.html" aria-label="SwiftX home">
+        <img src="assets/img/mark.svg" alt="" width="24" height="24">SwiftX
+      </a>
+      <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav-links">
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m4 7 5 5 5-5"/></svg>
+      </button>
+      <ul class="nav-links" id="nav-links">
+        <li><a href="index.html#summon">Overview</a></li>
+        <li><a href="index.html#customize">Customize</a></li>
+        <li><a href="index.html#corner">Hot corner</a></li>
+        <li><a href="index.html#tools">Tools</a></li>
+        <li><a href="index.html#privacy">Privacy</a></li>
+        <li><a href="index.html#specs">Specs</a></li>
+        <li><a href="index.html#faq">Support</a></li>
+        <li><a href="changelog.html">Changelog</a></li>
+        <li><a href="more.html">More apps</a></li>
+      </ul>
+      <a class="btn btn-primary btn-sm" href="https://apps.microsoft.com/detail/9pk5wx5sswts">Get from Microsoft Store</a>
+    </div>
+  </nav>
+
+  <main id="main" data-tone="light">
+    <header class="doc-hero">
+      <div class="wrap-narrow">
+        <p class="eyebrow">framedparadox</p>
+        <h1 class="title">More from the developer</h1>
+        <p class="lede">Other small, independent tools — Windows apps, VS Code extensions, and MCP servers — built by the same developer behind SwiftX, each scratching one specific itch.</p>
+        <p class="meta">Everything here is open source. See the <a href="https://github.com/framedparadox">GitHub profile</a> for the full list.</p>
+      </div>
+    </header>
+
+    <article class="doc">
+      <div class="wrap-narrow">
+
+        <!-- ═══════════════════════ Windows apps ═══════════════════════ -->
+        <section class="more-group">
+          <div class="more-group-head reveal">
+            <h2>Windows apps</h2>
+            <p>Native WinUI 3 apps that live in the tray or on the desktop edge.</p>
+          </div>
+          <div class="more-grid">
+
+            <article class="app-card reveal">
+              <div class="app-card-top">
+                <div class="app-icon has-logo">
+                  <img src="assets/img/logos/dockdev.png" alt="" width="48" height="48">
+                </div>
+                <div class="app-meta">
+                  <p class="app-name">DockDev</p>
+                  <span class="app-kicker">WinUI 3 · Windows 11</span>
+                </div>
+              </div>
+              <p class="app-desc">A floating quick-access dock of developer utilities — JSON formatting, JWT decoding, file hashing, and PII masking — with pasted content that never leaves the PC.</p>
+              <div class="app-links">
+                <a class="app-link" href="https://github.com/framedparadox/dockdev" target="_blank" rel="noopener">GitHub</a>
+                <a class="app-link" href="https://apps.microsoft.com/detail/9n9p794jzq7p" target="_blank" rel="noopener">Microsoft Store</a>
+              </div>
+            </article>
+
+            <article class="app-card reveal">
+              <div class="app-card-top">
+                <div class="app-icon has-logo">
+                  <img src="assets/img/logos/anchor-dock.png" alt="" width="48" height="48">
+                </div>
+                <div class="app-meta">
+                  <p class="app-name">Anchor Dock</p>
+                  <span class="app-kicker">WinUI 3 · Windows 11</span>
+                </div>
+              </div>
+              <p class="app-desc">A floating dock that pins apps, files, folders, and web links to any monitor edge — snaps into place, auto-hides, and supports one dock per screen.</p>
+              <div class="app-links">
+                <a class="app-link" href="https://www.framedparadox.com" target="_blank" rel="noopener">Website</a>
+                <a class="app-link" href="https://github.com/framedparadox/anchor-dock" target="_blank" rel="noopener">GitHub</a>
+                <a class="app-link" href="https://apps.microsoft.com/detail/9nlp5cwmkdj0" target="_blank" rel="noopener">Microsoft Store</a>
+              </div>
+            </article>
+
+          </div>
+        </section>
+
+        <!-- ═══════════════════════ VS Code extensions ═══════════════════════ -->
+        <section class="more-group">
+          <div class="more-group-head reveal">
+            <h2>VS Code extensions</h2>
+            <p>Developer-utility extensions, published to both the VS Code Marketplace and Open VSX.</p>
+          </div>
+          <div class="more-grid">
+
+            <article class="app-card reveal">
+              <div class="app-card-top">
+                <div class="app-icon has-logo">
+                  <img src="assets/img/logos/vsgit.png" alt="" width="48" height="48">
+                </div>
+                <div class="app-meta">
+                  <p class="app-name">VsGit</p>
+                  <span class="app-kicker">VS Code extension</span>
+                </div>
+              </div>
+              <p class="app-desc">A full Git client for VS Code that runs the real <code>git</code> binary — 173 commands across tree views, webviews, an interactive commit graph, and Source Control integration.</p>
+              <div class="app-links">
+                <a class="app-link" href="https://marketplace.visualstudio.com/items?itemName=framedparadox.vsgit-vscode" target="_blank" rel="noopener">Marketplace</a>
+                <a class="app-link" href="https://open-vsx.org/extension/framedparadox/vsgit-vscode" target="_blank" rel="noopener">Open VSX</a>
+                <a class="app-link" href="https://github.com/framedparadox/vsgit-vscode" target="_blank" rel="noopener">GitHub</a>
+              </div>
+            </article>
+
+            <article class="app-card reveal">
+              <div class="app-card-top">
+                <div class="app-icon has-logo">
+                  <img src="assets/img/logos/mulesoft-aes.png" alt="" width="48" height="48">
+                </div>
+                <div class="app-meta">
+                  <p class="app-name">MuleSoft AES</p>
+                  <span class="app-kicker">VS Code extension</span>
+                </div>
+              </div>
+              <p class="app-desc">Encrypts and decrypts MuleSoft secure configuration properties right inside VS Code. Cryptography runs locally; keys stay in VS Code's own secret storage.</p>
+              <div class="app-links">
+                <a class="app-link" href="https://marketplace.visualstudio.com/items?itemName=framedparadox.mule-aes" target="_blank" rel="noopener">Marketplace</a>
+                <a class="app-link" href="https://open-vsx.org/extension/framedparadox/mule-aes" target="_blank" rel="noopener">Open VSX</a>
+                <a class="app-link" href="https://github.com/framedparadox/mulesoft-aes-vscode" target="_blank" rel="noopener">GitHub</a>
+              </div>
+            </article>
+
+            <article class="app-card reveal">
+              <div class="app-card-top">
+                <div class="app-icon has-logo">
+                  <img src="assets/img/logos/certificate-utility.png" alt="" width="48" height="48">
+                </div>
+                <div class="app-meta">
+                  <p class="app-name">Certificate Utility</p>
+                  <span class="app-kicker">VS Code extension</span>
+                </div>
+              </div>
+              <p class="app-desc">Inspects and validates certificate artifacts, with conversion and keystore workflows plus an expiry scanner — all without leaving the editor.</p>
+              <div class="app-links">
+                <a class="app-link" href="https://marketplace.visualstudio.com/items?itemName=framedparadox.certi" target="_blank" rel="noopener">Marketplace</a>
+                <a class="app-link" href="https://open-vsx.org/extension/framedparadox/certi" target="_blank" rel="noopener">Open VSX</a>
+                <a class="app-link" href="https://github.com/framedparadox/cert-util-vscode" target="_blank" rel="noopener">GitHub</a>
+              </div>
+            </article>
+
+            <article class="app-card reveal">
+              <div class="app-card-top">
+                <div class="app-icon has-logo">
+                  <img src="assets/img/logos/developer-utility.png" alt="" width="48" height="48">
+                </div>
+                <div class="app-meta">
+                  <p class="app-name">Developer Utility</p>
+                  <span class="app-kicker">VS Code extension</span>
+                </div>
+              </div>
+              <p class="app-desc">A grab-bag of day-to-day developer tools in one extension — data formatting, certificate management, and encoding/decoding.</p>
+              <div class="app-links">
+                <a class="app-link" href="https://marketplace.visualstudio.com/items?itemName=framedparadox.dev-x" target="_blank" rel="noopener">Marketplace</a>
+                <a class="app-link" href="https://open-vsx.org/extension/framedparadox/dev-x" target="_blank" rel="noopener">Open VSX</a>
+                <a class="app-link" href="https://github.com/framedparadox/developer-util-vscode" target="_blank" rel="noopener">GitHub</a>
+              </div>
+            </article>
+
+          </div>
+        </section>
+
+        <!-- ═══════════════════════ MuleSoft tooling ═══════════════════════ -->
+        <section class="more-group">
+          <div class="more-group-head reveal">
+            <h2>MuleSoft tooling</h2>
+            <p>IDE and CI-side plugins for MuleSoft developers.</p>
+          </div>
+          <div class="more-grid">
+
+            <article class="app-card reveal">
+              <div class="app-card-top">
+                <div class="app-icon" style="background: linear-gradient(135deg, #1a65b5, #2cd098);">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12h8M8 16h5M8 8h3"/></svg>
+                </div>
+                <div class="app-meta">
+                  <p class="app-name">SonarQube plugin for MuleSoft</p>
+                  <span class="app-kicker">SonarQube plugin</span>
+                </div>
+              </div>
+              <p class="app-desc">A SonarQube plugin that analyzes MuleSoft applications, bringing Mule-specific rules into a team's existing code-quality pipeline.</p>
+              <div class="app-links">
+                <a class="app-link" href="https://github.com/framedparadox/sonarqube-mule" target="_blank" rel="noopener">GitHub</a>
+              </div>
+            </article>
+
+            <article class="app-card reveal">
+              <div class="app-card-top">
+                <div class="app-icon" style="background: linear-gradient(135deg, #1d4adb, #f1067e);">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7v6c0 5 3.5 7.5 8 8 4.5-.5 8-3 8-8V7z"/><path d="m9 12 2 2 4-4"/></svg>
+                </div>
+                <div class="app-meta">
+                  <p class="app-name">Copilot for Eclipse Anypoint</p>
+                  <span class="app-kicker">Eclipse plugin</span>
+                </div>
+              </div>
+              <p class="app-desc">Brings GitHub Copilot into MuleSoft's Anypoint Studio IDE, which is built on Eclipse and has no first-party Copilot support of its own.</p>
+              <div class="app-links">
+                <a class="app-link" href="https://github.com/framedparadox/copilot-for-eclipse-anypoint" target="_blank" rel="noopener">GitHub</a>
+              </div>
+            </article>
+
+          </div>
+        </section>
+
+        <!-- ═══════════════════════ Agentic / MCP ═══════════════════════ -->
+        <section class="more-group">
+          <div class="more-group-head reveal">
+            <h2>Agentic &amp; MCP</h2>
+            <p>Small pieces of infrastructure for AI agents and the Model Context Protocol.</p>
+          </div>
+          <div class="more-grid">
+
+            <article class="app-card reveal">
+              <div class="app-card-top">
+                <div class="app-icon" style="background: linear-gradient(135deg, #1a65b5, #1d4adb);">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="8" height="8" rx="1.5"/><rect x="13" y="5" width="8" height="8" rx="1.5"/><path d="M11 15h2a2 2 0 0 0 2-2v-1"/></svg>
+                </div>
+                <div class="app-meta">
+                  <p class="app-name">mcp-secure-remote</p>
+                  <span class="app-kicker">MCP proxy</span>
+                </div>
+              </div>
+              <p class="app-desc">A stdio ↔ remote bridge for the Model Context Protocol, secured with mutual TLS. Runs via <code>npx</code> or <code>uvx</code> with no separate install step.</p>
+              <div class="app-links">
+                <a class="app-link" href="https://www.npmjs.com/package/mcp-secure-remote" target="_blank" rel="noopener">npm</a>
+                <a class="app-link" href="https://pypi.org/project/mcp-secure-remote/" target="_blank" rel="noopener">PyPI</a>
+                <a class="app-link" href="https://github.com/framedparadox/mcp-secure-remote" target="_blank" rel="noopener">GitHub</a>
+              </div>
+            </article>
+
+            <article class="app-card reveal">
+              <div class="app-card-top">
+                <div class="app-icon" style="background: linear-gradient(135deg, #f1067e, #8a3fd1);">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 1 1-3.2-6.4"/><path d="M21 4v5h-5"/><path d="M8 13h.01M12 13h.01M16 13h.01"/></svg>
+                </div>
+                <div class="app-meta">
+                  <p class="app-name">pr-comments</p>
+                  <span class="app-kicker">Agent skill &amp; CLI</span>
+                </div>
+              </div>
+              <p class="app-desc">Agent skills and a CLI that pull pull-request review comments into a CSV and a local review dashboard, so an agent can act on reviewer feedback directly.</p>
+              <div class="app-links">
+                <a class="app-link" href="https://www.npmjs.com/package/pr-comments" target="_blank" rel="noopener">npm</a>
+                <a class="app-link" href="https://pypi.org/project/pr-comments/" target="_blank" rel="noopener">PyPI</a>
+                <a class="app-link" href="https://github.com/framedparadox/pr-comments" target="_blank" rel="noopener">GitHub</a>
+              </div>
+            </article>
+
+          </div>
+        </section>
+
+        <p class="more-note">Spotted a broken link or stale description? <a href="feedback.html">Let us know</a> — this page is maintained by hand alongside each project's own README.</p>
+
+      </div>
+    </article>
+  </main>
+
+  <!-- ============================================================ FOOTER -->
+  <footer class="footer" data-tone="light">
+    <div class="wrap">
+      <div class="footer-notes">
+        <p>Windows, Windows 11 and Microsoft Store are trademarks of the Microsoft group of companies. SwiftX is an independent open-source project and is not affiliated with or endorsed by Microsoft.</p>
+      </div>
+      <div class="footer-crumb"><img src="assets/img/mark.svg" alt="" width="16" height="16"><span class="chev">›</span><span>SwiftX</span></div>
+      <div class="footer-cols">
+        <div><h4>Explore</h4><ul><li><a href="index.html#summon">Overview</a></li><li><a href="index.html#customize">Customize</a></li><li><a href="index.html#corner">Hot corner</a></li><li><a href="index.html#tools">Built-in tools</a></li><li><a href="index.html#specs">Tech specs</a></li><li><a href="more.html">More apps</a></li></ul></div>
+        <div><h4>Get SwiftX</h4><ul><li><a href="https://apps.microsoft.com/detail/9pk5wx5sswts">Get from Microsoft Store</a></li><li><a href="changelog.html">Release history</a></li><li><a href="https://github.com/framedparadox/SwiftX/releases">GitHub releases</a></li><li><a href="index.html#start">Build from source</a></li></ul></div>
+        <div><h4>Support</h4><ul><li><a href="index.html#faq">FAQ</a></li><li><a href="feedback.html">Feedback &amp; suggestions</a></li><li><a href="https://github.com/framedparadox/SwiftX/issues">Report an issue</a></li><li><a href="https://github.com/framedparadox/SwiftX#readme">Documentation</a></li></ul></div>
+        <div><h4>Legal</h4><ul><li><a href="privacy.html">Privacy policy</a></li><li><a href="terms.html">Terms and conditions</a></li><li><a href="https://github.com/framedparadox/SwiftX/blob/main/LICENSE">MIT Licence</a></li></ul></div>
+      </div>
+      <div class="footer-legal">
+        <span>Copyright © <span data-year>2026</span> SwiftX. Released under the MIT Licence.</span>
+        <nav aria-label="Legal"><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="https://github.com/framedparadox/SwiftX">GitHub</a></nav>
+      </div>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="assets/js/site.js" defer></script>
+</body>
+</html>

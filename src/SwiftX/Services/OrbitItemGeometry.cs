@@ -1,5 +1,7 @@
+using System.Numerics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using SwiftX.Models;
@@ -48,6 +50,7 @@ public static class OrbitItemGeometry
             StrokeThickness = strokeThickness,
             Stretch = Stretch.None,
             IsHitTestVisible = false,
+            Tag = HexagonChromeTag,
         };
 
         // Detached before it goes into the wrapper grid below — every real caller already has an
@@ -64,6 +67,95 @@ public static class OrbitItemGeometry
         if (inner is not null)
             grid.Children.Add(inner);
         border.Child = grid;
+
+        // A ThemeShadow already on the Border (the caller lifted it before this ran) would be cast
+        // from the Border's square bounds: swap it for one that follows the hexagon.
+        if (border.Shadow is not null)
+        {
+            border.Shadow = null;
+            border.Translation = default;
+            CastHexagonShadow(border);
+        }
+    }
+
+    private const string HexagonChromeTag = "OrbitHexagonChrome";
+    private const string HexagonShadowTag = "OrbitHexagonShadow";
+
+    /// <summary>
+    /// The Path <see cref="Apply(Border, double)"/> moved a hexagon bubble's fill onto, or null for
+    /// any other shape. A hexagon's Border has square corners and no fill of its own, so anything
+    /// that recolours a bubble has to recolour this Path: a brush set on the Border paints a square
+    /// plate behind the hexagon.
+    /// </summary>
+    public static ShapePath? HexagonChrome(Border border)
+    {
+        if (border.Child is not Grid grid)
+            return null;
+
+        foreach (var child in grid.Children)
+        {
+            if (child is ShapePath { Tag: HexagonChromeTag } path)
+                return path;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// What a bubble holds besides its outline: its own child, or for a hexagon the element that
+    /// sits over the hexagon Path in the wrapper grid.
+    /// </summary>
+    public static UIElement? Content(Border border)
+    {
+        if (HexagonChrome(border) is not { } path)
+            return border.Child;
+
+        var children = ((Grid)border.Child).Children;
+        int next = children.IndexOf(path) + 1;
+        return next < children.Count ? children[next] : null;
+    }
+
+    /// <summary>
+    /// The soft drop shadow of a hexagon bubble, shaped like the hexagon. WinUI's ThemeShadow always
+    /// casts the rectangle of whatever element wears it (a Path included), which under a hexagon is
+    /// a square plate; a composition DropShadow masked by the Path's own outline is not. It is drawn
+    /// by a host element sitting under the Path, because a visual attached to an element is painted
+    /// over that element's children. No-op for any other shape, and when one is already cast.
+    /// </summary>
+    public static void CastHexagonShadow(Border border)
+    {
+        if (HexagonChrome(border) is not { } path || border.Child is not Grid grid)
+            return;
+        if (grid.Children.Any(c => c is FrameworkElement { Tag: HexagonShadowTag }))
+            return;
+
+        var host = new Border
+        {
+            Width = path.Width,
+            Height = path.Height,
+            IsHitTestVisible = false,
+            Tag = HexagonShadowTag,
+        };
+        grid.Children.Insert(grid.Children.IndexOf(path), host);
+
+        var compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
+        var shadow = compositor.CreateDropShadow();
+        shadow.BlurRadius = (float)Math.Max(6, path.Width * 0.28);
+        shadow.Offset = new Vector3(0, (float)Math.Max(2, path.Width * 0.08), 0);
+        shadow.Color = Windows.UI.Color.FromArgb(0x38, 0, 0, 0);
+        shadow.Mask = path.GetAlphaMask();
+
+        // The mask is a snapshot of the Path's rendering, and one taken before the Path has been
+        // laid out is empty: a DropShadow with nothing to mask is a plain rectangle, i.e. the
+        // square plate again. Retake it once the Path has a size and is in the tree.
+        void RefreshMask(object? s, RoutedEventArgs e) => shadow.Mask = path.GetAlphaMask();
+        path.Loaded += RefreshMask;
+        path.SizeChanged += (s, e) => RefreshMask(s, e);
+
+        var sprite = compositor.CreateSpriteVisual();
+        sprite.Size = new Vector2((float)path.Width, (float)path.Height);
+        sprite.Shadow = shadow;
+        ElementCompositionPreview.SetElementChildVisual(host, sprite);
     }
 
     /// <summary>
