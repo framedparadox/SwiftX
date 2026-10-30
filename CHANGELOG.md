@@ -2,6 +2,18 @@
 
 All notable changes to SwiftX will be documented in this file.
 
+## [3.0.2] - 2026-10-29
+
+### Fixed
+- **Hexagon orbit items showed a square shadow and hover plate** — `ThemeShadow` always casts the
+  rectangle of whatever element wears it, so a hexagon bubble's drop shadow and hover-state
+  background were square plates behind the hexagon outline. Hexagon bubbles now get a composition
+  `DropShadow` masked by their own outline, and their hover fill is applied to the hexagon's Path
+  instead of the (square, unfilled) Border.
+
+### Changed
+- Bumped the project, assembly, file, and package identity versions to 3.0.2.0.
+
 ## [3.0.1] - 2026-10-26
 
 ### Added

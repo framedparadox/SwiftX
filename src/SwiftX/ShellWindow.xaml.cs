@@ -2259,6 +2259,15 @@ public sealed partial class ShellWindow : Window
     /// </summary>
     private void ApplyBubbleShadow(UIElement element)
     {
+        // A ThemeShadow is always the rectangle of the element wearing it, so under a hexagon it
+        // is a square plate. A hexagon gets a shadow masked by its own outline instead;
+        // OrbitItemGeometry.Apply swaps one already worn.
+        if (element is Border bubble && OrbitItemGeometry.HexagonChrome(bubble) is not null)
+        {
+            OrbitItemGeometry.CastHexagonShadow(bubble);
+            return;
+        }
+
         element.Translation = new Vector3(0, 0, BubbleElevation);
 
         // Midnight paints both the canvas and every disc on it in near-black (see ThemeHelper's
@@ -4286,7 +4295,9 @@ public sealed partial class ShellWindow : Window
         bool invertedDark = !ThemeHelper.IsDark(Root);
         var ink = new SolidColorBrush(ThemeHelper.ColorFor(invertedDark, "SwiftXForegroundBrush"));
 
-        switch (border.Child)
+        // A hexagon wraps its content in a grid with the outline Path underneath; the content is
+        // what the switch below has to see, not that wrapper.
+        switch (OrbitItemGeometry.Content(border))
         {
             case TextBlock text:
                 InvertBubbleBackground(border, invertedDark, "OrbitLabelPillBrush");
@@ -4304,15 +4315,27 @@ public sealed partial class ShellWindow : Window
                 // FontIcon (a plain item or an empty "add" slot) and anything else alike: the disc
                 // swap is still a reasonable hover cue on its own.
                 InvertBubbleBackground(border, invertedDark, "OrbitNodeBackgroundBrush");
-                if (border.Child is FontIcon only) InvertIconForeground(only, ink);
+                if (OrbitItemGeometry.Content(border) is FontIcon only) InvertIconForeground(only, ink);
                 break;
         }
     }
 
     private void InvertBubbleBackground(Border border, bool invertedDark, string key)
     {
+        var inverted = new SolidColorBrush(ThemeHelper.ColorFor(invertedDark, key));
+
+        // A hexagon's fill lives on its Path; the Border is square and unfilled, so a brush set on
+        // it would show as a square plate behind the hexagon.
+        if (OrbitItemGeometry.HexagonChrome(border) is { } hexagon)
+        {
+            var originalFill = hexagon.Fill;
+            hexagon.Fill = inverted;
+            _hoveredPreviewRestores.Add(() => hexagon.Fill = originalFill);
+            return;
+        }
+
         var original = border.Background;
-        border.Background = new SolidColorBrush(ThemeHelper.ColorFor(invertedDark, key));
+        border.Background = inverted;
         _hoveredPreviewRestores.Add(() => border.Background = original);
     }
 
