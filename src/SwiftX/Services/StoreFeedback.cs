@@ -15,7 +15,7 @@ public static class StoreFeedback
     /// Partner Center product id. Placeholder until the listing is live — in-app review still
     /// works from a packaged build without it; the URI fallback needs the real twelve-character id.
     /// </summary>
-    public const string ProductId = "0000000000000";
+    public const string ProductId = "9pk5wx5sswts";
 
     /// <summary>
     /// Whether the in-app review dialog may be used at all. It is a <c>StoreContext</c> call, and
