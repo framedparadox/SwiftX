@@ -702,7 +702,8 @@
       raf = 0;
       const r = p.getBoundingClientRect(), vh = innerHeight;
       const t = Math.min(1, Math.max(0, (vh * 0.82 - r.top) / (r.height + vh * 0.3)));
-      const lit = Math.round(t * words.length);
+      const calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const lit = calm ? words.length : Math.round(t * words.length);
       words.forEach((w, i) => w.classList.toggle('is-lit', i < lit));
     };
     addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(update); }, { passive: true });

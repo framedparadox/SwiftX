@@ -3,25 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>SwiftX</title>
+  <title>SwiftX — Radial App Launcher &amp; Quick-Access Orbit for Windows 11</title>
   <meta name="description" content="SwiftX is a floating radial app launcher for Windows 11. Summon an orbit of your apps, files, folders and links with a shortcut, a hot corner or the tray — plus built-in developer tools.">
   <meta name="theme-color" content="#000000">
   <meta name="color-scheme" content="light dark">
-  <link rel="canonical" href="https://www.swiftx-app.com/">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <link rel="canonical" href="https://swiftx-app.com/">
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="SwiftX">
+  <meta property="og:locale" content="en_US">
   <meta property="og:title" content="SwiftX — Everything you reach for. Right where you are.">
   <meta property="og:description" content="A quick-access radial app launcher for Windows 11. Launch apps, files, folders and links from one keystroke or a screen corner. Free, open source, private by design.">
-  <meta property="og:url" content="https://www.swiftx-app.com/">
-  <meta property="og:image" content="https://www.swiftx-app.com/assets/img/og.png">
+  <meta property="og:url" content="https://swiftx-app.com/">
+  <meta property="og:image" content="https://swiftx-app.com/assets/img/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="The SwiftX orbit: eight glass items around the four-petal SwiftX mark.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="SwiftX — A quick-access orbit for Windows 11">
   <meta name="twitter:description" content="Summon your apps, files, folders and links with one keystroke or a screen corner. Free and open source.">
-  <meta name="twitter:image" content="https://www.swiftx-app.com/assets/img/og.png">
+  <meta name="twitter:image" content="https://swiftx-app.com/assets/img/og.png">
 
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="icon" href="assets/img/favicon-32.png" sizes="32x32" type="image/png">
@@ -42,17 +44,35 @@
     "applicationCategory": "UtilitiesApplication",
     "operatingSystem": "Windows 10 version 1809 or later, Windows 11",
     "processorRequirements": "x64, ARM64",
-    "softwareVersion": "3.0.1",
+    "softwareVersion": "3.0.2",
     "license": "https://opensource.org/licenses/MIT",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
     "downloadUrl": "https://apps.microsoft.com/detail/9pk5wx5sswts",
-    "url": "https://www.swiftx-app.com/",
-    "image": "https://www.swiftx-app.com/assets/img/og.png",
+    "url": "https://swiftx-app.com/",
+    "image": "https://swiftx-app.com/assets/img/og.png",
+    "screenshot": [
+      "https://swiftx-app.com/assets/img/screens/orbit-desktop.png",
+      "https://swiftx-app.com/assets/img/screens/orbit-settings.png",
+      "https://swiftx-app.com/assets/img/screens/dev-tools.png"
+    ],
+    "releaseNotes": "https://swiftx-app.com/changelog",
+    "isAccessibleForFree": true,
+    "author": { "@type": "Person", "name": "framedparadox", "url": "https://github.com/framedparadox" },
     "sameAs": [
       "https://github.com/framedparadox/SwiftX",
       "https://apps.microsoft.com/detail/9pk5wx5sswts"
     ]
   }
+  </script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "SwiftX",
+  "alternateName": "SwiftX for Windows 11",
+  "url": "https://swiftx-app.com/",
+  "inLanguage": "en"
+}
   </script>
   <script type="application/ld+json">
   {
@@ -118,11 +138,10 @@
         <li><a href="#privacy">Privacy</a></li>
         <li><a href="#specs">Specs</a></li>
         <li><a href="#faq">Support</a></li>
-        <li><a href="changelog.html">Changelog</a></li>
-        <li><a href="more.html">More apps</a></li>
+        <li><a href="/changelog">Changelog</a></li>
+        <li><a href="/more">More apps</a></li>
       </ul>
-      <!-- TODO: replace with real product id when listing goes live (matches StoreFeedback.ProductId in the app) -->
-      <a class="btn btn-primary btn-sm" href="https://apps.microsoft.com/detail/9pk5wx5sswts">Download</a>
+      <a class="btn btn-primary btn-sm" href="https://apps.microsoft.com/detail/9pk5wx5sswts" aria-label="Download SwiftX from the Microsoft Store">Download</a>
     </div>
   </nav>
 
@@ -140,7 +159,6 @@
 
       <div class="wrap">
         <div class="hero-ctas">
-          <!-- TODO: replace with real product id when listing goes live -->
           <a class="btn btn-primary" href="https://apps.microsoft.com/detail/9pk5wx5sswts">
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.1 10.4 4v7.2H3zm0 13.8 7.4 1.1v-7.1H3zm8.3 1.2L21 21.5v-8.6h-9.7zm0-16.2v7.3H21V2.5z"/></svg>
             Get from Microsoft Store
@@ -423,10 +441,10 @@
         </div>
 
         <div class="facts">
-          <div class="fact reveal"><span class="num grad">250 ms</span><h4>A deliberate dwell.</h4><p>A corner clipped in passing doesn't count. Rest for a quarter second and it fires.</p></div>
-          <div class="fact reveal"><span class="num grad">6 px</span><h4>A tiny trigger patch.</h4><p>The pointer stops dead against the screen edge, so a few pixels is all it ever needs.</p></div>
-          <div class="fact reveal"><span class="num grad">1×</span><h4>Once per visit.</h4><p>It re-arms only after you leave. A held mouse button never fires it, so window snaps still work.</p></div>
-          <div class="fact reveal"><span class="num grad">0</span><h4>System-wide mouse hooks.</h4><p>The pointer is polled on a timer the tray already owns. Per monitor, taskbar or not.</p></div>
+          <div class="fact reveal"><span class="num grad">250 ms</span><h3>A deliberate dwell.</h3><p>A corner clipped in passing doesn't count. Rest for a quarter second and it fires.</p></div>
+          <div class="fact reveal"><span class="num grad">6 px</span><h3>A tiny trigger patch.</h3><p>The pointer stops dead against the screen edge, so a few pixels is all it ever needs.</p></div>
+          <div class="fact reveal"><span class="num grad">1×</span><h3>Once per visit.</h3><p>It re-arms only after you leave. A held mouse button never fires it, so window snaps still work.</p></div>
+          <div class="fact reveal"><span class="num grad">0</span><h3>System-wide mouse hooks.</h3><p>The pointer is polled on a timer the tray already owns. Per monitor, taskbar or not.</p></div>
         </div>
       </div>
     </section>
@@ -634,7 +652,7 @@
             </div>
           </div>
         </div>
-        <p class="center" style="margin-top:36px"><a class="link-arrow" href="privacy.html">Read the full privacy policy</a></p>
+        <p class="center" style="margin-top:36px"><a class="link-arrow" href="/privacy">Read the full privacy policy</a></p>
       </div>
     </section>
 
@@ -658,7 +676,7 @@
           <div class="spec"><dt>Languages</dt><dd>19, plus System. Arabic and Hebrew mirror right-to-left.</dd></div>
           <div class="spec"><dt>Accessibility</dt><dd>Full keyboard support with Esc to step back. Honours High Contrast and the Windows animation setting.</dd></div>
           <div class="spec"><dt>Your data</dt><dd>One JSON file at <code>%AppData%\SwiftX\orbit.json</code>, written atomically.<small>Export and import from Settings. Set <code>SWIFTX_DATA_DIR</code> for a portable install.</small></dd></div>
-          <div class="spec"><dt>Privacy</dt><dd>No telemetry, analytics or ads. <a href="privacy.html">Privacy policy</a></dd></div>
+          <div class="spec"><dt>Privacy</dt><dd>No telemetry, analytics or ads. <a href="/privacy">Privacy policy</a></dd></div>
         </dl>
       </div>
     </section>
@@ -716,7 +734,7 @@ dotnet run   --project src/SwiftX/SwiftX.csproj -p:Platform=x64</pre>
           </details>
           <details>
             <summary>Does SwiftX collect any data?</summary>
-            <div class="answer"><p>No. There's no telemetry, no analytics and no crash reporting. Your configuration lives in one file on your PC. The only thing SwiftX ever asks the network for, on its own, is a website's icon when you add a web link to the orbit. <a href="privacy.html">Read the privacy policy</a>.</p></div>
+            <div class="answer"><p>No. There's no telemetry, no analytics and no crash reporting. Your configuration lives in one file on your PC. The only thing SwiftX ever asks the network for, on its own, is a website's icon when you add a web link to the orbit. <a href="/privacy">Read the privacy policy</a>.</p></div>
           </details>
           <details>
             <summary>I can't find SwiftX on the taskbar.</summary>
@@ -765,7 +783,6 @@ dotnet run   --project src/SwiftX/SwiftX.csproj -p:Platform=x64</pre>
         <h2 class="headline">Get SwiftX.</h2>
         <p class="lede">Free. Open source. Yours in a keystroke.</p>
         <div class="hero-ctas">
-          <!-- TODO: replace with real product id when listing goes live -->
           <a class="btn btn-primary" href="https://apps.microsoft.com/detail/9pk5wx5sswts">Get from Microsoft Store</a>
           <a class="btn btn-ghost" href="https://github.com/framedparadox/SwiftX">Star on GitHub</a>
         </div>
@@ -783,14 +800,15 @@ dotnet run   --project src/SwiftX/SwiftX.csproj -p:Platform=x64</pre>
       </div>
       <div class="footer-crumb"><img src="assets/img/mark.svg" alt="" width="16" height="16"><span class="chev">›</span><span>SwiftX</span></div>
       <div class="footer-cols">
-        <div><h4>Explore</h4><ul><li><a href="#summon">Overview</a></li><li><a href="#customize">Customize</a></li><li><a href="#corner">Hot corner</a></li><li><a href="#tools">Built-in tools</a></li><li><a href="#specs">Tech specs</a></li><li><a href="more.html">More apps</a></li></ul></div>
-        <div><h4>Get SwiftX</h4><ul><li><a href="https://apps.microsoft.com/detail/9pk5wx5sswts">Microsoft Store</a></li><li><a href="changelog.html">Release history</a></li><li><a href="https://github.com/framedparadox/SwiftX/releases">GitHub releases</a></li><li><a href="#start">Build from source</a></li></ul></div>
-        <div><h4>Support</h4><ul><li><a href="#faq">FAQ</a></li><li><a href="feedback.html">Feedback &amp; suggestions</a></li><li><a href="https://github.com/framedparadox/SwiftX/issues">Report an issue</a></li><li><a href="https://github.com/framedparadox/SwiftX#readme">Documentation</a></li></ul></div>
-        <div><h4>Legal</h4><ul><li><a href="privacy.html">Privacy policy</a></li><li><a href="terms.html">Terms and conditions</a></li><li><a href="https://github.com/framedparadox/SwiftX/blob/main/LICENSE">MIT Licence</a></li></ul></div>
+        <div><h2>Explore</h2><ul><li><a href="#summon">Overview</a></li><li><a href="#customize">Customize</a></li><li><a href="#corner">Hot corner</a></li><li><a href="#tools">Built-in tools</a></li><li><a href="#specs">Tech specs</a></li><li><a href="/more">More apps</a></li></ul></div>
+        <div><h2>Get SwiftX</h2><ul><li><a href="https://apps.microsoft.com/detail/9pk5wx5sswts">Microsoft Store</a></li><li><a href="/changelog">Release history</a></li><li><a href="https://github.com/framedparadox/SwiftX/releases">GitHub releases</a></li><li><a href="#start">Build from source</a></li></ul></div>
+        <div><h2>Support</h2><ul><li><a href="#faq">FAQ</a></li><li><a href="/feedback">Feedback &amp; suggestions</a></li><li><a href="https://github.com/framedparadox/SwiftX/issues">Report an issue</a></li><li><a href="https://github.com/framedparadox/SwiftX#readme">Documentation</a></li></ul></div>
+        <div><h2>Legal</h2><ul><li><a href="/privacy">Privacy policy</a></li><li><a href="/terms">Terms and conditions</a></li><li><a href="https://github.com/framedparadox/SwiftX/blob/main/LICENSE">MIT Licence</a></li></ul></div>
+        <div><h2>More apps</h2><ul><li><a href="https://anchordock-app.com/">Anchor Dock</a></li><li><a href="https://keystore-studio.app/">Keystore Studio</a></li><li><a href="https://apps.microsoft.com/detail/9n9p794jzq7p">DockDev</a></li><li><a href="/more">All apps</a></li></ul></div>
       </div>
       <div class="footer-legal">
         <span>Copyright © <span data-year>2026</span> SwiftX. Released under the MIT Licence.</span>
-        <nav aria-label="Legal"><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="https://github.com/framedparadox/SwiftX">GitHub</a></nav>
+        <nav aria-label="Legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="https://github.com/framedparadox/SwiftX">GitHub</a></nav>
       </div>
     </div>
   </footer>

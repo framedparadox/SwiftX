@@ -80,6 +80,12 @@ body {
 img, svg { display: block; max-width: 100%; }
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
+/* Links inside running text are underlined so they are not identified by colour alone (WCAG 1.4.1). */
+p a:not(.btn):not(.link-arrow):not(.app-link), li a:not(.btn), dd a:not(.btn) {
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .18em;
+}
+.nav a, .footer a, .toc a, .cl-index a { text-decoration: none !important; }
+.nav a:hover, .footer a:hover, .toc a:hover { text-decoration: underline !important; }
 button { font: inherit; color: inherit; letter-spacing: inherit; }
 code, kbd, pre { font-family: var(--mono); }
 
@@ -686,7 +692,7 @@ input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; border: 0; bo
 .corner-controls label { font-size: 13px; color: var(--night-ink-2); display: block; margin-bottom: 8px; text-align: center; }
 
 .facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; margin-top: clamp(56px, 7vw, 88px); }
-.fact h4 { font-size: 17px; margin: 0 0 6px; letter-spacing: -0.01em; }
+.fact h3, .fact h4 { font-size: 17px; margin: 0 0 6px; letter-spacing: -0.01em; }
 .fact p { margin: 0; font-size: 15px; color: var(--night-ink-2); line-height: 1.45; }
 .fact .num { display: block; font-size: 40px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 8px; }
 @media (max-width: 900px) { .facts { grid-template-columns: repeat(2, 1fr); } }
@@ -921,13 +927,14 @@ input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; border: 0; bo
 .footer-crumb { display: flex; align-items: center; gap: 8px; padding: 16px 0; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 13px; }
 .footer-crumb svg.mark { width: 16px; height: 16px; }
 .footer-crumb .chev { color: var(--ink-3); }
-.footer-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; padding: 22px 0; border-bottom: 1px solid var(--line); }
-.footer-cols h4 { color: var(--ink); font-size: 12px; font-weight: 600; margin: 0 0 10px; letter-spacing: -0.01em; }
+.footer-cols { display: grid; grid-template-columns: repeat(5, 1fr); gap: 24px; padding: 22px 0; border-bottom: 1px solid var(--line); }
+.footer-cols h2, .footer-cols h4 { color: var(--ink); font-size: 12px; font-weight: 600; margin: 0 0 10px; letter-spacing: -0.01em; }
 .footer-cols ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .footer-legal { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; padding-top: 18px; }
 .footer-legal nav { display: flex; flex-wrap: wrap; gap: 0; }
 .footer-legal nav a { padding: 0 10px; border-left: 1px solid var(--line); }
 .footer-legal nav a:first-child { padding-left: 0; border-left: 0; }
+@media (max-width: 900px) { .footer-cols { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 720px) { .footer-cols { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---- Document pages (privacy, terms) ----------------------------------- */
@@ -940,7 +947,7 @@ input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; border: 0; bo
 .doc { padding: 48px 0 110px; }
 .doc h2 { font-size: 28px; letter-spacing: -0.02em; line-height: 1.2; margin: 52px 0 14px; }
 .doc h2:first-child { margin-top: 0; }
-.doc p, .doc li { font-size: 17px; line-height: 1.6; color: #333336; }
+.doc p, .doc li { font-size: 17px; line-height: 1.6; color: var(--ink-body, #333336); }
 .doc ul { padding-left: 22px; }
 .doc li { margin: 6px 0; }
 .doc .summary {

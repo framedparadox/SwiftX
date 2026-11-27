@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://www.swiftx-app.com/</loc><lastmod>2026-10-26</lastmod></url>
-  <url><loc>https://www.swiftx-app.com/changelog.html</loc><lastmod>2026-10-29</lastmod></url>
-  <url><loc>https://www.swiftx-app.com/more.html</loc><lastmod>2026-10-29</lastmod></url>
-  <url><loc>https://www.swiftx-app.com/feedback.html</loc><lastmod>2026-10-26</lastmod></url>
-  <url><loc>https://www.swiftx-app.com/privacy.html</loc><lastmod>2026-09-28</lastmod></url>
-  <url><loc>https://www.swiftx-app.com/terms.html</loc><lastmod>2026-09-09</lastmod></url>
+  <url><loc>https://swiftx-app.com/</loc><lastmod>2026-11-27</lastmod><changefreq>monthly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://swiftx-app.com/more</loc><lastmod>2026-11-27</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://swiftx-app.com/changelog</loc><lastmod>2026-11-27</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swiftx-app.com/feedback</loc><lastmod>2026-11-27</lastmod><changefreq>yearly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://swiftx-app.com/privacy</loc><lastmod>2026-11-27</lastmod><changefreq>yearly</changefreq><priority>0.4</priority></url>
+  <url><loc>https://swiftx-app.com/terms</loc><lastmod>2026-11-27</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
 </urlset>

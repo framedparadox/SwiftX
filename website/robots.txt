@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /404
 
-Sitemap: https://www.swiftx-app.com/sitemap.xml
+Sitemap: https://swiftx-app.com/sitemap.xml
